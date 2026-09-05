@@ -967,6 +967,35 @@ PY
 # the footer varies with terminal width, model and configuration. The reported
 # 90s hang came from a pane showing "gpt-5.5 xhigh · ~/obsidian", which has no
 # "% left" segment at all.
+# Codex 0.153 shows a second startup dialog when hooks are new or changed
+# ("Hooks need review"). The child's hooks are the same ones the operator already
+# trusted in the real home, so select "Trust all and continue".
+codex_hooks_review_present() {
+    printf '%s' "$1" | grep -qF "Hooks need review"
+}
+
+codex_accept_hooks_review() {
+    local session_name="$1" attempt="$2" max_attempts="$3" log_prefix="${4:-spawn_child}"
+    if (( attempt > max_attempts )); then
+        echo "[$log_prefix] Codex hooks-review dialog persisted after ${max_attempts} attempts; aborting" >&2
+        return 1
+    fi
+    local pane_text
+    pane_text="$(tmux capture-pane -t "$session_name" -p 2>/dev/null || true)"
+    if ! printf '%s' "$pane_text" | grep -qE '[›❯>][[:space:]]*2\. Trust all'; then
+        tmux send-keys -t "$session_name" Down
+        sleep 1
+        pane_text="$(tmux capture-pane -t "$session_name" -p 2>/dev/null || true)"
+    fi
+    if printf '%s' "$pane_text" | grep -qE '[›❯>][[:space:]]*2\. Trust all'; then
+        echo "[$log_prefix] Codex hooks-review dialog detected; selecting 'Trust all and continue' (${attempt}/${max_attempts})" >&2
+        tmux send-keys -t "$session_name" C-m
+        return 0
+    fi
+    echo "[$log_prefix] Codex hooks-review dialog detected but 'Trust all' row is not selected; not pressing Enter (${attempt}/${max_attempts})" >&2
+    return 0
+}
+
 codex_pane_ready() {
     local pane_text="$1" last_lines
     printf '%s' "$pane_text" | grep -qF "Use existing model" && return 1
@@ -1059,7 +1088,13 @@ claimed = []
 plugin_ids = []
 config_source = source_path / "config.toml"
 text = config_source.read_text(encoding="utf-8") if config_source.exists() else ""
+hooks_key_prefix = '[hooks.state."' + str(source_path) + '/hooks.json:'
 for line in text.splitlines():
+    # Hook trust is keyed by the hooks.json path. The child home symlinks
+    # hooks.json, so re-key the persisted trust to the child path; otherwise
+    # Codex 0.153 shows "Hooks need review" and the launcher never sees the REPL.
+    if line.startswith(hooks_key_prefix):
+        line = '[hooks.state."' + str(home_path) + '/hooks.json:' + line[len(hooks_key_prefix):]
     stripped = line.strip()
     if stripped.startswith("["):
         header = stripped.strip("[]").strip()
@@ -1475,6 +1510,15 @@ ${TASK}"
                 continue
             fi
             # Trust ダイアログ: "Do you trust the contents of this directory?"
+            if codex_hooks_review_present "$PANE_TEXT"; then
+                HOOKS_REVIEW_ATTEMPTS=$(( ${HOOKS_REVIEW_ATTEMPTS:-0} + 1 ))
+                if ! codex_accept_hooks_review "$CHILD_NAME" "$HOOKS_REVIEW_ATTEMPTS" 5 "spawn_child"; then
+                    TRUST_FAILED=true
+                    break
+                fi
+                sleep 3
+                continue
+            fi
             if codex_trust_dialog_present "$PANE_TEXT"; then
                 TRUST_ATTEMPTS=$((TRUST_ATTEMPTS + 1))
                 if ! codex_accept_trust_dialog \
@@ -2278,6 +2322,15 @@ if [[ "$USE_CODEX" == true ]]; then
         fi
 
         # Trust ダイアログ: "Do you trust the contents of this directory?"
+        if codex_hooks_review_present "$PANE_TEXT"; then
+            HOOKS_REVIEW_ATTEMPTS=$(( ${HOOKS_REVIEW_ATTEMPTS:-0} + 1 ))
+            if ! codex_accept_hooks_review "$CHILD_NAME" "$HOOKS_REVIEW_ATTEMPTS" 5 "spawn_child"; then
+                TRUST_FAILED=true
+                break
+            fi
+            sleep 3
+            continue
+        fi
         if codex_trust_dialog_present "$PANE_TEXT"; then
             TRUST_ATTEMPTS=$((TRUST_ATTEMPTS + 1))
             if ! codex_accept_trust_dialog \
