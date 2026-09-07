@@ -56,7 +56,7 @@ def test_descendant_walk_finds_the_agent_under_a_wrapper_shell():
     assert server._pane_agent_process("x", ps_output=_ZOMBIE_TREE) == ""
 
 
-def _run_exit(server, pane_cmd: str, tree: str):
+def _run_exit(server, pane_cmd: str, tree: str, category: str):
     sent: list[list[str]] = []
 
     class _Done:
@@ -78,7 +78,7 @@ def _run_exit(server, pane_cmd: str, tree: str):
     originals = (server.subprocess.run, server.build_agents, server._has_session, server.time.sleep)
     try:
         server.subprocess.run = fake_run
-        server.build_agents = lambda: [{"name": "SandyTuring", "category": "agent", "attached": False}]
+        server.build_agents = lambda: [{"name": "SandyTuring", "category": category, "attached": False}]
         server._has_session = lambda _s: True
         server.time.sleep = lambda _s: None
         result = server.do_exit("SandyTuring")
@@ -89,7 +89,7 @@ def _run_exit(server, pane_cmd: str, tree: str):
 
 def test_exit_sends_slash_exit_to_codex_behind_a_bash_wrapper():
     server = _load_server()
-    result, sent = _run_exit(server, "bash", _WSL_TREE)
+    result, sent = _run_exit(server, "bash", _WSL_TREE, "agent")
     assert result["ok"], result
     assert "exit-sent" in result["actions"] and "shell-exit-sent" not in result["actions"], result
     assert any("/exit" in argv for argv in sent), sent
@@ -98,7 +98,7 @@ def test_exit_sends_slash_exit_to_codex_behind_a_bash_wrapper():
 
 def test_exit_still_closes_a_real_zombie_shell():
     server = _load_server()
-    result, sent = _run_exit(server, "bash", _ZOMBIE_TREE)
+    result, sent = _run_exit(server, "bash", _ZOMBIE_TREE, "finished")
     assert result["ok"], result
     assert "shell-exit-sent" in result["actions"], result
     assert any(argv[-2:] == ["exit", "Enter"] for argv in sent), sent
