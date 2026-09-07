@@ -2,14 +2,14 @@
 from __future__ import annotations
 
 import ctypes
-from ctypes import wintypes
-from functools import lru_cache
 import json
 import os
-from pathlib import Path
 import stat
 import subprocess
 import sys
+from ctypes import wintypes
+from functools import lru_cache
+from pathlib import Path
 
 
 def powershell(script: str, **env: str) -> str:
@@ -143,6 +143,8 @@ def create_private_directory(path: Path) -> None:
 def consume_token(source: Path, destination: Path) -> None:
     reject_reparse(source)
     reject_reparse(destination)
+    if not source.is_file():
+        raise FileNotFoundError('Token handoff file does not exist')
     require_private(source.parent)
     require_private(source)
     require_private(destination.parent)
