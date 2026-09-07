@@ -20,7 +20,7 @@ Required:
 
 Optional:
 
-- `fswatch`: mail watcher. Falls back to polling every two seconds when absent; notifications still arrive
+- `fswatch`: mail watcher. Falls back to polling every two seconds when absent; notifications still arrive. The watcher itself is registered by the installer as a launchd / systemd service, so notifications are delivered no matter where an agent was started from
 - `fzf`: directory picker for a launcher without arguments. The current directory is used when absent
 - Ghostty: click-to-jump and window titles. Falls back to iTerm2, Terminal.app, or `none`. Only Ghostty can raise an existing window; iTerm2 and Terminal.app open a new window for every jump
 - Obsidian: vault / Daily Note integration for `/log` and links that open Output items inside a vault. `/log`'s Obsidian mode is enabled only when `AGENTSTACK_OBSIDIAN_APP` is set; the installer does not set it. Without it, `/log` writes to local `logs/`, and the dashboard displays a generic project log as a non-link item

@@ -548,6 +548,18 @@ ags_start_mail_watcher() {
   local tmux_bin="$1" hooks_dir="$2"
   local watcher_session="${AGENTSTACK_MAIL_WATCHER_SESSION:-mail-watcher}"
   [[ -n "$tmux_bin" && -n "$hooks_dir" && -f "$hooks_dir/watch_agent_mail_signals.sh" ]] || return 0
+  # The installer now runs the watcher as a launchd / systemd service. When that
+  # (or any other) watcher holds the single-instance lock, a tmux copy would
+  # only start, print "duplicate", and exit — so this is a fallback, not the
+  # primary path.
+  local pidfile="${AGENTSTACK_MAIL_WATCHER_PIDFILE:-${AGENTSTACK_MAIL_WATCHER_LOCK_DIR:-/tmp/orrery-mail-watcher.lock}/watcher.pid}"
+  if [[ -f "$pidfile" ]]; then
+    local watcher_pid
+    watcher_pid="$(head -n 1 "$pidfile" 2>/dev/null | tr -d '[:space:]')"
+    if [[ "$watcher_pid" =~ ^[0-9]+$ ]] && kill -0 "$watcher_pid" 2>/dev/null; then
+      return 0
+    fi
+  fi
   if ! "$tmux_bin" has-session -t "$watcher_session" 2>/dev/null; then
     "$tmux_bin" new-session -d -s "$watcher_session" \
       "bash '$hooks_dir/watch_agent_mail_signals.sh'" >/dev/null 2>&1 \

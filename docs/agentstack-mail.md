@@ -163,6 +163,21 @@ is refused with a message rather than fought over — the sweep will retry, but 
 will not evict a listener it does not own. Immediate recovery is
 `agentstack-mailctl start`.
 
+### The watcher is a service too
+
+Delivery into tmux is done by `hooks/watch_agent_mail_signals.sh`, a separate
+long-running process from the Mail server. Since 2026-09-07 the installer
+registers it as `org.agentstack.mail-watcher` (launchd, `KeepAlive`) or
+`org.agentstack.mail-watcher.service` (systemd user unit, `Restart=always`),
+logging to `~/.agentstack/runtime/mail-watcher.log`. Before that, only
+`agent-start` and the Codex bootstrap started it, as a detached tmux session, so
+a host whose agents were all spawned from the dashboard accumulated signals and
+delivered none (observed on WSL2 after `wsl --shutdown`). The watcher holds a
+single-instance lock, so the `agent-start` tmux fallback now stands down when
+the service already runs; the installer also retires a leftover `mail-watcher`
+tmux session when it registers the unit. `/api/mail-watcher-health` reports
+`watcher_mode` as `launchd`, `systemd-user` or `pidfile`.
+
 ## Manual migration from upstream
 
 Migration is an operator-run procedure, not an installer step. First quiesce

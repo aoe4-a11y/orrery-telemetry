@@ -290,6 +290,14 @@ AGENT_MAIL_AUTOSTART_KIND=""
 AGENT_MAIL_AUTOSTART_PATH=""
 # systemd needs a second file (service + timer); launchd does it in one plist.
 AGENT_MAIL_AUTOSTART_SERVICE_PATH=""
+# The Mail watcher turns signal files into tmux prompt injections. Until
+# 2026-09-07 only `agent-start` and the Codex bootstrap started it (a detached
+# tmux session), so a host whose agents were all spawned from the dashboard had
+# signals piling up and nothing delivering them (WSL2 after `wsl --shutdown`:
+# watcher_running=false, six signals stuck, agents never notified).
+MAIL_WATCHER_LABEL="$LABEL_PREFIX.mail-watcher"
+AGENT_MAIL_WATCHER_KIND=""
+AGENT_MAIL_WATCHER_PATH=""
 NATIVE_MAIL_EXISTING=false
 PROVISION_NATIVE_MAIL=false
 NATIVE_MAIL_STATE_ROOT="${AGENTSTACK_MAIL_STATE_ROOT:-$HOME/.agentstack/mail}"
@@ -2298,6 +2306,201 @@ enable_mail_autostart() {
   warn "could not register the AgentStack Mail autostart unit; mail will NOT restart after a reboot. Start it manually with: $BIN_DIR/agentstack-mailctl start"
 }
 
+# --- ORRERY Mail watcher service ---------------------------------------------
+# Unlike the mail autostart (a controller that exits), the watcher is the
+# long-running process itself, so its unit is KeepAlive / Restart=always. It
+# holds a single-instance lock (hooks/watch_agent_mail_signals.sh acquire_lock):
+# a second copy exits 0 as a duplicate, which is why agent-start now checks the
+# lock before starting its tmux fallback.
+mail_watcher_environment() {
+  cat <<ENVLIST
+PATH=$PATH_VALUE
+AGENTSTACK_MAIL_HOME=$MAIL_HOME
+AGENTSTACK_SIGNALS_DIR=$SIGNALS_DIR
+AGENTSTACK_RUNTIME_DIR=$RUNTIME_DIR
+ENVLIST
+} # end mail_watcher_environment
+
+render_mail_watcher_unit() {
+  local kind="$1"
+  local watcher_script="$HOOKS_DIR/watch_agent_mail_signals.sh"
+  local watcher_log="$RUNTIME_DIR/mail-watcher.log"
+  if [[ "$kind" == "launchd" ]]; then
+    AGENT_MAIL_WATCHER_PATH="$HOME/Library/LaunchAgents/$MAIL_WATCHER_LABEL.plist"
+    plan "render launchd plist $AGENT_MAIL_WATCHER_PATH (ORRERY Mail watcher)"
+    [[ "$DRY_RUN" == true ]] && return 0
+    mkdir -p "$HOME/Library/LaunchAgents"
+    "$PYTHON_BIN" - \
+      "$AGENT_MAIL_WATCHER_PATH" "$MAIL_WATCHER_LABEL" \
+      "$watcher_script" "$watcher_log" \
+      "$(mail_watcher_environment)" <<'PY'
+import pathlib
+import plistlib
+import sys
+
+dst, label, script, logfile, env_blob = sys.argv[1:6]
+env = {}
+for line in env_blob.splitlines():
+    if "=" in line:
+        key, value = line.split("=", 1)
+        env[key] = value
+
+plist = {
+    "Label": label,
+    "ProgramArguments": ["/bin/bash", script],
+    "RunAtLoad": True,
+    # The watcher is the service: keep it alive and let ThrottleInterval pace
+    # a crash loop instead of hammering tmux.
+    "KeepAlive": True,
+    "ThrottleInterval": 5,
+    "StandardOutPath": logfile,
+    "StandardErrorPath": logfile,
+    "EnvironmentVariables": env,
+}
+path = pathlib.Path(dst)
+tmp = path.with_suffix(path.suffix + ".tmp")
+tmp.write_bytes(plistlib.dumps(plist))
+tmp.replace(path)
+PY
+    return 0
+  fi
+
+  AGENT_MAIL_WATCHER_PATH="$HOME/.config/systemd/user/$MAIL_WATCHER_LABEL.service"
+  plan "render systemd user unit $AGENT_MAIL_WATCHER_PATH (ORRERY Mail watcher)"
+  [[ "$DRY_RUN" == true ]] && return 0
+  mkdir -p "$HOME/.config/systemd/user"
+  {
+    printf '[Unit]\nDescription=ORRERY Mail watcher\nAfter=network.target\n\n'
+    printf '[Service]\nType=simple\n'
+    "$PYTHON_BIN" - "$watcher_script" "$(mail_watcher_environment)" <<'PY_UNIT'
+import sys
+
+script, env_blob = sys.argv[1:3]
+
+
+def quote(value):
+    return '"' + value.replace("\\", "\\\\").replace('"', '\\"') + '"'
+
+
+for line in env_blob.splitlines():
+    if "=" in line:
+        key, value = line.split("=", 1)
+        print(f"Environment={key}={quote(value)}")
+print(f"ExecStart=/bin/bash {quote(script)}")
+PY_UNIT
+    printf 'Restart=always\nRestartSec=5\n'
+    printf 'StandardOutput=append:%s\nStandardError=append:%s\n\n' \
+      "$watcher_log" "$watcher_log"
+    printf '[Install]\nWantedBy=default.target\n'
+  } > "$AGENT_MAIL_WATCHER_PATH.tmp"
+  mv "$AGENT_MAIL_WATCHER_PATH.tmp" "$AGENT_MAIL_WATCHER_PATH"
+} # end render_mail_watcher_unit
+
+# A watcher left behind by agent-start (tmux session `mail-watcher`) holds the
+# single-instance lock; the managed unit would then exit as a duplicate on
+# every restart until that session dies. Retire it before registering.
+stop_tmux_mail_watcher() {
+  local watcher_session="${AGENTSTACK_MAIL_WATCHER_SESSION:-mail-watcher}"
+  command -v tmux >/dev/null 2>&1 || return 0
+  if tmux has-session -t "$watcher_session" 2>/dev/null; then
+    tmux kill-session -t "$watcher_session" 2>/dev/null || true
+    say "stopped the tmux mail-watcher session; the service unit takes over"
+  fi
+} # end stop_tmux_mail_watcher
+
+enable_mail_watcher() {
+  local kind=""
+  case "$(uname -s)" in
+    Darwin) command -v launchctl >/dev/null 2>&1 && kind="launchd" ;;
+    Linux)  command -v systemctl >/dev/null 2>&1 && kind="systemd-user" ;;
+  esac
+  if [[ -z "$kind" ]]; then
+    warn "no supported service manager found; the ORRERY Mail watcher will only run while an agent started with $BIN_DIR/agent-start keeps its tmux session alive"
+    return 0
+  fi
+
+  if [[ "$kind" == "launchd" ]]; then
+    AGENT_MAIL_WATCHER_PATH="$HOME/Library/LaunchAgents/$MAIL_WATCHER_LABEL.plist"
+  else
+    AGENT_MAIL_WATCHER_PATH="$HOME/.config/systemd/user/$MAIL_WATCHER_LABEL.service"
+  fi
+  local previous=""
+  if [[ "$DRY_RUN" != true && -f "$AGENT_MAIL_WATCHER_PATH" ]]; then
+    previous="$AGENT_MAIL_WATCHER_PATH.prev"
+    rm -f "$previous"
+    cp "$AGENT_MAIL_WATCHER_PATH" "$previous"
+  fi
+
+  render_mail_watcher_unit "$kind"
+
+  if [[ "$DRY_RUN" == true ]]; then
+    if [[ "$kind" == "launchd" ]]; then
+      say "DRY-RUN would run: launchctl bootstrap gui/$(id -u) $AGENT_MAIL_WATCHER_PATH"
+    else
+      say "DRY-RUN would run: systemctl --user enable --now $MAIL_WATCHER_LABEL.service"
+    fi
+    AGENT_MAIL_WATCHER_KIND="$kind"
+    return 0
+  fi
+
+  stop_tmux_mail_watcher
+
+  if [[ "$kind" == "launchd" ]]; then
+    local launchd_target="gui/$(id -u)/$MAIL_WATCHER_LABEL"
+    if launchctl enable "$launchd_target"; then
+      launchctl bootout "$launchd_target" 2>/dev/null || true
+      if wait_for_launchd_unload "$launchd_target" && \
+         launchctl bootstrap "gui/$(id -u)" "$AGENT_MAIL_WATCHER_PATH"
+      then
+        AGENT_MAIL_WATCHER_KIND="launchd"
+        [[ -n "$previous" ]] && rm -f "$previous"
+        say "ORRERY Mail watcher runs under launchd ($MAIL_WATCHER_LABEL)"
+        return 0
+      fi
+    fi
+    launchctl bootout "$launchd_target" 2>/dev/null || true
+    wait_for_launchd_unload "$launchd_target" || true
+    rm -f "$AGENT_MAIL_WATCHER_PATH"
+    if [[ -n "$previous" ]]; then
+      mv "$previous" "$AGENT_MAIL_WATCHER_PATH"
+      if launchctl enable "$launchd_target" 2>/dev/null && \
+         launchctl bootstrap "gui/$(id -u)" "$AGENT_MAIL_WATCHER_PATH" 2>/dev/null; then
+        warn "kept the previous ORRERY Mail watcher unit; the new one could not be registered"
+        AGENT_MAIL_WATCHER_KIND="launchd"
+        return 0
+      fi
+    fi
+  else
+    # `enable --now` leaves an already-running service on the old unit file;
+    # restart so the rendered one is what actually runs.
+    if systemctl --user daemon-reload && \
+       systemctl --user enable --now "$MAIL_WATCHER_LABEL.service" && \
+       systemctl --user restart "$MAIL_WATCHER_LABEL.service"
+    then
+      AGENT_MAIL_WATCHER_KIND="systemd-user"
+      [[ -n "$previous" ]] && rm -f "$previous"
+      say "ORRERY Mail watcher runs under systemd ($MAIL_WATCHER_LABEL.service)"
+      return 0
+    fi
+    systemctl --user disable --now "$MAIL_WATCHER_LABEL.service" 2>/dev/null || true
+    rm -f "$AGENT_MAIL_WATCHER_PATH"
+    if [[ -n "$previous" ]]; then
+      mv "$previous" "$AGENT_MAIL_WATCHER_PATH"
+      if systemctl --user daemon-reload 2>/dev/null && \
+         systemctl --user enable --now "$MAIL_WATCHER_LABEL.service" 2>/dev/null; then
+        warn "kept the previous ORRERY Mail watcher unit; the new one could not be registered"
+        AGENT_MAIL_WATCHER_KIND="systemd-user"
+        return 0
+      fi
+    fi
+    systemctl --user daemon-reload 2>/dev/null || true
+  fi
+
+  rm -f "${previous:-/nonexistent}" 2>/dev/null || true
+  AGENT_MAIL_WATCHER_PATH=""
+  warn "could not register the ORRERY Mail watcher unit; agents spawned from the dashboard will not receive Mail notifications until an agent started with $BIN_DIR/agent-start brings the watcher up"
+} # end enable_mail_watcher
+
 render_launchd_plist() {
   local plist="$HOME/Library/LaunchAgents/$LABEL.plist"
   plan "render launchd plist $plist"
@@ -2628,7 +2831,9 @@ write_manifest() {
   "$PYTHON_BIN" - "$tmp" "$service_kind" "$service_path" \
     "$mail_service_kind" "$mail_service_path" "$AGENT_MAIL_NAME_CAPABILITY_JSON" \
     "${AGENT_MAIL_AUTOSTART_KIND:-}" "${AGENT_MAIL_AUTOSTART_PATH:-}" \
-    "$MAIL_AUTOSTART_LABEL" "${AGENT_MAIL_AUTOSTART_SERVICE_PATH:-}" <<PY
+    "$MAIL_AUTOSTART_LABEL" "${AGENT_MAIL_AUTOSTART_SERVICE_PATH:-}" \
+    "${AGENT_MAIL_WATCHER_KIND:-}" "${AGENT_MAIL_WATCHER_PATH:-}" \
+    "$MAIL_WATCHER_LABEL" <<PY
 import json
 import os
 import pathlib
@@ -2645,6 +2850,9 @@ mail_autostart_kind = sys.argv[7]
 mail_autostart_path = sys.argv[8]
 mail_autostart_label = sys.argv[9]
 mail_autostart_service_path = sys.argv[10]
+mail_watcher_kind = sys.argv[11]
+mail_watcher_path = sys.argv[12]
+mail_watcher_label = sys.argv[13]
 install_dir = pathlib.Path("$INSTALL_DIR")
 claude_skills_dir = pathlib.Path("$CLAUDE_SKILLS_DIR")
 owned_files = []
@@ -2669,6 +2877,8 @@ if mail_autostart_path:
     owned_files.append(mail_autostart_path)
 if mail_autostart_service_path:
     owned_files.append(mail_autostart_service_path)
+if mail_watcher_path:
+    owned_files.append(mail_watcher_path)
 for raw in ("$NATIVE_MAIL_ENV", "$NATIVE_MAIL_RUNNER"):
     path = pathlib.Path(raw)
     if path.is_file() or path.is_symlink():
@@ -2738,6 +2948,12 @@ elif mail_autostart_kind == "systemd-user" and mail_autostart_path:
     # The timer is the enabled unit; the service it triggers is a plain file.
     services.append({"kind": "systemd-user", "unit": f"{mail_autostart_label}.timer",
                      "path": mail_autostart_path, "role": "agent-mail-autostart"})
+if mail_watcher_kind == "launchd" and mail_watcher_path:
+    services.append({"kind": "launchd", "label": mail_watcher_label,
+                     "path": mail_watcher_path, "role": "mail-watcher"})
+elif mail_watcher_kind == "systemd-user" and mail_watcher_path:
+    services.append({"kind": "systemd-user", "unit": f"{mail_watcher_label}.service",
+                     "path": mail_watcher_path, "role": "mail-watcher"})
 manifest = {
     "schema_version": 1,
     "tool": "claude-agent-stack",
@@ -2885,6 +3101,7 @@ main() {
   # is precisely the case for every existing user re-running install.sh to
   # update, and they need the autostart most.
   enable_mail_autostart
+  enable_mail_watcher
   safe_merge_claude_mcp
   safe_merge_settings
   safe_managed_doc_setups

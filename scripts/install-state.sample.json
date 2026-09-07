@@ -121,7 +121,8 @@
     "/home/alice/.agentstack/runtime/claude-mcp-merge-result.json",
     "/home/alice/.claude/skills/delegate",
     "/home/alice/.claude/skills/log",
-    "/home/alice/.config/systemd/user/org.agentstack.agentdashboard.service"
+    "/home/alice/.config/systemd/user/org.agentstack.agentdashboard.service",
+    "/home/alice/.config/systemd/user/org.agentstack.mail-watcher.service"
   ],
   "purge_paths": [
     "/home/alice/.agentstack/mail-service",
@@ -149,6 +150,12 @@
       "path": "/home/alice/.config/systemd/user/org.agentstack.mail.timer",
       "role": "agent-mail-autostart",
       "unit": "org.agentstack.mail.timer"
+    },
+    {
+      "kind": "systemd-user",
+      "path": "/home/alice/.config/systemd/user/org.agentstack.mail-watcher.service",
+      "role": "mail-watcher",
+      "unit": "org.agentstack.mail-watcher.service"
     }
   ],
   "settings_backups": [

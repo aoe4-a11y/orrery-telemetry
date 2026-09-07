@@ -20,7 +20,7 @@
 
 任意:
 
-- `fswatch`: mail watcher。なければ 2 秒間隔の polling に fallback します（通知は届きます）
+- `fswatch`: mail watcher。なければ 2 秒間隔の polling に fallback します（通知は届きます）。watcher 自体は installer が launchd / systemd の service として登録するので、agent をどこから起動しても通知が届きます
 - `fzf`: 引数なし launcher の directory picker。なければカレントディレクトリを使います
 - Ghostty: click-to-jump と window title。iTerm2、Terminal.app、`none` へ fallback。ただし既存ウィンドウの前面化は Ghostty のみで、iTerm2 と Terminal.app では jump のたびに新しいウィンドウが開きます
 - Obsidian: `/log` の vault / Daily Note 統合と、vault 内 Output item を開く link。`/log` の Obsidian モードは `AGENTSTACK_OBSIDIAN_APP` を設定して初めて有効になります（installer は設定しません）。未設定なら `/log` はローカルの `logs/` に書き、dashboard は generic project log を非リンク項目として表示します

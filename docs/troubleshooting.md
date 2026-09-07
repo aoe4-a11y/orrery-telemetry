@@ -198,6 +198,14 @@ curl -s http://127.0.0.1:8770/api/mail-watcher-health
 - agent-mail endpoint / bearer token が不正
 - target tmux session がない
 
+watcher は installer が service として登録します（macOS は launchd `org.agentstack.mail-watcher`、Linux / WSL2 は systemd user unit `org.agentstack.mail-watcher.service`。`watcher_mode` にどちらで動いているかが出ます）。`watcher_running` が `false` のまま signal が溜まるのは、この unit が無い古いインストール（2026-09-07 より前は `agent-start` が tmux session として起動するだけで、dashboard から spawn した agent しかいない host では誰も起動しなかった）か、unit の登録に失敗した場合です。`bash scripts/install.sh` を再実行すると登録し直します。手動で確認するなら:
+
+```bash
+launchctl print gui/$(id -u)/org.agentstack.mail-watcher   # macOS
+systemctl --user status org.agentstack.mail-watcher.service   # Linux / WSL2
+tail ~/.agentstack/runtime/mail-watcher.log
+```
+
 `AGENTSTACK_MAIL_HOME` と `AGENTSTACK_SIGNALS_DIR` が service と launcher で一致しているか確認します。
 
 ## Dashboard spawn がすぐ消える

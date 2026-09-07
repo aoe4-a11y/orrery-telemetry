@@ -4611,6 +4611,22 @@ def _launchctl_job_running(label: str) -> bool:
         return False
 
 
+def _systemd_user_unit_running(unit: str) -> bool:
+    """True when `systemctl --user is-active <unit>` reports active (Linux)."""
+    if sys.platform != "linux":
+        return False
+    try:
+        process = subprocess.run(
+            ["systemctl", "--user", "is-active", unit],
+            capture_output=True,
+            text=True,
+            timeout=3,
+        )
+        return process.returncode == 0 and process.stdout.strip() == "active"
+    except Exception:
+        return False
+
+
 def mail_watcher_health() -> dict:
     now = time.time()
     cached = _MAIL_HEALTH_CACHE["data"]
@@ -4671,14 +4687,17 @@ def mail_watcher_health() -> dict:
     # 配送本体は mail-watcher に統合。GUI launchd domain が使えない環境でも
     # watcher 自身が持つ pidfile と command line を照合して実プロセスを判定する。
     watcher_launchd = _launchctl_job_running(MAIL_WATCHER_LABEL)
+    watcher_systemd = _systemd_user_unit_running(f"{MAIL_WATCHER_LABEL}.service")
     watcher_pidfile, watcher_pid = _pidfile_process_running(
         MAIL_WATCHER_PIDFILE,
         "watch_agent_mail_signals.sh",
         MAIL_WATCHER_HEARTBEAT,
     )
-    result["watcher_running"] = watcher_launchd or watcher_pidfile
+    result["watcher_running"] = watcher_launchd or watcher_systemd or watcher_pidfile
     if watcher_launchd:
         result["watcher_mode"] = "launchd"
+    elif watcher_systemd:
+        result["watcher_mode"] = "systemd-user"
     elif watcher_pidfile:
         result["watcher_mode"] = "pidfile"
         result["watcher_pid"] = watcher_pid

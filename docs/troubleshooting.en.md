@@ -183,6 +183,14 @@ curl -s http://127.0.0.1:8770/api/mail-watcher-health
 - invalid agent-mail endpoint / bearer token
 - target tmux session is missing
 
+The installer registers the watcher as a service (launchd `org.agentstack.mail-watcher` on macOS, the systemd user unit `org.agentstack.mail-watcher.service` on Linux / WSL2; `watcher_mode` tells you which one is running). `watcher_running: false` with signals piling up means either an older install without that unit (before 2026-09-07 only `agent-start` started the watcher, as a tmux session, so a host whose agents were all spawned from the dashboard had nothing delivering) or a failed registration. Re-running `bash scripts/install.sh` registers it again. To check by hand:
+
+```bash
+launchctl print gui/$(id -u)/org.agentstack.mail-watcher   # macOS
+systemctl --user status org.agentstack.mail-watcher.service   # Linux / WSL2
+tail ~/.agentstack/runtime/mail-watcher.log
+```
+
 Confirm that `AGENTSTACK_MAIL_HOME` and `AGENTSTACK_SIGNALS_DIR` match between service and launcher.
 
 ## Dashboard spawn disappears immediately
