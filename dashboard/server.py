@@ -4449,6 +4449,61 @@ def do_spawn(payload: dict) -> dict:
     return result
 
 
+_AGENT_PROCESS_NAMES = {"claude", "codex", "node"}
+
+
+def _pane_agent_process(session: str, ps_output: str | None = None) -> str:
+    """Name of a live agent process (claude / codex / node) under the pane, or "".
+
+    `#{pane_current_command}` is the foreground process *group leader*, and
+    under a `bash -lc '… codex …'` wrapper (Linux / WSL2: no job control, so
+    the child shares bash's group) that is "bash" even while Codex is alive.
+    do_exit then took the zombie-shell branch and typed a bare `exit` into
+    Codex (2026-09-07, SandyTuring on WSL2). Walk the pane's descendants
+    instead of trusting the leader's name.
+    """
+    if ps_output is None:
+        pid_r = subprocess.run(
+            ["tmux", "display-message", "-t", session, "-p", "#{pane_pid}"],
+            capture_output=True, text=True,
+        )
+        try:
+            pane_pid = int(pid_r.stdout.strip())
+        except ValueError:
+            return ""
+        ps_r = subprocess.run(["ps", "-axo", "pid=,ppid=,comm="], capture_output=True, text=True)
+        ps_output = ps_r.stdout
+        root = pane_pid
+    else:
+        root = None
+    children: dict[int, list[tuple[int, str]]] = {}
+    for line in ps_output.splitlines():
+        parts = line.split(None, 2)
+        if len(parts) < 3:
+            continue
+        try:
+            pid, ppid = int(parts[0]), int(parts[1])
+        except ValueError:
+            continue
+        children.setdefault(ppid, []).append((pid, os.path.basename(parts[2]).lower()))
+    if root is None:
+        # Test entry point: the pane pid is the first line's pid.
+        first = ps_output.strip().splitlines()[0].split(None, 2)
+        root = int(first[0])
+    queue = [root]
+    seen = set()
+    while queue:
+        pid = queue.pop()
+        if pid in seen:
+            continue
+        seen.add(pid)
+        for child_pid, comm in children.get(pid, []):
+            if comm in _AGENT_PROCESS_NAMES:
+                return comm
+            queue.append(child_pid)
+    return ""
+
+
 def do_exit(session: str) -> dict:
     """running/finished エージェントに `/exit` を送り、Claude を graceful exit させる。
 
@@ -4493,8 +4548,11 @@ def do_exit(session: str) -> dict:
         capture_output=True, text=True,
     )
     pane_cmd = pane_cmd_r.stdout.strip().lower()
+    agent_proc = _pane_agent_process(session) if pane_cmd in _SHELL_PROCS else ""
+    if agent_proc:
+        actions.append(f"wrapper-shell:{pane_cmd}>{agent_proc}")
 
-    if pane_cmd in _SHELL_PROCS:
+    if pane_cmd in _SHELL_PROCS and not agent_proc:
         # Claude はすでに終了してシェルだけ残っているゾンビ状態。
         # /exit はシェルに効かないので shell の exit コマンドで tmux session を閉じる。
         r = subprocess.run(
