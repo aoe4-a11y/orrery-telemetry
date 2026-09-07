@@ -96,9 +96,10 @@ On Windows, install inside a WSL2 Ubuntu. Inside Ubuntu it is Linux, so the step
    ```
 3. **Install the prerequisites** (inside Ubuntu).
    ```bash
-   sudo apt update && sudo apt install -y git tmux python3 curl
+   sudo apt update && sudo apt install -y git tmux python3 curl fswatch
    curl -LsSf https://astral.sh/uv/install.sh | sh
    ```
+   `fswatch` is optional. Without it the mail watcher falls back to polling every 2 seconds and notifications still arrive.
 4. **Clone and run the installer** (inside Ubuntu). Keep the project on the WSL side (`~/work/...`): `/mnt/c` is slow and handles permissions differently.
    ```bash
    git clone https://github.com/gyroid-eth/orrery-telemetry.git
@@ -107,7 +108,18 @@ On Windows, install inside a WSL2 Ubuntu. Inside Ubuntu it is Linux, so the step
    ```
    The questions are the same three as above, and each only changes files under the Ubuntu home. Answer each with `yes` and one press of Enter (over Remote Desktop a key can register as repeated, so press once and wait for the output). It is done when `dashboard healthy: http://127.0.0.1:8770/api/agents` appears.
 5. **Open the dashboard.** In a Windows browser open `http://127.0.0.1:8770/`. WSL2 forwards localhost to Windows, so it just works.
-6. **Start an agent** (inside Ubuntu). Install Claude Code or the Codex CLI inside Ubuntu, log in, then use the same commands as in "Starting the first agent" above. The dashboard's jump opens a new Windows Terminal tab attached to the tmux session.
+6. **Install Claude Code or the Codex CLI inside Ubuntu and log in.** A copy installed on the Windows side is not used: agents run inside Ubuntu's tmux.
+   ```bash
+   # Claude Code (native installer; lands in ~/.local/bin)
+   curl -fsSL https://claude.ai/install.sh | bash
+   # Codex CLI (needs Node.js; keep the global prefix under home to avoid sudo)
+   sudo apt install -y nodejs npm
+   npm config set prefix ~/.npm-global
+   echo 'export PATH="$HOME/.npm-global/bin:$HOME/.local/bin:$PATH"' >> ~/.bashrc && source ~/.bashrc
+   npm install -g @openai/codex
+   ```
+   Log in with `claude` (then `/login`) and `codex login`. Open the URL each prints in a Windows browser to authorize.
+7. **Start an agent** (inside Ubuntu). Use the same commands as in "Starting the first agent" above. The dashboard's jump opens a new Windows Terminal (`wt.exe`, preinstalled on Windows 11) tab attached to the tmux session. If Windows Terminal is missing, install it from the Microsoft Store.
 
 **Do not close every window.** When the last Ubuntu window closes, WSL2 stops the whole VM and Mail and the dashboard go with it. To keep them resident, set `loginctl enable-linger` and `vmIdleTimeout=-1` in `.wslconfig` as described in the [WSL2 section of troubleshooting](troubleshooting.en.md#on-wsl2-the-services-vanish-when-the-last-shell-closes).
 

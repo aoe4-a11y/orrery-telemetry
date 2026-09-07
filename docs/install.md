@@ -96,9 +96,10 @@ Windows では WSL2 の Ubuntu の中に入れます。Ubuntu の中は Linux �
    ```
 3. **前提を入れる**（Ubuntu の中）。
    ```bash
-   sudo apt update && sudo apt install -y git tmux python3 curl
+   sudo apt update && sudo apt install -y git tmux python3 curl fswatch
    curl -LsSf https://astral.sh/uv/install.sh | sh
    ```
+   `fswatch` は任意です。無くても mail watcher は 2 秒間隔の polling で通知を届けます。
 4. **clone して installer を走らせる**（Ubuntu の中）。project は WSL 側のパス（`~/work/...`）にしてください。`/mnt/c` 配下は遅く、権限の扱いも違います。
    ```bash
    git clone https://github.com/gyroid-eth/orrery-telemetry.git
@@ -107,7 +108,18 @@ Windows では WSL2 の Ubuntu の中に入れます。Ubuntu の中は Linux �
    ```
    途中の質問は上の 3 つと同じで、どれも Ubuntu の home の中を変えるだけです。質問ごとに `yes` と打って Enter を 1 回ずつ押します（Remote Desktop 越しだとキーが連打扱いになることがあるので、1 回押して表示を待ちます）。最後に `dashboard healthy: http://127.0.0.1:8770/api/agents` が出れば完了です。
 5. **dashboard を開く。** Windows のブラウザで `http://127.0.0.1:8770/` を開きます。WSL2 の localhost は Windows 側に転送されるので、そのまま届きます。
-6. **agent を起動する**（Ubuntu の中）。Claude Code か Codex CLI を Ubuntu の中に入れてログインしてから、上の「最初の agent を起動する」と同じコマンドを打ちます。dashboard の jump は Windows Terminal の新しいタブを開いて tmux に attach します。
+6. **Claude Code か Codex CLI を Ubuntu の中に入れてログインする。** Windows 側に入れたものは使えません（agent は Ubuntu の tmux の中で動きます）。
+   ```bash
+   # Claude Code（native installer。~/.local/bin に入る）
+   curl -fsSL https://claude.ai/install.sh | bash
+   # Codex CLI（Node.js が要る。global install は home の下にして sudo を避ける）
+   sudo apt install -y nodejs npm
+   npm config set prefix ~/.npm-global
+   echo 'export PATH="$HOME/.npm-global/bin:$HOME/.local/bin:$PATH"' >> ~/.bashrc && source ~/.bashrc
+   npm install -g @openai/codex
+   ```
+   ログインは `claude`（起動後に `/login`）と `codex login` です。表示された URL を Windows 側のブラウザで開いて認可します。
+7. **agent を起動する**（Ubuntu の中）。上の「最初の agent を起動する」と同じコマンドを打ちます。dashboard の jump は Windows Terminal（`wt.exe`、Windows 11 なら標準搭載）の新しいタブを開いて tmux に attach します。Windows Terminal が無い場合は Microsoft Store から入れてください。
 
 **閉じてはいけない窓。** Ubuntu の窓を全部閉じると WSL2 は VM ごと止まり、Mail と dashboard も消えます。常駐させたいときは [troubleshooting の WSL2 節](troubleshooting.md#wsl2-では最後のシェルを閉じると-service-が消える) の `loginctl enable-linger` と `.wslconfig` の `vmIdleTimeout=-1` を設定してください。
 
