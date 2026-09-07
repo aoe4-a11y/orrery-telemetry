@@ -91,6 +91,22 @@ NETWORK は選択中の time window 外にある node を表示しないこと�
 
 mail の `last_active` だけで running と判定せず、tmux process、pane state、session state を合わせます。過去 session を現在実行中と誤表示しないためです。
 
+### Lifecycle: EXIT の後に finished と gone のどちらへ行くか
+
+分類は「設計した遷移」ではなく、その時点で測れるもの（tmux session の有無、pane 配下の agent process の有無）を映しています。EXIT は agent に `/exit` を送るだけで、その後 `finished` と `gone` のどちらに落ちるかは Dashboard ではなく、**その agent を起こした launcher が REPL 終了後に shell を残すかどうか**で決まります。
+
+| 起動のしかた | REPL 終了後 | 分類 |
+| --- | --- | --- |
+| `/delegate` / `spawn_child.sh`（REPL の後ろに cleanup を繋ぐ） | cleanup が reservation 解放と soft-retire を済ませ、command 列が尽きて tmux session も閉じる | `gone`（soft-retire 済みなら `retired`） |
+| 対話 shell から手で起動した session、cleanup を後置しない launcher | shell が残る | `finished` |
+
+`finished` は EXIT の次の段階として用意した状態ではなく、shell が残っている現実を表す状態です。provider を追加するときに Claude / Codex と同じ見え方にしたければ、Dashboard 側ではなく child 経路の launcher に cleanup を後置します（[#20](https://github.com/gyroid-eth/orrery-telemetry/issues/20)）。
+
+- `finished` への EXIT は shell に `exit` を送って session を閉じるので `gone` に落ちます
+- resume は `finished` / `gone` のどちらも transcript から新しい session を作る同じ経路です。`finished` は先に husk を kill してから乗ります
+- `finished` の実用上の違いは、DECK の既定表示に残ること、`OPEN TMUX` で最後の画面と cwd を見に行けることの 2 点です
+- husk は待機中の shell 1 個なので、溜めても memory 負荷にはなりません。溜まって困るのは DECK の見通しの方で、retire / kill で片付けます
+
 ### 検索
 
 上部の `FILTER · name / task` は、名前だけでなく **task description、live pane title、最後に受け取った指示の subject と送信者**も対象にします。何をしていた agent かを覚えていれば、名前を思い出せなくても引けます。
