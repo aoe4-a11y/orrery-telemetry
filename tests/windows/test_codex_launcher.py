@@ -3,17 +3,17 @@
 from __future__ import annotations
 
 import importlib.util
+import io
 import json
-from pathlib import Path
 import subprocess
 import sys
 import time
-import tomllib
-from types import ModuleType
+from pathlib import Path
+from types import ModuleType, SimpleNamespace
 
 import psutil
 import pytest
-
+import tomllib
 
 ROOT = Path(__file__).resolve().parents[2]
 PRIVATE_STATE_PATH = ROOT / "scripts" / "windows" / "private_state.py"
@@ -134,6 +134,16 @@ def test_private_token_handoff_consumes_source_after_verified_copy(
     assert destination.read_text(encoding="utf-8") == "one-time-child-token"
     private_state.require_private(destination)
     _assert_current_user_only(destination, protected=None)
+
+
+def test_missing_token_handoff_has_a_clear_error(tmp_path: Path) -> None:
+    private_root = tmp_path / "private"
+    private_state.create_private_directory(private_root)
+    source = private_root / "missing-handoff"
+    destination = private_root / "owner.token"
+
+    with pytest.raises(FileNotFoundError, match="Token handoff file does not exist"):
+        private_state.consume_token(source, destination)
 
 
 def _wait_for(predicate, timeout: float = 10.0) -> None:
@@ -285,9 +295,9 @@ def test_stale_creation_time_prevents_pid_reuse_termination() -> None:
 
 def test_pane_ready_rejects_blocked_dialogs_even_with_a_prompt_footer() -> None:
     blocked = (
-        "Starting MCP\n› Ask Codex to do anything\n  gpt-5.6-sol",
         "Sign in to continue\n› Ask Codex to do anything\n  gpt-5.6-sol",
-        "Do you trust this folder?\n❯ Yes\n  gpt-5.6-sol",
+        ("Do you trust the contents of this directory?\n"
+         "› 1. Yes, continue\n  2. No, quit"),
         "Setup required\n› Ask Codex to do anything\n  gpt-5.6-sol",
         "Would you like to continue?\n› Ask Codex to do anything\n  gpt-5.6-sol",
         "Approve access\n› Ask Codex to do anything\n  gpt-5.6-sol",
@@ -309,6 +319,316 @@ def test_pane_ready_ignores_old_startup_scrollback() -> None:
         "old startup details\n"
         "Codex\n› Ask Codex to do anything\n  gpt-5.6-sol low"
     ) is True
+
+
+def test_pane_ready_accepts_current_prompt_after_stale_mcp_notice() -> None:
+    assert launcher.pane_ready(
+        "• Starting MCP servers (1/2): codex_apps (0s • esc to interrupt)\n"
+        "› Ask Codex to do anything\n"
+        "  gpt-5.6-luna max"
+    ) is True
+
+
+def test_trust_dialog_is_recognized_and_forwarded_to_the_launching_console() -> None:
+    pane = (
+        "Do you trust the contents of this directory?\n"
+        "› 1. Yes, continue\n"
+        "  2. No, quit\n"
+        "Press enter to continue"
+    )
+    output = io.StringIO()
+
+    assert launcher.trust_dialog_present(pane) is True
+    assert launcher.request_directory_trust(Path(r"C:\work\project"), lambda: "yes", output) is True
+    assert "Codex requests trust for" in output.getvalue()
+    assert launcher.request_directory_trust(Path(r"C:\work\project"), lambda: "no", io.StringIO()) is False
+
+
+def test_noninteractive_trust_returns_a_resumable_state(monkeypatch: pytest.MonkeyPatch,
+                                                        tmp_path: Path) -> None:
+    state = tmp_path / "state"
+    home = tmp_path / "home"
+    private_state.create_private_directory(state)
+    private_state.create_private_directory(home)
+    launcher.write_private_text(state / "owner.token", "test-token\n")
+    spec = {
+        "home": str(home),
+        "state": str(state),
+        "name": "BlueLake",
+        "parent": "GreenCastle",
+        "cwd": str(tmp_path),
+        "project": "project-key",
+        "socket": "orrery-test",
+    }
+    launcher.write_json(state / "launch.json", spec)
+    trust_pane = (
+        "Do you trust the contents of this directory?\n"
+        "› 1. Yes, continue\n"
+        "  2. No, quit"
+    )
+    calls: list[tuple[str, ...]] = []
+
+    def fake_tmux(_spec: dict, *arguments: str, **_kwargs: object) -> subprocess.CompletedProcess:
+        calls.append(arguments)
+        if arguments[:3] == ("capture-pane", "-p", "-t"):
+            return subprocess.CompletedProcess([], 0, trust_pane, "")
+        if arguments[0] == "display-message":
+            return subprocess.CompletedProcess([], 0, "0", "")
+        raise AssertionError(arguments)
+
+    monkeypatch.setattr(launcher, "tmux", fake_tmux)
+    monkeypatch.setattr(launcher, "console_is_interactive", lambda: False)
+    launcher.acquire_home_lock(home, state)
+
+    try:
+        result = launcher.resume(state, 2)
+
+        assert result["status"] == "trust_required"
+        assert result["state_directory"] == str(state)
+        assert (state / "owner.token").is_file()
+        assert not any(arguments[0] == "send-keys" for arguments in calls)
+    finally:
+        assert launcher.release_home_lock(state) is True
+
+
+def test_home_lock_rejects_a_second_active_launcher(tmp_path: Path) -> None:
+    home = tmp_path / "home"
+    state = tmp_path / "state"
+    other_state = tmp_path / "other-state"
+    for path in (home, state, other_state):
+        private_state.create_private_directory(path)
+
+    def write_spec(path: Path) -> None:
+        launcher.write_json(path / "launch.json", {"home": str(home), "state": str(path)})
+
+    write_spec(state)
+    write_spec(other_state)
+    launcher.acquire_home_lock(home, state)
+    try:
+        with pytest.raises(RuntimeError, match="already in use by an active launcher"):
+            launcher.acquire_home_lock(home, other_state)
+    finally:
+        assert launcher.release_home_lock(state) is True
+
+
+def test_home_lock_recovers_a_stopped_launcher_claim(tmp_path: Path) -> None:
+    home = tmp_path / "home"
+    stale_state = tmp_path / "stale-state"
+    new_state = tmp_path / "new-state"
+    for path in (home, stale_state, new_state):
+        private_state.create_private_directory(path)
+        launcher.write_json(path / "launch.json", {"home": str(home), "state": str(path)})
+    launcher.write_private_text(
+        home / ".orrery-launch.lock",
+        json.dumps({
+            "home": str(home),
+            "state": str(stale_state),
+            "owner": {"pid": 4_000_000, "created": 0.0, "exe": "C:\\stale.exe"},
+        }),
+        exclusive=True,
+    )
+
+    launcher.acquire_home_lock(home, new_state)
+    try:
+        assert launcher._home_lock_data(home)["state"] == str(new_state)
+    finally:
+        assert launcher.release_home_lock(new_state) is True
+
+
+def test_managed_config_cleanup_recovers_only_its_own_stopped_state(tmp_path: Path) -> None:
+    state_root = tmp_path / "state-root"
+    state = state_root / "run"
+    home = tmp_path / "codex-home"
+    private_state.create_private_directory(state_root)
+    private_state.create_private_directory(state)
+    private_state.create_private_directory(home)
+    spec = {
+        "home": str(home),
+        "state": str(state),
+        "model": "gpt-5.6-sol",
+        "effort": "xhigh",
+        "python": str(tmp_path / "python.exe"),
+        "name": "BlueLake",
+        "project": "project-key",
+        "mail_url": "http://127.0.0.1:18765/mcp",
+        "bearer_mode": "disabled",
+        "mail_env": "",
+    }
+    launcher.write_json(state / "launch.json", spec)
+    launcher.configure_proxy(home, spec)
+
+    assert launcher.managed_config_state(home) == state
+    assert launcher.recover_stale_managed_config(home, state_root) is True
+    assert not (home / "config.toml").exists()
+    assert json.loads((state / "result.json").read_text(encoding="utf-8"))["config_removed"] is True
+
+
+def test_managed_config_cleanup_never_deletes_a_different_state_config(tmp_path: Path) -> None:
+    state = tmp_path / "state"
+    other_state = tmp_path / "other-state"
+    home = tmp_path / "codex-home"
+    for path in (state, other_state, home):
+        private_state.create_private_directory(path)
+    spec = {
+        "home": str(home),
+        "state": str(state),
+        "model": "gpt-5.6-sol",
+        "effort": "xhigh",
+        "python": str(tmp_path / "python.exe"),
+        "name": "BlueLake",
+        "project": "project-key",
+        "mail_url": "http://127.0.0.1:18765/mcp",
+        "bearer_mode": "disabled",
+        "mail_env": "",
+    }
+    launcher.write_json(state / "launch.json", spec)
+    launcher.configure_proxy(home, spec)
+
+    assert launcher.remove_managed_config(other_state) is False
+    assert (home / "config.toml").is_file()
+
+
+def test_stale_recovery_never_deletes_a_user_config(tmp_path: Path) -> None:
+    state_root = tmp_path / "state-root"
+    home = tmp_path / "codex-home"
+    private_state.create_private_directory(state_root)
+    private_state.create_private_directory(home)
+    launcher.write_private_text(home / "config.toml", 'model = "user-choice"\n')
+
+    assert launcher.recover_stale_managed_config(home, state_root) is False
+    assert (home / "config.toml").read_text(encoding="utf-8") == 'model = "user-choice"\n'
+
+
+def test_keyboard_interrupt_cleans_launcher_owned_config(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    home = tmp_path / "codex-home"
+    state_root = tmp_path / "state-root"
+    private_state.create_private_directory(home)
+    private_state.create_private_directory(state_root)
+    handoff = state_root / "handoff.token"
+    handoff.write_text("owner-token\n", encoding="utf-8")
+    private_state.protect_private_file(handoff)
+    args = SimpleNamespace(
+        name="BlueLake",
+        parent="GreenCastle",
+        cwd=str(tmp_path),
+        project="project-key",
+        codex=sys.executable,
+        python=sys.executable,
+        codex_home=str(home),
+        state_directory=str(state_root),
+        child_token_file=str(handoff),
+        mail_url="http://127.0.0.1:18765/mcp",
+        model="gpt-5.6-sol",
+        effort="xhigh",
+        approval="never",
+        mail_env="",
+        bearer_mode="disabled",
+        ready_timeout=30,
+    )
+    original_configure_proxy = launcher.configure_proxy
+
+    def interrupt_after_configure(child_home: Path, spec: dict) -> None:
+        original_configure_proxy(child_home, spec)
+        raise KeyboardInterrupt
+
+    monkeypatch.setattr(launcher.shutil, "which", lambda _command: sys.executable)
+    monkeypatch.setattr(launcher, "configure_proxy", interrupt_after_configure)
+
+    result = launcher.launch(args)
+
+    assert result["ok"] is False
+    assert result["error"] == "Cancelled by user"
+    assert not (home / "config.toml").exists()
+    assert handoff.is_file()
+
+
+def test_launch_recovers_a_stopped_config_before_validating_new_handoff(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    home = tmp_path / "codex-home"
+    state_root = tmp_path / "state-root"
+    old_state = state_root / "old-state"
+    private_state.create_private_directory(home)
+    private_state.create_private_directory(state_root)
+    private_state.create_private_directory(old_state)
+    old_spec = {
+        "home": str(home),
+        "state": str(old_state),
+        "model": "gpt-5.6-sol",
+        "effort": "xhigh",
+        "python": sys.executable,
+        "name": "BlueLake",
+        "project": "project-key",
+        "mail_url": "http://127.0.0.1:18765/mcp",
+        "bearer_mode": "disabled",
+        "mail_env": "",
+    }
+    launcher.write_json(old_state / "launch.json", old_spec)
+    launcher.configure_proxy(home, old_spec)
+    handoff = state_root / "empty-handoff"
+    handoff.write_text("", encoding="utf-8")
+    private_state.protect_private_file(handoff)
+    args = SimpleNamespace(
+        name="BlueLake",
+        parent="GreenCastle",
+        cwd=str(tmp_path),
+        project="project-key",
+        codex=sys.executable,
+        python=sys.executable,
+        codex_home=str(home),
+        state_directory=str(state_root),
+        child_token_file=str(handoff),
+        mail_url="http://127.0.0.1:18765/mcp",
+        model="gpt-5.6-sol",
+        effort="xhigh",
+        approval="never",
+        mail_env="",
+        bearer_mode="disabled",
+        ready_timeout=5,
+    )
+    monkeypatch.setattr(launcher.shutil, "which", lambda _command: sys.executable)
+
+    result = launcher.launch(args)
+
+    assert result["ok"] is False
+    assert "token handoff" in result["error"].lower()
+    assert not (home / "config.toml").exists()
+    assert not (home / ".orrery-launch.lock").exists()
+
+
+def test_launch_rejects_missing_handoff_before_writing_child_config(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    home = tmp_path / "codex-home"
+    state_root = tmp_path / "state-root"
+    private_state.create_private_directory(home)
+    private_state.create_private_directory(state_root)
+    args = SimpleNamespace(
+        name="BlueLake",
+        parent="GreenCastle",
+        cwd=str(tmp_path),
+        project="project-key",
+        codex=sys.executable,
+        python=sys.executable,
+        codex_home=str(home),
+        state_directory=str(state_root),
+        child_token_file=str(state_root / "missing-handoff"),
+        mail_url="http://127.0.0.1:18765/mcp",
+        model="gpt-5.6-sol",
+        effort="xhigh",
+        approval="never",
+        mail_env="",
+        bearer_mode="disabled",
+        ready_timeout=5,
+    )
+    monkeypatch.setattr(launcher.shutil, "which", lambda _command: sys.executable)
+
+    with pytest.raises(ValueError, match="existing private file"):
+        launcher.launch(args)
+    assert not (home / "config.toml").exists()
+    assert not (home / ".orrery-launch.lock").exists()
 
 
 def test_proxy_environment_disabled_removes_ambient_bearer_token() -> None:

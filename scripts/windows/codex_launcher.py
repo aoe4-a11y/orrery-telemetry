@@ -11,20 +11,24 @@ import ctypes
 import json
 import math
 import os
-from pathlib import Path
 import re
 import shutil
 import subprocess
 import sys
 import time
 import uuid
+from pathlib import Path
 from urllib.parse import urlsplit
 
 import psutil
-
-from private_state import (consume_token, create_private_directory,
-                           require_private, write_private_text)
+import tomllib
 from owned_job import OwnedJob
+from private_state import (
+    consume_token,
+    create_private_directory,
+    require_private,
+    write_private_text,
+)
 
 HERE = Path(__file__).resolve().parent
 ROOT = HERE.parents[1]
@@ -91,20 +95,201 @@ def tmux(spec: dict, *arguments: str, check: bool = True) -> subprocess.Complete
                           errors='replace', timeout=10, check=check)
 
 
+def trust_dialog_present(text: str) -> bool:
+    """Recognize Codex's directory-trust dialog before treating a pane as idle."""
+    lower = text.lower()
+    return ('do you trust the contents of this directory?' in lower
+            and '1. yes, continue' in lower
+            and '2. no, quit' in lower)
+
+
 def pane_ready(text: str) -> bool:
     # Recognize an idle prompt only; startup, trust and permission dialogs
     # require the human. Do not inject a Mail task into an unknown screen.
     # Codex leaves old startup notifications in scrollback; match its current
     # footer like the canonical shell helper rather than blocking on history.
-    tail = '\n'.join(line for line in text.splitlines() if line.strip()).splitlines()[-3:]
-    current = '\n'.join(tail)
-    lower = current.lower()
-    if any(marker in lower for marker in (
-            'starting mcp', 'startup completes', 'sign in', 'trust this',
-            'set up', 'setup', 'would you like', 'approve', 'usage limit reached')):
+    lines = [line for line in text.splitlines() if line.strip()]
+    current = '\n'.join(lines[-2:])
+    nearby = '\n'.join(lines[-3:]).lower()
+    if trust_dialog_present(text) or any(marker in nearby for marker in (
+            'startup completes', 'sign in', 'set up', 'setup', 'would you like',
+            'approve', 'usage limit reached')):
         return False
     return bool(re.search(r'^\s*[›❯>]\s+\S', current, re.MULTILINE)
                 and re.search(r'gpt-[\w.\-]+', current))
+
+
+def _same_path(left: Path, right: Path) -> bool:
+    return os.path.normcase(os.path.abspath(left)) == os.path.normcase(os.path.abspath(right))
+
+
+_HOME_LOCK_NAME = '.orrery-launch.lock'
+
+
+def _state_spec(state: Path) -> dict | None:
+    launch = state / 'launch.json'
+    if not launch.is_file():
+        return None
+    try:
+        require_private(state)
+        require_private(launch)
+        spec = json.loads(launch.read_text(encoding='utf-8'))
+    except (OSError, PermissionError, json.JSONDecodeError):
+        return None
+    return spec if isinstance(spec, dict) else None
+
+
+def _state_claims_home(state: Path, home: Path) -> bool:
+    spec = _state_spec(state)
+    return (spec is not None and isinstance(spec.get('home'), str)
+            and isinstance(spec.get('state'), str)
+            and _same_path(Path(spec['home']), home)
+            and _same_path(Path(spec['state']), state))
+
+
+def _home_lock_path(home: Path) -> Path:
+    return home / _HOME_LOCK_NAME
+
+
+def _home_lock_data(home: Path) -> dict | None:
+    lock = _home_lock_path(home)
+    if not lock.is_file():
+        return None
+    try:
+        require_private(lock)
+        data = json.loads(lock.read_text(encoding='utf-8'))
+    except (OSError, PermissionError, json.JSONDecodeError):
+        return None
+    return data if isinstance(data, dict) else None
+
+
+def release_home_lock(state: Path) -> bool:
+    """Release only the home claim recorded by this launch state."""
+    spec = _state_spec(state)
+    if spec is None or not isinstance(spec.get('home'), str):
+        return False
+    home = Path(spec['home']).absolute()
+    lock = _home_lock_path(home)
+    data = _home_lock_data(home)
+    if data is None or not isinstance(data.get('state'), str):
+        return False
+    if not _same_path(Path(data['state']), state):
+        return False
+    lock.unlink()
+    return True
+
+
+def acquire_home_lock(home: Path, state: Path) -> None:
+    """Atomically claim a prepared CODEX_HOME for one launcher process."""
+    lock = _home_lock_path(home)
+    payload = {
+        'home': str(home.absolute()),
+        'state': str(state.absolute()),
+        'owner': process_record(psutil.Process()),
+    }
+    try:
+        write_private_text(lock, json.dumps(payload, ensure_ascii=False), exclusive=True)
+        return
+    except FileExistsError:
+        pass
+    data = _home_lock_data(home)
+    if (data is None or not isinstance(data.get('state'), str)
+            or not _state_claims_home(Path(data['state']).absolute(), home)):
+        raise RuntimeError('Prepared child home is already claimed by an unknown launcher')
+    owner = data.get('owner')
+    if isinstance(owner, dict) and matching_process(owner) is not None:
+        raise RuntimeError('Prepared child home is already in use by an active launcher')
+    stale_state = Path(data['state']).absolute()
+    if state_has_live_processes(stale_state):
+        raise RuntimeError('Prepared child home is already in use by an active launcher state')
+    stop(stale_state)
+    try:
+        write_private_text(lock, json.dumps(payload, ensure_ascii=False), exclusive=True)
+    except FileExistsError as error:
+        raise RuntimeError('Prepared child home became claimed by another launcher') from error
+
+
+def managed_config_state(home: Path) -> Path | None:
+    """Return the state that owns this launcher's config, never a user config."""
+    target = home / 'config.toml'
+    if not target.is_file():
+        return None
+    try:
+        require_private(target)
+        config = tomllib.loads(target.read_text(encoding='utf-8'))
+        environment = config['mcp_servers']['orrery-mail']['env']
+        runtime_directory = environment['AGENTSTACK_RUNTIME_DIR']
+        state = Path(runtime_directory).absolute()
+        launch = state / 'launch.json'
+        require_private(state)
+        require_private(launch)
+        spec = json.loads(launch.read_text(encoding='utf-8'))
+    except (KeyError, OSError, PermissionError, tomllib.TOMLDecodeError, json.JSONDecodeError):
+        return None
+    recorded_home = spec.get('home')
+    recorded_state = spec.get('state')
+    if not (isinstance(recorded_home, str) and isinstance(recorded_state, str)
+            and _same_path(Path(recorded_home), home)
+            and _same_path(Path(recorded_state), state)):
+        return None
+    return state
+
+
+def remove_managed_config(state: Path) -> bool:
+    """Remove only the config that this exact launch state created."""
+    launch = state / 'launch.json'
+    if not launch.is_file():
+        return False
+    require_private(launch)
+    spec = json.loads(launch.read_text(encoding='utf-8'))
+    home = Path(spec['home'])
+    managed_state = managed_config_state(home)
+    if managed_state is None or not _same_path(managed_state, state):
+        return False
+    (home / 'config.toml').unlink()
+    return True
+
+
+def state_has_live_processes(state: Path) -> bool:
+    """Use recorded identities, never a bare PID, when deciding whether a home is busy."""
+    for filename in ('server.json', 'processes.json'):
+        record_path = state / filename
+        if not record_path.is_file():
+            continue
+        require_private(record_path)
+        records = json.loads(record_path.read_text(encoding='utf-8')).get('processes', [])
+        if any(matching_process(record) is not None for record in records):
+            return True
+    return False
+
+
+def recover_stale_managed_config(home: Path, state_root: Path) -> bool:
+    """Recover only a stopped launcher's own config; leave user config untouched."""
+    state = managed_config_state(home)
+    if state is None:
+        return False
+    try:
+        common = os.path.commonpath((os.path.abspath(state), os.path.abspath(state_root)))
+    except ValueError:
+        return False
+    if not _same_path(Path(common), state_root):
+        return False
+    lock_data = _home_lock_data(home)
+    if (lock_data is not None and isinstance(lock_data.get('owner'), dict)
+            and matching_process(lock_data['owner']) is not None):
+        raise RuntimeError('Prepared child home is already in use by an active launcher')
+    if state_has_live_processes(state):
+        raise RuntimeError('Prepared child home is already in use by an active launcher state')
+    stop(state)
+    return True
+
+
+def request_directory_trust(cwd: Path, input_fn=input, output=None) -> bool:
+    """Bring Codex's directory-trust decision back to the launching console."""
+    stream = sys.stderr if output is None else output
+    print(f'Codex requests trust for {cwd}. Type yes to continue, or anything else to cancel:',
+          file=stream, flush=True)
+    return input_fn().strip().casefold() == 'yes'
 
 
 def configure_proxy(home: Path, spec: dict) -> None:
@@ -196,6 +381,8 @@ def child(spec_path: Path) -> int:
         # Do not include ourselves: the PowerShell script exits when we return.
         stop_owned(records[1:])
         (state / 'owner.token').unlink(missing_ok=True)
+        remove_managed_config(state)
+        release_home_lock(state)
         write_json(record_path, {'processes': records, 'status': 'exited'})
 
 
@@ -209,8 +396,123 @@ def stop(state: Path) -> dict:
             records.extend(json.loads(path.read_text(encoding='utf-8'))['processes'])
     stopped = stop_owned(records)
     (state / 'owner.token').unlink(missing_ok=True)
-    write_json(state / 'result.json', {'ok': True, 'status': 'stopped', 'pids': stopped})
-    return {'ok': True, 'status': 'stopped', 'pids': stopped}
+    config_removed = remove_managed_config(state)
+    lock_removed = release_home_lock(state)
+    result = {'ok': True, 'status': 'stopped', 'pids': stopped,
+              'config_removed': config_removed, 'lock_removed': lock_removed}
+    write_json(state / 'result.json', result)
+    return result
+
+
+def console_is_interactive() -> bool:
+    try:
+        return sys.stdin.isatty() and sys.stderr.isatty()
+    except (AttributeError, OSError):
+        return False
+
+
+def task_prompt(spec: dict) -> str:
+    return (f'You are {spec["name"]}; your parent is {spec["parent"]}. Your identity is already '
+            'registered; do not register a different name. Use the orrery-mail MCP '
+            f'server fetch_inbox tool for project {json.dumps(spec["project"])} to read '
+            'the canonical task, then use its send_message tool to reply to your parent. '
+            'The proxy owns your token; never request or print it. These tools connect '
+            'to ORRERY Mail directly; agmsg is a separate system and is not used for this task.')
+
+
+def trust_required_result(spec: dict, state: Path, pane: str) -> dict:
+    write_private_text(state / 'startup-pane.txt', pane)
+    result = {
+        'ok': False,
+        'status': 'trust_required',
+        'error': ('Codex is waiting for directory trust; attach to the recorded tmux session, '
+                  'choose Yes, continue, then run resume with this state directory'),
+        'child_name': spec['name'],
+        'registration_retained': True,
+        'state_directory': str(state),
+        'tmux_socket': spec['socket'],
+        'session': spec['name'],
+    }
+    write_json(state / 'result.json', result)
+    return result
+
+
+def wait_until_ready_and_submit(spec: dict, state: Path, ready_timeout: float) -> dict:
+    """Wait for a usable Codex pane, handling trust in either console mode."""
+    deadline = time.monotonic() + ready_timeout
+    trust_approved_at = None
+    pane = ''
+    while time.monotonic() < deadline:
+        pane = tmux(spec, 'capture-pane', '-p', '-t', spec['name']).stdout
+        if tmux(spec, 'display-message', '-p', '-t', spec['name'], '#{pane_dead}').stdout.strip() == '1':
+            write_private_text(state / 'startup-pane.txt', pane)
+            raise RuntimeError('Child exited before readiness; see private startup-pane.txt')
+        if trust_dialog_present(pane):
+            if not console_is_interactive():
+                return trust_required_result(spec, state, pane)
+            if trust_approved_at is None:
+                if not request_directory_trust(Path(spec['cwd'])):
+                    raise RuntimeError('Directory trust was not granted')
+                tmux(spec, 'send-keys', '-t', spec['name'], '1')
+                tmux(spec, 'send-keys', '-t', spec['name'], 'C-m')
+                trust_approved_at = time.monotonic()
+            elif time.monotonic() - trust_approved_at >= 10:
+                raise RuntimeError('Codex did not accept the directory-trust confirmation')
+            time.sleep(0.5)
+            continue
+        if pane_ready(pane):
+            time.sleep(2)
+            if not pane_ready(tmux(spec, 'capture-pane', '-p', '-t', spec['name']).stdout):
+                continue
+            tmux(spec, 'set-option', '-w', '-t', spec['name'], 'remain-on-exit', 'off')
+            tmux(spec, 'send-keys', '-t', spec['name'], '-l', task_prompt(spec))
+            time.sleep(0.5)
+            tmux(spec, 'send-keys', '-t', spec['name'], 'C-m')
+            result = {'ok': True, 'status': 'submitted', 'child_name': spec['name'],
+                      'state_directory': str(state), 'tmux_socket': spec['socket']}
+            write_json(state / 'result.json', result)
+            return result
+        time.sleep(0.5)
+    write_private_text(state / 'startup-pane.txt', pane)
+    raise TimeoutError('Codex did not reach a recognized prompt; task was not submitted')
+
+
+def resume(state: Path, ready_timeout: float) -> dict:
+    """Continue a non-interactive launch after its trust decision is made."""
+    if not math.isfinite(ready_timeout) or not 1 <= ready_timeout <= 300:
+        raise ValueError('Ready timeout must be between 1 and 300 seconds')
+    require_private(state)
+    spec = _state_spec(state)
+    if spec is None or not isinstance(spec.get('state'), str) or not _same_path(Path(spec['state']), state):
+        raise ValueError('Launch state is missing or does not identify itself')
+    if not isinstance(spec.get('home'), str) or not _state_claims_home(state, Path(spec['home']).absolute()):
+        raise ValueError('Launch state has an invalid child home')
+    home = Path(spec['home']).absolute()
+    require_private(home)
+    lock_data = _home_lock_data(home)
+    if (lock_data is None or not isinstance(lock_data.get('state'), str)
+            or not _same_path(Path(lock_data['state']), state)):
+        raise ValueError('Launch state no longer owns the prepared child home')
+    if not (state / 'owner.token').is_file():
+        raise ValueError('Launch state no longer has an owner token')
+    try:
+        return wait_until_ready_and_submit(spec, state, ready_timeout)
+    except (Exception, KeyboardInterrupt) as error:  # noqa: BLE001 - CLI boundary must report every resume failure
+        cleanup_error = None
+        try:
+            stop(state)
+        except Exception as cleanup:  # noqa: BLE001 - preserve the original resume failure
+            cleanup_error = type(cleanup).__name__
+        result = {
+            'ok': False,
+            'error': 'Cancelled by user' if isinstance(error, KeyboardInterrupt) else str(error),
+            'child_name': spec.get('name', ''),
+            'registration_retained': True,
+            'state_directory': str(state),
+            'cleanup_error': cleanup_error,
+        }
+        write_json(state / 'result.json', result)
+        return result
 
 
 def launch(args: argparse.Namespace) -> dict:
@@ -240,6 +542,10 @@ def launch(args: argparse.Namespace) -> dict:
     if not home.is_dir():
         raise ValueError('Prepared child home must be an existing directory')
     require_private(home)
+    parent_state = Path(args.state_directory).absolute()
+    create_private_directory(parent_state)
+    if (home / 'config.toml').exists():
+        recover_stale_managed_config(home, parent_state)
     if (home / 'config.toml').exists():
         raise ValueError('Prepared child home must not contain config.toml')
     mail_env = None
@@ -250,22 +556,27 @@ def launch(args: argparse.Namespace) -> dict:
         require_private(mail_env)
     elif args.bearer_mode == 'enabled':
         raise ValueError('Authenticated Mail requires --mail-env or AGENTSTACK_MAIL_ENV')
-    parent_state = Path(args.state_directory).absolute()
-    create_private_directory(parent_state)
+    handoff = Path(args.child_token_file).absolute()
+    if not handoff.is_file():
+        raise ValueError('Child token handoff must be an existing private file')
+    require_private(handoff)
     state = parent_state / uuid.uuid4().hex
     create_private_directory(state)
-    spec = dict(name=args.name, parent=args.parent, cwd=str(cwd), project=args.project,
-                codex=codex, python=python, tmux=tmux_path,
-                socket='orrery-' + uuid.uuid4().hex, home=str(home), state=str(state),
-                model=args.model, effort=args.effort, approval=args.approval,
-                mail_url=args.mail_url, mail_env=str(mail_env) if mail_env else '',
-                bearer_mode=args.bearer_mode,
-                path=os.environ.get('PATH', ''))
+    spec = {'name': args.name, 'parent': args.parent, 'cwd': str(cwd),
+            'project': args.project, 'codex': codex, 'python': python,
+            'tmux': tmux_path, 'socket': 'orrery-' + uuid.uuid4().hex,
+            'home': str(home), 'state': str(state), 'model': args.model,
+            'effort': args.effort, 'approval': args.approval,
+            'mail_url': args.mail_url,
+            'mail_env': str(mail_env) if mail_env else '',
+            'bearer_mode': args.bearer_mode,
+            'path': os.environ.get('PATH', '')}
     spec_path = state / 'launch.json'
     write_json(spec_path, spec)
     try:
+        acquire_home_lock(home, state)
         configure_proxy(home, spec)
-        consume_token(Path(args.child_token_file).absolute(), state / 'owner.token')
+        consume_token(handoff, state / 'owner.token')
         # Own the server process before any client command: even an unresponsive
         # named pipe leaves an exact PID/create-time record for cleanup.
         tmux_log = state / 'tmux.log'
@@ -307,40 +618,16 @@ def launch(args: argparse.Namespace) -> dict:
         print(json.dumps({'status': 'starting', 'state_directory': str(state),
                           'tmux_socket': spec['socket'], 'session': args.name}),
               file=sys.stderr, flush=True)
-        deadline = time.monotonic() + args.ready_timeout
-        while time.monotonic() < deadline:
-            pane = tmux(spec, 'capture-pane', '-p', '-t', args.name).stdout
-            if tmux(spec, 'display-message', '-p', '-t', args.name, '#{pane_dead}').stdout.strip() == '1':
-                write_private_text(state / 'startup-pane.txt', pane, exclusive=True)
-                raise RuntimeError('Child exited before readiness; see private startup-pane.txt')
-            if pane_ready(pane):
-                time.sleep(2)
-                if not pane_ready(tmux(spec, 'capture-pane', '-p', '-t', args.name).stdout):
-                    continue
-                tmux(spec, 'set-option', '-w', '-t', args.name, 'remain-on-exit', 'off')
-                prompt = (f'You are {args.name}; your parent is {args.parent}. Your identity is already '
-                          'registered; do not register a different name. Use the orrery-mail MCP '
-                          f'server fetch_inbox tool for project {json.dumps(args.project)} to read '
-                          'the canonical task, then use its send_message tool to reply to your parent. '
-                          'The proxy owns your token; never request or print it. These tools connect '
-                          'to ORRERY Mail directly; agmsg is a separate system and is not used for this task.')
-                tmux(spec, 'send-keys', '-t', args.name, '-l', prompt)
-                time.sleep(0.5)
-                tmux(spec, 'send-keys', '-t', args.name, 'C-m')
-                result = {'ok': True, 'status': 'submitted', 'child_name': args.name,
-                          'state_directory': str(state), 'tmux_socket': spec['socket']}
-                write_json(state / 'result.json', result)
-                return result
-            time.sleep(0.5)
-        write_private_text(state / 'startup-pane.txt', pane, exclusive=True)
-        raise TimeoutError('Codex did not reach a recognized prompt; task was not submitted')
-    except Exception as error:
+        return wait_until_ready_and_submit(spec, state, args.ready_timeout)
+    except (Exception, KeyboardInterrupt) as error:  # noqa: BLE001 - CLI boundary must report every launch failure
         cleanup_error = None
         try:
             stop(state)
-        except Exception as cleanup:
+        except Exception as cleanup:  # noqa: BLE001 - preserve the original launch failure
             cleanup_error = type(cleanup).__name__
-        result = {'ok': False, 'error': str(error), 'child_name': args.name,
+        result = {'ok': False,
+                  'error': 'Cancelled by user' if isinstance(error, KeyboardInterrupt) else str(error),
+                  'child_name': args.name,
                   'registration_retained': True, 'state_directory': str(state),
                   'cleanup_error': cleanup_error}
         write_json(state / 'result.json', result)
@@ -362,14 +649,23 @@ def main() -> int:
     start.add_argument('--bearer-mode', choices=('enabled', 'disabled'), default='enabled')
     start.add_argument('--ready-timeout', type=float, default=90)
     sub.add_parser('stop').add_argument('--state-directory', required=True)
+    resume_parser = sub.add_parser('resume')
+    resume_parser.add_argument('--state-directory', required=True)
+    resume_parser.add_argument('--ready-timeout', type=float, default=90)
     sub.add_parser('_child').add_argument('--spec-file', required=True)
     args = parser.parse_args()
     if args.action == '_child':
         return child(Path(args.spec_file))
     try:
-        result = stop(Path(args.state_directory)) if args.action == 'stop' else launch(args)
-    except Exception as error:
-        result = {'ok': False, 'error': str(error)}
+        if args.action == 'stop':
+            result = stop(Path(args.state_directory))
+        elif args.action == 'resume':
+            result = resume(Path(args.state_directory), args.ready_timeout)
+        else:
+            result = launch(args)
+    except (Exception, KeyboardInterrupt) as error:  # noqa: BLE001 - CLI boundary must return JSON
+        result = {'ok': False,
+                  'error': 'Cancelled by user' if isinstance(error, KeyboardInterrupt) else str(error)}
     print(json.dumps(result, ensure_ascii=False))
     return 0 if result['ok'] else 1
 
