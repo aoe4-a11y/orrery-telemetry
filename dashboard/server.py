@@ -815,6 +815,7 @@ def build_agents() -> list[dict]:
             if running
             else {}
         )
+        pane_model = _pane_model_for(rt.get("pane_model"), (m or {}).get("program"))
         rows.append(
             {
                 "name": name,
@@ -838,13 +839,14 @@ def build_agents() -> list[dict]:
                 "live": live,
                 # pane のステータスバー由来を優先（warm pool claim で DB
                 # の model が実 model と乖離するケースを救う）。
-                "model": _display_model(rt.get("pane_model")) or
+                "model": _display_model(pane_model) or
                          (m or {}).get("model", ""),
-                "model_raw": rt.get("pane_model") or (m or {}).get("model_raw", ""),
+                "model_raw": pane_model or (m or {}).get("model_raw", ""),
                 "provider": _provider_of(
-                    rt.get("pane_model")
+                    pane_model
                     or (m or {}).get("model_raw")
-                    or (m or {}).get("model")),
+                    or (m or {}).get("model")
+                    or (m or {}).get("program")),
                 "ctx_window": rt.get("ctx_window") or _ctx_window(
                     (m or {}).get("model_raw") or (m or {}).get("model")),
                 "ctx_used": rt.get("ctx_used"),
@@ -1484,9 +1486,10 @@ def graph_payload(days: float, show_all: bool) -> dict:
          "ctx_window": lv.get("ctx_window") or _ctx_window(n.get("model")),
          # モデル: pane 由来を優先 (warm pool claim で DB が乖離するケース)
          #   display 形式に揃える (build_agents と同じ正規化)
-         "model": _display_model(lv.get("pane_model")) or n.get("model"),
+         "model": _display_model(_pane_model_for(lv.get("pane_model"), n.get("program"))) or n.get("model"),
          # provider: family ベースで anthropic / openai 等を判定（logo 用）
-         "provider": _provider_of(lv.get("pane_model") or n.get("model"))}
+         "provider": _provider_of(_pane_model_for(lv.get("pane_model"), n.get("program"))
+                                  or n.get("model") or n.get("program"))}
         for n in nodes
         if n["name"] in keep
     ]
@@ -3125,14 +3128,23 @@ _MODEL_PANE_RE = re.compile(
     re.IGNORECASE,
 )
 _STATUSLINE_HINT_RE = re.compile(
-    r"ctx:\s*\d+%\s*used|Context\s+\d+%\s*(?:left|used)", re.IGNORECASE)
+    r"ctx:\s*\d+%\s*used|Context\s+\d+%\s*(?:left|used)"
+    # Codex footer before any context is used: "gpt-5.6-terra medium · ~/dir"
+    r"|^\s*gpt-\S+\s+(?:low|medium|high|xhigh|max|ultra)\s+[·•]"
+    # Claude's /model or /status line: "Model: Default (Opus 5 with 1M context)"
+    r"|^\s*Model:\s",
+    re.IGNORECASE)
 
 
 def _pane_model_from(tail: str) -> str | None:
-    """末尾行群から実モデル名を読む。statusline（ctx 表示のある行）があれば
-    その行だけを見る。無ければ末尾全体から最初の一致を採る。"""
-    candidates = [ln for ln in tail.splitlines() if _STATUSLINE_HINT_RE.search(ln)]
-    for src in (*candidates, tail):
+    """末尾行群から実モデル名を読む。statusline（ctx 表示・Codex footer・
+    ``Model:`` 行）だけを見る。会話本文は読まない。
+
+    2026-09-07 WSL2 実害: statusline 未設定の Claude Code 親が「gpt-5.6-terra
+    の子に委任」と話しただけで、末尾全体フォールバックが gpt-5.6 を実モデルと
+    誤読し、cockpit で Codex 表示になった。statusline が無いペインは None を
+    返し、ORRERY Mail の登録（program / model）に判断を委ねる。"""
+    for src in (ln for ln in tail.splitlines() if _STATUSLINE_HINT_RE.search(ln)):
         mm = _MODEL_PANE_RE.search(src)
         if not mm:
             continue
@@ -3141,6 +3153,18 @@ def _pane_model_from(tail: str) -> str | None:
         base, variant = mm.group(3), mm.group(4)
         return f"{base}-{variant}" if variant else base
     return None
+
+
+def _pane_model_for(pane_model: str | None, program: str | None) -> str | None:
+    """pane 由来モデルを採用してよいか。登録 program が示す vendor と食い違う
+    読み（claude-code の pane から gpt-*）は捨てて登録側に任せる。"""
+    if not pane_model:
+        return None
+    registered = _provider_of(program)
+    observed = _provider_of(pane_model)
+    if registered and observed and registered != observed:
+        return None
+    return pane_model
 
 # 稼働経過時間。work 中: スピナー行の先頭尺。
 #   Claude: "(2m 24s · ↓ … tokens …)"（区切り · = U+00B7）
