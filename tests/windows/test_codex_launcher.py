@@ -533,6 +533,7 @@ def test_keyboard_interrupt_cleans_launcher_owned_config(
         original_configure_proxy(child_home, spec)
         raise KeyboardInterrupt
 
+    monkeypatch.setattr(launcher.shutil, "which", lambda _command: sys.executable)
     monkeypatch.setattr(launcher, "configure_proxy", interrupt_after_configure)
 
     result = launcher.launch(args)
@@ -544,7 +545,7 @@ def test_keyboard_interrupt_cleans_launcher_owned_config(
 
 
 def test_launch_recovers_a_stopped_config_before_validating_new_handoff(
-    tmp_path: Path,
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     home = tmp_path / "codex-home"
     state_root = tmp_path / "state-root"
@@ -587,6 +588,7 @@ def test_launch_recovers_a_stopped_config_before_validating_new_handoff(
         bearer_mode="disabled",
         ready_timeout=5,
     )
+    monkeypatch.setattr(launcher.shutil, "which", lambda _command: sys.executable)
 
     result = launcher.launch(args)
 
@@ -596,7 +598,9 @@ def test_launch_recovers_a_stopped_config_before_validating_new_handoff(
     assert not (home / ".orrery-launch.lock").exists()
 
 
-def test_launch_rejects_missing_handoff_before_writing_child_config(tmp_path: Path) -> None:
+def test_launch_rejects_missing_handoff_before_writing_child_config(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     home = tmp_path / "codex-home"
     state_root = tmp_path / "state-root"
     private_state.create_private_directory(home)
@@ -619,6 +623,7 @@ def test_launch_rejects_missing_handoff_before_writing_child_config(tmp_path: Pa
         bearer_mode="disabled",
         ready_timeout=5,
     )
+    monkeypatch.setattr(launcher.shutil, "which", lambda _command: sys.executable)
 
     with pytest.raises(ValueError, match="existing private file"):
         launcher.launch(args)
