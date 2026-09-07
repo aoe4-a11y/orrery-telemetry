@@ -2452,6 +2452,10 @@ enable_mail_watcher() {
       if wait_for_launchd_unload "$launchd_target" && \
          launchctl bootstrap "gui/$(id -u)" "$AGENT_MAIL_WATCHER_PATH"
       then
+        # RunAtLoad does not fire when the bootstrap comes from a non-GUI
+        # context (an ssh session on the Air: loaded, runs = 0, never started).
+        # kickstart is idempotent for a job that is already running.
+        launchctl kickstart "$launchd_target" 2>/dev/null || true
         AGENT_MAIL_WATCHER_KIND="launchd"
         [[ -n "$previous" ]] && rm -f "$previous"
         say "ORRERY Mail watcher runs under launchd ($MAIL_WATCHER_LABEL)"

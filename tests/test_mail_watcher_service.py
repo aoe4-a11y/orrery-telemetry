@@ -109,6 +109,13 @@ def test_launchd_unit_keeps_the_watcher_alive():
     assert env["AGENTSTACK_RUNTIME_DIR"].endswith(".agentstack/runtime")
     assert plist["StandardOutPath"].endswith("mail-watcher.log")
     assert f"launchctl bootstrap gui/" in calls and ".mail-watcher.plist" in calls, calls
+    # Bootstrapped from a non-GUI context (ssh), RunAtLoad never fires: the Air
+    # showed the job loaded with runs = 0. kickstart makes the start explicit.
+    assert f"launchctl kickstart gui/" in calls, calls
+    lines = calls.splitlines()
+    bootstrap = next(i for i, line in enumerate(lines) if "launchctl bootstrap " in line)
+    kickstart = next(i for i, line in enumerate(lines) if "launchctl kickstart " in line)
+    assert bootstrap < kickstart, calls
 
 
 def test_systemd_unit_restarts_the_watcher():
