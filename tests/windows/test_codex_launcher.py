@@ -136,6 +136,16 @@ def test_private_token_handoff_consumes_source_after_verified_copy(
     _assert_current_user_only(destination, protected=None)
 
 
+def test_missing_token_handoff_has_a_clear_error(tmp_path: Path) -> None:
+    private_root = tmp_path / "private"
+    private_state.create_private_directory(private_root)
+    source = private_root / "missing-handoff"
+    destination = private_root / "owner.token"
+
+    with pytest.raises(FileNotFoundError, match="Token handoff file does not exist"):
+        private_state.consume_token(source, destination)
+
+
 def _wait_for(predicate, timeout: float = 10.0) -> None:
     deadline = time.monotonic() + timeout
     while time.monotonic() < deadline:
@@ -578,6 +588,36 @@ def test_launch_recovers_a_stopped_config_before_validating_new_handoff(
 
     assert result["ok"] is False
     assert "token handoff" in result["error"].lower()
+    assert not (home / "config.toml").exists()
+    assert not (home / ".orrery-launch.lock").exists()
+
+
+def test_launch_rejects_missing_handoff_before_writing_child_config(tmp_path: Path) -> None:
+    home = tmp_path / "codex-home"
+    state_root = tmp_path / "state-root"
+    private_state.create_private_directory(home)
+    private_state.create_private_directory(state_root)
+    args = SimpleNamespace(
+        name="BlueLake",
+        parent="GreenCastle",
+        cwd=str(tmp_path),
+        project="project-key",
+        codex=sys.executable,
+        python=sys.executable,
+        codex_home=str(home),
+        state_directory=str(state_root),
+        child_token_file=str(state_root / "missing-handoff"),
+        mail_url="http://127.0.0.1:18765/mcp",
+        model="gpt-5.6-sol",
+        effort="xhigh",
+        approval="never",
+        mail_env="",
+        bearer_mode="disabled",
+        ready_timeout=5,
+    )
+
+    with pytest.raises(ValueError, match="existing private file"):
+        launcher.launch(args)
     assert not (home / "config.toml").exists()
     assert not (home / ".orrery-launch.lock").exists()
 

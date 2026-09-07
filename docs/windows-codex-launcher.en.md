@@ -22,7 +22,7 @@ The parent agent uses ORRERY Mail to pre-register the child identity, prepare co
   Its `[windows] sandbox = "elevated"` entry is a child launch setting; it does not complete Codex or Windows authentication and setup.
   If sign-in, setup, or approval screens remain, the readiness timeout stops the launch and no task is injected.
 - When the parent pre-registers the child in Mail, put the resulting owner token in a one-line child token handoff file.
-  The handoff file and the `--mail-env` env file must also have a current-user-only private ACL.
+  The handoff file must exist when the launcher starts and, together with the `--mail-env` env file, must have a current-user-only private ACL.
 
 ## Launch
 

@@ -556,6 +556,10 @@ def launch(args: argparse.Namespace) -> dict:
         require_private(mail_env)
     elif args.bearer_mode == 'enabled':
         raise ValueError('Authenticated Mail requires --mail-env or AGENTSTACK_MAIL_ENV')
+    handoff = Path(args.child_token_file).absolute()
+    if not handoff.is_file():
+        raise ValueError('Child token handoff must be an existing private file')
+    require_private(handoff)
     state = parent_state / uuid.uuid4().hex
     create_private_directory(state)
     spec = {'name': args.name, 'parent': args.parent, 'cwd': str(cwd),
@@ -572,7 +576,7 @@ def launch(args: argparse.Namespace) -> dict:
     try:
         acquire_home_lock(home, state)
         configure_proxy(home, spec)
-        consume_token(Path(args.child_token_file).absolute(), state / 'owner.token')
+        consume_token(handoff, state / 'owner.token')
         # Own the server process before any client command: even an unresponsive
         # named pipe leaves an exact PID/create-time record for cleanup.
         tmux_log = state / 'tmux.log'
