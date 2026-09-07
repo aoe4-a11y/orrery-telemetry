@@ -39,10 +39,27 @@ If the child runs outside the project directory, explicitly tell it to use `$PRO
 /delegate "<task>"
 /delegate "<task>" --dir <working-directory>
 /delegate "<task>" --codex
-/delegate "<task>" --model <model-name>
+/delegate "<task>" --model <model-name> [--effort <level>]
 /delegate "<task>" --worktree
 /delegate "<task>" --worktree --worktree-base <rev>
 ```
+
+### How to read the arguments
+
+Users type this skill tersely, often without flags: `/delegate codex terra fix the flaky test`. Read the words in this order, and never invent a child name from them.
+
+| Word in the arguments | Meaning |
+| --- | --- |
+| `codex` | `--codex` (a Codex child) |
+| `claude` | a Claude child (the default) |
+| `sol`, `terra`, `luna`, `astra` | Codex model shorthand: `--codex --model <word>`. The launcher expands them to `gpt-5.6-sol`, `gpt-5.6-terra`, `gpt-5.6-luna`, `gpt-6-astra` |
+| `opus`, `sonnet`, `haiku` | Claude model shorthand: `--model <word>` |
+| `low`, `medium`, `high`, `xhigh`, `max`, `ultra` | `--effort <word>` (Codex reasoning effort) |
+| anything else | part of the task text |
+
+The child's name is never taken from the arguments. Only an explicit `--name <Adjective-Scientist>` names a child; otherwise the registration helper picks one. A word such as `terra` is a model, not a name.
+
+Model defaults: Claude children use `claude-opus-5`; Codex children use `gpt-5.6-sol` at effort `xhigh`. Pass the same `--model` (and `--effort`) both to the registration helper and to `spawn_child.sh`, so the roster and the running process agree.
 
 ## 1. Analyze Risk Before Spawning
 
@@ -123,7 +140,7 @@ substitute.
    ```
 
    The helper prints the registered name; use `$CHILD_NAME` from here on rather than a name you chose yourself.
-   For a Codex child, pass `--program "codex" --model "gpt-5.5"`.
+   For a Codex child, pass `--program "codex" --model "<gpt-5.6-sol | gpt-5.6-terra | gpt-5.6-luna | gpt-6-astra>"`, using the full model id the user's shorthand expands to (see "How to read the arguments"). Do not pass `--name` just because the user typed a word you do not recognize.
    Do not paste the token into the inbox message, prompt text, shell history, or a command-line argument.
 4. Ensure the child can send its completion report to the parent. The stack registration helper sets the child's `contact_policy` to `open` by default. If either side uses a restrictive contact policy, complete a contact handshake or approval before spawning.
 5. Reserve file paths if the task edits shared resources.
@@ -150,11 +167,11 @@ PARENT_AGENT="<parent-name>" bash "${AGENTSTACK_SPAWN_SCRIPT:-$AGENTSTACK_HOME/h
   "<working-directory>"
 ```
 
-For a Codex child:
+For a Codex child, repeat the model (and effort) the user asked for; without `--model` the launcher starts `gpt-5.6-sol` regardless of what was registered:
 
 ```bash
 PARENT_AGENT="<parent-name>" bash "${AGENTSTACK_SPAWN_SCRIPT:-$AGENTSTACK_HOME/hooks/spawn_child.sh}" \
-  --pre-registered "<child-name>" --codex \
+  --pre-registered "<child-name>" --codex --model terra --effort medium \
   --child-token-file "$CHILD_TOKEN_FILE" \
   --embed-task --task-file "$TASK_FILE" \
   "<working-directory>"
