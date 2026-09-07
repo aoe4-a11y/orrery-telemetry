@@ -1089,6 +1089,7 @@ proxy_tools = (
     "renew_reservations",
     "release_reservations",
     "runtime_status",
+    "whois",
 )
 
 

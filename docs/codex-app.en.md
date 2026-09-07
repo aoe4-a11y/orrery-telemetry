@@ -134,7 +134,7 @@ Both launchd and supervised-background logs are in the following locations by de
 
 The `SessionStart` / `SubagentStart` hooks add context instructing the agent to first call `agentstack.bootstrap` with the current `session_id` and, when needed, `agent_id`. The first bootstrap pins an MCP process to one Bridge binding. Subsequent tool calls do not accept the project key, agent name, or owner token from the agent.
 
-The proxy exposes these eight tools:
+The proxy exposes these nine tools:
 
 - `bootstrap`
 - `fetch_inbox`
@@ -144,6 +144,9 @@ The proxy exposes these eight tools:
 - `renew_reservations`
 - `release_reservations`
 - `runtime_status`
+- `whois` (to confirm a recipient name; names are case-sensitive)
+
+When a tool call fails, the proxy returns the first line of the Mail server's own error (anything that looks like a token is replaced with `[redacted]`, and the line is cut at 600 characters). It used to return only the fixed text "agent-mail tool call failed", so a child hit by a plain validation error such as a misspelled recipient never learned why and gave up instead of correcting the name.
 
 A root task passes only `session_id`. A subagent passes the same `session_id` and its own `agent_id`; bindings that do not match the parent lineage recorded by the Bridge are rejected.
 
@@ -192,7 +195,7 @@ The installer generates consistent values for `AGENTSTACK_CODEX_APP_SOCKET`, `AG
 - Owner tokens are isolated in a private identity store and are not exposed to agents or dashboard snapshots
 - Hook events and dashboard snapshots are validated with field allowlists
 - Cold wake sends only fixed instructions and bounded metadata; stdout / stderr diagnostics redact token patterns
-- Headless wake temporarily approves only the eight session-bound proxy tools above; it does not change shell, sandbox, other MCPs, or the global approval policy
+- Headless wake temporarily approves only the nine session-bound proxy tools above; it does not change shell, sandbox, other MCPs, or the global approval policy
 
 `--skip-git-check` is not an option that generally permits untrusted directories. Limit it to a workspace already reviewed as non-Git, and normally start tasks inside trusted repositories.
 

@@ -8,6 +8,7 @@ server-side binding; callers never provide them through the proxy tool surface.
 from __future__ import annotations
 
 import json
+import re
 import urllib.error
 import urllib.request
 from dataclasses import dataclass
@@ -377,8 +378,41 @@ class AgentMailClient:
             }
         )
 
+_ERROR_TEXT_LIMIT = 600
+# Anything that looks like a credential is redacted before an upstream error
+# reaches the model: bearer/registration tokens are long runs of URL-safe
+# characters, hex digests likewise.
+_SECRET_LIKE = re.compile(r"(?<![A-Za-z0-9_./-])[A-Za-z0-9_-]{32,}(?![A-Za-z0-9_./-])")
+
+
+def _safe_error_text(rpc_result: Mapping[str, Any]) -> str:
+    """The server's own error line, shortened and with secret-like runs redacted.
+
+    Hiding the reason entirely (the previous behaviour, a fixed "tool call
+    failed") left the model unable to act on plain validation errors — an
+    unknown recipient was reported as an opaque failure and the child gave up
+    instead of correcting the name (2026-09-07, WSL2 Codex child).
+    """
+
+    content = rpc_result.get("content")
+    text = ""
+    if isinstance(content, list):
+        for part in content:
+            if isinstance(part, dict) and part.get("type") == "text":
+                candidate = part.get("text")
+                if isinstance(candidate, str) and candidate.strip():
+                    text = candidate.strip()
+                    break
+    if not text:
+        return "agent-mail tool call failed"
+    text = _SECRET_LIKE.sub("[redacted]", text.splitlines()[0])
+    if len(text) > _ERROR_TEXT_LIMIT:
+        text = text[: _ERROR_TEXT_LIMIT - 1] + "…"
+    return f"agent-mail tool call failed: {text}"
+
+
 def _decode_tool_response(response: Mapping[str, Any]) -> Any:
-    """Decode safe result shapes while keeping upstream error text private."""
+    """Decode safe result shapes; surface the server's error line, redacted."""
 
     if response.get("error"):
         raise AgentMailError("agent-mail JSON-RPC call failed")
@@ -386,7 +420,7 @@ def _decode_tool_response(response: Mapping[str, Any]) -> Any:
     if not isinstance(rpc_result, dict):
         raise AgentMailError("agent-mail response is missing result")
     if rpc_result.get("isError") is True:
-        raise AgentMailError("agent-mail tool call failed")
+        raise AgentMailError(_safe_error_text(rpc_result))
 
     structured = rpc_result.get("structuredContent")
     if isinstance(structured, (dict, list)):

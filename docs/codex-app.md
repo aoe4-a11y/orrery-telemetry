@@ -139,7 +139,7 @@ launchd / supervised background の log はどちらも既定で次にありま�
 
 `SessionStart` / `SubagentStart` hook は、現在の `session_id` と必要なら `agent_id` を使って最初に `agentstack.bootstrap` を呼ぶよう additional context を渡します。最初の bootstrap が MCP process を一つの Bridge binding に固定し、その後の tool call では project key、agent 名、owner token を agent から受け取りません。
 
-proxy の公開 tool は次の8個です。
+proxy の公開 tool は次の9個です。
 
 - `bootstrap`
 - `fetch_inbox`
@@ -149,6 +149,9 @@ proxy の公開 tool は次の8個です。
 - `renew_reservations`
 - `release_reservations`
 - `runtime_status`
+- `whois`（宛先名の確認用。名前は大文字小文字を区別します）
+
+tool call が失敗したとき、proxy は Mail server のエラー 1 行目をそのまま返します（token に見える文字列は `[redacted]` に置き換え、600 文字で切ります）。以前は固定文 "agent-mail tool call failed" だけを返していたため、宛先名の綴り違いのような検証エラーでも child は理由を知れず、直さずに諦めていました。
 
 root task は `session_id` だけを渡します。subagent は同じ `session_id` と自分の `agent_id` を渡し、Bridge が記録した parent lineage と一致しない binding は拒否されます。
 
@@ -197,7 +200,7 @@ wake prompt に入るのは message ID、sender、subject だけです。message
 - owner token は private identity store に分離し、agent や dashboard snapshot へ公開しない
 - hook event と dashboard snapshot は field allowlist で検証
 - cold wake は固定 instruction と bounded metadata だけを渡し、stdout / stderr 診断は token pattern を redaction
-- headless wake が一時的に approve するのは上記8個の session-bound proxy tool だけで、shell、sandbox、他 MCP、global approval policy は変更しない
+- headless wake が一時的に approve するのは上記9個の session-bound proxy tool だけで、shell、sandbox、他 MCP、global approval policy は変更しない
 
 `--skip-git-check` は untrusted directory を一般に許可する option ではありません。git 管理外であることを確認済みの workspace に限定し、通常は trusted repository 内で task を開始してください。
 

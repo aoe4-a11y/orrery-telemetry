@@ -319,6 +319,29 @@ class AgentStackProxy:
             file_reservation_ids=ids or None,
         )
 
+    def whois(
+        self,
+        session_id: str,
+        *,
+        name: str,
+        agent_id: str | None = None,
+    ) -> dict[str, Any]:
+        """Look up another agent's profile, e.g. to confirm a recipient name.
+
+        Without this the child had no way to check a spelling before
+        `send_message`, and the server's "unknown recipient" was the first and
+        last thing it heard. The argument is `name`, not `agent_name`: the
+        latter is reserved for the caller's own identity and rejected by
+        `_dispatch` after bootstrap.
+        """
+        binding, owner_token = self._resolve(session_id, agent_id)
+        target = _agent_names([name], "name", required=True)[0]
+        return self.agent_mail.whois(
+            project_key=binding["project_key"],
+            agent_name=target,
+            registration_token=owner_token,
+        )
+
     def runtime_status(
         self, session_id: str, agent_id: str | None = None
     ) -> dict[str, Any]:
@@ -512,6 +535,7 @@ def _dispatch(
         "renew_reservations": proxy.renew_reservations,
         "release_reservations": proxy.release_reservations,
         "runtime_status": proxy.runtime_status,
+        "whois": proxy.whois,
     }
     handler = handlers.get(name)
     if handler is None:
@@ -803,6 +827,17 @@ TOOL_DEFINITIONS = [
             "and parent lineage. Takes no caller-supplied identity."
         ),
         "inputSchema": _schema({}, []),
+    },
+    {
+        "name": "whois",
+        "description": (
+            "Look up one agent's profile by exact name, e.g. to confirm a "
+            "recipient before send_message. Names are case-sensitive."
+        ),
+        "inputSchema": _schema(
+            {"name": {"type": "string", "minLength": 1, "maxLength": 128}},
+            ["name"],
+        ),
     },
 ]
 
