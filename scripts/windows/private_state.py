@@ -79,6 +79,29 @@ def protect_private_file(path: Path) -> None:
     require_private(path)
 
 
+def write_private_text(path: Path, contents: str, *, exclusive: bool = False) -> None:
+    """Publish UTF-8 text only after the temporary file has a private ACL."""
+    path = path.absolute()
+    reject_reparse(path)
+    if not path.parent.is_dir():
+        raise ValueError('Private state parent must be an existing directory')
+    require_private(path.parent)
+    if exclusive and path.exists():
+        raise FileExistsError(str(path))
+    temporary = path.with_name(path.name + '.' + os.urandom(16).hex() + '.tmp')
+    try:
+        with temporary.open('x', encoding='utf-8', newline='') as stream:
+            stream.write(contents)
+            stream.flush()
+            os.fsync(stream.fileno())
+        protect_private_file(temporary)
+        if exclusive and path.exists():
+            raise FileExistsError(str(path))
+        temporary.replace(path)
+    finally:
+        temporary.unlink(missing_ok=True)
+
+
 def create_private_directory(path: Path) -> None:
     """Create atomically with a protected DACL, before any secret is written."""
     path = path.absolute()
@@ -128,15 +151,5 @@ def consume_token(source: Path, destination: Path) -> None:
     token = source.read_text(encoding='utf-8').strip()
     if not token or '\n' in token or '\r' in token:
         raise ValueError('Token handoff must contain one non-empty token')
-    with destination.open('x', encoding='utf-8') as stream:
-        stream.write(token)
-        stream.flush()
-        os.fsync(stream.fileno())
-    try:
-        protect_private_file(destination)
-    except BaseException:
-        # Never leave a newly written token behind when its ACL cannot be
-        # verified. The source remains intact so the caller can recover.
-        destination.unlink(missing_ok=True)
-        raise
+    write_private_text(destination, token, exclusive=True)
     source.unlink()

@@ -23,7 +23,7 @@ from urllib.parse import urlsplit
 import psutil
 
 from private_state import (consume_token, create_private_directory,
-                           protect_private_file, require_private)
+                           require_private, write_private_text)
 from owned_job import OwnedJob
 
 HERE = Path(__file__).resolve().parent
@@ -31,17 +31,7 @@ ROOT = HERE.parents[1]
 
 
 def write_json(path: Path, data: dict) -> None:
-    require_private(path.parent)
-    temporary = path.with_name(path.name + '.' + uuid.uuid4().hex + '.tmp')
-    try:
-        with temporary.open('x', encoding='utf-8') as stream:
-            json.dump(data, stream, ensure_ascii=False, indent=2)
-            stream.flush()
-            os.fsync(stream.fileno())
-        protect_private_file(temporary)
-        temporary.replace(path)
-    finally:
-        temporary.unlink(missing_ok=True)
+    write_private_text(path, json.dumps(data, ensure_ascii=False, indent=2))
 
 
 def executable(value: str) -> str:
@@ -150,11 +140,7 @@ def configure_proxy(home: Path, spec: dict) -> None:
     for tool in ('bootstrap', 'fetch_inbox', 'send_message', 'acknowledge_message',
                  'reserve_files', 'renew_reservations', 'release_reservations', 'runtime_status'):
         lines.extend([f'[mcp_servers.orrery-mail.tools.{tool}]', 'approval_mode = "approve"'])
-    with target.open('x', encoding='utf-8') as stream:
-        stream.write('\n'.join(lines) + '\n')
-        stream.flush()
-        os.fsync(stream.fileno())
-    protect_private_file(target)
+    write_private_text(target, '\n'.join(lines) + '\n', exclusive=True)
 
 
 _SCRUBBED_CHILD_ENV = (
@@ -279,7 +265,9 @@ def launch(args: argparse.Namespace) -> dict:
         consume_token(Path(args.child_token_file).absolute(), state / 'owner.token')
         # Own the server process before any client command: even an unresponsive
         # named pipe leaves an exact PID/create-time record for cleanup.
-        with (state / 'tmux.log').open('ab') as log:
+        tmux_log = state / 'tmux.log'
+        write_private_text(tmux_log, '', exclusive=True)
+        with tmux_log.open('ab') as log:
             server = subprocess.Popen([tmux_path, '-D', '-S', spec['socket'], '-f', 'NUL'],
                                       stdin=subprocess.DEVNULL, stdout=log, stderr=log)
         write_json(state / 'server.json', {'processes': [process_record(psutil.Process(server.pid))]})
@@ -320,7 +308,7 @@ def launch(args: argparse.Namespace) -> dict:
         while time.monotonic() < deadline:
             pane = tmux(spec, 'capture-pane', '-p', '-t', args.name).stdout
             if tmux(spec, 'display-message', '-p', '-t', args.name, '#{pane_dead}').stdout.strip() == '1':
-                (state / 'startup-pane.txt').write_text(pane, encoding='utf-8')
+                write_private_text(state / 'startup-pane.txt', pane, exclusive=True)
                 raise RuntimeError('Child exited before readiness; see private startup-pane.txt')
             if pane_ready(pane):
                 time.sleep(2)
@@ -341,7 +329,7 @@ def launch(args: argparse.Namespace) -> dict:
                 write_json(state / 'result.json', result)
                 return result
             time.sleep(0.5)
-        (state / 'startup-pane.txt').write_text(pane, encoding='utf-8')
+        write_private_text(state / 'startup-pane.txt', pane, exclusive=True)
         raise TimeoutError('Codex did not reach a recognized prompt; task was not submitted')
     except Exception as error:
         cleanup_error = None
