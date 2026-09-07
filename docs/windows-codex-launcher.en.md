@@ -16,11 +16,11 @@ The parent agent uses ORRERY Mail to pre-register the child identity, prepare co
   The validation environment used `arndawg.tmux-windows` `3.6a-win32.7` and the `tmux3.6a-win32` binary.
 - `--codex-home` must already be an existing child-specific private directory.
   Its ACL must allow access only to the current user SID.
-  Do not put `config.toml` in this directory; the launcher writes the child-specific file.
-- Prepare Codex authentication, login, and first-run trust / permission setup in advance.
+  Do not put your own `config.toml` in this directory; the launcher creates and owns a child-specific file for each run.
+- Prepare Codex authentication and login in advance.
   The launcher does not create credentials or complete first-run setup.
   Its `[windows] sandbox = "elevated"` entry is a child launch setting; it does not complete Codex or Windows authentication and setup.
-  If trust, sign-in, setup, or approval screens remain, the readiness timeout stops the launch and no task is injected.
+  If sign-in, setup, or approval screens remain, the readiness timeout stops the launch and no task is injected.
 - When the parent pre-registers the child in Mail, put the resulting owner token in a one-line child token handoff file.
   The handoff file and the `--mail-env` env file must also have a current-user-only private ACL.
 
@@ -56,7 +56,7 @@ The main arguments are:
 | `--name`, `--parent` | The child and parent names already prepared in Mail. PR1 does not accept a parentless launch. |
 | `--cwd` | Existing directory where the child works. |
 | `--project` | Project key passed to Mail. |
-| `--codex-home` | ACL-verified child-specific `CODEX_HOME`; an existing `config.toml` is rejected. |
+| `--codex-home` | ACL-verified child-specific `CODEX_HOME`; a user-owned `config.toml` is rejected. A stopped earlier launcher run is recovered safely. |
 | `--state-directory` | Private root where the launcher creates per-launch state; its parent must already exist. |
 | `--child-token-file` | One-line token handoff file with a current-user-only ACL; the source is consumed on success. |
 | `--mail-url` | Mail endpoint. The example shows a loopback MCP URL. |
@@ -71,10 +71,17 @@ The main arguments are:
 The launcher starts its own tmux server and records that server's PID, creation time, and executable before issuing a client command.
 If the server exits before its named pipe is ready, the launcher fails without creating a second server.
 If the child never reaches a recognized prompt, the pane is saved in private state and no task is sent.
-When trust or first-run setup needs a human action, attach with the `tmux_socket` and child name shown at launch:
+When Codex asks whether to trust `--cwd`, an interactive PowerShell launch shows that decision in the window which started it.
+Type `yes` to choose Codex's **Yes, continue** option; any other input cancels the launch and cleans up its state.
+The launcher never confirms directory trust by itself.
+When the caller has no interactive console (for example, a future Dashboard caller), the launcher returns `status=trust_required` with the state, socket, and session instead of waiting on hidden input.
+Attach to the recorded session, choose **Yes, continue**, and run the `resume` action with the returned state directory:
 
 ```powershell
 tmux -S '<tmux_socket>' attach-session -t '<session>'
+
+$State = 'C:\path\to\private-launch-state\<state-directory-returned-by-launch>'
+& $Python -X utf8 $Launcher resume --state-directory $State
 ```
 
 Use the exact `tmux_socket` and `session` values from the launch result / stderr.
@@ -86,7 +93,10 @@ Use `-S`, not `-L`, for the socket.
 After verification, the launcher exclusively copies the token value into the per-launch state's `owner.token` and removes the source handoff file.
 The token value is absent from Codex argv and the task prompt; the child proxy receives only the private `owner.token` path.
 
-`owner.token` is removed by `stop` or when the child exits naturally.
+`owner.token` and the launcher-owned child `config.toml` are removed by `stop`, by Ctrl+C during launch, or when the child exits naturally.
+On the next launch, a stopped state that owns the child config is recovered before a new run starts.
+The launcher verifies the recorded home and state paths before that removal, so it does not remove a user configuration or a config owned by another state.
+Only one launcher can claim a prepared child home at a time; a second launch fails closed while the first launcher is still starting or running.
 That cleanup does not retire the Mail identity.
 The identity, contact, and task history prepared by the parent remain the parent's responsibility, and a failed launch result reports that registration was retained.
 
@@ -113,11 +123,11 @@ If a PID has been reused or its creation time / executable no longer matches, it
 
 ## Readiness and validation scope
 
-Readiness recognizes an idle Codex prompt with a displayed model.
-Startup, sign-in, trust, setup, approval, and usage-limit screens are blocked states.
+Readiness recognizes an idle Codex prompt with a displayed model, even when an old MCP startup notification remains in pane scrollback.
+Sign-in, trust, setup, approval, and usage-limit screens are blocked states.
 Screens requiring human action are never confirmed automatically; a timeout fails closed.
 
-The focused regression run was 15 tests passed in `tests/windows/test_codex_launcher.py`.
+The focused regression run covers `tests/windows/test_codex_launcher.py`.
 It exercises native-Windows ACLs, token handoff, proxy bearer environment handling, owned-process cleanup, the kill-on-close job, PID reuse protection, readiness, and runtime environment propagation.
 This result is recorded separately from the real smoke run.
 It does not establish full installer, Codex App Bridge, Dashboard SPAWN, Mail-history, or native-Windows-wide success.
