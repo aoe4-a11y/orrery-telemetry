@@ -506,6 +506,9 @@ def test_keyboard_interrupt_cleans_launcher_owned_config(
     state_root = tmp_path / "state-root"
     private_state.create_private_directory(home)
     private_state.create_private_directory(state_root)
+    handoff = state_root / "handoff.token"
+    handoff.write_text("owner-token\n", encoding="utf-8")
+    private_state.protect_private_file(handoff)
     args = SimpleNamespace(
         name="BlueLake",
         parent="GreenCastle",
@@ -515,7 +518,7 @@ def test_keyboard_interrupt_cleans_launcher_owned_config(
         python=sys.executable,
         codex_home=str(home),
         state_directory=str(state_root),
-        child_token_file=str(tmp_path / "unused-handoff"),
+        child_token_file=str(handoff),
         mail_url="http://127.0.0.1:18765/mcp",
         model="gpt-5.6-sol",
         effort="xhigh",
@@ -537,6 +540,7 @@ def test_keyboard_interrupt_cleans_launcher_owned_config(
     assert result["ok"] is False
     assert result["error"] == "Cancelled by user"
     assert not (home / "config.toml").exists()
+    assert handoff.is_file()
 
 
 def test_launch_recovers_a_stopped_config_before_validating_new_handoff(
