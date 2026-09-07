@@ -60,6 +60,22 @@ def test_codex_child_approval_allowlist_matches_proxy_surface_exactly():
     assert _CODEX_PROXY_TOOLS == tuple(item["name"] for item in TOOL_DEFINITIONS)
 
 
+def test_windows_launcher_approval_list_matches_proxy_surface_exactly():
+    """scripts/windows/codex_launcher.py writes its own approval blocks.
+
+    It is a community lane that cannot import the proxy at runtime, so the
+    tool names are a literal tuple there; this keeps that literal in step with
+    TOOL_DEFINITIONS from macOS, where tests/windows/ is never collected.
+    """
+    import re
+
+    text = (_ROOT / "scripts" / "windows" / "codex_launcher.py").read_text(encoding="utf-8")
+    match = re.search(r"for tool in \((.*?)\):", text, re.S)
+    assert match, "codex_launcher.configure_proxy no longer enumerates the proxy tools"
+    listed = tuple(re.findall(r"'([a-z_]+)'", match.group(1)))
+    assert listed == _CODEX_PROXY_TOOLS, listed
+
+
 def _extract(func: str) -> str:
     text = _SPAWN.read_text(encoding="utf-8")
     start = text.index(f"{func}() {{")
