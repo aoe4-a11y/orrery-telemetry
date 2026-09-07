@@ -41,6 +41,7 @@ class _Mail(http.server.BaseHTTPRequestHandler):
             result = {"structuredContent": {"id": 1}}
         elif name == "register_agent":
             args = params.get("arguments") or {}
+            _Mail.register_args.append(dict(args))
             result = {"structuredContent": {
                 "id": AGENT_ID, "name": args.get("name"),
                 "registration_token": args.get("registration_token", ""),
@@ -70,6 +71,7 @@ class _Mail(http.server.BaseHTTPRequestHandler):
 @pytest.fixture()
 def mail() -> object:
     _Mail.calls = []
+    _Mail.register_args = []
     server = http.server.HTTPServer(("127.0.0.1", 0), _Mail)
     threading.Thread(target=server.serve_forever, daemon=True).start()
     try:
@@ -80,7 +82,9 @@ def mail() -> object:
         server.server_close()
 
 
-def _run_child_session_start(tmp_path: Path, mcp_url: str, *, with_transcript: bool = True):
+def _run_child_session_start(
+    tmp_path: Path, mcp_url: str, *, with_transcript: bool = True, extra_env: dict | None = None
+):
     runtime = tmp_path / "runtime"
     runtime.mkdir()
     # spawn_child.sh leaves the child's owner token here before the session starts.
@@ -106,6 +110,7 @@ def _run_child_session_start(tmp_path: Path, mcp_url: str, *, with_transcript: b
         "AGENTSTACK_HOOKS_DIR": str(REPO_ROOT / "hooks"),
         "AGENTSTACK_REGISTER_LIB": str(REPO_ROOT / "bin" / "lib" / "agentstack-register.sh"),
     }
+    env.update(extra_env or {})
     (tmp_path / "home").mkdir()
     result = subprocess.run(
         ["/bin/bash", str(HOOK)], input=json.dumps(payload),
@@ -113,6 +118,20 @@ def _run_child_session_start(tmp_path: Path, mcp_url: str, *, with_transcript: b
     )
     assert result.returncode == 0, result.stderr
     return result, runtime, transcript
+
+
+def test_shell_registration_keeps_the_model_the_parent_chose(mail: str, tmp_path: Path) -> None:
+    """spawn_child.sh passes CLAUDE_CHILD_MODEL; the re-registration must not
+    replace it with the program name. With "claude-code" as the model the
+    dashboard derives no provider: no logo, and a chip reading CLAUDE-CODE
+    (seen on WSL2, where no pane model is parsed to rescue it)."""
+    _run_child_session_start(tmp_path, mail, extra_env={"CLAUDE_CHILD_MODEL": "claude-sonnet-5"})
+    assert _Mail.register_args and _Mail.register_args[-1]["model"] == "claude-sonnet-5", _Mail.register_args
+
+
+def test_shell_registration_without_a_handed_model_still_names_the_program(mail: str, tmp_path: Path) -> None:
+    _run_child_session_start(tmp_path, mail)
+    assert _Mail.register_args and _Mail.register_args[-1]["model"] == "claude-code", _Mail.register_args
 
 
 def test_shell_registration_writes_the_session_index(mail: str, tmp_path: Path) -> None:

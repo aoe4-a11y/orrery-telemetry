@@ -83,6 +83,13 @@ def test_fable_statusline_wins_over_model_names_in_conversation():
     )
     assert parsed["pane_model"] == "Fable 5.1"
     assert server._provider_of(parsed["pane_model"]) == "anthropic"
+    # A program name stored as the model (a child re-registered by the shell
+    # hook without CLAUDE_CHILD_MODEL) still names the vendor. Before this the
+    # deck showed a blank LED instead of the logo (WSL2, 2026-09-07).
+    assert server._provider_of("claude-code") == "anthropic"
+    assert server._provider_of("codex") == "openai"
+    assert server._provider_of("gpt-5.6-sol") == "openai"
+    assert server._provider_of("something-else") == ""
 
     codex = server._parse_runtime(
         "• Opus 4.6 との比較を書いた\n"

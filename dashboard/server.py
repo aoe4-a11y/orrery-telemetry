@@ -275,6 +275,13 @@ def _provider_of(raw: str | None) -> str:
         return ""
     m = _MN_FAMILY_RE.search(canon)
     if not m:
+        # A program name stored where a model should be ("claude-code",
+        # "codex") still names the vendor; better a logo than a blank LED.
+        low = canon.lower()
+        if "claude" in low or "anthropic" in low:
+            return "anthropic"
+        if "codex" in low or "openai" in low:
+            return "openai"
         return ""
     return _MN_PROVIDER.get(m.group("family"), "")
 

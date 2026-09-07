@@ -188,7 +188,11 @@ shell_register_resolved_agent() {
     CHILD_REGISTRATION_TOKEN="$restored_token"
     export CHILD_REGISTRATION_TOKEN
     work_dir="${PWD:-$PROJECT_KEY}"
-    model="${AGENTSTACK_CLAUDE_MODEL:-claude-code}"
+    # spawn_child.sh hands the child its model as CLAUDE_CHILD_MODEL; without
+    # it this re-registration overwrote the pre-registered model with the
+    # program name, and the dashboard lost the provider (no logo, chip said
+    # "CLAUDE-CODE" — seen on WSL2, where no pane model is parsed either).
+    model="${AGENTSTACK_CLAUDE_MODEL:-${CLAUDE_CHILD_MODEL:-claude-code}}"
     ags_register_session "$PROJECT_KEY" "claude-code" "$model" "cc" "$work_dir" "$RESOLVED_AGENT" "reserved" >/dev/null 2>&1
     register_status=$?
     if [ "$register_status" -ne 0 ]; then
