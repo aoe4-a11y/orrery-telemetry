@@ -17,14 +17,14 @@ parent agent は ORRERY Mail で child identity を事前登録し、contact と
   検証環境では `arndawg.tmux-windows` の `3.6a-win32.7` と binary `tmux3.6a-win32` を使いました。
 - `--codex-home` には、既存の child 専用 private directory を指定します。
   ACL は current user SID だけに access を許可しなければなりません。
-  この directory に `config.toml` を置かないでください。
-  launcher が child 専用 file を書き込みます。
-- Codex の authentication、login、first-run の trust と permission setup は、あらかじめ完了させてください。
+  利用者自身の `config.toml` は置かないでください。
+  launcher が起動ごとに child 専用の `config.toml` を作成し、終了時に回収します。
+- Codex の authentication と login は、あらかじめ完了させてください。
   launcher は credential の作成や first-run setup を完了させません。
   `[windows] sandbox = "elevated"` の entry は child launch の設定であり、Codex や Windows の authentication と setup を完了させるものではありません。
-  trust、sign-in、setup、approval の画面が残っている場合、readiness timeout が launch を停止し、task は注入されません。
+  sign-in、setup、approval の画面が残っている場合、readiness timeout が launch を停止し、task は注入されません。
 - parent が Mail に child を事前登録したら、返された owner token を一行の child token handoff file に保存します。
-  handoff file と `--mail-env` の env file にも current-user-only private ACL が必要です。
+  handoff file は launcher を起動する時点で存在し、`--mail-env` の env file と同じく current-user-only private ACL を持つ必要があります。
 
 ## Launch
 
@@ -58,7 +58,7 @@ $Launcher = 'C:\path\to\orrery-telemetry\scripts\windows\codex_launcher.py'
 | `--name`、`--parent` | Mail で準備済みの child 名と parent 名です。PR1 では parent のない launch を受け付けません。 |
 | `--cwd` | child が作業する既存 directory です。 |
 | `--project` | Mail に渡す project key です。 |
-| `--codex-home` | ACL を検証した child 専用 `CODEX_HOME` です。既存の `config.toml` は拒否されます。 |
+| `--codex-home` | ACL を検証した child 専用 `CODEX_HOME` です。利用者自身の `config.toml` は拒否されます。以前の停止済み launcher が所有する設定だけを安全に回収します。 |
 | `--state-directory` | launcher が per-launch state を作る private root です。parent directory は事前に存在しなければなりません。 |
 | `--child-token-file` | current-user-only ACL を持つ一行の token handoff file です。成功すると source が消費されます。 |
 | `--mail-url` | Mail endpoint です。例では loopback MCP URL を示しています。 |
@@ -73,10 +73,19 @@ $Launcher = 'C:\path\to\orrery-telemetry\scripts\windows\codex_launcher.py'
 launcher は専用の tmux server を起動し、client command を発行する前に server の PID、creation time、executable を記録します。
 server が named pipe の準備前に終了すると、launcher は 2 つ目の server を作らずに失敗します。
 child が recognized prompt に到達しない場合、pane を private state に保存し、task を送信しません。
-trust や first-run setup で人間の操作が必要な場合、launch 時に表示された `tmux_socket` と child name を使って attach します。
+Codex が `--cwd` を信頼するか確認した場合、対話型の PowerShell では、launcher を起動した画面に確認を表示します。
+`yes` と入力すると、Codex の **Yes, continue** を選択します。
+それ以外を入力すると起動を中止し、launcher が作成した state を回収します。
+launcher がディレクトリを自動で信頼することはありません。
+
+Dashboard など入力を受け付ける画面がない呼び出し元では、入力を待たずに `status=trust_required` を返します。
+返された state、socket、session を使って tmux へ接続し、**Yes, continue** を選択してから `resume` を実行します。
 
 ```powershell
 tmux -S '<tmux_socket>' attach-session -t '<session>'
+
+$State = 'C:\path\to\private-launch-state\<state-directory-returned-by-launch>'
+& $Python -X utf8 $Launcher resume --state-directory $State
 ```
 
 launch result または stderr に示された `tmux_socket` と `session` の値をそのまま使います。
@@ -88,7 +97,11 @@ launch result または stderr に示された `tmux_socket` と `session` の�
 検証後、launcher は token の値を per-launch state の `owner.token` に専用にコピーし、source handoff file を削除します。
 token の値は Codex argv と task prompt に現れず、child proxy に渡るのは private な `owner.token` path だけです。
 
-`owner.token` は `stop` または child の自然終了時に削除されます。
+`owner.token` と launcher が作成した child の `config.toml` は、`stop`、launch 中の Ctrl+C、child の自然終了のいずれかで削除されます。
+停止済みの state が child の設定を所有している場合、次回の launch がその設定を回収します。
+削除前に記録済みの home と state の path を検証するため、利用者の設定や別の state が所有する設定は削除しません。
+一つの child home を同時に利用できる launcher は一つだけです。
+最初の launcher が起動中または実行中であれば、後から起動した launcher は何も変更せずに失敗します。
 この cleanup は Mail identity を retire しません。
 parent が準備した identity、contact、task history は parent の責任として残り、launch failure result は登録が保持されたことを報告します。
 
@@ -117,11 +130,11 @@ PID が再利用された場合や creation time または executable が一致�
 
 ## Readiness と検証範囲
 
-Readiness は、表示された model を含む idle Codex prompt を認識します。
-startup、sign-in、trust、setup、approval、usage-limit の画面は blocked state です。
+Readiness は、以前の MCP 起動通知が pane の scrollback に残っている場合でも、表示された model を含む現在の idle Codex prompt を認識します。
+sign-in、trust、setup、approval、usage-limit の画面は blocked state です。
 人間の操作が必要な画面を自動で確認済みにすることはなく、timeout は fail closed します。
 
-focused regression run では `tests/windows/test_codex_launcher.py` の 15 tests が passed しました。
+focused regression run は `tests/windows/test_codex_launcher.py` を対象にします。
 このテストは native-Windows ACL、token handoff、proxy の bearer environment 処理、owned-process cleanup、kill-on-close job、PID reuse protection、readiness、runtime environment propagation を検証します。
 この結果は real smoke run とは別に記録されます。
 installer 全体、Codex App Bridge、Dashboard SPAWN、Mail history、native Windows 全体の成功を示すものではありません。
