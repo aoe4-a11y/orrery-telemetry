@@ -50,7 +50,7 @@ done:
 - `claude/CLAUDE.md`
 - `codex/AGENTS.md`
 
-Facts that drift silently — the default agent-mail port, the number of
+Facts that drift silently — the default ORRERY Mail port, the number of
 approval prompts, the number of Claude event hooks, the guide list — are
 checked against the implementation by `tests/test_docs_consistency.py`.
 Extend that test when you add such a fact instead of relying on review.

@@ -22,7 +22,7 @@
 
 Python は **3.11 以上**が必須です。上限は設けておらず、全 suite を実測済みなのは 3.12 / 3.13 / 3.14（CI は 3.11 / 3.12 / 3.14）です。3.10 は import こそ通るものの mail service のテストが通らないため対応外です（2026-09-04）。
 
-必須 command は `git` と `tmux` です。agent-mail を新規 provision する場合だけ `uv` も必須です。実行時には Claude Code または Codex CLI の少なくとも一方が必要です。`systemctl` は Linux の user service 用ですが、利用できなければ supervisor が代替します。`fswatch`（mail watcher）、`fzf`（directory picker）、Ghostty、Obsidian は任意です。
+必須 command は `git` と `tmux` です。ORRERY Mail を新規 provision する場合だけ `uv` も必須です。実行時には Claude Code または Codex CLI の少なくとも一方が必要です。`systemctl` は Linux の user service 用ですが、利用できなければ supervisor が代替します。`fswatch`（mail watcher）、`fzf`（directory picker）、Ghostty、Obsidian は任意です。
 
 installer は冒頭で OS、Python、必須 command、ORRERY Mail endpoint（既定 `127.0.0.1:18765`・state root `~/.agentstack/mail`）、install directory の書込権限をまとめて検査します。endpoint が使用中でも、既存の `install-state.json` があれば上書き更新として扱います。新規 install で使用中の場合も socket の所有者を推測して停止せず、health response と canonical database を確認できた場合だけ既存 service を再利用します。無関係または解決不能な listener なら、最初の書き込み前に停止します。
 
@@ -30,7 +30,7 @@ CI や isolated test で platform boundary を意図的に偽装する場合に�
 
 ## クイックスタート
 
-初回は必ず dry-run から始めます。変更予定（service mode・使う agent-mail DB・settings diff）を読んでから本番の install に進みます。
+初回は必ず dry-run から始めます。変更予定（service mode・使う ORRERY Mail DB・settings diff）を読んでから本番の install に進みます。
 
 ```bash
 git clone https://github.com/gyroid-eth/orrery-telemetry.git
@@ -55,9 +55,9 @@ agent-start ~/code/my-project        # または agent-start-codex ~/code/my-pro
 open http://127.0.0.1:8770/          # 別 terminal。DECK に親と child のカードが並べば完了
 ```
 
-`agent-start` は agent-mail identity と同名の tmux session を作ります。これが dashboard の jump、mail signal 配送、token recovery を一意に結びます。設定を変える場合は[インストール](docs/install.md)と[設定](docs/configuration.md)、child の仕組みは[委任と child agent](docs/delegation.md)を参照してください。
+`agent-start` は ORRERY Mail identity と同名の tmux session を作ります。これが dashboard の jump、mail signal 配送、token recovery を一意に結びます。設定を変える場合は[インストール](docs/install.md)と[設定](docs/configuration.md)、child の仕組みは[委任と child agent](docs/delegation.md)を参照してください。
 
-Codex Desktop の root task / subagent も同じ agent-mail と dashboard に接続する場合は、任意の [Codex App 統合](docs/codex-app.md)を追加します。Codex CLI だけを使う場合、この追加 install は不要です。
+Codex Desktop の root task / subagent も同じ ORRERY Mail と dashboard に接続する場合は、任意の [Codex App 統合](docs/codex-app.md)を追加します。Codex CLI だけを使う場合、この追加 install は不要です。
 
 ## 機能ギャラリー
 
@@ -69,11 +69,11 @@ Codex Desktop の root task / subagent も同じ agent-mail と dashboard に接
 
 ### 2. Hook、mail、file reservation
 
-Claude Code hook が未登録 session と競合書き込みを止め、成功した edit の reservation を短い grace 後に解放し、agent-mail inbox signal を Claude / Codex REPL へ再注入します。mail と reservation の正本を一つに保つため、UI を再起動しても協調状態が分裂しません。
+Claude Code hook が未登録 session と競合書き込みを止め、成功した edit の reservation を短い grace 後に解放し、ORRERY Mail inbox signal を Claude / Codex REPL へ再注入します。mail と reservation の正本を一つに保つため、UI を再起動しても協調状態が分裂しません。
 
-agent-mail は監査 archive の Git commit を既定で非同期 queue に積み、DB 更新と archive file の書き込みが完了した時点で tool 応答を返します。同期 commit に戻す kill switch は `AGENTSTACK_MAIL_ARCHIVE_COMMIT_ASYNC=false` です。hard shutdown が応答直後に重なると飛行中の commit は失われる可能性がありますが、archive file は working tree に残り、DB は影響を受けません。次回起動時に未 commit file を同期 commit して回収します。詳細と測定条件は [agentstack-mail 文書](docs/agentstack-mail.md#archive-commit-latency-and-startup-repair)を参照してください。
+ORRERY Mail は監査 archive の Git commit を既定で非同期 queue に積み、DB 更新と archive file の書き込みが完了した時点で tool 応答を返します。同期 commit に戻す kill switch は `AGENTSTACK_MAIL_ARCHIVE_COMMIT_ASYNC=false` です。hard shutdown が応答直後に重なると飛行中の commit は失われる可能性がありますが、archive file は working tree に残り、DB は影響を受けません。次回起動時に未 commit file を同期 commit して回収します。詳細と測定条件は [agentstack-mail 文書](docs/agentstack-mail.md#archive-commit-latency-and-startup-repair)を参照してください。
 
-<!-- TODO: screenshot: agent-mail notification and reservation -->
+<!-- TODO: screenshot: ORRERY Mail notification and reservation -->
 
 ### 3. DECK
 
@@ -83,7 +83,7 @@ agent-mail は監査 archive の Git commit を既定で非同期 queue に積�
 
 ### 4. NETWORK と DIGEST REPLAY
 
-spawn 系譜と agent-mail 通信を force graph に重ね、node、edge、role / group、mail drawer を探索できます。複数 agent を選ぶと、通信と状態遷移を速度・HOLD・TIME-TRAVEL 付きで再生できます。
+spawn 系譜と ORRERY Mail 通信を force graph に重ね、node、edge、role / group、mail drawer を探索できます。複数 agent を選ぶと、通信と状態遷移を速度・HOLD・TIME-TRAVEL 付きで再生できます。
 
 ![NETWORK view](docs/img/network.jpg)
 
@@ -118,7 +118,7 @@ murmur は browser の言語から日本語 / 英語を自動選択し、`?lang=
 | [API reference](docs/api.md) | 全 route、query / request、response schema |
 | [設定](docs/configuration.md) | `AGENTSTACK_*` 環境変数とカスタマイズ |
 | [トラブルシューティング](docs/troubleshooting.md) | `NOT CONFIGURED`、service、通知、spawn、認証 |
-| [第三者コンポーネント](docs/third-party.md) | agent-mail、license、credits |
+| [第三者コンポーネント](docs/third-party.md) | ORRERY Mail、license、credits |
 
 コードへ変更を送る場合は [CONTRIBUTING.md](CONTRIBUTING.md) も参照してください。
 

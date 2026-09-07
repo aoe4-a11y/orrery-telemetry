@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Shared agent-mail registration helpers for agent launchers.
+# Shared ORRERY Mail registration helpers for agent launchers.
 # SOURCE this file; callers are expected to run with set -euo pipefail.
 
 if [ -n "${BASH_SOURCE:-}" ]; then _ags_register_src="${BASH_SOURCE[0]}"; else _ags_register_src="$0"; fi
@@ -88,7 +88,7 @@ sys.exit(1)
 '
 }
 
-# The agent-mail row id from a register_agent reply (plain, structuredContent,
+# The ORRERY Mail row id from a register_agent reply (plain, structuredContent,
 # or a JSON text block). Empty when the reply carries none. The id is the key
 # of the session index, which is why a shell-side registration needs it.
 ags_extract_agent_id() {
@@ -262,7 +262,7 @@ ags_store_registration_token() {
   chmod 600 "$token_file" 2>/dev/null || true
 }
 
-# Record that agent-mail granted a different identity than the one requested.
+# Record that ORRERY Mail granted a different identity than the one requested.
 # The dashboard reads this file and says so on the agent, because the only
 # other trace is a missing portrait — which reads as a style, not a fault.
 # Best effort: a spawn that otherwise worked must not fail over bookkeeping.
@@ -410,7 +410,7 @@ ags_pick_available_agent_name() {
       return 0
     fi
     if [[ "$name_status" == "unknown" ]]; then
-      echo "agentstack: cannot verify whether '$preferred_name' is free (agent-mail unreachable or refusing whois); refusing to claim it." >&2
+      echo "agentstack: cannot verify whether '$preferred_name' is free (ORRERY Mail unreachable or refusing whois); refusing to claim it." >&2
       return 1
     fi
   fi

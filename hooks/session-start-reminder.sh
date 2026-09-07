@@ -28,7 +28,7 @@ fi
 # Is the mail server answering?
 #
 # The obvious probe -- GET the liveness URL derived above -- was wrong in a way
-# that looked exactly like the server being down. AgentStack Mail serves its MCP
+# that looked exactly like the server being down. ORRERY Mail serves its MCP
 # path and the configured aliases and nothing else, so there is no
 # /health/liveness route to answer, and `curl -sf` fails on any non-2xx. Every
 # healthy install therefore reported "not running" at every session start, every
@@ -156,7 +156,7 @@ find_register_lib() {
     return 1
 }
 
-# True when this session's agent-mail MCP server is the per-child proxy that
+# True when this session's ORRERY Mail MCP server is the per-child proxy that
 # spawn_child.sh configured. The proxy injects the token, so the agent must not
 # read it: doing so triggers a Bash approval prompt and pulls the secret into
 # the model's context for no benefit.
@@ -197,7 +197,7 @@ shell_register_resolved_agent() {
     register_status=$?
     if [ "$register_status" -ne 0 ]; then
         if [ "$register_status" -eq 2 ] && [ "${AGS_AGENT_NAME_SUBSTITUTED:-0}" = "1" ]; then
-            SHELL_REGISTRATION_ERROR="agent-mail changed reserved identity '$RESOLVED_AGENT' to '${AGS_SERVER_RETURNED_AGENT_NAME:-unknown}'"
+            SHELL_REGISTRATION_ERROR="ORRERY Mail changed reserved identity '$RESOLVED_AGENT' to '${AGS_SERVER_RETURNED_AGENT_NAME:-unknown}'"
         fi
         return 1
     fi

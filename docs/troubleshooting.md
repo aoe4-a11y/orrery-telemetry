@@ -27,7 +27,7 @@ dashboard は `/api/version` の正しい JSON response を「実際に配信中
 
 | 項目 | これが分かれば判ること |
 |---|---|
-| agent-mail の commit・origin より何コミット先か | 動いているコードが本当はどれか |
+| ORRERY Mail の commit・origin より何コミット先か | 動いているコードが本当はどれか |
 | `AGENT_NAME_ENFORCEMENT_MODE` | 要求した名前がそのまま通るかどうか |
 | passthrough patch の有無 | 上のモードがそもそも受け付けられる版かどうか |
 | requested-name handling | #140 / passthrough / 旧処理を合わせた最終判定。`unknown` は未判定 |
@@ -195,7 +195,7 @@ curl -s http://127.0.0.1:8770/api/mail-watcher-health
 
 - watcher process がない
 - signal が残り、直近成功が古い
-- agent-mail endpoint / bearer token が不正
+- ORRERY Mail endpoint / bearer token が不正
 - target tmux session がない
 
 watcher は installer が service として登録します（macOS は launchd `org.agentstack.mail-watcher`、Linux / WSL2 は systemd user unit `org.agentstack.mail-watcher.service`。`watcher_mode` にどちらで動いているかが出ます）。`watcher_running` が `false` のまま signal が溜まるのは、この unit が無い古いインストール（2026-09-07 より前は `agent-start` が tmux session として起動するだけで、dashboard から spawn した agent しかいない host では誰も起動しなかった）か、unit の登録に失敗した場合です。`bash scripts/install.sh` を再実行すると登録し直します。手動で確認するなら:
@@ -230,11 +230,11 @@ Codex の場合は `AGENTSTACK_CODEX_MODELS` と request model、effort allow-li
 - `unknown`: DB / auth / transport failure
 - `available`: 使用可
 
-`unknown` は使用できません。別名で回避する前に agent-mail と project key を直してください。identity continuity を守るためです。
+`unknown` は使用できません。別名で回避する前に ORRERY Mail と project key を直してください。identity continuity を守るためです。
 
 ## 要求した名前と違う名前で登録される
 
-agent-mail が名前を受け入れず、生成名に置き換えた状態です。エージェントは動き続けるので気づきにくく、他のエージェントから宛先として呼べないことで初めて分かります。
+ORRERY Mail が名前を受け入れず、生成名に置き換えた状態です。エージェントは動き続けるので気づきにくく、他のエージェントから宛先として呼べないことで初めて分かります。
 
 ```bash
 ~/.agentstack/bin/agentstack-doctor --report \
@@ -371,7 +371,7 @@ protected root 内の Edit / Write では、hook が exact identity を確定し
 1. `AGENTSTACK_PROJECT_KEY` / `PROJECT_KEY` が reservation を作った project と一致するか確認
 2. `AGENT_NAME`、または`TMUX_PANE`で明示したtmux sessionがcanonical identityを指すか確認。pane metadataとの不一致は`AGENT IDENTITY CONFLICT`として先に直す。tmux 外の client は `register_agent` 済みなら session index から identity が解決される。同一 session に複数の identity が結び付いている場合も `AGENT IDENTITY CONFLICT` で、どちらを残すかを決めてから再登録する
 3. exact path または最小の glob を `file_reservation_paths` で予約
-4. conflict が返ったら holder へ agent-mail で連絡し、release または expiry を待つ
+4. conflict が返ったら holder へ ORRERY Mail で連絡し、release または expiry を待つ
 
 owner `registration_token` はこのhookのtool argumentsへ送られず、legacy HTTP bearerとは別物です。`isError`は省略またはboolean `false`だけを成功とします。exact identityとprotected scopeの確定後、最初の照会がtransport unreachableの場合だけfail-openです。HTTP/MCP/schema rejection、malformed response、definitive zero後のtransport failureはblockします。pathなし・protected root外はenforcement対象外なのでexit 0です。
 
@@ -393,7 +393,7 @@ Codex Desktop 統合には core doctor とは別の doctor、runtime state、失
 
 ## Dashboard に agent が二重表示される
 
-tmux session 名と agent-mail identity が一致しているか確認します。
+tmux session 名と ORRERY Mail identity が一致しているか確認します。
 
 ```bash
 tmux list-sessions
@@ -406,7 +406,7 @@ stale な top-level environment を継承した可能性がある場合は、新
 
 `/api/history` は agent program に応じて Claude / Codex transcript を探し、見つからなければ他方へ fallback します。
 
-- agent-mail の program が正しいか
+- ORRERY Mail の program が正しいか
 - transcript が disk に残っているか
 - session / agent 名が一致しているか
 - child と parent の transcript を取り違えていないか

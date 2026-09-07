@@ -78,7 +78,7 @@ agent-start /path/to/your-project
 agent-start-codex /path/to/your-project
 ```
 
-`agent-start` は agent-mail の identity と同名の tmux session を作ります。dashboard の jump、mail 通知、token 復旧はこの名前で結びつきます。起動した Claude Code では `/delegate` のように先頭の slash を付けて skill を呼びます。初回の child 起動は [Skills と file reservation](launchers.md#skills2件と-file-reservation) を参照してください。
+`agent-start` は ORRERY Mail の identity と同名の tmux session を作ります。dashboard の jump、mail 通知、token 復旧はこの名前で結びつきます。起動した Claude Code では `/delegate` のように先頭の slash を付けて skill を呼びます。初回の child 起動は [Skills と file reservation](launchers.md#skills2件と-file-reservation) を参照してください。
 
 ## Windows（WSL2）で入れる
 
@@ -119,7 +119,7 @@ CI や script から入れる場合、既定のままだと 4 つの承認（Cla
 ./scripts/install.sh --project-key /absolute/path/to/your-project --assume-yes
 ```
 
-`--assume-yes`（短縮 `-y`、環境変数 `AGENTSTACK_ASSUME_YES=1` も同じ）は approval の事前付与であり、`--force` ではありません。Python 3.11 未満、dashboard port の競合、既存 agent-mail DB の複数候補・不存在・稼働 server との不一致、自動 setup の失敗は従来どおり停止します。自動承認した項目は `assume-yes:` 行として個別に出力されます。agent や自動化が「便利だから」とユーザーの明示選択なしにこの option を付けてはいけません。command-line の指定は環境変数より優先され、生成する `env.sh` には残しません。
+`--assume-yes`（短縮 `-y`、環境変数 `AGENTSTACK_ASSUME_YES=1` も同じ）は approval の事前付与であり、`--force` ではありません。Python 3.11 未満、dashboard port の競合、既存 ORRERY Mail DB の複数候補・不存在・稼働 server との不一致、自動 setup の失敗は従来どおり停止します。自動承認した項目は `assume-yes:` 行として個別に出力されます。agent や自動化が「便利だから」とユーザーの明示選択なしにこの option を付けてはいけません。command-line の指定は環境変数より優先され、生成する `env.sh` には残しません。
 
 ## Install tier と option
 
@@ -154,7 +154,7 @@ CI や script から入れる場合、既定のままだと 4 つの承認（Cla
 Tier 1 の merge は `scripts/lib/merge_settings.py` による JSON parser ベースです。
 
 - 既存の hooks、permissions、その他の user settings を保持
-- AgentStack が追加する値だけを重複なしで追記
+- ORRERY Telemetry が追加する値だけを重複なしで追記
 - merge 前の settings backup を `~/.agentstack/backups` に保存
 - 追加した entry と変更結果を manifest に記録
 - managed block は marker 間だけを idempotent に更新
@@ -171,13 +171,13 @@ permissions の `deny` は、**不可逆で復旧手段がない操作だけ**�
 ~/.claude/skills/log      -> ~/.agentstack/skills/log
 ```
 
-同じ AgentStack payload を指す symlink がすでにある場合は再利用し、manifest に所有登録します。この link は payload と一緒に無効になるため、uninstall では削除対象です。同名の file、directory、または別 target の symlink がある場合は warning を出して保持し、所有登録しません。uninstall は manifest の path と実際の symlink target を照合し、所有登録された、AgentStack payload を指す symlink だけを削除します。利用者が file や directory に置き換えた path、または retarget した symlink は残します。
+同じ ORRERY Telemetry payload を指す symlink がすでにある場合は再利用し、manifest に所有登録します。この link は payload と一緒に無効になるため、uninstall では削除対象です。同名の file、directory、または別 target の symlink がある場合は warning を出して保持し、所有登録しません。uninstall は manifest の path と実際の symlink target を照合し、所有登録された、ORRERY Telemetry payload を指す symlink だけを削除します。利用者が file や directory に置き換えた path、または retarget した symlink は残します。
 
-旧 installer が `skillsDirectories` に `~/.agentstack/skills` を追加していた環境では、Tier 1 の settings merge を承認した再インストール時にその旧 AgentStack entry だけを削除します。同じ配列の他の user value と、それ以外の settings は保持します。
+旧 installer が `skillsDirectories` に `~/.agentstack/skills` を追加していた環境では、Tier 1 の settings merge を承認した再インストール時にその旧 ORRERY Telemetry entry だけを削除します。同じ配列の他の user value と、それ以外の settings は保持します。
 
 installer は shell dotfile を変更しません。project 内では、Tier 1 の preview 後に承認した場合だけ `CLAUDE.md` の managed marker 間を更新し、それ以外の file は変更しません。Claude Code user settings の既定位置は `~/.claude/settings.json` で、`AGENTSTACK_CLAUDE_SETTINGS` で変更できます。
 
-## Claude Code から agent-mail を使えるようにする
+## Claude Code から ORRERY Mail を使えるようにする
 
 `/delegate` skill は `mcp__orrery-mail__*` tool を許可し、Claude Code の user-scope MCP server 名も **`orrery-mail` 固定**です。
 
@@ -220,7 +220,7 @@ Tier 1 が preview / merge に使う helper は単独でも実行できます。
 ~/.agentstack/bin/agentstack-claude-setup --print
 ```
 
-`--print` は placeholder を解決した block と対象を表示するだけで変更しません。引数なしでは既存 file を backup し、marker 間の AgentStack block だけを install / update します。
+`--print` は placeholder を解決した block と対象を表示するだけで変更しません。引数なしでは既存 file を backup し、marker 間の ORRERY Telemetry block だけを install / update します。
 
 ```bash
 ~/.agentstack/bin/agentstack-codex-setup
@@ -290,9 +290,9 @@ git pull
 
 installer は payload と `VERSION` を更新し、service を再登録して、managed merge を再び preview します。同梱 ORRERY Mail の candidate と state を検証して再利用します。`--project-key` は前回の値を引き継ぎます。
 
-**in-place upgrade 中も agent-mail server は稼働させたまま**にしてください。稼働 listener から解決した実 DB path は filesystem の候補探索より優先されます。agent-mail を先に止めると候補探索へフォールバックし、複数の DB がある環境では誤選択を避けるため installer が停止します。
+**in-place upgrade 中も ORRERY Mail server は稼働させたまま**にしてください。稼働 listener から解決した実 DB path は filesystem の候補探索より優先されます。ORRERY Mail を先に止めると候補探索へフォールバックし、複数の DB がある環境では誤選択を避けるため installer が停止します。
 
-dashboard port を現在の AgentStack launchd job または supervised-background pidfile 配下のプロセスが保持している場合、installer は所有者を照合してその dashboard を新しい payload で置換します。同じ port を無関係なプロセスが保持している場合は、従来どおり停止します。
+dashboard port を現在の ORRERY Telemetry launchd job または supervised-background pidfile 配下のプロセスが保持している場合、installer は所有者を照合してその dashboard を新しい payload で置換します。同じ port を無関係なプロセスが保持している場合は、従来どおり停止します。
 
 service の environment は install 時に plist / unit へ書き込まれます。`~/.agentstack/env.sh` を変更しただけでは既存 service に反映されないため、installer を再実行するか service definition も更新してください。
 
@@ -306,7 +306,7 @@ service の environment は install 時に plist / unit へ書き込まれます
 uninstaller は `install-state.json` に記録された file、service、settings 変更だけを対象にします。
 
 - merge した Claude settings entry を構造的に除去
-- AgentStack 所有 file を削除
+- ORRERY Telemetry 所有 file を削除
 - 空になった所有 directory だけを削除
 - ORRERY Mail state / DB と runtime directory（annotation、token、session state / log）は既定で保持
 

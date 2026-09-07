@@ -104,7 +104,7 @@ ags_mail_load_token
 # top-level path uses, and check anything supplied by hand.
 if [[ -z "$agent_name" ]]; then
   agent_name="$(ags_pick_available_agent_name "$project_key" "")" \
-    || die "could not pick an available child name (agent-mail unreachable or refusing whois)"
+    || die "could not pick an available child name (ORRERY Mail unreachable or refusing whois)"
 elif ! ags_has_scientist_suffix "$agent_name"; then
   printf '%s: warning: "%s" does not end in a known scientist name, so the dashboard will not show a portrait for it. Omit --name to let the picker choose.\n' \
     "$PROG" "$agent_name" >&2
@@ -143,7 +143,7 @@ fi
 registered="$(ags_extract_agent_name <<<"$register_result")"
 [[ -n "$registered" ]] || die "could not read registered child name"
 if [[ "$registered" != "$agent_name" ]]; then
-  printf "%s: agent-mail changed requested identity '%s' to '%s'; the child tmux session must use the server-returned name\n" \
+  printf "%s: ORRERY Mail changed requested identity '%s' to '%s'; the child tmux session must use the server-returned name\n" \
     "$PROG" "$agent_name" "$registered" >&2
   # A warning on stderr is read once, by whoever happened to be looking. The
   # child then runs for hours under a name its parent does not know. Record it

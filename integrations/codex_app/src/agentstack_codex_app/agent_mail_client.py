@@ -1,4 +1,4 @@
-"""Injectable agent-mail client used by the Bridge and P2 MCP proxy.
+"""Injectable ORRERY Mail client used by the Bridge and P2 MCP proxy.
 
 The client exposes only the operations explicitly allowlisted by the Codex App
 integration. Identity, project, and owner credentials are supplied by the
@@ -16,7 +16,7 @@ from typing import Any, Mapping, Protocol
 
 
 class AgentMailError(RuntimeError):
-    """Raised when the agent-mail transport or response is invalid."""
+    """Raised when the ORRERY Mail transport or response is invalid."""
 
 
 class JsonRpcTransport(Protocol):
@@ -32,7 +32,7 @@ class Registration:
 
 
 class HttpJsonRpcTransport:
-    """POST JSON-RPC to a configured agent-mail HTTP endpoint."""
+    """POST JSON-RPC to a configured ORRERY Mail HTTP endpoint."""
 
     def __init__(
         self,
@@ -42,7 +42,7 @@ class HttpJsonRpcTransport:
         timeout: float = 10.0,
     ) -> None:
         if not endpoint:
-            raise ValueError("agent-mail endpoint must be configured")
+            raise ValueError("ORRERY Mail endpoint must be configured")
         self.endpoint = endpoint
         self.bearer_token = bearer_token
         self.timeout = timeout
@@ -65,9 +65,9 @@ class HttpJsonRpcTransport:
             with urllib.request.urlopen(request, timeout=self.timeout) as response:
                 body = json.loads(response.read())
         except (OSError, urllib.error.URLError, json.JSONDecodeError) as exc:
-            raise AgentMailError("agent-mail HTTP request failed") from exc
+            raise AgentMailError("ORRERY Mail HTTP request failed") from exc
         if not isinstance(body, dict):
-            raise AgentMailError("agent-mail returned a non-object response")
+            raise AgentMailError("ORRERY Mail returned a non-object response")
         return body
 
 
@@ -102,11 +102,11 @@ class AgentMailClient:
                 }
             )
             if response.get("error"):
-                raise AgentMailError("agent-mail tool schema discovery failed")
+                raise AgentMailError("ORRERY Mail tool schema discovery failed")
             result = response.get("result")
             tools = result.get("tools") if isinstance(result, dict) else None
             if not isinstance(tools, list):
-                raise AgentMailError("agent-mail tool schema discovery failed")
+                raise AgentMailError("ORRERY Mail tool schema discovery failed")
             params: dict[str, frozenset[str]] = {}
             for tool in tools:
                 if not isinstance(tool, dict):
@@ -404,21 +404,21 @@ def _safe_error_text(rpc_result: Mapping[str, Any]) -> str:
                     text = candidate.strip()
                     break
     if not text:
-        return "agent-mail tool call failed"
+        return "ORRERY Mail tool call failed"
     text = _SECRET_LIKE.sub("[redacted]", text.splitlines()[0])
     if len(text) > _ERROR_TEXT_LIMIT:
         text = text[: _ERROR_TEXT_LIMIT - 1] + "…"
-    return f"agent-mail tool call failed: {text}"
+    return f"ORRERY Mail tool call failed: {text}"
 
 
 def _decode_tool_response(response: Mapping[str, Any]) -> Any:
     """Decode safe result shapes; surface the server's error line, redacted."""
 
     if response.get("error"):
-        raise AgentMailError("agent-mail JSON-RPC call failed")
+        raise AgentMailError("ORRERY Mail JSON-RPC call failed")
     rpc_result = response.get("result")
     if not isinstance(rpc_result, dict):
-        raise AgentMailError("agent-mail response is missing result")
+        raise AgentMailError("ORRERY Mail response is missing result")
     if rpc_result.get("isError") is True:
         raise AgentMailError(_safe_error_text(rpc_result))
 
@@ -439,7 +439,7 @@ def _decode_tool_response(response: Mapping[str, Any]) -> Any:
                 continue
             if isinstance(decoded, (dict, list)):
                 return decoded
-    raise AgentMailError("agent-mail tool result has an unexpected shape")
+    raise AgentMailError("ORRERY Mail tool result has an unexpected shape")
 
 
 def _put_optional(arguments: dict[str, Any], key: str, value: Any) -> None:

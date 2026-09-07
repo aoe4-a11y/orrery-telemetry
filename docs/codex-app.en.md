@@ -4,11 +4,11 @@
 
 [Previous: Hooks](hooks.en.md) · [Back to README](../README.en.md) · [Next: Dashboard](dashboard.en.md)
 
-Codex App integration is an optional feature that associates **root tasks / subagents running in Codex Desktop** with agent-mail identities and extends lifecycle, inbox, file reservations, and dashboard telemetry to runtimes outside tmux. The regular `agent-start-codex` is a launcher for running Codex CLI inside tmux and follows a separate path from this Bridge.
+Codex App integration is an optional feature that associates **root tasks / subagents running in Codex Desktop** with ORRERY Mail identities and extends lifecycle, inbox, file reservations, and dashboard telemetry to runtimes outside tmux. The regular `agent-start-codex` is a launcher for running Codex CLI inside tmux and follows a separate path from this Bridge.
 
 | Usage | This integration |
 | --- | --- |
-| Connect Codex Desktop tasks / subagents to agent-mail | Applicable. Install it |
+| Connect Codex Desktop tasks / subagents to ORRERY Mail | Applicable. Install it |
 | Resume waiting Codex Desktop tasks when inbox mail arrives | Applicable. Cold wake is available |
 | Use only Codex CLI through `agent-start-codex` | Unnecessary. The core installer's launcher and child MCP proxy are sufficient |
 | Use only Claude Code and the dashboard | Unnecessary |
@@ -16,10 +16,10 @@ Codex App integration is an optional feature that associates **root tasks / suba
 ## Capabilities
 
 - Send Codex Desktop `SessionStart`, `SubagentStart`, `UserPromptSubmit`, `PostToolUse`, `Stop`, and `SubagentStop` events to the Bridge and maintain per-root / per-subagent runtime state
-- Save the agent-mail name confirmed by the server in the runtime binding and reregister with the same identity and owner token after restart
+- Save the ORRERY Mail name confirmed by the server in the runtime binding and reregister with the same identity and owner token after restart
 - Use inbox, messaging, acknowledgement, file reservations, and sanitized runtime status through a session-bound MCP proxy
 - During an active turn, notify the agent of the pending-mail count as additional context after `PostToolUse`
-- For a `waiting` / `dormant` root task, detect an agent-mail signal and perform a bounded cold wake with `codex exec resume`
+- For a `waiting` / `dormant` root task, detect an ORRERY Mail signal and perform a bounded cold wake with `codex exec resume`
 - Pass a sanitized snapshot to the dashboard provider and display Codex App runtime state plus an `open` action
 
 The Bridge accepts only sessions that match real transcripts with a `Codex Desktop` originator. Codex CLI transcripts, rows without transcripts, and hook payloads from other surfaces are deliberately ignored.
@@ -30,7 +30,7 @@ The Bridge accepts only sessions that match real transcripts with a `Codex Deskt
 Codex Desktop plugin hook
         │ lifecycle metadata only
         ▼
-private Unix socket ──► Bridge daemon ──► agent-mail
+private Unix socket ──► Bridge daemon ──► ORRERY Mail
         │                    │                 │
         │                    ├─ binding/token  └─ inbox signal
         │                    ├─ snapshot              │
@@ -97,7 +97,7 @@ Primary options:
 | `--no-plugin` | Build the marketplace without registering the Codex plugin |
 | `--wake-limit COUNT` | Cold-wake limit per root task per hour |
 | `--stale-after SECONDS` | Threshold for changing a waiting runtime to dormant, from 300 to 604800 seconds |
-| `--retry-max-attempts N` | Maximum number of agent-mail registration retry calls |
+| `--retry-max-attempts N` | Maximum number of ORRERY Mail registration retry calls |
 | `--retry-max-age SECONDS` | Maximum time registration retries are retained |
 | `--retry-max-backoff SECONDS` | Upper bound for registration retry backoff |
 | `--skip-git-check` | Explicitly disable the trust check only for a reviewed non-Git workspace |
@@ -146,7 +146,7 @@ The proxy exposes these nine tools:
 - `runtime_status`
 - `whois` (to confirm a recipient name; names are case-sensitive)
 
-When a tool call fails, the proxy returns the first line of the Mail server's own error (anything that looks like a token is replaced with `[redacted]`, and the line is cut at 600 characters). It used to return only the fixed text "agent-mail tool call failed", so a child hit by a plain validation error such as a misspelled recipient never learned why and gave up instead of correcting the name.
+When a tool call fails, the proxy returns the first line of the Mail server's own error (anything that looks like a token is replaced with `[redacted]`, and the line is cut at 600 characters). It used to return only the fixed text "ORRERY Mail tool call failed", so a child hit by a plain validation error such as a misspelled recipient never learned why and gave up instead of correcting the name.
 
 A root task passes only `session_id`. A subagent passes the same `session_id` and its own `agent_id`; bindings that do not match the parent lineage recorded by the Bridge are rejected.
 

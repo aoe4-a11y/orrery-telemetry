@@ -30,7 +30,7 @@ Only CI and isolated tests that deliberately replace a platform boundary should 
 
 ## Quick start
 
-Always start with a dry run. Read what it plans (service mode, the agent-mail database it resolved, the settings diff) before the real install.
+Always start with a dry run. Read what it plans (service mode, the ORRERY Mail database it resolved, the settings diff) before the real install.
 
 ```bash
 git clone https://github.com/gyroid-eth/orrery-telemetry.git
@@ -55,9 +55,9 @@ agent-start ~/code/my-project        # or agent-start-codex ~/code/my-project
 open http://127.0.0.1:8770/          # another terminal; DECK shows the parent and child cards
 ```
 
-`agent-start` gives the tmux session the same name as its agent-mail identity. That unambiguously connects dashboard jumps, mail-signal delivery, and token recovery. See [Installation](docs/install.en.md) and [Configuration](docs/configuration.en.md) for other setups, and [Delegation and child agents](docs/delegation.en.md) for how children differ from built-in subagents.
+`agent-start` gives the tmux session the same name as its ORRERY Mail identity. That unambiguously connects dashboard jumps, mail-signal delivery, and token recovery. See [Installation](docs/install.en.md) and [Configuration](docs/configuration.en.md) for other setups, and [Delegation and child agents](docs/delegation.en.md) for how children differ from built-in subagents.
 
-To connect Codex Desktop root tasks and subagents to the same agent-mail project and dashboard, add the optional [Codex App integration](docs/codex-app.en.md). Codex CLI-only setups do not need this additional install.
+To connect Codex Desktop root tasks and subagents to the same ORRERY Mail project and dashboard, add the optional [Codex App integration](docs/codex-app.en.md). Codex CLI-only setups do not need this additional install.
 
 ## Feature gallery
 
@@ -69,11 +69,11 @@ To connect Codex Desktop root tasks and subagents to the same agent-mail project
 
 ### 2. Hooks, mail, and file reservations
 
-Claude Code hooks block unregistered sessions and conflicting writes, while agent-mail inbox signals are reinjected into Claude and Codex REPLs. A single source of truth for mail and reservations keeps coordination intact across UI restarts.
+Claude Code hooks block unregistered sessions and conflicting writes, while ORRERY Mail inbox signals are reinjected into Claude and Codex REPLs. A single source of truth for mail and reservations keeps coordination intact across UI restarts.
 
-By default, agent-mail queues the audit archive's Git commit asynchronously and returns from a tool once the database update and archive-file writes are complete. Set the kill switch `AGENTSTACK_MAIL_ARCHIVE_COMMIT_ASYNC=false` to restore synchronous commits. A hard shutdown immediately after a response can lose a commit that is still in flight, but its archive files remain in the working tree and the database is unaffected. The next startup commits those files synchronously. See the [agentstack-mail guide](docs/agentstack-mail.md#archive-commit-latency-and-startup-repair) for details and measurement conditions.
+By default, ORRERY Mail queues the audit archive's Git commit asynchronously and returns from a tool once the database update and archive-file writes are complete. Set the kill switch `AGENTSTACK_MAIL_ARCHIVE_COMMIT_ASYNC=false` to restore synchronous commits. A hard shutdown immediately after a response can lose a commit that is still in flight, but its archive files remain in the working tree and the database is unaffected. The next startup commits those files synchronously. See the [agentstack-mail guide](docs/agentstack-mail.md#archive-commit-latency-and-startup-repair) for details and measurement conditions.
 
-<!-- TODO: screenshot: agent-mail notification and reservation -->
+<!-- TODO: screenshot: ORRERY Mail notification and reservation -->
 
 ### 3. DECK
 
@@ -83,7 +83,7 @@ Cards group running, standby, finished, and gone agents while showing tasks, mod
 
 ### 4. NETWORK and DIGEST REPLAY
 
-A force graph overlays spawn lineage and agent-mail traffic, with explorable nodes, edges, roles, groups, and a mail drawer. Select multiple agents to replay communication and state changes with speed, HOLD, and TIME-TRAVEL controls.
+A force graph overlays spawn lineage and ORRERY Mail traffic, with explorable nodes, edges, roles, groups, and a mail drawer. Select multiple agents to replay communication and state changes with speed, HOLD, and TIME-TRAVEL controls.
 
 ![NETWORK view](docs/img/network.jpg)
 
@@ -118,7 +118,7 @@ The Japanese documentation is canonical. English versions of the detailed guides
 | [API reference](docs/api.en.md) | Every route, query/request fields, and response schemas |
 | [Configuration](docs/configuration.en.md) | `AGENTSTACK_*` environment variables and customization |
 | [Troubleshooting](docs/troubleshooting.en.md) | `NOT CONFIGURED`, services, notifications, spawn, and authentication |
-| [Third-party components](docs/third-party.md) | agent-mail, licensing, and credits |
+| [Third-party components](docs/third-party.md) | ORRERY Mail, licensing, and credits |
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) before sending code changes.
 

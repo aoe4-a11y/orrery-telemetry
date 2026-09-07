@@ -24,7 +24,7 @@ Use these variables instead of hard-coded personal paths:
 - `AGENTSTACK_RUNTIME_DIR`, used by monitor state
 
 If the child runs outside the project directory, explicitly tell it to use `$PROJECT_KEY` or `$AGENTSTACK_PROJECT_KEY` for `ensure_project`, `register_agent`, `fetch_inbox`, and completion messages. Do not let the child infer the project from its current working directory.
-`AGENTSTACK_PROJECT_KEY` must be set before spawning. It is the agent-mail project identity and may be different from the code worktree or the child's current working directory.
+`AGENTSTACK_PROJECT_KEY` must be set before spawning. It is the ORRERY Mail project identity and may be different from the code worktree or the child's current working directory.
 
 ## Naming Rules
 
@@ -62,7 +62,7 @@ Suggested monitoring cadence:
 | medium | every 1 minute until stable | every 3 minutes |
 | low | every 1 minute until stable | every 5 minutes |
 
-For file edits in a shared project, reserve the relevant paths before spawning when an agent-mail reservation tool is available.
+For file edits in a shared project, reserve the relevant paths before spawning when an ORRERY Mail reservation tool is available.
 
 ## 2. Prepare The Child Task
 
@@ -98,10 +98,10 @@ Use generic task examples such as code review, API migration, test-suite repair,
 Preferred flow: do the coordination through MCP tools first, then let `spawn_child.sh` create the tmux session.
 
 This is the canonical flow, not one option among interchangeable transports.
-If the required agent-mail tools or preregistration helper are unavailable, use
+If the required ORRERY Mail tools or preregistration helper are unavailable, use
 only the documented registration recovery path. If it cannot restore the flow,
 report the exact failure and stop delegation. Do not inspect mailbox files or
-the agent-mail database, start an ad hoc watcher/poll loop, inject the task into
+the ORRERY Mail database, start an ad hoc watcher/poll loop, inject the task into
 tmux, use a built-in child tool, or invoke the launcher's direct mode as a
 substitute.
 
@@ -173,7 +173,7 @@ Behavior:
 - The child runs in a temporary worktree directory.
 - The child uses a new branch such as `exp/<child-name>`.
 - The parent decides later whether to merge, cherry-pick, or discard the result.
-- The worktree is outside the normal project directory, so the child must be told to use `$PROJECT_KEY` or `$AGENTSTACK_PROJECT_KEY` for agent-mail project identity.
+- The worktree is outside the normal project directory, so the child must be told to use `$PROJECT_KEY` or `$AGENTSTACK_PROJECT_KEY` for ORRERY Mail project identity.
 
 Use `--worktree-base <rev>` when spawning several children that must share the same baseline:
 
@@ -239,7 +239,7 @@ If you need to clear a label, send an empty value to `http://127.0.0.1:${AGENTST
 
 ## 6. Monitor Progress
 
-Primary completion signal: the child sends an agent-mail message to the parent. It reaches you as a notification in your session; if the notification says the body is complete, act on it without a `fetch_inbox`.
+Primary completion signal: the child sends an ORRERY Mail message to the parent. It reaches you as a notification in your session; if the notification says the body is complete, act on it without a `fetch_inbox`.
 
 ### Waiting for the child
 
@@ -335,9 +335,9 @@ Codex children differ from Claude Code children in a few operational details:
 
 ## 9. Shared Resource Coordination
 
-For files, prefer agent-mail file reservations.
+For files, prefer ORRERY Mail file reservations.
 
-For non-file resources such as a single browser tab, hardware device, local service, or database writer, use a simple acquire/release protocol over agent-mail:
+For non-file resources such as a single browser tab, hardware device, local service, or database writer, use a simple acquire/release protocol over ORRERY Mail:
 
 - Send `<RESOURCE>_ACQUIRE: <key>` to the relevant agents.
 - Check recent inbox messages for an unreleased acquire from another agent.

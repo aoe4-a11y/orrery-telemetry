@@ -15,7 +15,7 @@ After the installer merges `settings.template.json` into `~/.claude/settings.jso
 | Event / matcher | Executable | Trigger timing | Primary behavior |
 | --- | --- | --- | --- |
 | `SessionStart` | [`set-ghostty-title.sh`](../hooks/set-ghostty-title.sh) | Immediately after startup / resume / `/clear` / compact | Apply a known identity to pane metadata, the tmux session, the terminal-title clipboard, and the managed agent list |
-| `SessionStart` | [`session-start-reminder.sh`](../hooks/session-start-reminder.sh) | Same as above, after the title helper | Check agent-mail health and the existing identity, then output same-name reregistration or registration instructions and `fetch_inbox` into session context |
+| `SessionStart` | [`session-start-reminder.sh`](../hooks/session-start-reminder.sh) | Same as above, after the title helper | Check ORRERY Mail health and the existing identity, then output same-name reregistration or registration instructions and `fetch_inbox` into session context |
 | `PreToolUse` / `Edit|Write` | [`check-file-reservation.sh`](../hooks/check-file-reservation.sh) | Immediately before Claude Code edits a file | Check an existing exact-path reservation inside a protected root with renew-only semantics. Retry zero results once, then block with exit 2 if the result remains zero |
 | `PreToolUse` / `Edit|Write|Bash` | [`check-agent-registered.sh`](../hooks/check-agent-registered.sh) | Immediately before an edit, write, or shell command | Check a session flag to confirm that the current Claude session has called `register_agent`. Block an unregistered session with exit 2 |
 | `PreToolUse` / reservation tools | [`invalidate-release-debounce.sh`](../hooks/invalidate-release-debounce.sh) | Immediately before acquiring or renewing a file reservation | Invalidate the token of an older release worker for the same agent/path, preventing a race that would remove the new reservation immediately |
@@ -36,7 +36,7 @@ The installer distributes the endpoint and transport credential selector in the 
 ### `session-start-reminder.sh`
 
 - **Trigger:** Every `SessionStart` source, including startup, resume, `/clear`, and after compaction.
-- **Behavior:** Resolves identity in the order `AGENT_NAME` → pane metadata → exact tmux session and checks agent-mail liveness. When an owner token and project key are available, it reregisters the same identity from the shell and instructs the session to begin with `fetch_inbox` after success.
+- **Behavior:** Resolves identity in the order `AGENT_NAME` → pane metadata → exact tmux session and checks ORRERY Mail liveness. When an owner token and project key are available, it reregisters the same identity from the shell and instructs the session to begin with `fetch_inbox` after success.
 - **When reregistration is unavailable:** Displays instructions that pass the resolved same name to `register_agent`; it does not branch into generating another name. When a child-specific MCP proxy injects authentication, it does not make the model read the token file.
 
 ### `check-file-reservation.sh`
@@ -113,16 +113,16 @@ These are not registered directly with events in `settings.template.json`. Their
 
 | Executable | Caller / startup timing | Primary behavior |
 | --- | --- | --- |
-| [`record-session-index.py`](../hooks/record-session-index.py) | Started **synchronously** by `mark-agent-registered.sh` with the PostToolUse payload | Atomically write the exact mapping among agent-mail ID, Claude `session_id`, transcript, cwd, `project_key`, and `registered_by`. Do not record a call that registered another agent |
+| [`record-session-index.py`](../hooks/record-session-index.py) | Started **synchronously** by `mark-agent-registered.sh` with the PostToolUse payload | Atomically write the exact mapping among ORRERY Mail ID, Claude `session_id`, transcript, cwd, `project_key`, and `registered_by`. Do not record a call that registered another agent |
 | [`resolve-agent-name.sh`](../hooks/resolve-agent-name.sh) | Sourced by reminder, reservation, and cleanup helpers that need identity | Resolve identity in the order env → exact tmux session → session index (when the caller passes `AGENTSTACK_SESSION_ID`) |
 | [`spawn_child.sh`](../hooks/spawn_child.sh) | Explicitly run by `/delegate` or dashboard NEW AGENT when starting a child | Combine identity, token, task mail, reservation, tmux, Claude / Codex, worktree, and readiness into one launch transaction |
 | [`cleanup-child-agent.sh`](../hooks/cleanup-child-agent.sh) | Immediately after the child REPL command started by `spawn_child.sh` ends | Best-effort release of reservations, retirement of remote identity, and removal of managed-list / state / credential / MCP configuration |
 | [`monitor_child_agent.sh`](../hooks/monitor_child_agent.sh) | Run once per monitoring interval by a `/delegate` parent | Capture the tmux pane and report completion, session disappearance, permission prompt, stasis, and an optional danger pattern through exit codes |
-| [`watch_agent_mail_signals.sh`](../hooks/watch_agent_mail_signals.sh) | Started by launcher registration as a dedicated `mail-watcher` tmux service | Watch agent-mail signals and inject notification text plus `C-m` into the exact matching agent tmux session |
+| [`watch_agent_mail_signals.sh`](../hooks/watch_agent_mail_signals.sh) | Started by launcher registration as a dedicated `mail-watcher` tmux service | Watch ORRERY Mail signals and inject notification text plus `C-m` into the exact matching agent tmux session |
 
 ### `record-session-index.py`
 
-From the PostToolUse payload, this helper obtains the numeric agent-mail ID, canonical name, Claude `session_id`, transcript path, and cwd, then writes them to `$AGENTSTACK_RUNTIME_DIR/session_index/<agent_id>.json` using a temporary file plus `os.replace`. Each record has `schema_version: 2` and `binding_kind: "self"`. **It does not write a record when the caller registered another agent, such as when a parent registers a child.** The index is read for both dashboard resume and guard identity resolution, so declining to write leaves less room for misuse than filtering only when reading. The dashboard prefers this exact mapping for session resume and falls back to a heuristic only for old sessions. Invalid input and I/O failures are quiet no-ops that do not interfere with registration.
+From the PostToolUse payload, this helper obtains the numeric ORRERY Mail ID, canonical name, Claude `session_id`, transcript path, and cwd, then writes them to `$AGENTSTACK_RUNTIME_DIR/session_index/<agent_id>.json` using a temporary file plus `os.replace`. Each record has `schema_version: 2` and `binding_kind: "self"`. **It does not write a record when the caller registered another agent, such as when a parent registers a child.** The index is read for both dashboard resume and guard identity resolution, so declining to write leaves less room for misuse than filtering only when reading. The dashboard prefers this exact mapping for session resume and falls back to a heuristic only for old sessions. Invalid input and I/O failures are quiet no-ops that do not interfere with registration.
 
 ### `resolve-agent-name.sh`
 
@@ -152,7 +152,7 @@ The delivery target is only the tmux session whose name exactly matches the agen
 
 ## Differences for Codex
 
-Codex CLI does not have Claude Code's `SessionStart` / `PreToolUse` / `PostToolUse` hook system, so `mark-agent-registered.sh` does not run. `agent-start-codex` completes identity registration and tmux rename during bootstrap; a reserved child/resume or reregistration stops when the response name does not match. Direct spawn instead reports a warning and adopts the response name, while raw MCP registration is not detected automatically. These are separate follow-ups and do not justify omitting the mail service's `passthrough` setting. The managed `~/.codex/AGENTS.md` instructs reservation reserve / renew / release behavior. The mail watcher and agent-mail registry are shared by Claude and Codex, so notifications and reservation conflicts are mutually visible.
+Codex CLI does not have Claude Code's `SessionStart` / `PreToolUse` / `PostToolUse` hook system, so `mark-agent-registered.sh` does not run. `agent-start-codex` completes identity registration and tmux rename during bootstrap; a reserved child/resume or reregistration stops when the response name does not match. Direct spawn instead reports a warning and adopts the response name, while raw MCP registration is not detected automatically. These are separate follow-ups and do not justify omitting the mail service's `passthrough` setting. The managed `~/.codex/AGENTS.md` instructs reservation reserve / renew / release behavior. The mail watcher and ORRERY Mail registry are shared by Claude and Codex, so notifications and reservation conflicts are mutually visible.
 
 Codex Desktop uses a further, separate plugin hook / Bridge lifecycle. See [Codex App integration](codex-app.en.md) for details.
 

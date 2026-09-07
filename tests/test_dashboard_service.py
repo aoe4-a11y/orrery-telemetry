@@ -51,7 +51,7 @@ def _start_dashboard_version_server():
         ("127.0.0.1", 0), _DashboardVersionHandler
     )
     server.version_payload = {
-        "name": "claude-agent-stack", "version": "test", "api": 1,
+        "name": "orrery-telemetry", "version": "test", "api": 1,
     }
     thread = threading.Thread(target=server.serve_forever, daemon=True)
     thread.start()
@@ -736,7 +736,7 @@ def test_doctor_rejects_loaded_but_not_running_launchd_job(tmp_path):
         )
 
         version_server.version_payload = {
-            "name": "claude-agent-stack", "version": "test", "api": 1,
+            "name": "orrery-telemetry", "version": "test", "api": 1,
         }
         running = subprocess.run(
             [
@@ -931,7 +931,7 @@ exit 0
                 "pidfile": str(
                     install_dir / "mail-service/runtime/agentstack-mail.pid"
                 ),
-                "role": "agent-mail",
+                "role": "ORRERY Mail",
             },
         ]
         assert "launchd could not bootstrap" in result.stderr

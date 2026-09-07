@@ -1,4 +1,4 @@
-# AgentStack mail extraction
+# ORRERY Mail extraction
 
 ORRERY Mail is the public installer's coordination service. It
 is developed inside this repository as a logically isolated package;
@@ -56,7 +56,7 @@ published. Their bodies remain internal only until the differential train can
 prove that pruning them does not break macro or storage dependencies.
 
 Because no roster resource is published, tool descriptions direct callers to
-the identity assigned by the AgentStack runtime or returned by
+the identity assigned by the ORRERY Telemetry runtime or returned by
 `register_agent`/`macro_start_session`. `list_contacts` returns known links,
 `whois` verifies a known identity, and broadcast delivery does not require a
 roster response. Tool filtering cannot reduce the public surface: a profile
@@ -141,8 +141,8 @@ own log.
 `runtime/agentstack-mail.stopped`, and the sweep leaves a deliberately stopped
 server alone until an explicit `start` or `restart` releases the hold. Without
 that record the trigger would quietly undo an operator's stop at the next
-firing — measured before the fix: `stop` reported "AgentStack Mail stopped", and
-the following sweep reported "AgentStack Mail started".
+firing — measured before the fix: `stop` reported "ORRERY Mail stopped", and
+the following sweep reported "ORRERY Mail started".
 
 If neither launchd nor systemd is available, the installer says so explicitly
 rather than skipping quietly, because a missing autostart is invisible until the
@@ -219,7 +219,7 @@ rollback.
 
 ## Notification layout compatibility
 
-AgentStack Mail writes one signal per message at
+ORRERY Mail writes one signal per message at
 `signals/projects/<project>/agents/<agent>/<message-id>.signal`. The bundled
 `hooks/watch_agent_mail_signals.sh` recursively discovers that layout, extracts
 the nested `message` metadata, injects the notification, and removes only the

@@ -45,7 +45,7 @@ The installer previews three changes and asks for `yes` for each.
 2. Claude Code settings (append hooks and permissions to `~/.claude/settings.json`)
 3. Managed instruction blocks (between markers in the project's `CLAUDE.md` and `~/.codex/AGENTS.md`)
 
-All existing content is preserved, and a backup from before each merge is stored in `~/.agentstack/backups`. An item answered with `no` can be installed separately later with a helper; see [Using agent-mail from Claude Code](#using-agent-mail-from-claude-code).
+All existing content is preserved, and a backup from before each merge is stored in `~/.agentstack/backups`. An item answered with `no` can be installed separately later with a helper; see [Using ORRERY Mail from Claude Code](#using-agent-mail-from-claude-code).
 
 The installer places:
 
@@ -78,7 +78,7 @@ agent-start /path/to/your-project
 agent-start-codex /path/to/your-project
 ```
 
-`agent-start` creates a tmux session with the same name as the agent-mail identity. Dashboard jumps, mail notifications, and token recovery are joined by this name. In the launched Claude Code session, invoke skills with a leading slash, as in `/delegate`. See [Skills and file reservations](launchers.en.md#skills-2-and-file-reservations) for the first child launch.
+`agent-start` creates a tmux session with the same name as the ORRERY Mail identity. Dashboard jumps, mail notifications, and token recovery are joined by this name. In the launched Claude Code session, invoke skills with a leading slash, as in `/delegate`. See [Skills and file reservations](launchers.en.md#skills-2-and-file-reservations) for the first child launch.
 
 ## Installing on Windows (WSL2)
 
@@ -119,7 +119,7 @@ When installing from CI or a script, the four approvals (Claude settings merge, 
 ./scripts/install.sh --project-key /absolute/path/to/your-project --assume-yes
 ```
 
-`--assume-yes` (short form `-y`; environment variable `AGENTSTACK_ASSUME_YES=1` is equivalent) grants approvals in advance; it is not `--force`. Python older than 3.11, a dashboard-port conflict, multiple or absent existing agent-mail database candidates, disagreement with the running server, and automatic-setup failure still stop installation. Every automatically approved item is printed separately as an `assume-yes:` line. Agents and automation must not add this option “for convenience” without the user's explicit choice. The command-line option takes precedence over the environment variable and is not persisted in generated `env.sh`.
+`--assume-yes` (short form `-y`; environment variable `AGENTSTACK_ASSUME_YES=1` is equivalent) grants approvals in advance; it is not `--force`. Python older than 3.11, a dashboard-port conflict, multiple or absent existing ORRERY Mail database candidates, disagreement with the running server, and automatic-setup failure still stop installation. Every automatically approved item is printed separately as an `assume-yes:` line. Agents and automation must not add this option “for convenience” without the user's explicit choice. The command-line option takes precedence over the environment variable and is not persisted in generated `env.sh`.
 
 ## Installation tiers and options
 
@@ -154,7 +154,7 @@ An explicit `--project-key` always has highest priority, followed by environment
 The Tier 1 merge uses the JSON parser in `scripts/lib/merge_settings.py`.
 
 - Preserve existing hooks, permissions, and other user settings
-- Append only AgentStack values, without duplicates
+- Append only ORRERY Telemetry values, without duplicates
 - Save a pre-merge settings backup in `~/.agentstack/backups`
 - Record added entries and the change result in the manifest
 - Idempotently update only content between managed-block markers
@@ -171,13 +171,13 @@ The installer parses and merges structure rather than performing simple string r
 ~/.claude/skills/log      -> ~/.agentstack/skills/log
 ```
 
-An existing symlink to the same AgentStack payload is reused and recorded as owned in the manifest. Because the link becomes invalid with the payload, it is removed on uninstall. An existing same-name file, directory, or symlink to another target is preserved with a warning and is not recorded as owned. Uninstall compares the manifest path with the actual symlink target and removes only an owned symlink that points to the AgentStack payload. A path replaced by the user with a file or directory, or a retargeted symlink, remains.
+An existing symlink to the same ORRERY Telemetry payload is reused and recorded as owned in the manifest. Because the link becomes invalid with the payload, it is removed on uninstall. An existing same-name file, directory, or symlink to another target is preserved with a warning and is not recorded as owned. Uninstall compares the manifest path with the actual symlink target and removes only an owned symlink that points to the ORRERY Telemetry payload. A path replaced by the user with a file or directory, or a retargeted symlink, remains.
 
-On systems where an old installer added `~/.agentstack/skills` to `skillsDirectories`, a reinstall with the Tier 1 settings merge approved removes only that old AgentStack entry. Other user values in the same array and all other settings are preserved.
+On systems where an old installer added `~/.agentstack/skills` to `skillsDirectories`, a reinstall with the Tier 1 settings merge approved removes only that old ORRERY Telemetry entry. Other user values in the same array and all other settings are preserved.
 
 The installer does not change shell dotfiles. Within the project, it updates only content between managed markers in `CLAUDE.md`, and only after a Tier 1 preview is approved; it changes no other file. The default location for Claude Code user settings is `~/.claude/settings.json` and can be changed with `AGENTSTACK_CLAUDE_SETTINGS`.
 
-## Using agent-mail from Claude Code
+## Using ORRERY Mail from Claude Code
 
 The `/delegate` skill allows `mcp__orrery-mail__*` tools, and the Claude Code user-scope MCP server name is fixed as **`orrery-mail`**.
 
@@ -220,7 +220,7 @@ The helpers used by Tier 1 to preview / merge can also run independently.
 ~/.agentstack/bin/agentstack-claude-setup --print
 ```
 
-`--print` only displays the target and the block with placeholders resolved; it makes no changes. With no arguments, the helper backs up the existing file and installs / updates only the AgentStack block between markers.
+`--print` only displays the target and the block with placeholders resolved; it makes no changes. With no arguments, the helper backs up the existing file and installs / updates only the ORRERY Telemetry block between markers.
 
 ```bash
 ~/.agentstack/bin/agentstack-codex-setup
@@ -290,9 +290,9 @@ git pull
 
 The installer updates payloads and `VERSION`, reregisters services, and previews managed merges again. It validates and reuses the bundled ORRERY Mail candidate and state. `--project-key` inherits the previous value.
 
-**Keep the agent-mail server running during an in-place upgrade.** The real database path resolved from the running listener takes precedence over filesystem candidate discovery. Stopping agent-mail first falls back to candidate discovery, and the installer stops rather than risk choosing incorrectly in an environment with several databases.
+**Keep the ORRERY Mail server running during an in-place upgrade.** The real database path resolved from the running listener takes precedence over filesystem candidate discovery. Stopping ORRERY Mail first falls back to candidate discovery, and the installer stops rather than risk choosing incorrectly in an environment with several databases.
 
-If the dashboard port is held by a process under the current AgentStack launchd job or supervised-background pidfile, the installer verifies ownership and replaces that dashboard with the new payload. It still stops if an unrelated process holds the same port.
+If the dashboard port is held by a process under the current ORRERY Telemetry launchd job or supervised-background pidfile, the installer verifies ownership and replaces that dashboard with the new payload. It still stops if an unrelated process holds the same port.
 
 Service environment is written into plist / unit files during installation. Changing only `~/.agentstack/env.sh` does not affect an existing service, so rerun the installer or update the service definition too.
 
@@ -306,7 +306,7 @@ Service environment is written into plist / unit files during installation. Chan
 The uninstaller targets only files, services, and settings changes recorded in `install-state.json`.
 
 - Structurally remove merged Claude settings entries
-- Remove AgentStack-owned files
+- Remove ORRERY Telemetry-owned files
 - Remove only owned directories that become empty
 - Preserve ORRERY Mail state / database and the runtime directory (annotations, tokens, session state / logs) by default
 

@@ -551,7 +551,7 @@ def _to_int(s: str) -> int:
 
 
 # --------------------------------------------------------------------------- #
-# agent-mail SQLite (read-only)
+# ORRERY Mail SQLite (read-only)
 # --------------------------------------------------------------------------- #
 class _ClosingConnection(sqlite3.Connection):
     """sqlite connection whose context manager also releases the file handle.
@@ -582,10 +582,10 @@ _RETIRED_AT_CACHE: dict[str, bool] = {}
 
 
 def _has_retired_at() -> bool:
-    """Does this agent-mail's `agents` table have a `retired_at` column?
+    """Does this ORRERY Mail's `agents` table have a `retired_at` column?
 
     The dashboard reads a database it does not own, at whatever version the
-    operator installed. A tester running a forty-day-old agent-mail has no such
+    operator installed. A tester running a forty-day-old ORRERY Mail has no such
     column, and every query naming it raised `OperationalError: no such column:
     a.retired_at` — which took out the whole card, and (before the descriptor
     fix) leaked the connection on the way out.
@@ -627,9 +627,9 @@ def _retired_at_select(alias: str = "a") -> str:
 
 
 def _retired_names(project_key: str) -> set[str]:
-    """agent-mail が retired と見なしている名前。列が無い版では空集合。
+    """ORRERY Mail が retired と見なしている名前。列が無い版では空集合。
 
-    agent-mail は 24 時間無活動で agent を retire する。終了した session を
+    ORRERY Mail は 24 時間無活動で agent を retire する。終了した session を
     片付けるぶんには妥当だが、**生きたまま idle だった常駐 agent** も巻き込む。
     そして retired agent は送信も自分の inbox 読取も素通りし、受信だけが黙って
     拒否されるので、当人も人間も気づけない。他 agent のメールが bounce して
@@ -752,7 +752,7 @@ def classify(name: str, cmd: str, title: str, in_mail: bool,
     claude = cmd in ("node", "claude") or bool(_VERSION_CMD_RE.match(cmd or "")) or glyph
     # Codex は pane_current_command が zsh で報告されることが多く (REPL の node
     # が zsh の子プロセスのため)、glyph が消える待機中に "finished" 誤判定して
-    # しまう。agent-mail に program=codex-cli で登録され、かつ tmux session が
+    # しまう。ORRERY Mail に program=codex-cli で登録され、かつ tmux session が
     # 生きているなら「Codex 起動中」とみなす。終了時は tmux session が消えて
     # build_agents の 2nd pass で gone/retired として扱われる。
     if not claude and program and program.startswith("codex") and in_mail:
@@ -767,7 +767,7 @@ def classify(name: str, cmd: str, title: str, in_mail: bool,
     if claude:
         return "agent"
     if in_mail:
-        # agent-mail に登録が残るが claude プロセスが生きていない
+        # ORRERY Mail に登録が残るが claude プロセスが生きていない
         # = exit 済みでセッションだけ残骸として残っている
         return "finished"
     return "idle"
@@ -821,7 +821,7 @@ def build_agents() -> list[dict]:
                 "category": cat,
                 "running": running,
                 "attached": s["attached"],
-                # Exact same-name presence in agent-mail is the identity link.
+                # Exact same-name presence in ORRERY Mail is the identity link.
                 # tmux client attachment is a separate UI/safety signal and
                 # must never imply that registration succeeded.
                 "mail_linked": m is not None,
@@ -831,7 +831,7 @@ def build_agents() -> list[dict]:
                 # having a conversation, and silently changing its state is
                 # how "it looked fine" happens.
                 "retired_but_alive": name in retired_names,
-                # The name we asked agent-mail for, when it granted a different
+                # The name we asked ORRERY Mail for, when it granted a different
                 # one. Empty for everybody else.
                 "requested_name": substitutions.get(name, ""),
                 "cmd": s["cmd"],
@@ -861,7 +861,7 @@ def build_agents() -> list[dict]:
                 "surface": "tmux",
             }
         )
-    # 2nd pass: tmux 不在の agent-mail 登録 (retired / gone) も rows に含める。
+    # 2nd pass: tmux 不在の ORRERY Mail 登録 (retired / gone) も rows に含める。
     # これが無いと kill 直後の retired agent が deck の showAll でも見えず、
     # 検索・resume の起点が失われる (2026-05-20 ユーザー報告)。
     seen = {r["name"] for r in rows}
@@ -979,7 +979,7 @@ def _rel(epoch: int, now: int) -> str:
 
 
 # --------------------------------------------------------------------------- #
-# Graph (親子 + agent-mail 通信網)
+# Graph (親子 + ORRERY Mail 通信網)
 # --------------------------------------------------------------------------- #
 _CODEX_APP_PROVIDER = CodexAppRuntimeProvider()
 _CAPP_CACHE: dict = {"ts": 0.0, "map": {}}
@@ -1253,7 +1253,7 @@ def _annotations() -> dict:
 #   $AGENTSTACK_RUNTIME_DIR/name-substitutions.json =
 #       {registered_name: {"requested": str, "ts": str}}
 #
-#   agent-mail does not always register the name it was asked for; which names
+#   ORRERY Mail does not always register the name it was asked for; which names
 #   it honours depends on its version. The agent then runs fine under a name
 #   nobody else can address it by, and the only trace is a missing portrait —
 #   a face is easy to read as a style choice, not as a fault. So the fact is
@@ -1441,11 +1441,11 @@ def graph_payload(days: float, show_all: bool) -> dict:
         if t and t not in (s.get("cmd", ""), name) and not t.startswith("/"):
             live_txt = t
         # 生存シグナル sig: tmux session_activity の新しさ＝実際に作業して
-        # いるかの近似。agent-mail のメッセージ数(act)は作業量と無関係なので
+        # いるかの近似。ORRERY Mail のメッセージ数(act)は作業量と無関係なので
         # 脈拍駆動には使わない（CalmKepler レビュー P1 指摘）
         delta = max(0, now_real - int(s.get("activity") or 0))
         sig = max(0.0, min(1.0, 1.0 - delta / 480.0))
-        # graph ノードは全て agent-mail 登録済。present だが claude 非稼働
+        # graph ノードは全て ORRERY Mail 登録済。present だが claude 非稼働
         # = exit 済でセッションだけ残った husk → idle ではなく finished
         # HP(ctx 残量) + 動作状態は running のみ取得（capture-pane 抑制）
         rt = (
@@ -1804,7 +1804,7 @@ def _claim_transcript(path: str, name: str, score: int, *, exact: bool) -> bool:
 
 
 def _agent_window(name: str) -> tuple[int, int]:
-    """agent-mail DB から (inception_epoch, last_active_epoch)。不明は 0。"""
+    """ORRERY Mail DB から (inception_epoch, last_active_epoch)。不明は 0。"""
     if not os.path.exists(DB_PATH):
         return (0, 0)
     con = None
@@ -1843,7 +1843,7 @@ SESSION_INDEX_DIR = os.path.join(RUNTIME_DIR, "session_index")
 
 
 def _agent_id_for_name(name: str) -> int | None:
-    """agent-mail DB から name の最新 agent id を返す(無ければ None)。
+    """ORRERY Mail DB から name の最新 agent id を返す(無ければ None)。
 
     UNIQUE(project_id, name) なので 1 プロジェクト内では name→id は一意。
     プロジェクトをまたぐ同名は last_active 最新を採る。"""
@@ -1869,7 +1869,7 @@ def _indexed_transcript(name: str) -> str | None:
     """精密マップ(record-session-index.py が登録時に書く id→sessionId/
     transcript)から該当 transcript を引く。
 
-    name→agent-mail id→`~/.agentstack/runtime/session_index/<id>.json` の
+    name→ORRERY Mail id→`~/.agentstack/runtime/session_index/<id>.json` の
     transcript_path を返す。これは selfref スコア+活動期間窓のヒューリス
     ティックと違い、登録時に焼いた exact な対応なので同名使い回し・
     last_active 固着のどちらにも左右されない。マップが無い(本フック導入前
@@ -1911,7 +1911,7 @@ def _transcript_path(session: str) -> str | None:
 
     1) 稼働中: tmux ペインの cwd → projects ディレクトリ配下で自己参照
        最多の jsonl を選ぶ。
-    2) 終了済み(tmux ペイン無し): agent-mail の活動期間(inception〜
+    2) 終了済み(tmux ペイン無し): ORRERY Mail の活動期間(inception〜
        last_active)で全 projects の jsonl を mtime 絞り込みし、自己参照
        最多の jsonl を選ぶ。データは DB/ディスクに残るので閲覧可能。
 
@@ -1960,7 +1960,7 @@ def _transcript_path(session: str) -> str | None:
     # 2) cwd で特定できない(終了済み / resume で cwd 不一致 等):
     #    全 projects 横断 + 活動期間 mtime 絞り込みで自己参照最多。
     #    窓内で 0 件なら全件にフォールバックする。last_active_ts が登録時
-    #    から進まない(=登録だけして以後 agent-mail を叩かず resume だけ
+    #    から進まない(=登録だけして以後 ORRERY Mail を叩かず resume だけ
     #    された)エージェントは活動期間窓が狭すぎ実ファイル(mtime が窓の
     #    上限より新しい)を取りこぼすため(NobleHubble 事例)。窓優先で同名
     #    使い回しは正しく区別しつつ、窓ミス時だけ全件で救済する。
@@ -2026,7 +2026,7 @@ def _transcript_cwd(path: str) -> str | None:
 
 
 def _agent_program(session: str) -> str:
-    """agent-mail から program 文字列を引く（codex 判定用）。
+    """ORRERY Mail から program 文字列を引く（codex 判定用）。
 
     register_agent の program は警告系で書き換わらず安定。空なら "" を返す。
     codex は "codex" / "codex-cli" の双方があるため startswith("codex") で判定。"""
@@ -2186,7 +2186,7 @@ def _do_resume_codex(session: str) -> dict:
 
     rollout は ~/.codex/sessions/.../rollout-*.jsonl。session_meta.payload の
     id=session_id / cwd=作業ディレクトリ。cx と同じ起動条件を再現する:
-      - codex_agent_bootstrap.sh を source（AGENT_NAME export + agent-mail
+      - codex_agent_bootstrap.sh を source（AGENT_NAME export + ORRERY Mail
         再登録 + mail-watcher 起動 + tmux リネーム）
       - launch_codex_workspace.sh と同じ writable scope / sandbox / approval
     selfref 探索ではなく inception_ts 一致で rollout を引くので子の会話を
@@ -2276,7 +2276,7 @@ def _codex_transcript_path(session: str) -> str | None:
 
     Codex は `~/.codex/sessions/YYYY/MM/DD/rollout-DATE-UUID.jsonl` に保存し、
     ファイル名にエージェント名が入らない。1 行目の session_meta.payload.timestamp
-    を読み、agent-mail の inception_ts と最も近い (90 秒以内) ものを返す。
+    を読み、ORRERY Mail の inception_ts と最も近い (90 秒以内) ものを返す。
 
     結果は 120 秒キャッシュ。
     """
@@ -2289,7 +2289,7 @@ def _codex_transcript_path(session: str) -> str | None:
         _TPATH_CACHE[("codex", session)] = (now, None)
         return None
 
-    # agent-mail から inception_ts を引く
+    # ORRERY Mail から inception_ts を引く
     project_key = _project_key()
     if not project_key:
         _TPATH_CACHE[("codex", session)] = (now, None)
@@ -2597,7 +2597,7 @@ def messages_since_payload(since_ts: int, limit: int = 80) -> dict:
 
 # --------------------------------------------------------------------------- #
 # Agent history (Task E) — detail panel の 24h sparkline 用。
-#   agent-mail SQLite から 1 エージェントの「送信 / 受信 / spawn / retire」を
+#   ORRERY Mail SQLite から 1 エージェントの「送信 / 受信 / spawn / retire」を
 #   時系列順に返す。live state ではなく past trace を可視化するための専用源。
 #
 # 区分判定:
@@ -3461,7 +3461,7 @@ def do_jump(session: str) -> dict:
 def do_kill(session: str, mode: str = "both") -> dict:
     """finished/gone エージェントを kill する。
 
-    mode: 'tmux' (husk shell のみ kill) / 'retire' (agent-mail soft retire のみ) /
+    mode: 'tmux' (husk shell のみ kill) / 'retire' (ORRERY Mail soft retire のみ) /
           'both' (デフォ＝両方)。
 
     安全弁:
@@ -3470,7 +3470,7 @@ def do_kill(session: str, mode: str = "both") -> dict:
         独自 running 判定を do_kill 内に書かない (2026-05-20 自己kill 事故)。
       - retire は soft (`agent.retired_at` を立てるだけ)。transcript JSONL は
         一切触れず、`claude --resume` も do_resume も後から動く
-      - hard_delete は使わない (agent-mail timestamp 情報を保持し
+      - hard_delete は使わない (ORRERY Mail timestamp 情報を保持し
         _transcript_path() の finished-branch 探索を温存)
     """
     if mode not in ("both", "tmux", "retire"):
@@ -3516,7 +3516,7 @@ def do_kill(session: str, mode: str = "both") -> dict:
 
     actions = []
 
-    # 1) retire 先 (agent-mail の retired_at を立てる)
+    # 1) retire 先 (ORRERY Mail の retired_at を立てる)
     if mode in ("both", "retire"):
         project_key = _project_key()
         if not project_key:
@@ -3852,7 +3852,7 @@ def spawn_names_payload() -> dict:
 
 
 def _mcp_bearer() -> str:
-    """agent-mail .env から HTTP_BEARER_TOKEN を読む。空なら ''。"""
+    """ORRERY Mail .env から HTTP_BEARER_TOKEN を読む。空なら ''。"""
     if not os.path.exists(MAIL_ENV_PATH):
         return ""
     try:
@@ -3955,7 +3955,7 @@ def _mcp_tool_parameters(tool: str) -> set[str] | None:
 
 
 def _mcp_call(method: str, args: dict, timeout: int = 15) -> dict:
-    """Call one agent-mail tool, shaping arguments to its advertised schema."""
+    """Call one ORRERY Mail tool, shaping arguments to its advertised schema."""
     allowed = _mcp_tool_parameters(method)
     prepared = args if allowed is None else {
         key: value for key, value in args.items() if key in allowed
@@ -3974,7 +3974,7 @@ def _mcp_call(method: str, args: dict, timeout: int = 15) -> dict:
             for block in result.get("content") or []
             if isinstance(block, dict)
         ).strip()
-        return {"ok": False, "error": text or "agent-mail tool failed"}
+        return {"ok": False, "error": text or "ORRERY Mail tool failed"}
     # Newer MCP servers expose the decoded payload in structuredContent.
     try:
         data = result.get("structuredContent")
@@ -4823,7 +4823,7 @@ class Handler(BaseHTTPRequestHandler):
                 self._send(404, b"theme asset missing", "text/plain")
         elif path == "/api/version":
             version = _resolve_version()
-            self._send(200, json.dumps({"name": "claude-agent-stack", "version": version, "api": 1}).encode(), "application/json; charset=utf-8")
+            self._send(200, json.dumps({"name": "orrery-telemetry", "version": version, "api": 1}).encode(), "application/json; charset=utf-8")
         elif path == "/api/spawn-names":
             try:
                 self._send(200, json.dumps(spawn_names_payload()).encode(), "application/json; charset=utf-8")
@@ -5171,7 +5171,7 @@ class Handler(BaseHTTPRequestHandler):
 # --------------------------------------------------------------------------- #
 # do_reactivate — 生きているのに retired にされた agent を受信可能に戻す。
 #
-# agent-mail は 24 時間無活動の agent を毎時 retire する。終了した session に
+# ORRERY Mail は 24 時間無活動の agent を毎時 retire する。終了した session に
 # は妥当な掃除だが、**生きたまま idle だった常駐 agent**（司令塔・監視役）も
 # 一緒に retire される。そして retired agent は送信と自分の inbox 読取は
 # 素通りし、**受信だけが黙って拒否される** ので、本人も人間も気づけない。
@@ -5182,11 +5182,11 @@ class Handler(BaseHTTPRequestHandler):
 # 直すには会話を捨てて再起動するしかなかった。
 #
 # ここは dashboard にしかできない仕事である。tmux が生きているかどうかを
-# 知っているのは agent-mail ではなくこちら側だから。自動では戻さない:
+# 知っているのは ORRERY Mail ではなくこちら側だから。自動では戻さない:
 # 黙って直すのは、今日一日で 4 つの形で踏んだ失敗そのものなので。
 # --------------------------------------------------------------------------- #
 def _mail_web_url(path: str) -> str:
-    """agent-mail の web API を、設定済み endpoint と同じ host:port で叩く。
+    """ORRERY Mail の web API を、設定済み endpoint と同じ host:port で叩く。
 
     以前は特定の localhost port を直書きしていた。既定ポートで動いている
     限り正しく、それ以外では retire が黙って失敗する——「動いている環境では
@@ -5203,7 +5203,7 @@ def do_reactivate(session: str) -> dict:
         return {"ok": False, "error": "invalid session name"}
     if not _has_retired_at():
         return {"ok": False,
-                "error": "this agent-mail has no retired_at column; "
+                "error": "this ORRERY Mail has no retired_at column; "
                          "nothing can be retired on it"}
     project_key = _project_key()
     if not project_key:
@@ -5229,7 +5229,7 @@ def do_reactivate(session: str) -> dict:
         if con is not None:
             con.close()
     if row is None:
-        return {"ok": False, "error": f"agent '{session}' not found in agent-mail"}
+        return {"ok": False, "error": f"agent '{session}' not found in ORRERY Mail"}
     if not row["retired_at"]:
         return {"ok": False, "error": f"agent '{session}' is not retired"}
 

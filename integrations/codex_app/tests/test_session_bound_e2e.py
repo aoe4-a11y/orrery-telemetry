@@ -61,7 +61,7 @@ class RecordingAgentMailTransport:
         elif tool == "file_reservation_paths":
             result = {"granted": [{"id": 11}], "conflicts": []}
         else:  # pragma: no cover - the E2E allowlist below is intentionally exact
-            raise AssertionError(f"unexpected agent-mail tool: {tool}")
+            raise AssertionError(f"unexpected ORRERY Mail tool: {tool}")
         return {"result": {"structuredContent": result}}
 
 

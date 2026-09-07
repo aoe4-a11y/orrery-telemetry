@@ -402,5 +402,5 @@ def test_server_error_text_reaches_the_model_with_secrets_redacted():
     assert "[redacted]" in str(excinfo.value)
 
     empty = {"result": {"isError": True, "content": []}}
-    with pytest.raises(AgentMailError, match="^agent-mail tool call failed$"):
+    with pytest.raises(AgentMailError, match="^ORRERY Mail tool call failed$"):
         _decode_tool_response(empty)

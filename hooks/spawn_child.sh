@@ -971,8 +971,8 @@ def looks_like_agent_mail(name):
 
 
 # The child inherits the user's own MCP servers, including their DIRECT
-# agent-mail connection. Publishing the proxy under a NEW name just adds a
-# second agent-mail, and the model reaches for the name it knows — the direct,
+# ORRERY Mail connection. Publishing the proxy under a NEW name just adds a
+# second ORRERY Mail, and the model reaches for the name it knows — the direct,
 # unauthenticated one. --mcp-config overrides a same-named server (measured),
 # so claim the names the user already uses as compatibility aliases as well as
 # the canonical product key.
@@ -1093,7 +1093,7 @@ proxy_tools = (
 )
 
 
-# Strip EVERY agent-mail server the user has, not just one spelling. A child
+# Strip EVERY ORRERY Mail server the user has, not just one spelling. A child
 # that still sees the direct connection will use it — the model reaches for the
 # name it knows — and that connection is not authenticated as the child.
 lines = []
@@ -1462,13 +1462,13 @@ PY
         CHILD_CODEX_HOME="$(write_child_codex_home "$CHILD_NAME" "$CHILD_TOKEN_FILE")"
         TMUX_ENV_ARGS+=(-e "AGENTSTACK_CODEX_ADD_DIRS_RESOLVED=$(codex_child_add_dirs "$CHILD_CODEX_HOME")")
         if [[ -n "$CHILD_CODEX_HOME" ]]; then
-            echo "[spawn_child/pre-reg] Child CODEX_HOME with authenticated agent-mail: $CHILD_CODEX_HOME" >&2
+            echo "[spawn_child/pre-reg] Child CODEX_HOME with authenticated ORRERY Mail: $CHILD_CODEX_HOME" >&2
             TMUX_ENV_ARGS+=(
                 -e "CODEX_HOME=$CHILD_CODEX_HOME"
                 -e "CODEX_SHARED_CODEX_DIR=$CHILD_CODEX_HOME"
             )
         else
-            echo "[spawn_child/pre-reg] No MCP proxy available; Codex child uses the shared agent-mail endpoint" >&2
+            echo "[spawn_child/pre-reg] No MCP proxy available; Codex child uses the shared ORRERY Mail endpoint" >&2
         fi
         if [[ "$STANDALONE" == true ]]; then
             CODEX_PROMPT="You are ${CHILD_NAME}, a standalone agent with no parent. The name ${CHILD_NAME} is already reserved; do not register another identity. This prompt is the canonical task. Start it immediately:
@@ -1619,7 +1619,7 @@ ${TASK}"
             if [[ -n "$CHILD_MCP_CONFIG" ]]; then
                 echo "[spawn_child/pre-reg] Child MCP proxy config: $CHILD_MCP_CONFIG" >&2
             else
-                echo "[spawn_child/pre-reg] No MCP proxy available; child uses the shared agent-mail endpoint" >&2
+                echo "[spawn_child/pre-reg] No MCP proxy available; child uses the shared ORRERY Mail endpoint" >&2
             fi
             tmux new-session -d -s "$CHILD_NAME" \
                 -c "$WORK_DIR" \
@@ -1749,7 +1749,7 @@ if [[ "$PARENT_NAME" == "unknown" || -z "$PARENT_NAME" ]]; then
     exit 1
 fi
 
-# --- Legacy transport bearer (native AgentStack Mail deliberately has none) ---
+# --- Legacy transport bearer (native ORRERY Mail deliberately has none) ---
 if legacy_http_bearer_enabled; then
     TOKEN=$(get_agentstack_token 2>/dev/null || true)
     bearer_status=0
@@ -2279,13 +2279,13 @@ if [[ "$USE_CODEX" == true ]]; then
     TMUX_ENV_ARGS+=(-e "AGENTSTACK_CODEX_MODEL=$CHILD_MODEL" -e "AGENTSTACK_CODEX_EFFORT=$CODEX_EFFORT")
     TMUX_ENV_ARGS+=(-e "AGENTSTACK_CODEX_ADD_DIRS_RESOLVED=$(codex_child_add_dirs "$CHILD_CODEX_HOME")")
     if [[ -n "$CHILD_CODEX_HOME" ]]; then
-        echo "[spawn_child] Child CODEX_HOME with authenticated agent-mail: $CHILD_CODEX_HOME" >&2
+        echo "[spawn_child] Child CODEX_HOME with authenticated ORRERY Mail: $CHILD_CODEX_HOME" >&2
         TMUX_ENV_ARGS+=(
             -e "CODEX_HOME=$CHILD_CODEX_HOME"
             -e "CODEX_SHARED_CODEX_DIR=$CHILD_CODEX_HOME"
         )
     else
-        echo "[spawn_child] No MCP proxy available; Codex child uses the shared agent-mail endpoint" >&2
+        echo "[spawn_child] No MCP proxy available; Codex child uses the shared ORRERY Mail endpoint" >&2
     fi
     # Codex startup: inject a bootstrap prompt that points the child to inbox.
     CODEX_PROMPT="You are ${CHILD_NAME}. The parent agent is ${PARENT_NAME}. The child name ${CHILD_NAME} is already reserved, so do not register under another name. The canonical task is in your ORRERY Mail inbox. First, if ${REREGISTER_HELPER:-agentstack-reregister} exists, run PROJECT_KEY=${PROJECT_KEY} ${REREGISTER_HELPER:-agentstack-reregister} ${CHILD_NAME}; when that succeeds, skip register_agent and fetch_inbox for ${CHILD_NAME}. The helper reads the child-owned 0600 token file; never request or print its token. Do not infer the task from this prompt; treat the inbox request as authoritative."

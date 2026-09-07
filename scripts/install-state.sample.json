@@ -3,7 +3,7 @@
     "candidate_venv": "/home/alice/.agentstack/mail-service/candidates/868ba0ac97553adb45d31abd6dde8b5ee3291b3c/venv",
     "provider": "agentstack",
     "requested_name_honoring": {
-      "detail": "AgentStack Mail service env requires passthrough",
+      "detail": "ORRERY Mail service env requires passthrough",
       "enforcement_mode": "passthrough",
       "evidence": "agentstack-cutover-profile",
       "mail_dir": "",

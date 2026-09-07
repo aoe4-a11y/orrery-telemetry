@@ -44,7 +44,7 @@ jobs:
         with:
           python-version: ${{ matrix.python-version }}
       # tmux: agents run inside it and tests exercise the real binary.
-      # uv: the installer provisions AgentStack Mail with it and fails preflight without it.
+      # uv: the installer provisions ORRERY Mail with it and fails preflight without it.
       - name: Install tmux and uv
         run: brew install tmux uv
       - name: Install test and package-build tools

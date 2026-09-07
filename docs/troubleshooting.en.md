@@ -27,7 +27,7 @@ Paste the output verbatim from `--- copy from here ---` through `--- copy to her
 
 | Item | What it reveals |
 |---|---|
-| agent-mail commit and distance ahead of origin | Which code is actually running |
+| ORRERY Mail commit and distance ahead of origin | Which code is actually running |
 | `AGENT_NAME_ENFORCEMENT_MODE` | Whether the requested name passes through unchanged |
 | presence of the passthrough patch | Whether that mode is accepted by the installed version |
 | requested-name handling | Final decision combining #140 / passthrough / legacy behavior. `unknown` means undetermined |
@@ -180,7 +180,7 @@ curl -s http://127.0.0.1:8770/api/mail-watcher-health
 
 - no watcher process
 - signals remain and the most recent success is old
-- invalid agent-mail endpoint / bearer token
+- invalid ORRERY Mail endpoint / bearer token
 - target tmux session is missing
 
 The installer registers the watcher as a service (launchd `org.agentstack.mail-watcher` on macOS, the systemd user unit `org.agentstack.mail-watcher.service` on Linux / WSL2; `watcher_mode` tells you which one is running). `watcher_running: false` with signals piling up means either an older install without that unit (before 2026-09-07 only `agent-start` started the watcher, as a tmux session, so a host whose agents were all spawned from the dashboard had nothing delivering) or a failed registration. Re-running `bash scripts/install.sh` registers it again. To check by hand:
@@ -215,11 +215,11 @@ After removing hyphens, an explicit name must be a 2–64-character alphabetic n
 - `unknown`: database / auth / transport failure
 - `available`: usable
 
-`unknown` cannot be used. Repair agent-mail and the project key before attempting another name, preserving identity continuity.
+`unknown` cannot be used. Repair ORRERY Mail and the project key before attempting another name, preserving identity continuity.
 
 ## Registered under a different name than requested
 
-agent-mail rejected the name and replaced it with a generated one. The agent continues working, so this can remain unnoticed until another agent cannot address it.
+ORRERY Mail rejected the name and replaced it with a generated one. The agent continues working, so this can remain unnoticed until another agent cannot address it.
 
 ```bash
 ~/.agentstack/bin/agentstack-doctor --report \
@@ -349,7 +349,7 @@ For Edit / Write under a protected root, the hook establishes exact identity and
 1. Confirm `AGENTSTACK_PROJECT_KEY` / `PROJECT_KEY` matches the project where the reservation was made
 2. Confirm `AGENT_NAME`, or the tmux session explicitly selected by `TMUX_PANE`, refers to the canonical identity. A pane-metadata mismatch is `AGENT IDENTITY CONFLICT` and must be repaired first. A client outside tmux resolves identity from the session index after `register_agent`. Multiple identities tied to one session are also `AGENT IDENTITY CONFLICT`; decide which remains and reregister
 3. Reserve the exact path or smallest glob with `file_reservation_paths`
-4. If a conflict is returned, contact the holder through agent-mail and wait for release or expiry
+4. If a conflict is returned, contact the holder through ORRERY Mail and wait for release or expiry
 
 The owner `registration_token` is not sent in this hook's tool arguments and is separate from the legacy HTTP bearer. `isError` succeeds only when omitted or boolean `false`. After exact identity and protected scope are established, only transport unreachability on the first query fails open. HTTP/MCP/schema rejection, malformed response, and transport failure after definitive zero block. A missing path or path outside protected roots is outside enforcement and exits 0.
 
@@ -371,7 +371,7 @@ Codex Desktop integration has its own doctor, runtime state, and failure classif
 
 ## Agent appears twice on the dashboard
 
-Check whether the tmux session name matches the agent-mail identity.
+Check whether the tmux session name matches the ORRERY Mail identity.
 
 ```bash
 tmux list-sessions
@@ -384,7 +384,7 @@ If stale top-level environment may have been inherited, relaunch from a new term
 
 `/api/history` searches Claude / Codex transcripts based on agent program, then falls back to the other when absent.
 
-- whether agent-mail program is correct
+- whether ORRERY Mail program is correct
 - whether the transcript remains on disk
 - whether session and agent names match
 - whether child and parent transcripts were confused

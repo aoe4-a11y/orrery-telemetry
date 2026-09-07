@@ -270,7 +270,7 @@ def test_codex_spawn_passes_model_effort_and_readback_name(monkeypatch, tmp_path
 
 
 def test_auto_spawn_registers_an_explicit_hyphenated_name(monkeypatch, tmp_path):
-    """Omitting name must not let stock agent-mail generate a new identity."""
+    """Omitting name must not let stock ORRERY Mail generate a new identity."""
     launcher = tmp_path / "spawn_child.sh"
     launcher.write_text("#!/bin/bash\n")
     launcher.chmod(0o755)

@@ -59,7 +59,7 @@ def listener(port: int) -> psutil.Process | None:
 
 def dashboard_health(url: str) -> None:
     version = request(url + 'api/version')
-    if version.get('name') != 'claude-agent-stack' or version.get('api') != 1:
+    if version.get('name') not in ('orrery-telemetry', 'claude-agent-stack') or version.get('api') != 1:
         raise RuntimeError('Dashboard endpoint is not the expected ORRERY API')
     request(url + 'api/agents')
     request(url + 'api/graph?all=1')

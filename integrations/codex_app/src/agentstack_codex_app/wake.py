@@ -763,7 +763,7 @@ def read_signal_messages(
     project_slug: str,
     agent_name: str,
 ) -> list[WakeMessage]:
-    """Read only valid message metadata from private agent-mail signal files."""
+    """Read only valid message metadata from private ORRERY Mail signal files."""
 
     agents_dir = signals_dir / "projects" / project_slug / "agents"
     candidates = [agents_dir / f"{agent_name}.signal"]

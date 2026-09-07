@@ -210,7 +210,7 @@ def test_codex_child_gets_a_home_whose_agent_mail_is_the_proxy():
         assert home, "helper produced no CODEX_HOME"
         config = (pathlib.Path(home) / "config.toml").read_text(encoding="utf-8")
 
-        # The shared HTTP transport for agent-mail is gone, replaced by stdio.
+        # The shared HTTP transport for ORRERY Mail is gone, replaced by stdio.
         assert 'url = "http://127.0.0.1:8765/api/"' not in config
         assert '[mcp_servers."orrery-mail"]' in config
         assert '[mcp_servers."agentstack"]' in config
@@ -289,7 +289,7 @@ def test_launcher_passes_the_config_to_claude_only_when_present():
     assert '[[ -n "$CLAUDE_CHILD_MCP_CONFIG" ]]' in text
     # --strict-mcp-config keeps the child on its own proxy. Without it the child
     # also inherits the user's top-level mcpServers, ends up talking to a second
-    # copy of agent-mail, and carries a standing authentication notice.
+    # copy of ORRERY Mail, and carries a standing authentication notice.
     assert text.count("--strict-mcp-config") == 2
 
 
@@ -462,7 +462,7 @@ def _claude_child_config(tmpdir, claude_json: str | None) -> dict:
 
 
 def test_claude_child_proxy_claims_the_users_own_server_name():
-    """Otherwise the child sees two agent-mail servers and picks the direct one.
+    """Otherwise the child sees two ORRERY Mail servers and picks the direct one.
 
     Measured: --mcp-config overrides a same-named global server, so claiming
     the user's name replaces their unauthenticated HTTP connection.
@@ -542,7 +542,7 @@ def test_codex_child_replaces_every_agent_mail_spelling():
         home = pathlib.Path(_run_codex_home(tmpdir, config_text=source))
         text = (home / "config.toml").read_text(encoding="utf-8")
 
-        # Every direct agent-mail transport is gone (the endpoint still appears
+        # Every direct ORRERY Mail transport is gone (the endpoint still appears
         # inside the proxy's env block, which is what the proxy dials).
         assert 'url = "http://127.0.0.1:8765/mcp"' not in text
         assert 'url = "http://127.0.0.1:8765/api/"' not in text
@@ -614,7 +614,7 @@ def test_codex_child_keeps_default_name_on_new_endpoint():
 def test_doctor_reports_the_fallback_instead_of_staying_silent():
     doctor = (_ROOT / "scripts" / "doctor.sh").read_text(encoding="utf-8")
     assert "child MCP proxy" in doctor
-    assert "fall back to the shared agent-mail endpoint" in doctor
+    assert "fall back to the shared ORRERY Mail endpoint" in doctor
 
 
 def _main() -> int:
