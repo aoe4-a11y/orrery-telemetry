@@ -885,20 +885,52 @@ flush_queued_prompt() {
     return 1
 }
 
+# Reduce prompt or pane text to the characters that survive the REPL's
+# rendering: drop whitespace (the TUI re-wraps long lines, CJK mid-word) and
+# the Markdown markers Claude Code strips from a submitted prompt (`## Role:`
+# is shown as `Role:`, so a needle that keeps the `##` can never match).
+injection_match_key() {
+    printf '%s' "$1" | tr -d '\n\r\t #*>`'
+}
+
+# A UTF-8 locale for ${var:0:N}: bash counts characters under UTF-8 and bytes
+# under C, and a byte cut lands mid-character in Japanese prompts, producing a
+# needle that is invalid UTF-8 and matches nothing (LC_CTYPE is unset in cron,
+# launchd and some ssh sessions).
+injection_utf8_locale() {
+    local candidate
+    for candidate in C.UTF-8 en_US.UTF-8 UTF-8; do
+        if locale -a 2>/dev/null | grep -qx "$candidate"; then
+            printf '%s' "$candidate"
+            return 0
+        fi
+    done
+    return 0
+}
+
 # Verify delivery against pane scrollback, not only the visible viewport. Long
-# embedded tasks push their first line off screen immediately. Normalize line
-# wrapping and spaces before matching a short literal prefix of the prompt.
+# embedded tasks push their first line off screen immediately. Compare a short
+# prefix of the prompt with the pane after the same normalization. The window
+# is 30s: a cold-started REPL on a loaded host takes more than 10s to accept
+# and render a multi-kilobyte paste, and a false FAILED is worse than a slow
+# ok because operators act on it (2026-09-08: two healthy children reported
+# FAILED while already working).
 verify_injection() {
     local session_name="$1"
     local prompt_text="$2"
     local needle
     local waited=0
     local pane_text
-    needle="$(printf '%s' "${prompt_text:0:40}" | tr -d '\n ')"
+    local utf8_locale
+    utf8_locale="$(injection_utf8_locale)"
+    if [[ -n "$utf8_locale" ]]; then
+        local LC_ALL="$utf8_locale"
+    fi
+    needle="$(injection_match_key "${prompt_text:0:48}")"
     [[ -n "$needle" ]] || return 0
-    while (( waited < 10 )); do
+    while (( waited < 30 )); do
         pane_text="$(tmux capture-pane -t "$session_name" -p -S -1000 2>/dev/null || true)"
-        if printf '%s' "$pane_text" | tr -d '\n ' | grep -qF -- "$needle"; then
+        if injection_match_key "$pane_text" | grep -qF -- "$needle"; then
             INJECTION_VERIFIED=true
             spawn_note "injected ok ($session_name)"
             return 0
@@ -906,7 +938,7 @@ verify_injection() {
         sleep 2
         waited=$((waited + 2))
     done
-    spawn_note "WARNING: injection FAILED ($session_name): the REPL is ready but the task text was not found; resend it or close the child session"
+    spawn_note "WARNING: injection not verified ($session_name): the REPL is ready but the task text was not seen in the pane within 30s. This is a failed check, not proof that the task is missing: inspect with 'tmux capture-pane -t $session_name -p -S -1000' before resending, and do not close the child on this message alone"
     return 1
 }
 

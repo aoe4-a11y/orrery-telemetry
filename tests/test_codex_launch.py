@@ -388,6 +388,8 @@ def test_injection_verifier_uses_scrollback_and_warns_without_killing():
 SPAWN_INCIDENT_LOG={str(incident_log)!r}
 INJECTION_VERIFIED=false
 {spawn_note}
+{_extract("injection_match_key")}
+{_extract("injection_utf8_locale")}
 {verifier}
 sleep() {{ :; }}
 """
@@ -420,8 +422,72 @@ printf '%s\\n' "$status"
         )
         assert missing.returncode == 0, missing.stderr
         assert missing.stdout.strip() == "1"
-        assert "injection FAILED (Child)" in incident_log.read_text(encoding="utf-8")
+        warning = incident_log.read_text(encoding="utf-8")
+        assert "injection not verified (Child)" in warning
+        assert "do not close the child on this message alone" in warning
+        assert "close the child session" not in warning
         assert "kill-session" not in tmux_log.read_text(encoding="utf-8")
+
+
+def _verifier_env(tmpdir: pathlib.Path) -> str:
+    return f"""
+SPAWN_INCIDENT_LOG={str(tmpdir / 'spawn-incidents.log')!r}
+INJECTION_VERIFIED=false
+{_extract("spawn_note")}
+{_extract("injection_match_key")}
+{_extract("injection_utf8_locale")}
+{_extract("verify_injection")}
+sleep() {{ :; }}
+"""
+
+
+def test_injection_verifier_matches_a_markdown_heading_the_repl_renders_without_hashes():
+    # Claude Code renders a submitted `## Role: ...` line as `Role: ...`, so a
+    # needle that keeps the hashes can never match (2026-09-08: two healthy
+    # children were reported FAILED). Both sides drop the Markdown markers.
+    with tempfile.TemporaryDirectory() as tmp:
+        result = _run_bash(
+            _verifier_env(pathlib.Path(tmp))
+            + """
+tmux() {
+    printf '%s\\n' '❯ Role: 引用文献' '  Task summary: ハチ論文 Tier A — 注入検証' \\
+        '  これは spawn_child.sh の verify_injection を再現するテスト'
+}
+verify_injection Child '## Role: 引用文献
+## Task summary: ハチ論文 Tier A — 注入検証
+
+これは spawn_child.sh の verify_injection を再現するテスト'
+printf '%s\\n' "$INJECTION_VERIFIED"
+"""
+        )
+        assert result.returncode == 0, result.stderr
+        assert result.stdout.strip() == "true"
+
+
+def test_injection_verifier_slices_the_needle_by_character_under_a_c_locale():
+    # ${var:0:N} counts bytes under LC_ALL=C and cuts Japanese text
+    # mid-character; the needle then is invalid UTF-8 and never matches.
+    with tempfile.TemporaryDirectory() as tmp:
+        result = _run_bash(
+            _verifier_env(pathlib.Path(tmp))
+            + """
+export LC_ALL=C
+tmux() {
+    printf '%s\\n' '❯ あなたは Child（親: Parent）。この起動は embed-task mode です。' \\
+        '  ORRERY Mail への登録は親が完了済み・儀式不要です。'
+}
+verify_injection Child 'あなたは Child（親: Parent）。この起動は embed-task mode です。ORRERY Mail への登録は親が完了済み・儀式不要です。'
+printf '%s\\n' "$INJECTION_VERIFIED"
+"""
+        )
+        assert result.returncode == 0, result.stderr
+        assert result.stdout.strip() == "true"
+
+
+def test_injection_verifier_waits_thirty_seconds():
+    verifier = _extract("verify_injection")
+    assert "waited < 30" in verifier
+    assert "waited < 10" not in verifier
 
 
 def test_queued_claude_prompt_is_flushed_with_an_empty_submit():
