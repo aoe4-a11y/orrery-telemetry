@@ -62,6 +62,8 @@
     <string>__CODEX_NETWORK__</string>
     <key>AGENTSTACK_CODEX_ADD_DIRS</key>
     <string>__CODEX_ADD_DIRS__</string>
+    <key>AGENTSTACK_CODEX_BIN</key>
+    <string>__CODEX_BIN__</string>
     <key>AGENTSTACK_PORTRAITS_DIR</key>
     <string>__PORTRAITS_DIR__</string>
     <key>AGENTSTACK_CUSTOM_PORTRAITS</key>

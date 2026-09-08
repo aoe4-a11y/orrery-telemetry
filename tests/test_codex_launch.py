@@ -104,11 +104,16 @@ def _codex_stub(tmpdir: pathlib.Path, help_text: str) -> None:
     stub.chmod(stub.stat().st_mode | stat.S_IEXEC)
 
 
+def _codex_lookup() -> str:
+    """The binary lookup codex_approval_flags depends on."""
+    return _extract("codex_search_path") + "\n" + _extract("find_codex_bin") + "\n"
+
+
 def _flags(help_text: str) -> str:
     with tempfile.TemporaryDirectory() as tmp:
         tmpdir = pathlib.Path(tmp)
         _codex_stub(tmpdir, help_text)
-        script = _extract("codex_approval_flags") + "\ncodex_approval_flags\n"
+        script = _codex_lookup() + _extract("codex_approval_flags") + "\ncodex_approval_flags\n"
         return _run_bash(
             script, {"PATH": f"{tmpdir}:{os.environ['PATH']}"}
         ).stdout.strip()
@@ -134,7 +139,7 @@ def _flags_with_env(help_text: str | None, env: dict[str, str]) -> str:
         else:
             _codex_stub(tmpdir, help_text)
             run_env["PATH"] = f"{tmpdir}:/usr/bin:/bin"
-        script = _extract("codex_approval_flags") + "\ncodex_approval_flags\n"
+        script = _codex_lookup() + _extract("codex_approval_flags") + "\ncodex_approval_flags\n"
         return _run_bash(script, run_env).stdout.strip()
 
 
@@ -160,7 +165,7 @@ def test_explicit_codex_bin_is_probed_instead_of_path():
     with tempfile.TemporaryDirectory() as tmp:
         tmpdir = pathlib.Path(tmp)
         _codex_stub(tmpdir, "  -s, --sandbox <MODE>\n      --full-auto")
-        script = _extract("codex_approval_flags") + "\ncodex_approval_flags\n"
+        script = _codex_lookup() + _extract("codex_approval_flags") + "\ncodex_approval_flags\n"
         out = _run_bash(script, {"PATH": "/usr/bin:/bin", "HOME": tmp,
                                  "AGENTSTACK_CODEX_BIN": str(tmpdir / "codex")}).stdout.strip()
     assert out == "--full-auto"
@@ -479,6 +484,64 @@ tmux() {
 verify_injection Child 'あなたは Child（親: Parent）。この起動は embed-task mode です。ORRERY Mail への登録は親が完了済み・儀式不要です。'
 printf '%s\\n' "$INJECTION_VERIFIED"
 """
+        )
+        assert result.returncode == 0, result.stderr
+        assert result.stdout.strip() == "true"
+
+
+def test_codex_binary_is_found_under_per_user_node_prefixes():
+    # The dashboard's launchd PATH is minimal; codex installed through nvm,
+    # nodebrew or ~/.npm-global must still be found (2026-09-08: NEW AGENT
+    # Codex spawn failed with "Codex CLI not found" on a nodebrew host).
+    with tempfile.TemporaryDirectory() as tmp:
+        home = pathlib.Path(tmp)
+        prefix = home / ".nodebrew" / "current" / "bin"
+        prefix.mkdir(parents=True)
+        fake = prefix / "codex"
+        fake.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+        fake.chmod(0o755)
+        script = (
+            f"{_extract('codex_search_path')}\n{_extract('find_codex_bin')}\n"
+            f"{_extract('resolve_codex_bin')}\nresolve_codex_bin\n"
+        )
+        found = _run_bash(script, {"HOME": str(home), "PATH": "/usr/bin:/bin",
+                                   "AGENTSTACK_CODEX_BIN": ""})
+        assert found.returncode == 0, found.stderr
+        assert found.stdout.strip() == str(fake)
+
+        # A stale explicit path falls through to the search instead of failing.
+        stale = _run_bash(script, {"HOME": str(home), "PATH": "/usr/bin:/bin",
+                                   "AGENTSTACK_CODEX_BIN": str(home / "gone" / "codex")})
+        assert stale.returncode == 0, stale.stderr
+        assert stale.stdout.strip() == str(fake)
+
+        # Nothing anywhere: the launcher still says so instead of guessing.
+        missing = _run_bash(script, {"HOME": str(home / "empty"), "PATH": "/usr/bin:/bin",
+                                     "AGENTSTACK_CODEX_BIN": ""})
+        assert missing.returncode == 1
+        assert "Codex CLI not found" in missing.stderr
+
+
+def test_injection_verifier_accepts_the_prompt_tail_when_the_head_scrolled_off():
+    # Claude Code runs on the alternate screen: tmux keeps no scrollback, and a
+    # task taller than the viewport shows only its last lines. The verifier
+    # must accept the tail of the prompt (2026-09-08: history_size 0 on every
+    # Claude pane; healthy children were reported FAILED).
+    prompt = "あなたは Child（親: Parent）。以下のタスクが正本です。\n" + "\n".join(
+        f"- 手順 {i}: 中身" for i in range(80)
+    ) + "\n完了したら send_message で Parent に報告してください。"
+    with tempfile.TemporaryDirectory() as tmp:
+        result = _run_bash(
+            _verifier_env(pathlib.Path(tmp))
+            + """
+tmux() {
+    printf '%s\\n' '  - 手順 78: 中身' '  - 手順 79: 中身' \\
+        '  完了したら send_message で Parent に報告してください。' '✻ Thinking…'
+}
+verify_injection Child "$PROMPT"
+printf '%s\\n' "$INJECTION_VERIFIED"
+""",
+            {"PROMPT": prompt},
         )
         assert result.returncode == 0, result.stderr
         assert result.stdout.strip() == "true"

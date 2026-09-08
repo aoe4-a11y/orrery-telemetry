@@ -227,6 +227,14 @@ def test_service_definitions_use_runner_runtime_log_and_restart_policy():
     assert plist["EnvironmentVariables"]["AGENTSTACK_CODEX_CHILD_APPROVAL"] == "__CODEX_CHILD_APPROVAL__"
     assert plist["EnvironmentVariables"]["AGENTSTACK_CODEX_NETWORK"] == "__CODEX_NETWORK__"
     assert plist["EnvironmentVariables"]["AGENTSTACK_CODEX_ADD_DIRS"] == "__CODEX_ADD_DIRS__"
+    # The dashboard's launchd PATH has no per-user Node prefix, so the installer
+    # resolves codex in the operator's shell and hands the path to the service.
+    assert plist["EnvironmentVariables"]["AGENTSTACK_CODEX_BIN"] == "__CODEX_BIN__"
+    installer_text = (ROOT / "scripts" / "install.sh").read_text(encoding="utf-8")
+    assert "--codex-bin)" in installer_text
+    assert 'CODEX_BIN_SETTING="$(command -v codex 2>/dev/null || true)"' in installer_text
+    assert installer_text.count('"AGENTSTACK_CODEX_BIN": "$CODEX_BIN_SETTING"') >= 3
+    assert '"__CODEX_BIN__": "$CODEX_BIN_SETTING"' in installer_text
     assert plist["EnvironmentVariables"]["AGENTSTACK_PORTRAITS_DIR"] == "__PORTRAITS_DIR__"
     assert plist["EnvironmentVariables"]["AGENTSTACK_CUSTOM_PORTRAITS"] == "__CUSTOM_PORTRAITS__"
     assert plist["EnvironmentVariables"]["AGENTSTACK_CODEX_MODELS"] == "__CODEX_MODELS__"

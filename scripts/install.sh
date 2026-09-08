@@ -37,6 +37,13 @@ SPAWN_ROOTS_SETTING="${AGENTSTACK_SPAWN_ROOTS:-}"
 CODEX_CHILD_APPROVAL_SETTING="${AGENTSTACK_CODEX_CHILD_APPROVAL:-}"
 CODEX_NETWORK_SETTING="${AGENTSTACK_CODEX_NETWORK:-}"
 CODEX_ADD_DIRS_SETTING="${AGENTSTACK_CODEX_ADD_DIRS:-}"
+# Where the Codex CLI lives. The dashboard runs under launchd / systemd with
+# the minimal AGENTSTACK_PATH, which does not contain the per-user Node
+# prefixes (nvm, nodebrew, ~/.npm-global) that `npm install -g` uses, so a
+# NEW AGENT Codex spawn failed with "Codex CLI not found" while the same
+# command worked from a shell (2026-09-08). Resolve it here, in the operator's
+# shell, and persist it: explicit > installed env.sh > `command -v codex`.
+CODEX_BIN_SETTING="${AGENTSTACK_CODEX_BIN:-}"
 # Dashboard-only settings with the same lifecycle: read at install, persisted
 # into env.sh and the service definition, inherited on re-install.
 PORTRAITS_DIR_SETTING="${AGENTSTACK_PORTRAITS_DIR:-}"
@@ -93,6 +100,9 @@ Options:
                          else never)
   --codex-network MODE   on or off: sandbox network access for Codex children
                          (default: existing env.sh, else on)
+  --codex-bin PATH       Codex CLI executable used by the dashboard and child
+                         launchers (default: existing env.sh, else `codex` on
+                         this shell's PATH; empty when not installed)
   --codex-add-dirs PATHS ':'-separated extra writable roots for Codex children
                          on top of project, spawn dirs/roots, install dir,
                          worktrees, ~/.claude and ~/.codex (default: none)
@@ -180,6 +190,10 @@ while [[ $# -gt 0 ]]; do
       CODEX_ADD_DIRS_SETTING="$2"
       shift 2
       ;;
+    --codex-bin)
+      CODEX_BIN_SETTING="$2"
+      shift 2
+      ;;
     -h|--help)
       usage
       exit 0
@@ -223,6 +237,19 @@ if [[ -z "$CODEX_NETWORK_SETTING" ]]; then
 fi
 if [[ -z "$CODEX_ADD_DIRS_SETTING" ]]; then
   CODEX_ADD_DIRS_SETTING="$(agentstack_installed_env_value AGENTSTACK_CODEX_ADD_DIRS "$INSTALL_DIR/env.sh")"
+fi
+if [[ -z "$CODEX_BIN_SETTING" ]]; then
+  CODEX_BIN_SETTING="$(agentstack_installed_env_value AGENTSTACK_CODEX_BIN "$INSTALL_DIR/env.sh")"
+  if [[ -n "$CODEX_BIN_SETTING" && ! -x "$CODEX_BIN_SETTING" ]]; then
+    # A stale path from an earlier install (Node upgraded, prefix moved) must
+    # not pin the dashboard to a binary that no longer exists. An explicit
+    # --codex-bin that does not exist is rejected below instead.
+    echo "note: installed AGENTSTACK_CODEX_BIN=$CODEX_BIN_SETTING is not executable; resolving codex again" >&2
+    CODEX_BIN_SETTING=""
+  fi
+  if [[ -z "$CODEX_BIN_SETTING" ]]; then
+    CODEX_BIN_SETTING="$(command -v codex 2>/dev/null || true)"
+  fi
 fi
 # Product defaults are written out explicitly so env.sh, the service definition
 # and install-state.json all say what a child actually gets.
@@ -378,6 +405,10 @@ case "$CODEX_NETWORK_SETTING" in
     exit 2
     ;;
 esac
+if [[ -n "$CODEX_BIN_SETTING" && ! -x "$CODEX_BIN_SETTING" ]]; then
+  echo "error: --codex-bin must point at an executable (got: $CODEX_BIN_SETTING)" >&2
+  exit 2
+fi
 
 # The two mail jobs are different things: one runs the service, the other runs
 # `agentstack-mailctl start` on a timer. Sharing a label makes the controller
@@ -1607,6 +1638,7 @@ values = {
     "AGENTSTACK_CODEX_CHILD_APPROVAL": "$CODEX_CHILD_APPROVAL_SETTING",
     "AGENTSTACK_CODEX_NETWORK": "$CODEX_NETWORK_SETTING",
     "AGENTSTACK_CODEX_ADD_DIRS": "$CODEX_ADD_DIRS_SETTING",
+    "AGENTSTACK_CODEX_BIN": "$CODEX_BIN_SETTING",
     "AGENTSTACK_PORTRAITS_DIR": "$PORTRAITS_DIR_SETTING",
     "AGENTSTACK_CUSTOM_PORTRAITS": "$CUSTOM_PORTRAITS_SETTING",
     "AGENTSTACK_CODEX_MODELS": "$CODEX_MODELS_SETTING",
@@ -2538,6 +2570,7 @@ repl = {
     "__CODEX_CHILD_APPROVAL__": "$CODEX_CHILD_APPROVAL_SETTING",
     "__CODEX_NETWORK__": "$CODEX_NETWORK_SETTING",
     "__CODEX_ADD_DIRS__": "$CODEX_ADD_DIRS_SETTING",
+    "__CODEX_BIN__": "$CODEX_BIN_SETTING",
     "__PORTRAITS_DIR__": "$PORTRAITS_DIR_SETTING",
     "__CUSTOM_PORTRAITS__": "$CUSTOM_PORTRAITS_SETTING",
     "__CODEX_MODELS__": "$CODEX_MODELS_SETTING",
@@ -2593,6 +2626,7 @@ env = {
     "AGENTSTACK_CODEX_CHILD_APPROVAL": "$CODEX_CHILD_APPROVAL_SETTING",
     "AGENTSTACK_CODEX_NETWORK": "$CODEX_NETWORK_SETTING",
     "AGENTSTACK_CODEX_ADD_DIRS": "$CODEX_ADD_DIRS_SETTING",
+    "AGENTSTACK_CODEX_BIN": "$CODEX_BIN_SETTING",
     "AGENTSTACK_PORTRAITS_DIR": "$PORTRAITS_DIR_SETTING",
     "AGENTSTACK_CUSTOM_PORTRAITS": "$CUSTOM_PORTRAITS_SETTING",
     "AGENTSTACK_CODEX_MODELS": "$CODEX_MODELS_SETTING",
@@ -2988,9 +3022,11 @@ manifest = {
         "AGENTSTACK_CODEX_CHILD_APPROVAL": "$CODEX_CHILD_APPROVAL_SETTING",
         "AGENTSTACK_CODEX_NETWORK": "$CODEX_NETWORK_SETTING",
         "AGENTSTACK_CODEX_ADD_DIRS": "$CODEX_ADD_DIRS_SETTING",
+    "AGENTSTACK_CODEX_BIN": "$CODEX_BIN_SETTING",
     "AGENTSTACK_CODEX_CHILD_APPROVAL": "$CODEX_CHILD_APPROVAL_SETTING",
     "AGENTSTACK_CODEX_NETWORK": "$CODEX_NETWORK_SETTING",
     "AGENTSTACK_CODEX_ADD_DIRS": "$CODEX_ADD_DIRS_SETTING",
+    "AGENTSTACK_CODEX_BIN": "$CODEX_BIN_SETTING",
         "AGENTSTACK_PORTRAITS_DIR": "$PORTRAITS_DIR_SETTING",
         "AGENTSTACK_CUSTOM_PORTRAITS": "$CUSTOM_PORTRAITS_SETTING",
         "AGENTSTACK_CODEX_MODELS": "$CODEX_MODELS_SETTING",
@@ -3062,6 +3098,7 @@ main() {
   say "spawn roots: ${SPAWN_ROOTS_SETTING:-(default: \$HOME)}"
   say "codex child approval: $CODEX_CHILD_APPROVAL_SETTING"
   say "codex network: $CODEX_NETWORK_SETTING"
+  say "codex bin: ${CODEX_BIN_SETTING:-(not found on PATH; Codex spawns will fail until --codex-bin is set)}"
   say "codex add dirs: ${CODEX_ADD_DIRS_SETTING:-(none beyond project, spawn dirs/roots, install dir, worktrees, ~/.claude, ~/.codex)}"
   validate_assume_yes
   if ! run_preflight; then

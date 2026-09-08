@@ -656,11 +656,36 @@ resolve_child_shell() {
 }
 CHILD_SHELL="$(resolve_child_shell)" || exit 1
 
-resolve_codex_bin() {
+# Per-user Node prefixes where `npm install -g @openai/codex` lands. The
+# dashboard runs under launchd / systemd with the minimal AGENTSTACK_PATH, so
+# without this list a NEW AGENT Codex spawn failed with "Codex CLI not found"
+# on a host where `codex` worked from every shell (2026-09-08, nodebrew). The
+# installer now persists AGENTSTACK_CODEX_BIN; this is the fallback for
+# installs that predate it and for hosts where the setting is empty.
+codex_search_path() {
+    local extra="$HOME/.local/bin:$HOME/.npm-global/bin:$HOME/.nodebrew/current/bin:/opt/homebrew/bin:/usr/local/bin"
+    local nvm_dir="${NVM_DIR:-$HOME/.nvm}"
+    local candidate
+    for candidate in "$nvm_dir"/versions/node/*/bin; do
+        [[ -d "$candidate" ]] && extra="$extra:$candidate"
+    done
+    printf '%s\n' "$PATH:$extra"
+}
+
+find_codex_bin() {
     local codex_bin="${AGENTSTACK_CODEX_BIN:-}"
-    if [[ -z "$codex_bin" ]]; then
-        codex_bin="$(PATH="$PATH:$HOME/.local/bin" command -v codex 2>/dev/null || true)"
+    if [[ -n "$codex_bin" && ! -x "$codex_bin" ]]; then
+        codex_bin=""
     fi
+    if [[ -z "$codex_bin" ]]; then
+        codex_bin="$(PATH="$(codex_search_path)" command -v codex 2>/dev/null || true)"
+    fi
+    printf '%s\n' "$codex_bin"
+}
+
+resolve_codex_bin() {
+    local codex_bin
+    codex_bin="$(find_codex_bin)"
     if [[ -z "$codex_bin" || ! -x "$codex_bin" ]]; then
         echo "Error: Codex CLI not found; set AGENTSTACK_CODEX_BIN to an executable path" >&2
         return 1
@@ -671,10 +696,7 @@ resolve_codex_bin() {
 codex_approval_flags() {
     local help_text codex_bin policy
     policy="${AGENTSTACK_CODEX_CHILD_APPROVAL:-never}"
-    codex_bin="${AGENTSTACK_CODEX_BIN:-}"
-    if [[ -z "$codex_bin" ]]; then
-        codex_bin="$(PATH="$PATH:$HOME/.local/bin" command -v codex 2>/dev/null || true)"
-    fi
+    codex_bin="$(find_codex_bin)"
     if [[ -z "$codex_bin" ]]; then
         printf '%s\n' "--ask-for-approval $policy"
         return 0
@@ -908,35 +930,46 @@ injection_utf8_locale() {
     return 0
 }
 
-# Verify delivery against pane scrollback, not only the visible viewport. Long
-# embedded tasks push their first line off screen immediately. Compare a short
-# prefix of the prompt with the pane after the same normalization. The window
-# is 30s: a cold-started REPL on a loaded host takes more than 10s to accept
-# and render a multi-kilobyte paste, and a false FAILED is worse than a slow
-# ok because operators act on it (2026-09-08: two healthy children reported
-# FAILED while already working).
+# Verify delivery against the pane, comparing short prefix AND suffix keys of
+# the prompt after the same normalization, polling every second for 30s.
+#
+# Why both ends: Claude Code 2.1.26x draws on the alternate screen, so tmux
+# keeps no scrollback for the pane (history_size 0) and `-S -1000` returns the
+# viewport only. A multi-kilobyte task is taller than the viewport the moment
+# it is rendered, so its first line is never visible; its last line is, until
+# the model's output pushes it up. Codex (normal screen, scrollback kept)
+# matches on the prefix as before. Polling every second catches the short
+# window in which the tail is on screen. The 30s budget covers a cold REPL on
+# a loaded host. A false FAILED is worse than a slow ok because operators act
+# on it (2026-09-08: healthy children reported FAILED while already working).
 verify_injection() {
     local session_name="$1"
     local prompt_text="$2"
-    local needle
+    local head_key tail_key
     local waited=0
-    local pane_text
+    local pane_text pane_key
     local utf8_locale
     utf8_locale="$(injection_utf8_locale)"
     if [[ -n "$utf8_locale" ]]; then
         local LC_ALL="$utf8_locale"
     fi
-    needle="$(injection_match_key "${prompt_text:0:48}")"
-    [[ -n "$needle" ]] || return 0
+    head_key="$(injection_match_key "${prompt_text:0:48}")"
+    [[ -n "$head_key" ]] || return 0
+    tail_key=""
+    if (( ${#prompt_text} > 48 )); then
+        tail_key="$(injection_match_key "${prompt_text: -48}")"
+    fi
     while (( waited < 30 )); do
         pane_text="$(tmux capture-pane -t "$session_name" -p -S -1000 2>/dev/null || true)"
-        if injection_match_key "$pane_text" | grep -qF -- "$needle"; then
+        pane_key="$(injection_match_key "$pane_text")"
+        if printf '%s' "$pane_key" | grep -qF -- "$head_key" \
+            || { [[ -n "$tail_key" ]] && printf '%s' "$pane_key" | grep -qF -- "$tail_key"; }; then
             INJECTION_VERIFIED=true
             spawn_note "injected ok ($session_name)"
             return 0
         fi
-        sleep 2
-        waited=$((waited + 2))
+        sleep 1
+        waited=$((waited + 1))
     done
     spawn_note "WARNING: injection not verified ($session_name): the REPL is ready but the task text was not seen in the pane within 30s. This is a failed check, not proof that the task is missing: inspect with 'tmux capture-pane -t $session_name -p -S -1000' before resending, and do not close the child on this message alone"
     return 1
