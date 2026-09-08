@@ -620,11 +620,41 @@ def _is_codex_process_name(name: str) -> bool:
     return executable == "codex" or executable.startswith("codex-")
 
 
-def _codex_process_alive(
+def _is_claude_process_name(name: str) -> bool:
+    # Native Claude Code installs run as `claude`, or as a binary named by its
+    # version ("2.1.263") on 2.1.26x; the npm install runs under `node`.
+    executable = os.path.basename(name or "").lower()
+    return (
+        executable == "claude"
+        or executable == "node"
+        or bool(_VERSION_CMD_RE.match(executable))
+    )
+
+
+def _is_agent_process_name(name: str, program: str | None) -> bool:
+    """Is this process the agent that `program` registered as?
+
+    Codex and Claude both sit behind a shell wrapper (`zsh > node > codex`,
+    `zsh > claude` on macOS), so the pane leader's name says nothing about
+    whether the agent is alive. The process tree does. #19 measured Codex
+    this way; Claude is measured the same way so DECK / NETWORK / EXIT stop
+    depending on whether the title happens to carry a glyph.
+    """
+    if (program or "").startswith("codex"):
+        return _is_codex_process_name(name)
+    if (program or "").startswith("claude"):
+        return _is_claude_process_name(name)
+    return False
+
+
+def _agent_process_alive(
     pane_pid: object,
     process_tree: tuple[dict[int, str], dict[int, list[int]]] | None,
+    program: str | None,
 ) -> bool | None:
     """Return True/False when measured, None when liveness is unknowable."""
+    if not (program or "").startswith(("codex", "claude")):
+        return None
     try:
         root = int(pane_pid or 0)
     except (TypeError, ValueError):
@@ -642,10 +672,17 @@ def _codex_process_alive(
         if pid in seen:
             continue
         seen.add(pid)
-        if _is_codex_process_name(names.get(pid, "")):
+        if _is_agent_process_name(names.get(pid, ""), program):
             return True
         stack.extend(children.get(pid, ()))
     return False
+
+
+def _codex_process_alive(
+    pane_pid: object,
+    process_tree: tuple[dict[int, str], dict[int, list[int]]] | None,
+) -> bool | None:
+    return _agent_process_alive(pane_pid, process_tree, "codex-cli")
 
 
 # --------------------------------------------------------------------------- #
@@ -838,7 +875,7 @@ _VERSION_CMD_RE = re.compile(r"^\d+\.\d+\.\d+$")
 
 def classify(name: str, cmd: str, title: str, in_mail: bool,
              program: str | None = None,
-             codex_alive: bool | None = None) -> str:
+             agent_alive: bool | None = None) -> str:
     if name in INFRA_NAMES:
         return "infra"
     if name in WARMUP_NAMES:
@@ -849,18 +886,18 @@ def classify(name: str, cmd: str, title: str, in_mail: bool,
     # ProOpus / ProSonnet / SeminarBot がいずれも "2.1.259"）。node / claude
     # のどちらにも一致しないため、glyph の無い待機中に finished へ落ちていた。
     claude = cmd in ("node", "claude") or bool(_VERSION_CMD_RE.match(cmd or "")) or glyph
-    # Codex can sit behind a shell wrapper, so pane_current_command alone
-    # cannot distinguish a live TUI from the shell-only husk left after exit.
-    # A measured process tree is authoritative. If measurement is unavailable,
-    # preserve the historical registration + tmux fallback rather than turning
-    # a possibly-live agent into FINISHED.
-    if program and program.startswith("codex") and in_mail:
-        if codex_alive is True:
-            claude = True
-        elif codex_alive is False:
-            claude = False
-        elif not claude:
-            claude = True
+    # Codex and Claude both sit behind a shell wrapper, so pane_current_command
+    # alone cannot distinguish a live TUI from the shell-only husk left after
+    # exit. A measured process tree (any registered program) is authoritative.
+    # If measurement is unavailable, fall back to the cmd + glyph reading
+    # above, and for Codex to the historical registration + tmux rule rather
+    # than turning a possibly-live agent into FINISHED.
+    if in_mail and agent_alive is True:
+        claude = True
+    elif in_mail and agent_alive is False:
+        claude = False
+    elif program and program.startswith("codex") and in_mail and not claude:
+        claude = True
     # ※ 「program=claude-code で登録済み＋tmux 生存なら agent」という Codex 式の
     # fallback は入れない。Claude は REPL が終了すると pane が zsh に戻るので、
     # その規則だと「登録は残るが REPL は死んだ」= finished を表現できなくなる
@@ -880,14 +917,9 @@ def classify(name: str, cmd: str, title: str, in_mail: bool,
 def build_agents() -> list[dict]:
     sessions = tmux_state()
     mail_agents, mail_instr = agentmail_state()
-    codex_process_tree = (
-        _process_tree_snapshot()
-        if any(
-            (entry.get("program") or "").startswith("codex")
-            for entry in mail_agents.values()
-        )
-        else None
-    )
+    # One `ps` snapshot per refresh (4.5s TTL) shared by every registered
+    # agent, Codex and Claude alike.
+    process_tree = _process_tree_snapshot() if mail_agents else None
     codex_apps = _codex_app_runtimes()
     now = int(time.time())
     didx = _deliverables_index()  # {agent: [...]}（60秒キャッシュ）
@@ -897,14 +929,14 @@ def build_agents() -> list[dict]:
     for name, s in sessions.items():
         m = mail_agents.get(name)
         program = (m or {}).get("program") or ""
-        codex_alive = (
-            _codex_process_alive(s.get("pane_pid"), codex_process_tree)
-            if program.startswith("codex")
+        agent_alive = (
+            _agent_process_alive(s.get("pane_pid"), process_tree, program)
+            if m is not None
             else None
         )
         cat = classify(
             name, s["cmd"], s["title"], m is not None,
-            program=program, codex_alive=codex_alive,
+            program=program, agent_alive=agent_alive,
         )
         title = s["title"].strip()
         # ペインタイトルがコマンド名そのものや空ならライブ表示としては無意味
@@ -914,8 +946,8 @@ def build_agents() -> list[dict]:
         running = s["cmd"] in ("node", "claude") or (
             bool(title) and _is_activity_glyph(title[:1])
         )
-        if program.startswith("codex") and codex_alive is not None:
-            running = codex_alive
+        if agent_alive is not None:
+            running = agent_alive
         if name == "mail-watcher":
             watcher_health = mail_watcher_health()
             running = bool(watcher_health.get("watcher_running"))
@@ -1517,9 +1549,9 @@ def graph_payload(days: float, show_all: bool) -> dict:
     sessions = tmux_state()  # name -> {attached, cmd, title, activity, ...}
     codex_apps = _codex_app_runtimes()
     programs = {n["name"]: (n.get("program") or "") for n in nodes}
-    codex_process_tree = (
+    process_tree = (
         _process_tree_snapshot()
-        if any(program.startswith("codex") for program in programs.values())
+        if any(program.startswith(("codex", "claude")) for program in programs.values())
         else None
     )
     if show_all:
@@ -1534,14 +1566,11 @@ def graph_payload(days: float, show_all: bool) -> dict:
                 t and _is_activity_glyph(t[:1])
             )
             program = programs.get(nm, "")
-            if program.startswith("codex"):
-                codex_alive = _codex_process_alive(
-                    s.get("pane_pid"), codex_process_tree,
-                )
-                if codex_alive is not None:
-                    running = codex_alive
-                elif not running:
-                    running = True
+            agent_alive = _agent_process_alive(s.get("pane_pid"), process_tree, program)
+            if agent_alive is not None:
+                running = agent_alive
+            elif program.startswith("codex") and not running:
+                running = True
             if running:
                 running_set.add(nm)
         retired_names = {n["name"] for n in nodes if n.get("retired")}
@@ -1569,14 +1598,11 @@ def graph_payload(days: float, show_all: bool) -> dict:
         running = s["cmd"] in ("node", "claude") or (
             bool(t) and _is_activity_glyph(t[:1])
         )
-        if program and program.startswith("codex"):
-            codex_alive = _codex_process_alive(
-                s.get("pane_pid"), codex_process_tree,
-            )
-            if codex_alive is not None:
-                running = codex_alive
-            elif not running:
-                running = True
+        agent_alive = _agent_process_alive(s.get("pane_pid"), process_tree, program)
+        if agent_alive is not None:
+            running = agent_alive
+        elif program and program.startswith("codex") and not running:
+            running = True
         live_txt = ""
         if t and t not in (s.get("cmd", ""), name) and not t.startswith("/"):
             live_txt = t

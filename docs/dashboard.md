@@ -91,6 +91,8 @@ NETWORK は選択中の time window 外にある node を表示しないこと�
 
 mail の `last_active` だけで running と判定せず、tmux process、pane state、session state を合わせます。過去 session を現在実行中と誤表示しないためです。
 
+running と finished の境目は、pane の先頭 process 名ではなく process tree で決めます。Claude も Codex も shell の下で動く（`zsh > claude`、`zsh > node > codex`）ので、`pane_current_command` は生きていても死んでいても shell の名前です。dashboard は 4.5 秒ごとに `ps` を 1 回読み、pane の子孫に登録された program の実体（`claude` / version 名の binary / `node`、`codex`）が居るかで判定します。`ps` が使えない環境では従来どおり pane の command 名と title の glyph に落ちます。
+
 ### Lifecycle: EXIT の後に finished と gone のどちらへ行くか
 
 分類は「設計した遷移」ではなく、その時点で測れるもの（tmux session の有無、pane 配下の agent process の有無）を映しています。EXIT は agent に `/exit` を送るだけで、その後 `finished` と `gone` のどちらに落ちるかは Dashboard ではなく、**その agent を起こした launcher が REPL 終了後に shell を残すかどうか**で決まります。
