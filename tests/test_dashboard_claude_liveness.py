@@ -24,7 +24,7 @@ def _tree(child_name: str | None):
     return names, children
 
 
-def _patch_agent_inputs(monkeypatch, process_tree, title="Obsidian_for_Xiaomi"):
+def _patch_agent_inputs(monkeypatch, process_tree, title="notes-vault"):
     monkeypatch.setattr(
         server,
         "tmux_state",
