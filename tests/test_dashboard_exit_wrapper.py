@@ -96,6 +96,22 @@ def test_exit_sends_slash_exit_to_codex_behind_a_bash_wrapper():
     assert not any(argv[-2:] == ["exit", "Enter"] for argv in sent), sent
 
 
+def test_exit_keeps_slash_exit_for_a_live_agent_the_classifier_called_finished():
+    # #19 made the "finished" category authoritative for Codex, but Claude is
+    # still classified from pane_current_command + title glyph, and every
+    # Claude session on macOS is `zsh > claude`. A glyph-less live Claude
+    # reaches do_exit as "finished"; the descendant walk must still see the
+    # agent below the shell and send /exit instead of typing `exit` into it.
+    server = _load_server()
+    live_mac_tree = "4237 913 zsh\n4250 4237 claude\n5000 1 unrelated\n"
+    result, sent = _run_exit(server, "zsh", live_mac_tree, "finished")
+    assert result["ok"], result
+    assert "wrapper-shell:zsh>claude" in result["actions"], result
+    assert "exit-sent" in result["actions"] and "shell-exit-sent" not in result["actions"], result
+    assert any("/exit" in argv for argv in sent), sent
+    assert not any(argv[-2:] == ["exit", "Enter"] for argv in sent), sent
+
+
 def test_exit_still_closes_a_real_zombie_shell():
     server = _load_server()
     result, sent = _run_exit(server, "bash", _ZOMBIE_TREE, "finished")

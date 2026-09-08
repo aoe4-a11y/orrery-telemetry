@@ -4711,10 +4711,20 @@ def do_exit(session: str) -> dict:
     )
     pane_cmd = pane_cmd_r.stdout.strip().lower()
 
+    # build_agents() resolves Codex liveness from the shared process snapshot
+    # (#19), so a measured Codex husk arrives here as "finished". Claude is
+    # still classified from pane_current_command plus the title glyph, and on
+    # macOS every Claude session is `zsh > claude` (the pane leader is the
+    # shell), so a Claude whose title carries no glyph is "finished" while its
+    # REPL is alive. The descendant walk stays as the last guard: a shell
+    # `exit` is typed only when nothing agent-like runs below the pane.
+    agent_proc = ""
     if pane_cmd in _SHELL_PROCS and target["category"] == "finished":
-        # build_agents() already resolved Codex liveness from the shared process
-        # snapshot. Do not run a second EXIT-only process probe here: a measured
-        # shell husk gets shell `exit`, while live/unknown Codex gets `/exit`.
+        agent_proc = _pane_agent_process(session)
+        if agent_proc:
+            actions.append(f"wrapper-shell:{pane_cmd}>{agent_proc}")
+
+    if pane_cmd in _SHELL_PROCS and target["category"] == "finished" and not agent_proc:
         r = subprocess.run(
             ["tmux", "send-keys", "-t", session, "exit", "Enter"],
             capture_output=True, text=True,
