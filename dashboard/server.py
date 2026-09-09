@@ -3728,19 +3728,17 @@ def do_kill(session: str, mode: str = "both") -> dict:
         elif row["retired_at"]:
             actions.append("retire-already")
         else:
-            req = urllib.request.Request(
-                _mail_web_url("/mail/api/retire-agent"),
-                data=json.dumps({"agent_id": row["id"]}).encode(),
-                headers={"Content-Type": "application/json"},
-                method="POST",
+            # `retire_agent` is the published MCP tool; loopback callers may
+            # soft-retire without the registration token. The old mail UI's
+            # `/mail/api/retire-agent` route is not served by ORRERY Mail
+            # (404), which left DECK's RETIRE killing tmux but never retiring.
+            retired = _mcp_call(
+                "retire_agent",
+                {"project_key": project_key, "agent_name": session},
+                timeout=8,
             )
-            try:
-                with urllib.request.urlopen(req, timeout=4) as r:
-                    body = json.loads(r.read())
-                    actions.append("retired" if body.get("success")
-                                   else f"retire-fail:{body}")
-            except Exception as e:
-                actions.append(f"retire-err:{e}")
+            actions.append("retired" if retired.get("ok")
+                           else f"retire-err:{retired.get('error')}")
 
     # 2) tmux kill (husk shell があれば)
     if mode in ("both", "tmux"):
@@ -5429,19 +5427,21 @@ def do_reactivate(session: str) -> dict:
     if not row["retired_at"]:
         return {"ok": False, "error": f"agent '{session}' is not retired"}
 
-    req = urllib.request.Request(
-        _mail_web_url("/mail/api/unretire-agent"),
-        data=json.dumps({"agent_id": row["id"]}).encode(),
-        headers={"Content-Type": "application/json"},
-        method="POST",
+    # ORRERY Mail publishes `unretire_agent` as an MCP tool (loopback callers
+    # need no registration token). The former third-party mail UI's
+    # `/mail/api/unretire-agent` route does not exist on ORRERY Mail, so going
+    # through the web API returned 404 while the DB still said retired
+    # (2026-09-09, four live children of a Codex parent).
+    unretired = _mcp_call(
+        "unretire_agent",
+        {"project_key": project_key, "agent_name": session},
+        timeout=8,
     )
-    try:
-        with urllib.request.urlopen(req, timeout=4) as r:
-            payload = json.loads(r.read())
-    except Exception as e:
-        return {"ok": False, "error": f"unretire request failed: {e}"}
-    if not payload.get("success"):
-        return {"ok": False, "error": f"unretire refused: {payload}"}
+    if not unretired.get("ok"):
+        return {
+            "ok": False,
+            "error": f"unretire request failed: {unretired.get('error')}",
+        }
     return {"ok": True, "session": session, "action": "reactivated"}
 
 

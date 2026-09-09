@@ -143,6 +143,69 @@ def test_reactivate_rejects_an_invalid_name():
         assert server.do_reactivate("../../etc/passwd")["ok"] is False
 
 
+def test_reactivate_unretires_through_the_mcp_tool():
+    """ORRERY Mail has no `/mail/api/unretire-agent` route (that was the old
+    third-party mail UI); the published path is the `unretire_agent` tool."""
+    with tempfile.TemporaryDirectory() as directory:
+        server = _load(_db_with(pathlib.Path(directory), retired=True))
+        server._has_session = lambda _name: True
+        calls = []
+
+        def fake_mcp_call(method, args, timeout=15):
+            calls.append((method, args))
+            return {"ok": True, "result": {"status": "active"}}
+
+        server._mcp_call = fake_mcp_call
+        result = server.do_reactivate(LIVE)
+        assert result == {"ok": True, "session": LIVE, "action": "reactivated"}
+        assert calls == [("unretire_agent", {"project_key": PROJECT, "agent_name": LIVE})]
+
+
+def test_reactivate_reports_a_refused_unretire():
+    with tempfile.TemporaryDirectory() as directory:
+        server = _load(_db_with(pathlib.Path(directory), retired=True))
+        server._has_session = lambda _name: True
+        server._mcp_call = lambda *_a, **_k: {"ok": False, "error": "HTTP Error 404"}
+        result = server.do_reactivate(LIVE)
+        assert result["ok"] is False
+        assert "404" in result["error"]
+
+
+def test_kill_retires_through_the_mcp_tool():
+    """DECK's RETIRE went through the same missing web route: tmux was killed,
+    the roster never changed. It must use the `retire_agent` tool."""
+    with tempfile.TemporaryDirectory() as directory:
+        server = _load(_db_with(pathlib.Path(directory), retired=False))
+        server.build_agents = lambda: [{
+            "name": LIVE, "running": False, "attached": False, "category": "gone",
+        }]
+        server._has_session = lambda _name: False
+        calls = []
+
+        def fake_mcp_call(method, args, timeout=15):
+            calls.append((method, args))
+            return {"ok": True, "result": {"status": "retired"}}
+
+        server._mcp_call = fake_mcp_call
+        result = server.do_kill(LIVE, mode="retire")
+        assert result["ok"] is True
+        assert result["actions"] == ["retired"]
+        assert calls == [("retire_agent", {"project_key": PROJECT, "agent_name": LIVE})]
+
+
+def test_kill_reports_a_refused_retire_in_actions():
+    with tempfile.TemporaryDirectory() as directory:
+        server = _load(_db_with(pathlib.Path(directory), retired=False))
+        server.build_agents = lambda: [{
+            "name": LIVE, "running": False, "attached": False, "category": "gone",
+        }]
+        server._has_session = lambda _name: False
+        server._mcp_call = lambda *_a, **_k: {"ok": False, "error": "HTTP Error 404"}
+        result = server.do_kill(LIVE, mode="retire")
+        assert result["ok"] is True
+        assert result["actions"] == ["retire-err:HTTP Error 404"]
+
+
 def test_the_mail_web_api_follows_the_configured_endpoint():
     """It used to hardcode 127.0.0.1:8765, so retire failed on any other port."""
     with tempfile.TemporaryDirectory() as directory:

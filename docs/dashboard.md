@@ -108,6 +108,7 @@ running と finished の境目は、pane の先頭 process 名ではなく proce
 - resume は `finished` / `gone` のどちらも transcript から新しい session を作る同じ経路です。`finished` は先に husk を kill してから乗ります
 - `finished` の実用上の違いは、DECK の既定表示に残ること、`OPEN TMUX` で最後の画面と cwd を見に行けることの 2 点です
 - husk は待機中の shell 1 個なので、溜めても memory 負荷にはなりません。溜まって困るのは DECK の見通しの方で、retire / kill で片付けます
+- 逆に「tmux は生きているのに `retired`」もあります。親が完了報告を受けてすぐ soft-retire した child や、24 時間無活動で ORRERY Mail に retire された常駐 agent がこれで、NETWORK では薄く描かれ、**受信だけが黙って拒否されます**（送信と自分の inbox 読みは通る）。`OPEN TMUX` も resume も retired フラグには触りません。戻すのは `POST /api/reactivate`（body `{"session": "<name>"}`）で、tmux が生きていることを確かめてから ORRERY Mail の `unretire_agent` を呼びます。自動では戻しません
 
 ### 検索
 
