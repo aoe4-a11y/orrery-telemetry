@@ -2312,6 +2312,11 @@
   body.embed>header .controls{margin-left:auto}
   body.embed #net{height:calc(100vh - 44px)}
   body.embed #replayBar{top:52px}
+  /* replay 中の Tune は replayBar の下へ退く。standalone は bar top 16px に
+     対して 118px だが、embed は bar が 52px から 87px 分あるので同じ 118px
+     だと header が bar の裏に隠れ、開いた body も触れない (2026-09-09,
+     ORRERY app の NETWORK で「Tune が押せない」)。bar 下端 139px + 15px。 */
+  body.embed.replay-on .nctl{top:154px}
   body.embed main{padding-top:13px}
   /* Shared history language: mono smallcaps, hairlines, amber monochrome. */
   .tm-spark{font-family:var(--mono);background:rgba(11,13,17,.25);
