@@ -99,7 +99,7 @@ print(int(st.st_mtime))
 # A short body is included by newer mail servers. Keep it on one line before
 # passing it to tmux: an embedded newline would submit an incomplete prompt.
 snippet = (msg.get("body_snippet") or "").replace("\r", " ").replace("\n", " ⏎ ")
-print(snippet[:500])
+print(snippet[:1800])
 print("1" if msg.get("body_truncated") else "0")
 PY
 }
@@ -348,6 +348,15 @@ deliver_worker() {
     local from="$4" subject="$5" importance="$6" per_msg_file="$7"
     local body_snippet="${8:-}" body_truncated="${9:-0}"
     local session_name="$agent_name"
+
+    # P-010: the Claude head reads mail straight from the DB and has no tmux pane.
+    # Re-signalling its inbox every cycle spun the watcher for 3.5 h and starved every
+    # seat (~7k log lines / 2 min, zero deliveries). Skip the head, never signal it.
+    if [ "$agent_name" = "${AGENTSTACK_HEAD_AGENT:-ProudTuring}" ]; then
+        state_mark_result "$agent_name" "$msg_key" "head_no_pane" "watcher"
+        release_delivery_lease "$agent_name" "$msg_key"
+        return 0
+    fi
 
     if ! run_to "$TMUX_TIMEOUT" tmux has-session -t "$session_name" 2>/dev/null; then
         state_mark_result "$agent_name" "$msg_key" "session_not_found" "watcher"
