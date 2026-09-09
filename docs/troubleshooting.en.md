@@ -27,7 +27,7 @@ Paste the output verbatim from `--- copy from here ---` through `--- copy to her
 
 | Item | What it reveals |
 |---|---|
-| agent-mail commit and distance ahead of origin | Which code is actually running |
+| ORRERY Mail commit and distance ahead of origin | Which code is actually running |
 | `AGENT_NAME_ENFORCEMENT_MODE` | Whether the requested name passes through unchanged |
 | presence of the passthrough patch | Whether that mode is accepted by the installed version |
 | requested-name handling | Final decision combining #140 / passthrough / legacy behavior. `unknown` means undetermined |
@@ -36,6 +36,19 @@ Paste the output verbatim from `--- copy from here ---` through `--- copy to her
 | availability and versions of tmux / python3 / uv / claude / codex | Whether prerequisites are present |
 
 **No tokens or Authorization headers are included.** Values are intentionally omitted and tests lock this behavior so the report can be pasted directly into chat. Add “what you did,” “what you expected,” and “what happened” in the final field. Pasting error text verbatim is fastest.
+
+## Windows Mail archives exceed MAX_PATH
+
+A long canonical project path and message subject can make an archive path
+exceed Windows MAX_PATH and fail with `WinError 206`. Archive filesystem access
+uses extended-length paths, while Git staging uses Git with `core.longpaths=true`
+in the archive repository's local configuration. Project identities, slugs and
+filenames are preserved; global Git configuration is not changed.
+
+The Windows regression exercises message persistence, Git staging and startup
+recovery beyond 260 characters. It does not establish native Windows installer,
+service supervision or Codex Desktop Bridge support. UNC conversion is included
+but has not been exercised against a network share.
 
 ## `NOT CONFIGURED`
 
@@ -99,7 +112,7 @@ When the installer detects an occupied port, it stops before service registratio
 
 ## No service on Linux / WSL
 
-**Linux and WSL are unverified.** The systemd user path and supervised-background fallback are implemented, but development uses macOS and has not exercised registration or timer startup on a real Linux host. CI on ubuntu-latest stubs `systemctl` and checks only unit generation and call order. The following is the expected design; if it fails, report the environment and output in an issue.
+**Plain Linux is unverified; WSL2 has been checked on a real machine.** The systemd user path and supervised-background fallback are implemented, but registration and timer startup have not been exercised on a plain Linux host. CI on ubuntu-latest stubs `systemctl` and checks only unit generation and call order. On WSL2 (Ubuntu 26.04 / WSL 2.7) the Mail timer start, the dashboard, agent launch, and jump have all been run. If it fails, report the environment and output in an issue.
 
 When a systemd user session is available:
 
@@ -108,7 +121,26 @@ systemctl --user status agentstack-dashboard.service
 systemctl --user daemon-reload
 ```
 
-In environments without systemd user support and on WSL, the installer falls back to `nohup` plus a pidfile. Ghostty click-to-jump is unavailable, but the localhost dashboard and browser terminal can work.
+In environments without systemd user support and on WSL, the installer falls back to `nohup` plus a pidfile. The localhost dashboard and browser terminal can work. On WSL2 the dashboard's jump opens a new Windows Terminal (`wt.exe`) tab that attaches to tmux through `wsl.exe -d <distro>` (`AGENTSTACK_TERMINAL=auto` picks `wt`); on plain Linux jump stays unsupported.
+
+### On WSL2 the services vanish when the last shell closes
+
+WSL2 stops the distro's VM once no session is open, taking the `nohup`-started Mail and dashboard with it. On top of that, without linger the systemd user manager exits at the last logout. To keep them resident, set both (checked on Ubuntu 26.04 / WSL 2.7):
+
+```bash
+# inside WSL: keep systemd --user alive after logout
+loginctl enable-linger "$USER"
+```
+
+```ini
+# Windows side, %UserProfile%\.wslconfig: do not stop the VM when idle
+[wsl2]
+vmIdleTimeout=-1
+```
+
+Then run `wsl --shutdown` once and reopen. The Mail timer restarts Mail one minute after boot; bring the dashboard back by re-running `install.sh`.
+
+If the native Windows helper (`scripts/windows/`) also runs on the same PC: WSL2 forwards 8770 to the Windows localhost, so a leftover native dashboard on the same port answers the browser instead and the WSL agents never appear. Change one of the ports, or stop the native side before opening the page.
 
 ## `EPERM` on macOS
 
@@ -148,8 +180,16 @@ curl -s http://127.0.0.1:8770/api/mail-watcher-health
 
 - no watcher process
 - signals remain and the most recent success is old
-- invalid agent-mail endpoint / bearer token
+- invalid ORRERY Mail endpoint / bearer token
 - target tmux session is missing
+
+The installer registers the watcher as a service (launchd `org.agentstack.mail-watcher` on macOS, the systemd user unit `org.agentstack.mail-watcher.service` on Linux / WSL2; `watcher_mode` tells you which one is running). `watcher_running: false` with signals piling up means either an older install without that unit (before 2026-09-07 only `agent-start` started the watcher, as a tmux session, so a host whose agents were all spawned from the dashboard had nothing delivering) or a failed registration. Re-running `bash scripts/install.sh` registers it again. To check by hand:
+
+```bash
+launchctl print gui/$(id -u)/org.agentstack.mail-watcher   # macOS
+systemctl --user status org.agentstack.mail-watcher.service   # Linux / WSL2
+tail ~/.agentstack/runtime/mail-watcher.log
+```
 
 Confirm that `AGENTSTACK_MAIL_HOME` and `AGENTSTACK_SIGNALS_DIR` match between service and launcher.
 
@@ -175,11 +215,11 @@ After removing hyphens, an explicit name must be a 2–64-character alphabetic n
 - `unknown`: database / auth / transport failure
 - `available`: usable
 
-`unknown` cannot be used. Repair agent-mail and the project key before attempting another name, preserving identity continuity.
+`unknown` cannot be used. Repair ORRERY Mail and the project key before attempting another name, preserving identity continuity.
 
 ## Registered under a different name than requested
 
-agent-mail rejected the name and replaced it with a generated one. The agent continues working, so this can remain unnoticed until another agent cannot address it.
+ORRERY Mail rejected the name and replaced it with a generated one. The agent continues working, so this can remain unnoticed until another agent cannot address it.
 
 ```bash
 ~/.agentstack/bin/agentstack-doctor --report \
@@ -309,7 +349,7 @@ For Edit / Write under a protected root, the hook establishes exact identity and
 1. Confirm `AGENTSTACK_PROJECT_KEY` / `PROJECT_KEY` matches the project where the reservation was made
 2. Confirm `AGENT_NAME`, or the tmux session explicitly selected by `TMUX_PANE`, refers to the canonical identity. A pane-metadata mismatch is `AGENT IDENTITY CONFLICT` and must be repaired first. A client outside tmux resolves identity from the session index after `register_agent`. Multiple identities tied to one session are also `AGENT IDENTITY CONFLICT`; decide which remains and reregister
 3. Reserve the exact path or smallest glob with `file_reservation_paths`
-4. If a conflict is returned, contact the holder through agent-mail and wait for release or expiry
+4. If a conflict is returned, contact the holder through ORRERY Mail and wait for release or expiry
 
 The owner `registration_token` is not sent in this hook's tool arguments and is separate from the legacy HTTP bearer. `isError` succeeds only when omitted or boolean `false`. After exact identity and protected scope are established, only transport unreachability on the first query fails open. HTTP/MCP/schema rejection, malformed response, and transport failure after definitive zero block. A missing path or path outside protected roots is outside enforcement and exits 0.
 
@@ -331,7 +371,7 @@ Codex Desktop integration has its own doctor, runtime state, and failure classif
 
 ## Agent appears twice on the dashboard
 
-Check whether the tmux session name matches the agent-mail identity.
+Check whether the tmux session name matches the ORRERY Mail identity.
 
 ```bash
 tmux list-sessions
@@ -344,7 +384,7 @@ If stale top-level environment may have been inherited, relaunch from a new term
 
 `/api/history` searches Claude / Codex transcripts based on agent program, then falls back to the other when absent.
 
-- whether agent-mail program is correct
+- whether ORRERY Mail program is correct
 - whether the transcript remains on disk
 - whether session and agent names match
 - whether child and parent transcripts were confused

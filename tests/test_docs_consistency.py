@@ -1,7 +1,7 @@
 """Facts that user docs state about the implementation, checked against it.
 
 Each check exists because a reader found the docs contradicting the code
-(2026-09-03 first-look review): the agent-mail port in AGENTS.md, the number
+(2026-09-03 first-look review): the ORRERY Mail port in AGENTS.md, the number
 of approval prompts in install.md, the hook count and guide list in the
 English README.
 """

@@ -4,9 +4,9 @@
 
 [Previous: Codex App integration](codex-app.en.md) · [Back to README](../README.en.md) · [Next: API reference](api.en.md)
 
-The dashboard is served at `http://127.0.0.1:8770/` by default. It combines tmux, agent-mail SQLite, runtime state, project logs, and optional Obsidian-link hints into one screen for observation and safe control operations.
+The dashboard is served at `http://127.0.0.1:8770/` by default. It combines tmux, ORRERY Mail SQLite, runtime state, project logs, and optional Obsidian-link hints into one screen for observation and safe control operations.
 
-Here, agent-mail / mail watcher means the mechanism for messages among agents inside AgentStack. It never accesses the user's email account, mail client, or inbox.
+Here, ORRERY Mail / mail watcher means the mechanism for messages among agents inside ORRERY Telemetry. It never accesses the user's email account, mail client, or inbox.
 
 ## Find an action
 
@@ -39,7 +39,7 @@ The six screenshots on this page are real screens from an isolated demo environm
 | Thin line below the model | **Context remaining**. Longer means more room; below 20% it becomes redder. It is absent when telemetry cannot be obtained. |
 | Black strip | Current terminal display, useful for judging whether the agent is working or waiting. |
 | `ORD` | Most recent instruction assigned to the agent. |
-| `RX` | Most recent instruction received through agent-mail, with sender, subject, and importance. The row is absent before any mail arrives. |
+| `RX` | Most recent instruction received through ORRERY Mail, with sender, subject, and importance. The row is absent before any mail arrives. |
 | `● ONLINE` | The agent process is running. **This does not necessarily mean it is currently making progress.** |
 | Top-right state | Yellow seconds indicate work; faint `LAST …` indicates waiting for input; `?` and `APPROVAL` mean human intervention is required. |
 | `↩ EXIT` | Send graceful `/exit` to a running agent. Press twice to confirm. |
@@ -105,7 +105,7 @@ KILL eligibility is not based only on frontend appearance; the server rechecks t
 
 ### After a child completes
 
-In a normal completion flow, a child started by `/delegate` sends an agent-mail completion report to its parent before exiting. The parent reads the report, verifies the artifact, and then returns the result to the user. After the child REPL ends, launcher cleanup releases reservations, soft-retires the remote identity, and removes child runtime credentials and state. The tmux session closes when that command ends.
+In a normal completion flow, a child started by `/delegate` sends an ORRERY Mail completion report to its parent before exiting. The parent reads the report, verifies the artifact, and then returns the result to the user. After the child REPL ends, launcher cleanup releases reservations, soft-retires the remote identity, and removes child runtime credentials and state. The tmux session closes when that command ends.
 
 Thus a completed child's card disappears from the normal DECK view, but this is not a failure. Enabling `show all` displays `gone` / `retired` agents from the last 30 days.
 
@@ -123,7 +123,7 @@ A detected item inside `AGENTSTACK_VAULT` becomes an `obsidian://` link; a gener
 
 ## Codex App runtime
 
-With [Codex App integration](codex-app.en.md), the dashboard reads the Bridge's allowlisted snapshot alongside tmux state. It promotes a row with the same agent-mail name to `surface: codex-app` and displays `Codex App · <state>` or `Codex App · wake:<status>` live.
+With [Codex App integration](codex-app.en.md), the dashboard reads the Bridge's allowlisted snapshot alongside tmux state. It promotes a row with the same ORRERY Mail name to `surface: codex-app` and displays `Codex App · <state>` or `Codex App · wake:<status>` live.
 
 - `registering / working / waiting / blocked`: treated as running
 - `dormant / degraded`: treated as finished
@@ -155,7 +155,7 @@ History in the detail panel contains transcript and a 24-hour event sparkline; O
 ### Edges and mail
 
 - spawn edge: parent-child lineage
-- communication edge: agent-mail message
+- communication edge: ORRERY Mail message
 - number on a communication edge: message count between the pair
 - arrow on a communication edge: direction
 - click an edge for the pairwise mail drawer
@@ -234,15 +234,15 @@ The history range auto-fits to the oldest and newest events, widening ranges too
 - `occupied / unknown`: cannot select
 - scientist outside roster or no available candidate: HTTP 409 prompting another scientist / AUTO
 
-Scientist-rail `available` means that at least one pairing with the 134 adjectives is available, not that the bare surname is free. Adjectives are synchronized with agent-mail canonical `SIMPLE_ADJECTIVES`, and the client does not create unverified local names. AUTO also fail-closed verifies up to 75 candidates against the live registry and rejects spawn when none can be confirmed available.
+Scientist-rail `available` means that at least one pairing with the 134 adjectives is available, not that the bare surname is free. Adjectives are synchronized with ORRERY Mail canonical `SIMPLE_ADJECTIVES`, and the client does not create unverified local names. AUTO also fail-closed verifies up to 75 candidates against the live registry and rejects spawn when none can be confirmed available.
 
 ### Engine
 
 - Claude / Codex provider tabs
 - model cards and usage guidance per provider
 - Claude: Sonnet / Opus / Haiku
-- Codex: `gpt-5.6-sol / terra / luna`
-- Codex effort: `low / medium / high / xhigh`, default `xhigh`
+- Codex: `gpt-5.6-sol / terra / luna / gpt-6-astra`
+- Codex effort: `low / medium / high / xhigh / max / ultra` (max / ultra: gpt-6-astra only), default `xhigh`
 
 The server uses the provider / model / effort allowlist for both catalog and validation.
 
@@ -288,7 +288,7 @@ With `worktree: true`, each child uses:
 branch: exp/<child-name>
 ```
 
-Omitted `worktree_base` means `HEAD`. The task message names the original project key, branch, base, and directory so the worktree path is not mistaken for the agent-mail project key.
+Omitted `worktree_base` means `HEAD`. The task message names the original project key, branch, base, and directory so the worktree path is not mistaken for the ORRERY Mail project key.
 
 ## Embed mode
 

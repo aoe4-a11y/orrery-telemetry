@@ -20,7 +20,7 @@ The former is enough for a short investigation. The latter is necessary when **p
 | | Built-in subagent | Child agent (this stack) |
 |---|---|---|
 | How it is created | The parent calls the `Agent` / `Task` tool | `/delegate` (which uses `spawn_child.sh` internally) |
-| Identity | None. An internal ID for each call (a hexadecimal value such as `a1798ced…`) | A name registered with agent-mail (an adjective and scientist name such as `Teal-Darwin`) |
+| Identity | None. An internal ID for each call (a hexadecimal value such as `a1798ced…`) | A name registered with ORRERY Mail (an adjective and scientist name such as `Teal-Darwin`) |
 | Process | Same process as the parent | Independent tmux session (and optionally a terminal window) |
 | Dashboard | **Does not appear** (it does not exist even as a node) | Appears as a node, with a line connecting it to its parent |
 | Communication | Only the arguments from the parent and the final returned text | agent-mail. It can communicate bidirectionally with agents other than its parent |
@@ -32,7 +32,7 @@ The former is enough for a short investigation. The latter is necessary when **p
 
 ## How to tell them apart
 
-The most reliable method is to **look at the dashboard**. A built-in subagent does not register with agent-mail, so it does not appear as a node. It is not merely missing a line: **it does not exist there**.
+The most reliable method is to **look at the dashboard**. A built-in subagent does not register with ORRERY Mail, so it does not appear as a node. It is not merely missing a line: **it does not exist there**.
 
 If you perform a simple communication check and any of the following is true, you are using a built-in subagent:
 
@@ -45,11 +45,11 @@ With a child agent, by contrast, an edge connects the two agents and displays th
 
 ## Why they are silently substituted
 
-`/delegate` uses the agent-mail MCP tools. **When those tools are absent, a parent may decide on its own to switch to a built-in subagent and finish the work.** The work completes and a report returns, so from a person's perspective it looks like an unqualified success.
+`/delegate` uses the ORRERY Mail MCP tools. **When those tools are absent, a parent may decide on its own to switch to a built-in subagent and finish the work.** The work completes and a report returns, so from a person's perspective it looks like an unqualified success.
 
 This stack prevents that behavior in three layers.
 
-1. **The installer registers agent-mail as an MCP server.** Previously, the registration procedure was undocumented and silently assumed that users had already completed it
+1. **The installer registers ORRERY Mail as an MCP server.** Previously, the registration procedure was undocumented and silently assumed that users had already completed it
 2. **`agentstack-doctor` reports missing or inconsistent registration.** It also displays the repair command
 3. **The managed instructions (`claude/CLAUDE.md` / `codex/AGENTS.md`) state that delegation must use only `/delegate`, and that when the tools are absent the agent must report the problem and stop instead of substituting another mechanism**
 

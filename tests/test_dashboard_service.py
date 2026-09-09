@@ -51,7 +51,7 @@ def _start_dashboard_version_server():
         ("127.0.0.1", 0), _DashboardVersionHandler
     )
     server.version_payload = {
-        "name": "claude-agent-stack", "version": "test", "api": 1,
+        "name": "orrery-telemetry", "version": "test", "api": 1,
     }
     thread = threading.Thread(target=server.serve_forever, daemon=True)
     thread.start()
@@ -227,6 +227,14 @@ def test_service_definitions_use_runner_runtime_log_and_restart_policy():
     assert plist["EnvironmentVariables"]["AGENTSTACK_CODEX_CHILD_APPROVAL"] == "__CODEX_CHILD_APPROVAL__"
     assert plist["EnvironmentVariables"]["AGENTSTACK_CODEX_NETWORK"] == "__CODEX_NETWORK__"
     assert plist["EnvironmentVariables"]["AGENTSTACK_CODEX_ADD_DIRS"] == "__CODEX_ADD_DIRS__"
+    # The dashboard's launchd PATH has no per-user Node prefix, so the installer
+    # resolves codex in the operator's shell and hands the path to the service.
+    assert plist["EnvironmentVariables"]["AGENTSTACK_CODEX_BIN"] == "__CODEX_BIN__"
+    installer_text = (ROOT / "scripts" / "install.sh").read_text(encoding="utf-8")
+    assert "--codex-bin)" in installer_text
+    assert 'CODEX_BIN_SETTING="$(command -v codex 2>/dev/null || true)"' in installer_text
+    assert installer_text.count('"AGENTSTACK_CODEX_BIN": "$CODEX_BIN_SETTING"') >= 3
+    assert '"__CODEX_BIN__": "$CODEX_BIN_SETTING"' in installer_text
     assert plist["EnvironmentVariables"]["AGENTSTACK_PORTRAITS_DIR"] == "__PORTRAITS_DIR__"
     assert plist["EnvironmentVariables"]["AGENTSTACK_CUSTOM_PORTRAITS"] == "__CUSTOM_PORTRAITS__"
     assert plist["EnvironmentVariables"]["AGENTSTACK_CODEX_MODELS"] == "__CODEX_MODELS__"
@@ -736,7 +744,7 @@ def test_doctor_rejects_loaded_but_not_running_launchd_job(tmp_path):
         )
 
         version_server.version_payload = {
-            "name": "claude-agent-stack", "version": "test", "api": 1,
+            "name": "orrery-telemetry", "version": "test", "api": 1,
         }
         running = subprocess.run(
             [
@@ -839,7 +847,7 @@ def test_installer_skips_old_path_python_for_versioned_candidate(tmp_path):
     )
     version = re.search(r"\((\d+)\.(\d+)", chosen)
     assert version, f"no version reported in {chosen!r}"
-    assert (int(version.group(1)), int(version.group(2))) >= (3, 10), chosen
+    assert (int(version.group(1)), int(version.group(2))) >= (3, 11), chosen
 
 
 @pytest.mark.skipif(
@@ -931,7 +939,7 @@ exit 0
                 "pidfile": str(
                     install_dir / "mail-service/runtime/agentstack-mail.pid"
                 ),
-                "role": "agent-mail",
+                "role": "ORRERY Mail",
             },
         ]
         assert "launchd could not bootstrap" in result.stderr

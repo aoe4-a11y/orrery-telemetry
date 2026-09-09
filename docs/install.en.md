@@ -20,12 +20,12 @@ Required:
 
 Optional:
 
-- `fswatch`: mail watcher. Falls back to polling every two seconds when absent; notifications still arrive
+- `fswatch`: mail watcher. Falls back to polling every two seconds when absent; notifications still arrive. The watcher itself is registered by the installer as a launchd / systemd service, so notifications are delivered no matter where an agent was started from
 - `fzf`: directory picker for a launcher without arguments. The current directory is used when absent
 - Ghostty: click-to-jump and window titles. Falls back to iTerm2, Terminal.app, or `none`. Only Ghostty can raise an existing window; iTerm2 and Terminal.app open a new window for every jump
 - Obsidian: vault / Daily Note integration for `/log` and links that open Output items inside a vault. `/log`'s Obsidian mode is enabled only when `AGENTSTACK_OBSIDIAN_APP` is set; the installer does not set it. Without it, `/log` writes to local `logs/`, and the dashboard displays a generic project log as a non-link item
 
-On macOS, the resident-service path is chosen by the actual result of bootstrapping into launchd's `gui/$UID` domain. If bootstrap is unavailable while the display sleeps, in an SSH-only environment, or for another reason, installation automatically switches to supervised-background mode, which detects and restarts an exited dashboard server. On Linux, the implementation uses a systemd user service or the same supervised-background mode when unavailable, but it is unverified on a real Linux host; CI only tests unit generation with a stubbed `systemctl`. WSL2 is also unverified. By design, the localhost dashboard should work while Ghostty click-to-jump should not. Native Windows is unsupported.
+On macOS, the resident-service path is chosen by the actual result of bootstrapping into launchd's `gui/$UID` domain. If bootstrap is unavailable while the display sleeps, in an SSH-only environment, or for another reason, installation automatically switches to supervised-background mode, which detects and restarts an exited dashboard server. On Linux, the implementation uses a systemd user service or the same supervised-background mode when unavailable, but it is unverified on a plain Linux host; CI only tests unit generation with a stubbed `systemctl`. On WSL2 (Ubuntu 26.04 / WSL 2.7) the install, Mail, dashboard, `agent-start`, `/delegate` children, and dashboard jump (attach / resume in a Windows Terminal tab) have been checked on a real machine. The VM stops with the last shell; see the WSL2 section of [troubleshooting](troubleshooting.en.md). Native Windows is unsupported.
 
 An explicitly specified `AGENTSTACK_PYTHON` is also checked for Python 3.11 or newer. When unspecified, the installer checks `python3` on PATH, then also searches versioned commands, `/opt/homebrew/bin/python3`, and `/usr/local/bin/python3` if needed. If no compatible interpreter exists, it reports the inspected versions and paths and stops before generating service files.
 
@@ -45,7 +45,7 @@ The installer previews three changes and asks for `yes` for each.
 2. Claude Code settings (append hooks and permissions to `~/.claude/settings.json`)
 3. Managed instruction blocks (between markers in the project's `CLAUDE.md` and `~/.codex/AGENTS.md`)
 
-All existing content is preserved, and a backup from before each merge is stored in `~/.agentstack/backups`. An item answered with `no` can be installed separately later with a helper; see [Using agent-mail from Claude Code](#using-agent-mail-from-claude-code).
+All existing content is preserved, and a backup from before each merge is stored in `~/.agentstack/backups`. An item answered with `no` can be installed separately later with a helper; see [Using ORRERY Mail from Claude Code](#using-agent-mail-from-claude-code).
 
 The installer places:
 
@@ -78,7 +78,50 @@ agent-start /path/to/your-project
 agent-start-codex /path/to/your-project
 ```
 
-`agent-start` creates a tmux session with the same name as the agent-mail identity. Dashboard jumps, mail notifications, and token recovery are joined by this name. In the launched Claude Code session, invoke skills with a leading slash, as in `/delegate`. See [Skills and file reservations](launchers.en.md#skills-2-and-file-reservations) for the first child launch.
+`agent-start` creates a tmux session with the same name as the ORRERY Mail identity. Dashboard jumps, mail notifications, and token recovery are joined by this name. In the launched Claude Code session, invoke skills with a leading slash, as in `/delegate`. See [Skills and file reservations](launchers.en.md#skills-2-and-file-reservations) for the first child launch.
+
+## Installing on Windows (WSL2)
+
+On Windows, install inside a WSL2 Ubuntu. Inside Ubuntu it is Linux, so the steps above apply unchanged. This is the order that worked on Windows 11 with Ubuntu 26.04 / WSL 2.7.
+
+1. **Install WSL2 and Ubuntu** (PowerShell, once).
+   ```powershell
+   wsl --update
+   wsl --install -d Ubuntu
+   ```
+   It ends by asking for a username and password. If it stops with an error such as `Wsl/Service/E_UNEXPECTED`, run `wsl --update` first and retry `wsl --install`.
+2. **Enter Ubuntu.** Every command below is typed at the Ubuntu prompt (`user@PC:~$`). Typed at the PowerShell prompt (`PS C:\...>`) it fails at the first `&&`.
+   ```powershell
+   wsl -d Ubuntu
+   ```
+3. **Install the prerequisites** (inside Ubuntu).
+   ```bash
+   sudo apt update && sudo apt install -y git tmux python3 curl fswatch
+   curl -LsSf https://astral.sh/uv/install.sh | sh
+   ```
+   `fswatch` is optional. Without it the mail watcher falls back to polling every 2 seconds and notifications still arrive.
+4. **Clone and run the installer** (inside Ubuntu). Keep the project on the WSL side (`~/work/...`): `/mnt/c` is slow and handles permissions differently.
+   ```bash
+   git clone https://github.com/gyroid-eth/orrery-telemetry.git
+   cd orrery-telemetry
+   ./scripts/install.sh --project-key ~/work/your-project
+   ```
+   The questions are the same three as above, and each only changes files under the Ubuntu home. Answer each with `yes` and one press of Enter (over Remote Desktop a key can register as repeated, so press once and wait for the output). It is done when `dashboard healthy: http://127.0.0.1:8770/api/agents` appears.
+5. **Open the dashboard.** In a Windows browser open `http://127.0.0.1:8770/`. WSL2 forwards localhost to Windows, so it just works.
+6. **Install Claude Code or the Codex CLI inside Ubuntu and log in.** A copy installed on the Windows side is not used: agents run inside Ubuntu's tmux.
+   ```bash
+   # Claude Code (native installer; lands in ~/.local/bin)
+   curl -fsSL https://claude.ai/install.sh | bash
+   # Codex CLI (needs Node.js; keep the global prefix under home to avoid sudo)
+   sudo apt install -y nodejs npm
+   npm config set prefix ~/.npm-global
+   echo 'export PATH="$HOME/.npm-global/bin:$HOME/.local/bin:$PATH"' >> ~/.bashrc && source ~/.bashrc
+   npm install -g @openai/codex
+   ```
+   Log in with `claude` (then `/login`) and `codex login`. Open the URL each prints in a Windows browser to authorize.
+7. **Start an agent** (inside Ubuntu). Use the same commands as in "Starting the first agent" above. The dashboard's jump opens a new Windows Terminal (`wt.exe`, preinstalled on Windows 11) tab attached to the tmux session. If Windows Terminal is missing, install it from the Microsoft Store.
+
+**Do not close every window.** When the last Ubuntu window closes, WSL2 stops the whole VM and Mail and the dashboard go with it. To keep them resident, set `loginctl enable-linger` and `vmIdleTimeout=-1` in `.wslconfig` as described in the [WSL2 section of troubleshooting](troubleshooting.en.md#on-wsl2-the-services-vanish-when-the-last-shell-closes).
 
 ## Non-interactive installation (`--assume-yes`)
 
@@ -88,7 +131,7 @@ When installing from CI or a script, the four approvals (Claude settings merge, 
 ./scripts/install.sh --project-key /absolute/path/to/your-project --assume-yes
 ```
 
-`--assume-yes` (short form `-y`; environment variable `AGENTSTACK_ASSUME_YES=1` is equivalent) grants approvals in advance; it is not `--force`. Python older than 3.11, a dashboard-port conflict, multiple or absent existing agent-mail database candidates, disagreement with the running server, and automatic-setup failure still stop installation. Every automatically approved item is printed separately as an `assume-yes:` line. Agents and automation must not add this option “for convenience” without the user's explicit choice. The command-line option takes precedence over the environment variable and is not persisted in generated `env.sh`.
+`--assume-yes` (short form `-y`; environment variable `AGENTSTACK_ASSUME_YES=1` is equivalent) grants approvals in advance; it is not `--force`. Python older than 3.11, a dashboard-port conflict, multiple or absent existing ORRERY Mail database candidates, disagreement with the running server, and automatic-setup failure still stop installation. Every automatically approved item is printed separately as an `assume-yes:` line. Agents and automation must not add this option “for convenience” without the user's explicit choice. The command-line option takes precedence over the environment variable and is not persisted in generated `env.sh`.
 
 ## Installation tiers and options
 
@@ -123,7 +166,7 @@ An explicit `--project-key` always has highest priority, followed by environment
 The Tier 1 merge uses the JSON parser in `scripts/lib/merge_settings.py`.
 
 - Preserve existing hooks, permissions, and other user settings
-- Append only AgentStack values, without duplicates
+- Append only ORRERY Telemetry values, without duplicates
 - Save a pre-merge settings backup in `~/.agentstack/backups`
 - Record added entries and the change result in the manifest
 - Idempotently update only content between managed-block markers
@@ -140,13 +183,13 @@ The installer parses and merges structure rather than performing simple string r
 ~/.claude/skills/log      -> ~/.agentstack/skills/log
 ```
 
-An existing symlink to the same AgentStack payload is reused and recorded as owned in the manifest. Because the link becomes invalid with the payload, it is removed on uninstall. An existing same-name file, directory, or symlink to another target is preserved with a warning and is not recorded as owned. Uninstall compares the manifest path with the actual symlink target and removes only an owned symlink that points to the AgentStack payload. A path replaced by the user with a file or directory, or a retargeted symlink, remains.
+An existing symlink to the same ORRERY Telemetry payload is reused and recorded as owned in the manifest. Because the link becomes invalid with the payload, it is removed on uninstall. An existing same-name file, directory, or symlink to another target is preserved with a warning and is not recorded as owned. Uninstall compares the manifest path with the actual symlink target and removes only an owned symlink that points to the ORRERY Telemetry payload. A path replaced by the user with a file or directory, or a retargeted symlink, remains.
 
-On systems where an old installer added `~/.agentstack/skills` to `skillsDirectories`, a reinstall with the Tier 1 settings merge approved removes only that old AgentStack entry. Other user values in the same array and all other settings are preserved.
+On systems where an old installer added `~/.agentstack/skills` to `skillsDirectories`, a reinstall with the Tier 1 settings merge approved removes only that old ORRERY Telemetry entry. Other user values in the same array and all other settings are preserved.
 
 The installer does not change shell dotfiles. Within the project, it updates only content between managed markers in `CLAUDE.md`, and only after a Tier 1 preview is approved; it changes no other file. The default location for Claude Code user settings is `~/.claude/settings.json` and can be changed with `AGENTSTACK_CLAUDE_SETTINGS`.
 
-## Using agent-mail from Claude Code
+## Using ORRERY Mail from Claude Code
 
 The `/delegate` skill allows `mcp__orrery-mail__*` tools, and the Claude Code user-scope MCP server name is fixed as **`orrery-mail`**.
 
@@ -189,7 +232,7 @@ The helpers used by Tier 1 to preview / merge can also run independently.
 ~/.agentstack/bin/agentstack-claude-setup --print
 ```
 
-`--print` only displays the target and the block with placeholders resolved; it makes no changes. With no arguments, the helper backs up the existing file and installs / updates only the AgentStack block between markers.
+`--print` only displays the target and the block with placeholders resolved; it makes no changes. With no arguments, the helper backs up the existing file and installs / updates only the ORRERY Telemetry block between markers.
 
 ```bash
 ~/.agentstack/bin/agentstack-codex-setup
@@ -259,9 +302,9 @@ git pull
 
 The installer updates payloads and `VERSION`, reregisters services, and previews managed merges again. It validates and reuses the bundled ORRERY Mail candidate and state. `--project-key` inherits the previous value.
 
-**Keep the agent-mail server running during an in-place upgrade.** The real database path resolved from the running listener takes precedence over filesystem candidate discovery. Stopping agent-mail first falls back to candidate discovery, and the installer stops rather than risk choosing incorrectly in an environment with several databases.
+**Keep the ORRERY Mail server running during an in-place upgrade.** The real database path resolved from the running listener takes precedence over filesystem candidate discovery. Stopping ORRERY Mail first falls back to candidate discovery, and the installer stops rather than risk choosing incorrectly in an environment with several databases.
 
-If the dashboard port is held by a process under the current AgentStack launchd job or supervised-background pidfile, the installer verifies ownership and replaces that dashboard with the new payload. It still stops if an unrelated process holds the same port.
+If the dashboard port is held by a process under the current ORRERY Telemetry launchd job or supervised-background pidfile, the installer verifies ownership and replaces that dashboard with the new payload. It still stops if an unrelated process holds the same port.
 
 Service environment is written into plist / unit files during installation. Changing only `~/.agentstack/env.sh` does not affect an existing service, so rerun the installer or update the service definition too.
 
@@ -275,7 +318,7 @@ Service environment is written into plist / unit files during installation. Chan
 The uninstaller targets only files, services, and settings changes recorded in `install-state.json`.
 
 - Structurally remove merged Claude settings entries
-- Remove AgentStack-owned files
+- Remove ORRERY Telemetry-owned files
 - Remove only owned directories that become empty
 - Preserve ORRERY Mail state / database and the runtime directory (annotations, tokens, session state / logs) by default
 

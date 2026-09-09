@@ -29,7 +29,7 @@ The precedence order is an explicit argument, the `fzf` picker, then the current
 
 When launched from outside tmux, the launcher creates a new named session and replaces the current terminal tab. From inside tmux, it renames the current session and runs the CLI in place with `exec`.
 
-Matching the session name to the agent-mail identity makes the following associations unambiguous:
+Matching the session name to the ORRERY Mail identity makes the following associations unambiguous:
 
 - dashboard click-to-jump
 - inbox signal delivery target
@@ -48,7 +48,7 @@ A new identity requested by a top-level launcher has the form `Adjective-Scienti
 - the scientist suffix is the portrait key
 - only scientists whose names contain ASCII alphabetic characters are candidates
 
-The 134 words are synchronized word-for-word with agent-mail's canonical `SIMPLE_ADJECTIVES` Round 3 list. Strict agent-mail deployments validate generated names against the canonical list, so do not add a custom word only on the AgentStack side.
+The 134 words are synchronized word-for-word with ORRERY Mail's canonical `SIMPLE_ADJECTIVES` Round 3 list. Strict ORRERY Mail deployments validate generated names against the canonical list, so do not add a custom word only on the ORRERY Telemetry side.
 
 The launcher, dashboard catalog, suggestion API, and child preregistration share the same adjective and scientist sources. Keeping the naming sources unique prevents drift among portraits, registered names, and server-side validation.
 
@@ -68,16 +68,16 @@ After the dashboard spawn checks availability on the scientist rail, it validate
 
 ## Identity registration
 
-The launcher registers an identity with agent-mail before starting the CLI.
+The launcher registers an identity with ORRERY Mail before starting the CLI.
 
 1. Remove stale `AGENT_NAME`, `PARENT_AGENT`, token, and reserved marker values
 2. Generate a candidate name
-3. Check agent-mail health
+3. Check ORRERY Mail health
 4. Register with project key, program, model, and task metadata
 5. Compare the requested name with the returned canonical name. On a mismatch, a top-level launch reports it and renames the tmux session to the returned name; a reserved identity stops
 6. Update the managed agent list and clipboard
 
-If `AGENTSTACK_PROJECT_KEY` is unset or agent-mail is unreachable, the CLI itself still starts with the preselected name. Mail, reservations, and project-scoped dashboard features are unavailable, however.
+If `AGENTSTACK_PROJECT_KEY` is unset or ORRERY Mail is unreachable, the CLI itself still starts with the preselected name. Mail, reservations, and project-scoped dashboard features are unavailable, however.
 
 Claude Code hooks also record registration inside the session. Because Codex does not have Claude Code's hook system, `agentstack-codex-bootstrap` handles registration and tmux renaming before startup.
 
@@ -137,7 +137,7 @@ Because an API key in the environment can override OAuth, it is removed only fro
 
 ## Mail watcher and REPL injection
 
-When the mail watcher finds an agent-mail signal, it injects notification text into the corresponding tmux session's Claude / Codex REPL.
+When the mail watcher finds an ORRERY Mail signal, it injects notification text into the corresponding tmux session's Claude / Codex REPL.
 
 Text and submission are separate operations.
 
@@ -162,13 +162,13 @@ A Claude Code session that was open before installation does not discover the ne
 
 `/delegate` is not merely a shortcut that launches a child.
 
-AgentStack delegation must be entered with the leading slash as `/delegate ...`. `delegate ...` is an ordinary prompt, not an invocation of this skill. If Claude handles it with a built-in subagent / Agent tool, it may produce an artifact, but it does not create AgentStack identity, reservations, a dedicated tmux session, or dashboard telemetry. Do not use the built-in Agent tool in place of `/delegate` when the objective is to create an AgentStack-monitored child.
+ORRERY Telemetry delegation must be entered with the leading slash as `/delegate ...`. `delegate ...` is an ordinary prompt, not an invocation of this skill. If Claude handles it with a built-in subagent / Agent tool, it may produce an artifact, but it does not create ORRERY Telemetry identity, reservations, a dedicated tmux session, or dashboard telemetry. Do not use the built-in Agent tool in place of `/delegate` when the objective is to create an ORRERY Telemetry-monitored child.
 
 | Item | Details |
 | --- | --- |
 | Trigger | A request to delegate to a child, launch a subagent, or perform parallel work |
 | Basic form | `/delegate "<task>" [--dir <path>] [--codex] [--model <model>] [--worktree] [--worktree-base <rev>]` |
-| Required prerequisites | The parent's agent-mail identity and canonical project key. Editing tasks require a resource declaration and reservation |
+| Required prerequisites | The parent's ORRERY Mail identity and canonical project key. Editing tasks require a resource declaration and reservation |
 | Optional prerequisites | `--worktree` requires a Git repository; dashboard annotation requires the dashboard service |
 
 The parent agent does not finish when it hands off the task. It remains responsible for deciding scope and risk, making reservations, monitoring, and verifying the artifact. Use `--codex` for a Codex child, `--model` for an allowed model, and `--dir` to choose the child's working directory.
@@ -179,10 +179,10 @@ The model generation names in `spawn_child.sh`'s model catalog are canonical. Fo
 2. Create a child-owned token and canonical name with `agentstack-preregister-child`
 3. Prepare the file reservation, contact, and mode-`0600` canonical task file
 4. Launch Claude / Codex with its model and worktree through `spawn_child.sh --embed-task --task-file` (do not send task mail)
-5. Read the agent-mail completion report and `monitor_child_agent.sh`, then verify the artifact yourself
+5. Read the ORRERY Mail completion report and `monitor_child_agent.sh`, then verify the artifact yourself
 6. Release the reservation before reporting the parent's result
 
-A worktree child's cwd changes to `/tmp/cc-worktrees/<name>`, but its agent-mail project does not change. The task must identify `AGENTSTACK_PROJECT_KEY` / `PROJECT_KEY` as canonical. `--worktree-base <rev>` fixes the baseline for multiple children.
+A worktree child's cwd changes to `/tmp/cc-worktrees/<name>`, but its ORRERY Mail project does not change. The task must identify `AGENTSTACK_PROJECT_KEY` / `PROJECT_KEY` as canonical. `--worktree-base <rev>` fixes the baseline for multiple children.
 
 The monitor's dangerous-command detection is passive by default. When enabled with `AGENTSTACK_MONITOR_DANGER_CHECK=1`, a match causes a soft stop. Repeated stasis with unchanged output escalates through soft stop, `C-c`, process-group freeze, then session kill regardless of that setting. See the skill text for the exit codes.
 

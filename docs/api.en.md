@@ -61,7 +61,7 @@ curl -s http://127.0.0.1:8770/api/version
 ```
 
 ```json
-{"name":"claude-agent-stack","version":"0.9.0","api":1}
+{"name":"orrery-telemetry","version":"0.9.0","api":1}
 ```
 
 See [Installation](install.en.md#version) for version resolution order.
@@ -104,7 +104,7 @@ curl -s http://127.0.0.1:8770/api/spawn-names
       "program":"codex-cli",
       "models":["gpt-5.6-sol","gpt-6-astra","gpt-5.6-terra","gpt-5.6-luna"],
       "default_model":"gpt-5.6-sol",
-      "efforts":["low","medium","high","xhigh"],
+      "efforts":["low","medium","high","xhigh","max","ultra"],
       "effort_default":"xhigh"
     }
   ]
@@ -113,7 +113,7 @@ curl -s http://127.0.0.1:8770/api/spawn-names
 
 The scientist rail's `status` indicates whether at least one pairing of that scientist with the 134 adjectives is available. It becomes `occupied` when every combination is occupied and `unknown` when the database is missing or the query fails. It is not based only on whether the bare surname is registered.
 
-The adjectives are synchronized word-for-word with agent-mail's canonical `SIMPLE_ADJECTIVES` Round 3 list, and the launcher, catalog, and suggestion API use the same source. Custom additions are prohibited because they diverge from name validation in strict deployments.
+The adjectives are synchronized word-for-word with ORRERY Mail's canonical `SIMPLE_ADJECTIVES` Round 3 list, and the launcher, catalog, and suggestion API use the same source. Custom additions are prohibited because they diverge from name validation in strict deployments.
 
 When present, `AGENTSTACK_CODEX_MODELS` overrides the Codex model list. Otherwise the order is `gpt-5.6-sol`, `gpt-5.6-terra`, `gpt-5.6-luna`; the default is `gpt-5.6-sol`, and the default effort is `xhigh`.
 
@@ -229,7 +229,7 @@ Response:
 }
 ```
 
-agent-mail timestamps are normalized to epoch seconds before comparison, whether they are legacy ISO 8601 text or integer microseconds from the Rust implementation. If an unparseable value other than NULL or empty text is present, the response reports `timestamp_diagnostics.invalid_count` and affected `fields` and sets `degraded` to `true`. An unparseable value is never treated as epoch 0.
+ORRERY Mail timestamps are normalized to epoch seconds before comparison, whether they are legacy ISO 8601 text or integer microseconds from the Rust implementation. If an unparseable value other than NULL or empty text is present, the response reports `timestamp_diagnostics.invalid_count` and affected `fields` and sets `degraded` to `true`. An unparseable value is never treated as epoch 0.
 
 When the data source cannot be read, it still returns HTTP 200 with empty `nodes / edges / spawn`, an `error`, and `degraded: true`, so that the failure does not take down the entire DECK.
 
@@ -500,7 +500,7 @@ Request:
 | `dir` | no | Existing working directory. Defaults to the source repository |
 | `provider` | no | `claude` (default) or `codex` |
 | `model` | no | From the provider catalog. Each provider has a default |
-| `effort` | Codex only | `low / medium / high / xhigh`; default `xhigh` |
+| `effort` | Codex only | `low / medium / high / xhigh / max / ultra` (max / ultra: gpt-6-astra only); default `xhigh` |
 | `role` | no | At most 40 characters |
 | `group` | no | At most 24 characters |
 | `worktree` | no | Isolated worktree |
