@@ -383,8 +383,34 @@ files) is still scanned.
   runs): four orphaned `agentstack-mail-service foreground` processes from
   this worktree's `.venv`, each under a pytest tmp home
   (`pytest-23/25/28/29`), ppid 1, listening on ephemeral ports 60969, 64491,
-  61558, 63055 — reported to the parent, not killed (kill is outside this
-  station's boundary).
+  61558, 63055 — reported to the parent first (kill was outside the
+  station's boundary), then torn down under the parent's explicit
+  authorisation (mail 8465, limited to those four fixture trees):
+  - Re-verification 2026-09-19T15:40:11Z, per pid: wrapper
+    `/bin/bash …/pytest-{23,25,28,29}/test_noninteractive_assume_yes0/home/
+    .agentstack/mail-service/renders/<render>/run-agentstack-mail.sh`
+    (ppid 1) → `…/orrery-telemetry-wt-g1-reply-ack/.venv/bin/
+    agentstack-mail-service foreground` → `…/.venv/bin/agentstack-mail`
+    listening on 127.0.0.1:60969 / 64491 / 61558 / 63055. Live ORRERY Mail
+    re-checked at the same time: pids 7517/7519, `lsof -iTCP:18765` → 7519,
+    a different process tree.
+  - 15:40:27Z `kill -TERM` to the four `agentstack-mail-service` pids
+    (25603, 36798, 60021, 93286) one by one; after 3 s all four and their
+    `agentstack-mail` children (25615, 36820, 60030, 93316) had exited and
+    `lsof` on the four ephemeral ports returned nothing. The wrapper bash
+    loops (25600, 36791, 60014, 93283; their script file already deleted
+    with the tmp home, each sitting in `sleep 5`) were still alive and
+    would respawn, so after re-checking argv (same tmp homes) and ppid 1
+    they received `kill -TERM` at 15:40:59Z; after 7 s all four and their
+    `sleep` children had exited. No `pkill`, no pattern kill, no service
+    operation. Live mail afterwards: 7517/7519 unchanged, 18765 still
+    served by 7519.
+  - Residual, **not touched** (outside the authorised set): pid 82304,
+    system python running
+    `…/pytest-22/test_launchd_in_place_upgrade_0/old-dashboard.py`
+    (started 00:09 JST during the first full-suite run, listening on
+    127.0.0.1:58662, ppid 1) — a leftover of the base-origin
+    `test_dashboard_service.py` failure; reported for a separate decision.
 
 ## 6. Limits
 
