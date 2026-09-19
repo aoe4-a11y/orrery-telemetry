@@ -49,7 +49,7 @@ from .authorization import (
     redact_tool_arguments,
 )
 from .boundary import CompatibilityFastMCP
-from .config import Settings, get_settings
+from .config import Settings, _build_decouple_config, get_settings
 from .contract import SERVICE_IDENTITY
 from .model_normalize import display_model, normalize_model
 from .db import (
@@ -7463,6 +7463,31 @@ def build_mcp_server() -> FastMCP:
             "max_age_days": age_limit,
         }
 
+    # Spellings of AGENTSTACK_REPLY_ACK_DEFAULT that mean "false"; mirrors the
+    # false set of config._bool so one env file can use one vocabulary.
+    _REPLY_ACK_DEFAULT_FALSE_VALUES = frozenset({"false", "0", "no", "n", "f"})
+
+    def _resolve_reply_ack_required(original_ack: bool, explicit: bool | None) -> bool:
+        """Decide the ack_required flag carried by a reply.
+
+        An explicit boolean from the caller always wins. When the caller says
+        nothing (None), ``AGENTSTACK_REPLY_ACK_DEFAULT`` chooses between
+        ``inherit`` (copy the original message's flag — the historical
+        behaviour and the default) and ``false`` (replies never demand an
+        ack unless asked to). ``false`` accepts the same spellings as the
+        other boolean settings (``0``, ``no``, ``n``, ``f``, any case,
+        surrounding whitespace ignored); every other value, including
+        ``true``, is treated as ``inherit`` so a typo cannot silently drop
+        acks. Read through decouple so the service ``.env`` file and the
+        process environment are both honoured.
+        """
+        if explicit is not None:
+            return bool(explicit)
+        raw = _build_decouple_config()("AGENTSTACK_REPLY_ACK_DEFAULT", default="inherit")
+        if str(raw).strip().lower() in _REPLY_ACK_DEFAULT_FALSE_VALUES:
+            return False
+        return bool(original_ack)
+
     @mcp.tool(name="reply_message")
     @_instrument_tool(
         "reply_message",
@@ -7482,13 +7507,16 @@ def build_mcp_server() -> FastMCP:
         bcc: Optional[list[str]] = None,
         subject_prefix: str = "Re:",
         format: Optional[str] = None,
+        ack_required: Optional[bool] = None,
     ) -> dict[str, Any]:
         """
         Reply to an existing message, preserving or establishing a thread.
 
         Behavior
         --------
-        - Inherits original `importance` and `ack_required` flags
+        - Inherits original `importance`; `ack_required` inherits the original
+          flag unless passed explicitly, or unless
+          `AGENTSTACK_REPLY_ACK_DEFAULT=false` turns the unspecified case off
         - `thread_id` is taken from the original message if present; otherwise, the original id is used
         - Subject is prefixed with `subject_prefix` if not already present
         - Defaults `to` to the original sender if not explicitly provided
@@ -7507,6 +7535,11 @@ def build_mcp_server() -> FastMCP:
             Recipients by agent name. If omitted, `to` defaults to original sender.
         subject_prefix : str
             Prefix to apply (default "Re:"). Case-insensitive idempotent.
+        ack_required : Optional[bool]
+            Explicit override for the reply's ack flag. Omit (None) to fall
+            back to `AGENTSTACK_REPLY_ACK_DEFAULT`: `inherit` (default) or
+            `false` (also `0`/`no`/`n`/`f`, case-insensitive); anything
+            else behaves as `inherit`.
 
         Do / Don't
         ----------
@@ -7559,6 +7592,8 @@ def build_mcp_server() -> FastMCP:
         to_names = to or [original_sender.name]
         cc_list = cc or []
         bcc_list = bcc or []
+        # Resolved once so the local and cross-project deliveries below agree.
+        reply_ack_required = _resolve_reply_ack_required(bool(original.ack_required), ack_required)
 
         local_to: list[str] = []
         local_cc: list[str] = []
@@ -7660,7 +7695,7 @@ def build_mcp_server() -> FastMCP:
                 None,
                 None,
                 importance=original.importance,
-                ack_required=original.ack_required,
+                ack_required=reply_ack_required,
                 thread_id=thread_key,
                 topic=original.topic,
             )
@@ -7690,7 +7725,7 @@ def build_mcp_server() -> FastMCP:
                     None,
                     None,
                     importance=original.importance,
-                    ack_required=original.ack_required,
+                    ack_required=reply_ack_required,
                     thread_id=thread_key,
                     topic=original.topic,
                 )

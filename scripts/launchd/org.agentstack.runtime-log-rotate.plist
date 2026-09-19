@@ -1,0 +1,58 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  Daily size-based rotation of ~/.agentstack/runtime/*.log (rootless
+  LaunchAgent). Scope is that one directory; the ORRERY Mail service log under
+  mail-service/runtime is deliberately not listed (not approved for rotation).
+
+  Preparation only: scripts/install.sh does not install this. Deployment is
+  the head's job and needs BOTH steps — copying the plist alone starts a job
+  whose script does not exist:
+    1. install -m 0755 scripts/rotate_runtime_logs.sh ~/.agentstack/hooks/rotate_runtime_logs.sh
+    2. sed "s|/Users/huyuhutaru|$HOME|g" scripts/launchd/org.agentstack.runtime-log-rotate.plist \
+         > ~/Library/LaunchAgents/org.agentstack.runtime-log-rotate.plist
+       launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/org.agentstack.runtime-log-rotate.plist
+    3. dry run first: ~/.agentstack/hooks/rotate_runtime_logs.sh --dry-run ~/.agentstack/runtime
+  Remove with: launchctl bootout gui/$(id -u)/org.agentstack.runtime-log-rotate
+
+  The rotated jobs keep their own StandardOutPath: the script copies and
+  truncates in place (see scripts/rotate_runtime_logs.sh, "Semantics"; the
+  50 MiB value is the rotation threshold checked once per run, not a cap on
+  the archive size — a busy log overshoots it between runs).
+-->
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>org.agentstack.runtime-log-rotate</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>/bin/bash</string>
+        <string>-c</string>
+        <string>exec /bin/bash "$HOME/.agentstack/hooks/rotate_runtime_logs.sh" "$HOME/.agentstack/runtime"</string>
+    </array>
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PATH</key>
+        <string>/usr/bin:/bin:/usr/sbin:/sbin</string>
+        <key>AGENTSTACK_LOG_ROTATE_THRESHOLD_BYTES</key>
+        <string>52428800</string>
+        <key>AGENTSTACK_LOG_ROTATE_KEEP</key>
+        <string>3</string>
+    </dict>
+    <key>StartCalendarInterval</key>
+    <dict>
+        <key>Hour</key>
+        <integer>4</integer>
+        <key>Minute</key>
+        <integer>30</integer>
+    </dict>
+    <key>RunAtLoad</key>
+    <false/>
+    <key>Nice</key>
+    <integer>10</integer>
+    <key>StandardOutPath</key>
+    <string>/Users/huyuhutaru/.agentstack/runtime/log-rotate.log</string>
+    <key>StandardErrorPath</key>
+    <string>/Users/huyuhutaru/.agentstack/runtime/log-rotate.log</string>
+</dict>
+</plist>

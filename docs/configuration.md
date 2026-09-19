@@ -203,6 +203,7 @@ export AGENTSTACK_OBSIDIAN_APP="/Applications/Obsidian.app/Contents/MacOS/Obsidi
 | `AGENTSTACK_MAIL_WATCHER_PIDFILE` | `/tmp/orrery-mail-watcher.lock/watcher.pid` | dashboard が非 launchd watcher の実プロセスを照合する pidfile |
 | `AGENTSTACK_MAIL_WATCHER_HEARTBEAT` | pidfile と同じ directory の `heartbeat` | process command を取得できない環境で使う watcher heartbeat |
 | `AGENTSTACK_MAIL_NOTIFY_MIN_IMPORTANCE` | `low`（＝全通） | 通知として**割り込ませる**下限。`low` \| `normal` \| `high` \| `urgent` |
+| `AGENTSTACK_REPLY_ACK_DEFAULT` | `inherit` | `reply_message` が `ack_required` を省略されたときの既定。`inherit` = 元メッセージの flag を引き継ぐ（従来どおり）、`false` = ack を要求しない（`0` \| `no` \| `n` \| `f` も同義、大文字小文字不問）。呼び出し側が `ack_required` を明示すれば常にそちらが勝つ。`true` を含む他の値は `inherit` 扱い。ORRERY Mail service のプロセス環境／`.env` から読む |
 | `AGENTSTACK_REREGISTER_PROGRAM` | `codex` | `agentstack-reregister` の第2引数を省略した場合の program |
 | `AGENTSTACK_REREGISTER_MODEL` | program ごとの既定 | `agentstack-reregister` の第3引数を省略した場合の model label |
 
