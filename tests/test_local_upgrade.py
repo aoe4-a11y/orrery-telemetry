@@ -72,3 +72,45 @@ def test_rollback_preserves_new_mail_state_and_restores_payload(tmp_path):
     assert (live/'mail/storage.sqlite3').read_text()=='new-mail'
     assert (live/'runtime/agent_token_SunnyCurie').read_text()=='synthetic-secret'
     assert (project/'CLAUDE.md').read_text()=='old-managed-doc'
+
+
+def test_restart_authenticates_before_killing_and_passes_formal_binding(tmp_path):
+    import json
+    home=tmp_path/'home';stack=home/'.agentstack';(stack/'runtime').mkdir(parents=True)
+    token=stack/'runtime/agent_token_SunnyCurie';token.write_text('fixture-owner');token.chmod(0o600)
+    task=tmp_path/'task.md';task.write_text('# fixture task')
+    trace=tmp_path/'trace';fake=tmp_path/'fake';fake.mkdir()
+    lib=tmp_path/'register.sh';lib.write_text('''ags_mail_load_token() { :; }
+ags_load_registration_token() { printf fixture-owner; }
+ags_register_session() {
+    echo authenticated >> "$TRACE"
+    [[ "${AUTH_FAIL:-0}" != 1 ]] || return 1
+    AGS_REGISTERED_AGENT_NAME=SunnyCurie
+    AGS_REGISTERED_AGENT_ID=73
+}
+''')
+    for name,body in {'tmux':'''#!/bin/bash
+if [[ "$1" == kill-session ]]; then echo killed >> "$TRACE"; fi
+if [[ "$1" == display-message ]]; then echo /fixture; fi
+exit 0
+''','sleep':'#!/bin/sh\nexit 0\n'}.items():
+        p=fake/name;p.write_text(body);p.chmod(0o755)
+    (stack/'hooks').mkdir();spawn=stack/'hooks/spawn_child.sh'
+    spawn.write_text('''#!/bin/bash
+python3 - "$HOME/.agentstack/runtime/agent_token_SunnyCurie.binding.json" <<'PY_BIND'
+import json,sys
+assert json.load(open(sys.argv[1]))['agent_id']==73
+PY_BIND
+echo spawned >> "$TRACE"
+''');spawn.chmod(0o755)
+    env={**os.environ,'HOME':str(home),'TRACE':str(trace),'AGENTSTACK_REGISTER_LIB':str(lib),
+         'PATH':str(fake)+':'+os.environ['PATH'],'AGENTSTACK_PROJECT_KEY':str(tmp_path)}
+    run=subprocess.run(['/bin/bash',str(ROOT/'bin/agentstack-restart-seat'),'SunnyCurie',str(task),'gpt-6.1-sol','medium',str(tmp_path)],env=env,capture_output=True,text=True)
+    assert run.returncode==0,run.stderr
+    assert trace.read_text().splitlines()==['authenticated','killed','spawned']
+    assert 'fixture-owner' not in run.stdout+run.stderr
+    assert token.read_text()=='fixture-owner'
+    trace.write_text('');env['AUTH_FAIL']='1'
+    run=subprocess.run(['/bin/bash',str(ROOT/'bin/agentstack-restart-seat'),'SunnyCurie',str(task),'gpt-6.1-sol','medium',str(tmp_path)],env=env,capture_output=True,text=True)
+    assert run.returncode!=0
+    assert trace.read_text().splitlines()==['authenticated']

@@ -1852,7 +1852,7 @@ codex_pane_ready() {
     printf '%s' "$last_lines" | grep -qE '% (left|context)' && return 0
     printf '%s' "$last_lines" | grep -qE 'for shortcuts' && return 0
     # Footer form "<model> <effort> · <cwd>" (no context segment).
-    printf '%s' "$last_lines" | grep -qE '(gpt|codex|o[0-9])[^ ]* .*·' && return 0
+    printf '%s' "$last_lines" | grep -qiE '(gpt|codex|o[0-9])[^ ]* .*·' && return 0
     # Bare input prompt.
     printf '%s' "$last_lines" | grep -qE '^[[:space:]]*[▌❯>][[:space:]]*$' && return 0
     return 1
