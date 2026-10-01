@@ -114,3 +114,11 @@ echo spawned >> "$TRACE"
     run=subprocess.run(['/bin/bash',str(ROOT/'bin/agentstack-restart-seat'),'SunnyCurie',str(task),'gpt-6.1-sol','medium',str(tmp_path)],env=env,capture_output=True,text=True)
     assert run.returncode!=0
     assert trace.read_text().splitlines()==['authenticated']
+
+
+def test_modern_launch_and_resume_honor_the_fork_sandbox_override(monkeypatch):
+    from dashboard import server
+    monkeypatch.setenv('AGENTSTACK_CODEX_SANDBOX','danger-full-access')
+    assert '--sandbox danger-full-access' in server._codex_child_launch_flags([])
+    monkeypatch.delenv('AGENTSTACK_CODEX_SANDBOX')
+    assert '--sandbox workspace-write' in server._codex_child_launch_flags([])
