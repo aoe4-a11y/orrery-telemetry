@@ -136,7 +136,7 @@ print(int(st.st_mtime))
 # A short body is included by newer mail servers. Keep it on one line before
 # passing it to tmux: an embedded newline would submit an incomplete prompt.
 snippet = (msg.get("body_snippet") or "").replace("\r", " ").replace("\n", " ⏎ ")
-print(snippet[:500])
+print(snippet[:1800])
 print("1" if msg.get("body_truncated") else "0")
 PY
 }
@@ -452,6 +452,13 @@ deliver_worker() {
     local body_snippet="${8:-}" body_truncated="${9:-0}"
     local lease_owner="${10:-}"
     local session_name="$agent_name"
+
+    # Fleet P-010: this head is driven by the operator, never by tmux mail wake.
+    if [[ "$agent_name" == "${AGENTSTACK_HEAD_AGENT:-ProudTuring}" ]]; then
+        state_mark_result "$agent_name" "$msg_key" "head_no_pane" "watcher"
+        release_delivery_lease "$agent_name" "$msg_key" "$lease_owner"
+        return 0
+    fi
 
     # A persistent headless profile has no REPL pane to inject. Its wrapper
     # publishes a mode-0600 runtime manifest and execs a bridge that owns the

@@ -1091,7 +1091,10 @@ def _build_home_unlocked(
         plugin_ids: list[str] = []
         config_source = source / "config.toml"
         text = config_source.read_text(encoding="utf-8") if config_source.exists() else ""
+        hooks_key_prefix = '[hooks.state."' + str(source) + '/hooks.json:'
         for line in text.splitlines():
+            if line.startswith(hooks_key_prefix):
+                line = '[hooks.state."' + str(home) + '/hooks.json:' + line[len(hooks_key_prefix):]
             stripped = line.strip()
             if stripped.startswith("["):
                 header = stripped.strip("[]").strip()

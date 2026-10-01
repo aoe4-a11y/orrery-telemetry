@@ -1669,6 +1669,11 @@ codex_watch_initial_task() {
                 ;;
         esac
         [[ "$bound" == true ]] && continue
+        if codex_hooks_review_present "$pane_text"; then
+            trust_attempts=$((trust_attempts + 1))
+            codex_accept_hooks_review "$session_name" "$trust_attempts" "$trust_max" "$log_prefix" || return 1
+            continue
+        fi
         # A trust screen on the current screen comes first, whatever was seen
         # before: it is answered and the early end starts over.
         if codex_trust_screen_up "$pane_text"; then
@@ -1805,6 +1810,35 @@ PY
 # the footer varies with terminal width, model and configuration. The reported
 # 90s hang came from a pane showing "gpt-5.5 xhigh · ~/obsidian", which has no
 # "% left" segment at all.
+# Codex 0.153 shows a second startup dialog when hooks are new or changed
+# ("Hooks need review"). The child's hooks are the same ones the operator already
+# trusted in the real home, so select "Trust all and continue".
+codex_hooks_review_present() {
+    printf '%s' "$1" | grep -qF "Hooks need review"
+}
+
+codex_accept_hooks_review() {
+    local session_name="$1" attempt="$2" max_attempts="$3" log_prefix="${4:-spawn_child}"
+    if (( attempt > max_attempts )); then
+        echo "[$log_prefix] Codex hooks-review dialog persisted after ${max_attempts} attempts; aborting" >&2
+        return 1
+    fi
+    local pane_text
+    pane_text="$(tmux capture-pane -t "$session_name" -p 2>/dev/null || true)"
+    if ! printf '%s' "$pane_text" | grep -qE '[›❯>][[:space:]]*2\. Trust all'; then
+        tmux send-keys -t "$session_name" Down
+        sleep 1
+        pane_text="$(tmux capture-pane -t "$session_name" -p 2>/dev/null || true)"
+    fi
+    if printf '%s' "$pane_text" | grep -qE '[›❯>][[:space:]]*2\. Trust all'; then
+        echo "[$log_prefix] Codex hooks-review dialog detected; selecting 'Trust all and continue' (${attempt}/${max_attempts})" >&2
+        tmux send-keys -t "$session_name" C-m
+        return 0
+    fi
+    echo "[$log_prefix] Codex hooks-review dialog detected but 'Trust all' row is not selected; not pressing Enter (${attempt}/${max_attempts})" >&2
+    return 0
+}
+
 codex_pane_ready() {
     local pane_text="$1" last_lines
     printf '%s' "$pane_text" | grep -qF "Use existing model" && return 1
