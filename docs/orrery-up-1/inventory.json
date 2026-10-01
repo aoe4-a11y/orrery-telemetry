@@ -2468,6 +2468,23 @@
       "source": null,
       "migration_commit": "2026.09.30.4",
       "explanation": "core skill link \u307e\u305f\u306f\u751f\u6210service\u5b9a\u7fa9\u3002owner backup\u306b\u542b\u3081\u3001installer\u7ba1\u7406\u898f\u5247\u3067\u4fdd\u6301/\u518d\u751f\u6210\u3002isolated Linux service\u8a66\u8d70\u306fmacOS plist bytes\u6bd4\u8f03\u306e\u5bfe\u8c61\u5916\u3002"
+    },
+    {
+      "installed": "config/head-send-lint.json",
+      "owned": false,
+      "live_sha256": "bc6a1f2de96bd75ac7e7f4bfc2aaac989f07b6bd0bfcfee636f9ad54c9d5283f",
+      "disposition": "local-addition-installed",
+      "source": "config/head-send-lint.json",
+      "migration_commit": "pending-config-commit"
+    },
+    {
+      "installed": "config/head-send-lint.json.bak-20260923-tune1",
+      "owned": false,
+      "live_sha256": "38ac876e0ec482b53bfee33b6992357a11cb0a018583b48cd438523b775a74e3",
+      "disposition": "historical-generation-preserved",
+      "source": null,
+      "migration_commit": "pending-config-commit",
+      "archive": "docs/orrery-up-1/backup-generations/config/head-send-lint.json.bak-20260923-tune1"
     }
   ],
   "owned_inside_stack_count": 247,

@@ -34,7 +34,7 @@ def main():
     state=json.loads((h/'install-state.json').read_text());owned={str(pathlib.Path(x).relative_to(h)) for x in state['owned_files'] if pathlib.Path(x).is_relative_to(h)}
     rows=[];addons=[];conflicts=[]
     candidates=set(owned)
-    for root in ['bin','hooks']:
+    for root in ['bin','hooks','config']:
         candidates.update(str(p.relative_to(h)) for p in (h/root).rglob('*') if p.is_file() and '__pycache__' not in str(p))
     candidates.update(str(p.relative_to(h)) for p in (h/'integrations/codex_app').rglob('*') if p.is_file() and '.bak' in p.name)
     for rel in sorted(candidates):
@@ -56,8 +56,8 @@ def main():
         if base==cur:
             row['disposition']='upstream-source-no-local-delta';rows.append(row);continue
         cur=safe_code(p)
-        if mapped is None or (base is None and rel.startswith(('bin/','hooks/'))):
-            if not rel.startswith(('bin/','hooks/')):
+        if mapped is None or (base is None and rel.startswith(('bin/','hooks/','config/'))):
+            if not rel.startswith(('bin/','hooks/','config/')):
                 row['disposition']='generated-artifact-no-source';rows.append(row);continue
             mapped=rel;row['source']=mapped;dest=repo/mapped;dest.parent.mkdir(parents=True,exist_ok=True);dest.write_bytes(cur);shutil.copymode(p,dest);addons.append(mapped);row['disposition']='local-addition-installed'
         else:

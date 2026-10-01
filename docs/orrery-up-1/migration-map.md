@@ -2,7 +2,7 @@
 
 台帳: R-005 / R-026 / R-061 / R-062 / R-068 / M-011 / M-018 / M-020。
 
-採録時の owned は252件。e5039ffとの同名照合で7件差分・55件同名なし（owned .bak 4件を含めた生の同名なしは59件）。aliasを辿ると生成wrapper・旧optional sourceが含まれる。全305行を下に列挙する（stack内owned247件と外部owned5件を含む）。code .bak は36件（spawn8、supervisor13を含む）、env .bakは4件。失効した古い世代をすべて同時に動かすことはせず、現行コードの累積差分を移植し、旧世代bytesは復元可能な形で残した。
+採録時の owned は252件。e5039ffとの同名照合で7件差分・55件同名なし（owned .bak 4件を含めた生の同名なしは59件）。aliasを辿ると生成wrapper・旧optional sourceが含まれる。全307行を下に列挙する（stack内owned247件と外部owned5件を含む）。code/config .bak は37件（spawn8、supervisor13を含む）、env .bakは4件。失効した古い世代をすべて同時に動かすことはせず、現行コードの累積差分を移植し、旧世代bytesは復元可能な形で残した。
 
 sandbox override の移植は701b298以降で、modern spawn/resume/service環境まで同じ明示設定を渡す。
 
@@ -355,3 +355,12 @@ forkだけの4 commit（81c3fd9 / cd092c4 / 5e43de6 / e5039ff）は a4830d5 のm
 | `@home/Library/LaunchAgents/org.agentstack.agentdashboard.plist` | yes | `4e09bb45d77266f1ad472b7da2c3341b74189c69895beaff4e143f7ad17e4f0b` | 生成link/service定義。owner snapshot保存、install管理規則で保持/再生成 / 2026.09.30.4 |
 | `@home/Library/LaunchAgents/org.agentstack.mail-watcher.plist` | yes | `5d7c7b0890086d77b8f7dbbbe830a90e82e8ade77496fe2008da1f9c5c62c820` | 生成link/service定義。owner snapshot保存、install管理規則で保持/再生成 / 2026.09.30.4 |
 | `@home/Library/LaunchAgents/org.agentstack.mail.plist` | yes | `254b4a722b79e33dc780ea6837d68f77882d2bf4517bdc2b021f0d73af98fa52` | 生成link/service定義。owner snapshot保存、install管理規則で保持/再生成 / 2026.09.30.4 |
+
+## R-068 設定
+
+`config/head-send-lint.json` の検査条件・引用元path・既定headをそのままsourceへ保存し、installerは既存file/linkを上書きせず、無い場合だけseedする。旧調整前JSONも復元可能なbytesで保存。configはowner制御で、core owned-file一覧へ追加しない。owner rollback snapshotには含める。
+
+| installed file | owned | 採録 SHA-256 | 保存先 / commit |
+|---|---|---|---|
+| `config/head-send-lint.json` | no | `bc6a1f2de96bd75ac7e7f4bfc2aaac989f07b6bd0bfcfee636f9ad54c9d5283f` | `config/head-send-lint.json` / config保存commit |
+| `config/head-send-lint.json.bak-20260923-tune1` | no | `38ac876e0ec482b53bfee33b6992357a11cb0a018583b48cd438523b775a74e3` | `docs/orrery-up-1/backup-generations/config/head-send-lint.json.bak-20260923-tune1` / config保存commit |

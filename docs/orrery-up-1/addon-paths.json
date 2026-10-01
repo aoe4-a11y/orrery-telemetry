@@ -25,5 +25,6 @@
   "hooks/head-send-lint.py",
   "hooks/rotate_runtime_logs.sh",
   "hooks/task-file-lint.py",
-  "hooks/usage-throttle-warn.py"
+  "hooks/usage-throttle-warn.py",
+  "config/head-send-lint.json"
 ]

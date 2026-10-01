@@ -1878,6 +1878,16 @@ install_payload() {
     copy_tree "$REPO_ROOT/codex" "$INSTALL_DIR/codex"
     copy_tree "$REPO_ROOT/claude" "$INSTALL_DIR/claude"
     install_child_mcp_proxy
+    # Fleet lint configuration is owner-controlled: seed only when absent.
+    # Never turn a core reinstall into an overwrite of local tuning.
+    plan "seed absent fleet lint config -> $INSTALL_DIR/config/head-send-lint.json"
+    if [[ "$DRY_RUN" != true ]]; then
+      mkdir -p "$INSTALL_DIR/config"
+      if [[ ! -e "$INSTALL_DIR/config/head-send-lint.json" && ! -L "$INSTALL_DIR/config/head-send-lint.json" ]]; then
+        cp "$REPO_ROOT/config/head-send-lint.json" "$INSTALL_DIR/config/head-send-lint.json"
+        chmod 600 "$INSTALL_DIR/config/head-send-lint.json"
+      fi
+    fi
   else
     plan "skip hooks copy for --dashboard-only"
     plan "skip skills copy for --dashboard-only"

@@ -3,7 +3,7 @@
 from __future__ import annotations
 import argparse,hashlib,json,os,pathlib,shutil,sys
 
-PAYLOAD=('bin','hooks','skills','dashboard','codex','claude','integrations/codex_app','VERSION','env.sh','install-state.json')
+PAYLOAD=('config','bin','hooks','skills','dashboard','codex','claude','integrations/codex_app','VERSION','env.sh','install-state.json')
 EXTERNAL=('.claude/settings.json','.claude.json','.claude/CLAUDE.md','.codex/AGENTS.md')
 
 def digest(p):return hashlib.sha256(p.read_bytes()).hexdigest()
