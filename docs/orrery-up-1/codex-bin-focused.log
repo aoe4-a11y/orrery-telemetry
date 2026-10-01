@@ -1,0 +1,14 @@
+traffic: [ORRERY-UP-1-codex-bin] waiting — mem 10935MB, disk 105GiB, slots in use: 2/2
+traffic: [ORRERY-UP-1-codex-bin] waiting — mem 13866MB, disk 105GiB, slots in use: 2/2
+traffic: [ORRERY-UP-1-codex-bin] waiting — mem 10998MB, disk 105GiB, slots in use: 2/2
+traffic: [ORRERY-UP-1-codex-bin] running (slot slot-1, mem 14118MB, disk 105GiB)
+...                                                                      [100%]
+============================= slowest 25 durations =============================
+2.12s call     tests/test_spawn_child_codex_bin.py::test_the_search_skips_a_codex_that_fails_version
+1.18s call     tests/test_spawn_child_codex_bin.py::test_the_probe_runs_codex_with_the_path_the_child_will_have
+
+(7 durations < 1s hidden.)
+3 passed in 4.14s
+traffic: [ORRERY-UP-1-codex-bin] done (exit 0)
+
+EXIT_CODE=0

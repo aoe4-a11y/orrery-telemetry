@@ -1,0 +1,24 @@
+{
+  "measured_at": "2026-10-01T04:04:26.062096+00:00",
+  "folders": [
+    "bin",
+    "claude",
+    "codex",
+    "config",
+    "dashboard",
+    "hooks",
+    "integrations/codex_app",
+    "skills"
+  ],
+  "excluded_directory_names": [
+    ".agents",
+    ".git",
+    ".venv",
+    "__pycache__",
+    "proxy-runtime",
+    "runtime"
+  ],
+  "checked_regular_files": 288,
+  "uncovered_paths": [],
+  "inventory_sha256": "79151bb533c5720b602569f6e65acdfbfd133350181c3586d1eb0e5a82341cd0"
+}

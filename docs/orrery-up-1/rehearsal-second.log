@@ -1,0 +1,198 @@
+traffic: [ORRERY-UP-1-rehearsal] waiting — mem 13622MB, disk 104GiB, slots in use: 2/2
+traffic: [ORRERY-UP-1-rehearsal] waiting — mem 13837MB, disk 104GiB, slots in use: 2/2
+traffic: [ORRERY-UP-1-rehearsal] waiting — mem 12723MB, disk 104GiB, slots in use: 2/2
+traffic: [ORRERY-UP-1-rehearsal] waiting — mem 11067MB, disk 104GiB, slots in use: 2/2
+traffic: [ORRERY-UP-1-rehearsal] waiting — mem 16569MB, disk 104GiB, slots in use: 2/2
+traffic: [ORRERY-UP-1-rehearsal] waiting — mem 11140MB, disk 104GiB, slots in use: 2/2
+traffic: [ORRERY-UP-1-rehearsal] waiting — mem 11524MB, disk 104GiB, slots in use: 2/2
+traffic: [ORRERY-UP-1-rehearsal] waiting — mem 10888MB, disk 104GiB, slots in use: 2/2
+traffic: [ORRERY-UP-1-rehearsal] waiting — mem 10529MB, disk 104GiB, slots in use: 2/2
+traffic: [ORRERY-UP-1-rehearsal] waiting — mem 10295MB, disk 104GiB, slots in use: 2/2
+traffic: [ORRERY-UP-1-rehearsal] waiting — mem 12524MB, disk 104GiB, slots in use: 2/2
+traffic: [ORRERY-UP-1-rehearsal] waiting — mem 14129MB, disk 104GiB, slots in use: 2/2
+traffic: [ORRERY-UP-1-rehearsal] waiting — mem 11208MB, disk 104GiB, slots in use: 2/2
+traffic: [ORRERY-UP-1-rehearsal] waiting — mem 11046MB, disk 104GiB, slots in use: 2/2
+traffic: [ORRERY-UP-1-rehearsal] waiting — mem 11250MB, disk 104GiB, slots in use: 2/2
+traffic: [ORRERY-UP-1-rehearsal] waiting — mem 14125MB, disk 104GiB, slots in use: 2/2
+traffic: [ORRERY-UP-1-rehearsal] waiting — mem 13545MB, disk 104GiB, slots in use: 2/2
+traffic: [ORRERY-UP-1-rehearsal] waiting — mem 11132MB, disk 104GiB, slots in use: 2/2
+traffic: [ORRERY-UP-1-rehearsal] waiting — mem 12268MB, disk 103GiB, slots in use: 2/2
+traffic: [ORRERY-UP-1-rehearsal] waiting — mem 10581MB, disk 104GiB, slots in use: 2/2
+traffic: [ORRERY-UP-1-rehearsal] running (slot slot-2, mem 13680MB, disk 104GiB)
+warning: AGENTSTACK_WORKTREE_ROOT: directory does not exist yet: /Volumes/DevSSD/DevStorageGovernor/artifacts/orrery-telemetry/20261001T011558Z-build-cache-33928e51/rehearsal-home/.agentstack/worktrees
+warning: AGENTSTACK_CODEX_ADD_DIRS: directory does not exist yet: /Volumes/DevSSD/DevStorageGovernor/artifacts/orrery-telemetry/20261001T011558Z-build-cache-33928e51/rehearsal-home/Library/Application Support/DevStorageGovernor
+warning: AGENTSTACK_CODEX_ADD_DIRS: directory does not exist yet: /Volumes/DevSSD/DevStorageGovernor/artifacts/orrery-telemetry/20261001T011558Z-build-cache-33928e51/rehearsal-home/.dev-storage-governor
+warning: AGENTSTACK_CODEX_ADD_DIRS: directory does not exist yet: /Volumes/DevSSD/DevStorageGovernor/artifacts/orrery-telemetry/20261001T011558Z-build-cache-33928e51/rehearsal-home/Documents/Codex
+ORRERY Telemetry core installer
+tier: tier2
+install dir: /Volumes/DevSSD/DevStorageGovernor/artifacts/orrery-telemetry/20261001T011558Z-build-cache-33928e51/rehearsal-home/.agentstack
+project key: /Volumes/DevSSD/DevStorageGovernor/artifacts/orrery-telemetry/20261001T011558Z-build-cache-33928e51/rehearsal-home/project
+spawn dirs: /Volumes/DevSSD/DevStorageGovernor/artifacts/orrery-telemetry/20261001T011558Z-build-cache-33928e51/rehearsal-home/project
+spawn roots: /Volumes/DevSSD/DevStorageGovernor/artifacts/orrery-telemetry/20261001T011558Z-build-cache-33928e51/rehearsal-home
+worktree root: /Volumes/DevSSD/DevStorageGovernor/artifacts/orrery-telemetry/20261001T011558Z-build-cache-33928e51/rehearsal-home/.agentstack/worktrees
+automatically open child terminals: 0 (set AGENTSTACK_AUTO_OPEN_CHILD=0 on reinstall to disable auto-open while keeping Deck Open tmux)
+codex child approval: never
+codex child config overlay: (disabled)
+codex network: on
+codex bin: /Users/huyuhutaru/.local/bin/codex
+codex add dirs: /Volumes/DevSSD/DevStorageGovernor/artifacts/orrery-telemetry/20261001T011558Z-build-cache-33928e51/rehearsal-home/Library/Application Support/DevStorageGovernor:/Volumes/DevSSD/DevStorageGovernor/artifacts/orrery-telemetry/20261001T011558Z-build-cache-33928e51/rehearsal-home/.dev-storage-governor:/Volumes/DevSSD/DevStorageGovernor:/Volumes/DevSSD-Private/DevStorageGovernor:/Volumes/DevSSD/DevStorageGovernor/artifacts/orrery-telemetry/20261001T011558Z-build-cache-33928e51/rehearsal-home/Documents/Codex
+Claude/Codex child resume retention: 30 day(s)
+preflight: supported OS Linux (systemd --user unavailable; supervised background mode will be used)
+python: /Volumes/DevSSD/DevStorageGovernor/artifacts/orrery-telemetry/20261001T011558Z-build-cache-33928e51/venv/bin/python (3.14.7)
+preflight: ORRERY Mail port 53235 is available
+preflight: passed
+Phase 3a note: Tier2 project enable is a placeholder; no project settings are modified.
+no native listener or state found; installer will provision ORRERY Mail at http://127.0.0.1:53235/mcp
+planned service mode: nohup (falls back to supervised background if it cannot start)
+create install layout under /Volumes/DevSSD/DevStorageGovernor/artifacts/orrery-telemetry/20261001T011558Z-build-cache-33928e51/rehearsal-home/.agentstack
+copy /Users/huyuhutaru/tools/orrery-telemetry-wt-orrery-up-1/hooks -> /Volumes/DevSSD/DevStorageGovernor/artifacts/orrery-telemetry/20261001T011558Z-build-cache-33928e51/rehearsal-home/.agentstack/hooks (core files; optional provider payload excluded)
+copy /Users/huyuhutaru/tools/orrery-telemetry-wt-orrery-up-1/skills -> /Volumes/DevSSD/DevStorageGovernor/artifacts/orrery-telemetry/20261001T011558Z-build-cache-33928e51/rehearsal-home/.agentstack/skills
+copy /Users/huyuhutaru/tools/orrery-telemetry-wt-orrery-up-1/codex -> /Volumes/DevSSD/DevStorageGovernor/artifacts/orrery-telemetry/20261001T011558Z-build-cache-33928e51/rehearsal-home/.agentstack/codex
+copy /Users/huyuhutaru/tools/orrery-telemetry-wt-orrery-up-1/claude -> /Volumes/DevSSD/DevStorageGovernor/artifacts/orrery-telemetry/20261001T011558Z-build-cache-33928e51/rehearsal-home/.agentstack/claude
+install child MCP proxy -> /Volumes/DevSSD/DevStorageGovernor/artifacts/orrery-telemetry/20261001T011558Z-build-cache-33928e51/rehearsal-home/.agentstack/integrations/codex_app
+seed absent fleet lint config -> /Volumes/DevSSD/DevStorageGovernor/artifacts/orrery-telemetry/20261001T011558Z-build-cache-33928e51/rehearsal-home/.agentstack/config/head-send-lint.json
+copy /Users/huyuhutaru/tools/orrery-telemetry-wt-orrery-up-1/dashboard -> /Volumes/DevSSD/DevStorageGovernor/artifacts/orrery-telemetry/20261001T011558Z-build-cache-33928e51/rehearsal-home/.agentstack/dashboard (core files; optional provider payload excluded)
+copy VERSION -> /Volumes/DevSSD/DevStorageGovernor/artifacts/orrery-telemetry/20261001T011558Z-build-cache-33928e51/rehearsal-home/.agentstack/VERSION
+install helper scripts into /Volumes/DevSSD/DevStorageGovernor/artifacts/orrery-telemetry/20261001T011558Z-build-cache-33928e51/rehearsal-home/.agentstack/bin
+create Claude standard skills directory /Volumes/DevSSD/DevStorageGovernor/artifacts/orrery-telemetry/20261001T011558Z-build-cache-33928e51/rehearsal-home/.claude/skills
+link Claude skill /Volumes/DevSSD/DevStorageGovernor/artifacts/orrery-telemetry/20261001T011558Z-build-cache-33928e51/rehearsal-home/.claude/skills/delegate -> /Volumes/DevSSD/DevStorageGovernor/artifacts/orrery-telemetry/20261001T011558Z-build-cache-33928e51/rehearsal-home/.agentstack/skills/delegate
+link Claude skill /Volumes/DevSSD/DevStorageGovernor/artifacts/orrery-telemetry/20261001T011558Z-build-cache-33928e51/rehearsal-home/.claude/skills/log -> /Volumes/DevSSD/DevStorageGovernor/artifacts/orrery-telemetry/20261001T011558Z-build-cache-33928e51/rehearsal-home/.agentstack/skills/log
+render hook settings template token -> /Volumes/DevSSD/DevStorageGovernor/artifacts/orrery-telemetry/20261001T011558Z-build-cache-33928e51/rehearsal-home/.agentstack/hooks
+create immutable ORRERY Mail candidate venv /Volumes/DevSSD/DevStorageGovernor/artifacts/orrery-telemetry/20261001T011558Z-build-cache-33928e51/rehearsal-home/.agentstack/mail-service/candidates/fb2cd26f9cdffe1666c440114f8b2c69fc4fe987/venv
+install bundled ORRERY Mail package from /Users/huyuhutaru/tools/orrery-telemetry-wt-orrery-up-1/packages/agentstack_mail
+Using CPython 3.14.7 interpreter at: /Volumes/DevSSD/DevStorageGovernor/artifacts/orrery-telemetry/20261001T011558Z-build-cache-33928e51/venv/bin/python
+Creating virtual environment at: /Volumes/DevSSD/DevStorageGovernor/artifacts/orrery-telemetry/20261001T011558Z-build-cache-33928e51/rehearsal-home/.agentstack/mail-service/candidates/fb2cd26f9cdffe1666c440114f8b2c69fc4fe987/venv
+Activate with: source /Volumes/DevSSD/DevStorageGovernor/artifacts/orrery-telemetry/20261001T011558Z-build-cache-33928e51/rehearsal-home/.agentstack/mail-service/candidates/fb2cd26f9cdffe1666c440114f8b2c69fc4fe987/venv/bin/activate
+Using Python 3.14.7 environment at: /Volumes/DevSSD/DevStorageGovernor/artifacts/orrery-telemetry/20261001T011558Z-build-cache-33928e51/rehearsal-home/.agentstack/mail-service/candidates/fb2cd26f9cdffe1666c440114f8b2c69fc4fe987/venv
+Resolved 73 packages in 632ms
+   Building agentstack-mail @ file:///Users/huyuhutaru/tools/orrery-telemetry-wt-orrery-up-1/packages/agentstack_mail
+Downloading beartype (1.3MiB)
+Downloading cryptography (3.7MiB)
+Downloading pygments (1.2MiB)
+Downloading pydantic-core (1.8MiB)
+Downloading pillow (4.6MiB)
+Downloading sqlalchemy (2.1MiB)
+ Downloaded pygments
+ Downloaded beartype
+ Downloaded pydantic-core
+ Downloaded sqlalchemy
+ Downloaded pillow
+ Downloaded cryptography
+      Built agentstack-mail @ file:///Users/huyuhutaru/tools/orrery-telemetry-wt-orrery-up-1/packages/agentstack_mail
+Prepared 73 packages in 748ms
+Installed 73 packages in 61ms
+ + agentstack-mail==0.0.0 (from file:///Users/huyuhutaru/tools/orrery-telemetry-wt-orrery-up-1/packages/agentstack_mail)
+ + aiosqlite==0.22.1
+ + annotated-types==0.8.0
+ + anyio==4.15.1
+ + attrs==26.1.0
+ + authlib==1.8.0
+ + beartype==0.22.9
+ + cachetools==7.2.0
+ + certifi==2026.7.22
+ + cffi==2.1.1
+ + click==8.5.0
+ + cryptography==50.0.2
+ + cyclopts==5.1.1
+ + diskcache==5.6.3
+ + dnspython==2.8.0
+ + docstring-parser==0.18.0
+ + email-validator==2.3.0
+ + exceptiongroup==1.3.1
+ + fastmcp==2.13.0.2
+ + filelock==4.0.7
+ + gitdb==4.0.12
+ + gitpython==3.2.0
+ + greenlet==3.5.6
+ + h11==0.16.0
+ + httpcore==1.0.9
+ + httpx==0.28.1
+ + httpx-sse==0.4.3
+ + idna==3.20
+ + jaraco-classes==3.4.0
+ + jaraco-context==6.1.2
+ + jaraco-functools==4.6.0
+ + joserfc==1.7.5
+ + jsonschema==4.26.0
+ + jsonschema-path==0.5.0
+ + jsonschema-specifications==2025.9.1
+ + keyring==25.7.0
+ + markdown-it-py==4.2.0
+ + mcp==1.30.0
+ + mdurl==0.1.2
+ + more-itertools==11.1.0
+ + openapi-pydantic==0.5.1
+ + pathable==0.6.0
+ + pathspec==1.1.1
+ + pathvalidate==3.3.1
+ + pillow==12.3.0
+ + platformdirs==4.12.2
+ + psutil==7.2.2
+ + py-key-value-aio==0.2.8
+ + py-key-value-shared==0.2.8
+ + pycparser==3.0
+ + pydantic==2.12.5
+ + pydantic-core==2.41.5
+ + pydantic-settings==2.15.0
+ + pygments==2.21.0
+ + pyjwt==2.15.1
+ + pyperclip==1.11.0
+ + python-decouple==3.8
+ + python-dotenv==1.2.3
+ + python-multipart==0.0.32
+ + pyyaml==6.0.3
+ + referencing==0.37.0
+ + rich==15.0.0
+ + rich-rst==2.2.0
+ + rpds-py==2026.6.3
+ + smmap==5.0.3
+ + sqlalchemy==2.0.54
+ + sqlmodel==0.0.47
+ + sse-starlette==3.5.0
+ + starlette==1.7.0
+ + typing-extensions==4.16.0
+ + typing-inspection==0.4.4
+ + uvicorn==0.52.1
+ + websockets==17.1
+render namespaced ORRERY Mail service env /Volumes/DevSSD/DevStorageGovernor/artifacts/orrery-telemetry/20261001T011558Z-build-cache-33928e51/rehearsal-home/.agentstack/mail-service/renders/fb2cd26f9cdffe1666c440114f8b2c69fc4fe987-52d479eba932225cfdd3/service.env
+initialize empty ORRERY Mail state at /Volumes/DevSSD/DevStorageGovernor/artifacts/orrery-telemetry/20261001T011558Z-build-cache-33928e51/rehearsal-home/.agentstack/mail
+start ORRERY Mail with agentstack-mailctl at http://127.0.0.1:53235/mcp
+ORRERY Mail started (pid 36935, endpoint http://127.0.0.1:53235/mcp, ready after 3s)
+ORRERY Mail ready at http://127.0.0.1:53235/mcp (database: /Volumes/DevSSD/DevStorageGovernor/artifacts/orrery-telemetry/20261001T011558Z-build-cache-33928e51/rehearsal-home/.agentstack/mail/storage.sqlite3)
+ORRERY Mail requested-name handling: honored (passthrough)
+write local operator enrollment connection profile /Volumes/DevSSD/DevStorageGovernor/artifacts/orrery-telemetry/20261001T011558Z-build-cache-33928e51/rehearsal-home/.agentstack/connections/local.json
+write /Volumes/DevSSD/DevStorageGovernor/artifacts/orrery-telemetry/20261001T011558Z-build-cache-33928e51/rehearsal-home/.agentstack/env.sh (mode 600, token-free)
+render systemd user units /Volumes/DevSSD/DevStorageGovernor/artifacts/orrery-telemetry/20261001T011558Z-build-cache-33928e51/rehearsal-home/.config/systemd/user/org.agentstack.test.orrery-up-1.mail.service and /Volumes/DevSSD/DevStorageGovernor/artifacts/orrery-telemetry/20261001T011558Z-build-cache-33928e51/rehearsal-home/.config/systemd/user/org.agentstack.test.orrery-up-1.mail.timer (ORRERY Mail autostart)
+warning: could not register the ORRERY Mail autostart unit; mail will NOT restart after a reboot. Start it manually with: /Volumes/DevSSD/DevStorageGovernor/artifacts/orrery-telemetry/20261001T011558Z-build-cache-33928e51/rehearsal-home/.agentstack/bin/agentstack-mailctl start
+render systemd user unit /Volumes/DevSSD/DevStorageGovernor/artifacts/orrery-telemetry/20261001T011558Z-build-cache-33928e51/rehearsal-home/.config/systemd/user/org.agentstack.test.orrery-up-1.mail-watcher.service (ORRERY Mail watcher)
+warning: could not register the ORRERY Mail watcher unit; agents spawned from the dashboard will not receive Mail notifications until an agent started with /Volumes/DevSSD/DevStorageGovernor/artifacts/orrery-telemetry/20261001T011558Z-build-cache-33928e51/rehearsal-home/.agentstack/bin/agent-start brings the watcher up
+start dashboard in supervised background mode, pidfile /Volumes/DevSSD/DevStorageGovernor/artifacts/orrery-telemetry/20261001T011558Z-build-cache-33928e51/rehearsal-home/.agentstack/runtime/dashboard.pid
+write manifest /Volumes/DevSSD/DevStorageGovernor/artifacts/orrery-telemetry/20261001T011558Z-build-cache-33928e51/rehearsal-home/.agentstack/install-state.json
+verify dashboard API responds at http://127.0.0.1:53236/api/agents
+dashboard healthy: http://127.0.0.1:53236/api/agents
+Install complete: http://127.0.0.1:53236/
+Manifest: /Volumes/DevSSD/DevStorageGovernor/artifacts/orrery-telemetry/20261001T011558Z-build-cache-33928e51/rehearsal-home/.agentstack/install-state.json
+Dashboard log: /Volumes/DevSSD/DevStorageGovernor/artifacts/orrery-telemetry/20261001T011558Z-build-cache-33928e51/rehearsal-home/.agentstack/runtime/dashboard.log
+Run doctor: /Volumes/DevSSD/DevStorageGovernor/artifacts/orrery-telemetry/20261001T011558Z-build-cache-33928e51/rehearsal-home/.agentstack/bin/agentstack-doctor
+Verify operation: /Volumes/DevSSD/DevStorageGovernor/artifacts/orrery-telemetry/20261001T011558Z-build-cache-33928e51/rehearsal-home/.agentstack/bin/agentstack-selftest
+Runtime updated; managed instructions differ. Agents started now still read the old block:
+  warn: Codex AGENTS.md managed block not found in /Volumes/DevSSD/DevStorageGovernor/artifacts/orrery-telemetry/20261001T011558Z-build-cache-33928e51/rehearsal-home/.codex/AGENTS.md; add it with: AGENTSTACK_HOME=/Volumes/DevSSD/DevStorageGovernor/artifacts/orrery-telemetry/20261001T011558Z-build-cache-33928e51/rehearsal-home/.agentstack CODEX_HOME=/Volumes/DevSSD/DevStorageGovernor/artifacts/orrery-telemetry/20261001T011558Z-build-cache-33928e51/rehearsal-home/.codex AGENTSTACK_PROJECT_KEY=/Volumes/DevSSD/DevStorageGovernor/artifacts/orrery-telemetry/20261001T011558Z-build-cache-33928e51/rehearsal-home/project /Volumes/DevSSD/DevStorageGovernor/artifacts/orrery-telemetry/20261001T011558Z-build-cache-33928e51/rehearsal-home/.agentstack/bin/agentstack-codex-setup
+  warn: Claude CLAUDE.md managed block not found in /Volumes/DevSSD/DevStorageGovernor/artifacts/orrery-telemetry/20261001T011558Z-build-cache-33928e51/rehearsal-home/project/CLAUDE.md; add it with: AGENTSTACK_HOME=/Volumes/DevSSD/DevStorageGovernor/artifacts/orrery-telemetry/20261001T011558Z-build-cache-33928e51/rehearsal-home/.agentstack AGENTSTACK_CLAUDE_MD_SCOPE=project AGENTSTACK_PROJECT_KEY=/Volumes/DevSSD/DevStorageGovernor/artifacts/orrery-telemetry/20261001T011558Z-build-cache-33928e51/rehearsal-home/project /Volumes/DevSSD/DevStorageGovernor/artifacts/orrery-telemetry/20261001T011558Z-build-cache-33928e51/rehearsal-home/.agentstack/bin/agentstack-claude-setup
+{
+  "home": "/Volumes/DevSSD/DevStorageGovernor/artifacts/orrery-telemetry/20261001T011558Z-build-cache-33928e51/rehearsal-home",
+  "mail_port": 53235,
+  "dashboard_port": 53236,
+  "seeded": 254,
+  "mode": "real isolated native Mail and dashboard; fake no-service Linux manager; scoped approvals skipped",
+  "installer_exit": 0,
+  "mail_health": "ready",
+  "mail_database_matches": true,
+  "comparison_failed": 0,
+  "custom_exports_retained": true,
+  "optional_env_preserved": true,
+  "version": "2026.09.30.4",
+  "helper_processes_stopped": true
+}
+traffic: [ORRERY-UP-1-rehearsal] done (exit 0)
+
+EXIT_CODE=0

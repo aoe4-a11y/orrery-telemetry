@@ -1,0 +1,39 @@
+{
+  "isolated_metadata_root": "/Volumes/DevSSD/DevStorageGovernor/artifacts/orrery-telemetry/20261001T011558Z-build-cache-33928e51/model-default-proof",
+  "commands": [
+    {
+      "command": [
+        "/Users/huyuhutaru/.local/bin/codex",
+        "--version"
+      ],
+      "exit": 0,
+      "stdout": "codex-cli 0.159.3\n",
+      "stderr": ""
+    },
+    {
+      "command": [
+        ".venv/bin/python",
+        "dashboard/codex_models.py",
+        "resolve",
+        ""
+      ],
+      "exit": 0,
+      "stdout": "{\"model\": \"gpt-6.1-sol\", \"codex_bin\": \"/Users/huyuhutaru/.local/bin/codex\", \"cli_version\": \"0.159.3\", \"default_source\": \"cli_version\"}\n",
+      "stderr": ""
+    },
+    {
+      "command": [
+        ".venv/bin/python",
+        "dashboard/codex_models.py",
+        "effort",
+        "gpt-6.1-sol",
+        ""
+      ],
+      "exit": 0,
+      "stdout": "medium\n",
+      "stderr": ""
+    }
+  ],
+  "verification_exit": 0,
+  "real_model_exec": "not repeated; head already confirmed codex exec -m gpt-6.1-sol"
+}

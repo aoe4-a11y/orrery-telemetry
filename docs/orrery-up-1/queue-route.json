@@ -1,0 +1,33 @@
+{
+  "search_command": "rg --files /Users/huyuhutaru/tools -g heavy_job_lock.sh; inspect EXAMFORGE_HEAVY_PRIORITY literal in every returned script",
+  "searched_count": 21,
+  "paths": [
+    "/Users/huyuhutaru/tools/examforge-wt-s15-build3/scripts/heavy_job_lock.sh",
+    "/Users/huyuhutaru/tools/examforge-wt-s15-build/scripts/heavy_job_lock.sh",
+    "/Users/huyuhutaru/tools/examforge-wt-choicerows/scripts/heavy_job_lock.sh",
+    "/Users/huyuhutaru/tools/examforge-wt-boundary-diagnostics/scripts/heavy_job_lock.sh",
+    "/Users/huyuhutaru/tools/examforge-wt-diag10/scripts/heavy_job_lock.sh",
+    "/Users/huyuhutaru/tools/examforge-wt-first-experience/scripts/heavy_job_lock.sh",
+    "/Users/huyuhutaru/tools/examforge-wt-s15-build2/scripts/heavy_job_lock.sh",
+    "/Users/huyuhutaru/tools/examforge-wt-build-ops-s8c/scripts/heavy_job_lock.sh",
+    "/Users/huyuhutaru/tools/examforge-wt-bisect/scripts/heavy_job_lock.sh",
+    "/Users/huyuhutaru/tools/examforge-wt-build-ops-s8b/scripts/heavy_job_lock.sh",
+    "/Users/huyuhutaru/tools/examforge-wt-build-ops-s12/scripts/heavy_job_lock.sh",
+    "/Users/huyuhutaru/tools/examforge-wt-lane-a/scripts/heavy_job_lock.sh",
+    "/Users/huyuhutaru/tools/examforge-wt-build-ops-s10b/scripts/heavy_job_lock.sh",
+    "/Users/huyuhutaru/tools/examforge-wt-build-ops-s8d/scripts/heavy_job_lock.sh",
+    "/Users/huyuhutaru/tools/examforge-wt-a18-runner-tmp/scripts/heavy_job_lock.sh",
+    "/Users/huyuhutaru/tools/examforge-wt-s11-build/scripts/heavy_job_lock.sh",
+    "/Users/huyuhutaru/tools/examforge-wt-pinktesla-s28-3/scripts/heavy_job_lock.sh",
+    "/Users/huyuhutaru/tools/examforge-wt-diagq2/scripts/heavy_job_lock.sh",
+    "/Users/huyuhutaru/tools/examforge-wt-before/scripts/heavy_job_lock.sh",
+    "/Users/huyuhutaru/tools/examforge-wt-build-ops/scripts/heavy_job_lock.sh",
+    "/Users/huyuhutaru/tools/examforge/scripts/heavy_job_lock.sh"
+  ],
+  "matches": [],
+  "in_use_wrapper": "/Users/huyuhutaru/tools/examforge/scripts/heavy_job_lock.sh",
+  "in_use_wrapper_sha256": "fb4a5b6aa0595686f326bc2604e1e64bb0ed4d595a4a71fe8447c00f66e5d1f5",
+  "priority_env": 2,
+  "slots_override": "none",
+  "shared_script_edits": 0
+}

@@ -1,0 +1,8 @@
+..                                                                       [100%]
+============================= slowest 25 durations =============================
+11.19s call     tests/test_runtime_defaults.py::test_isolated_installer_migrates_annotations_and_matches_manifest_sample
+
+(5 durations < 1s hidden.)
+2 passed in 11.88s
+
+EXIT_CODE=0

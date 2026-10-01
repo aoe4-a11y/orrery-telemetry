@@ -1,0 +1,504 @@
+{
+  "comparison_count": 71,
+  "raw_byte_identical": 65,
+  "migrated_branch_identical": 71,
+  "comparisons": [
+    {
+      "path": "bin/agentstack-check-seats",
+      "live_sha256": "3db06eeaf4d34ff1e6783786ad9413605e882144ac67fdf63ca41de98691a1f8",
+      "installed_sha256": "3db06eeaf4d34ff1e6783786ad9413605e882144ac67fdf63ca41de98691a1f8",
+      "live_equals_installed": true,
+      "installed_matches_migrated_branch": true
+    },
+    {
+      "path": "bin/agentstack-doctor",
+      "live_sha256": "87c88f3b540a2465ae71538dbeaa8242dd08836d8ceb4045cf0e277810cb7e7a",
+      "installed_sha256": "d86fd9601bc9ab93c9f0bce2850c3022f383a400ccb353eedd029a464e98c4fd",
+      "live_equals_installed": false,
+      "installed_matches_migrated_branch": true
+    },
+    {
+      "path": "bin/agentstack-doctor.bak-20260920-tmux-tcc",
+      "live_sha256": "c0392571a04247ed3e7a94aeee366dee0df8f245fa59dfa6d5c8006c2444c545",
+      "installed_sha256": "c0392571a04247ed3e7a94aeee366dee0df8f245fa59dfa6d5c8006c2444c545",
+      "live_equals_installed": true,
+      "installed_matches_migrated_branch": true
+    },
+    {
+      "path": "bin/agentstack-doctor.bak-argv4",
+      "live_sha256": "efb3cd9925f17ca1f5a60c3381235df6bc221a30d84b2300d0a1129e3144d8d6",
+      "installed_sha256": "efb3cd9925f17ca1f5a60c3381235df6bc221a30d84b2300d0a1129e3144d8d6",
+      "live_equals_installed": true,
+      "installed_matches_migrated_branch": true
+    },
+    {
+      "path": "bin/agentstack-memory-guard",
+      "live_sha256": "3842a57bbd9eb8a717c664cd4c71897975b2bdaee1a3a3397209c15370b64e9a",
+      "installed_sha256": "3842a57bbd9eb8a717c664cd4c71897975b2bdaee1a3a3397209c15370b64e9a",
+      "live_equals_installed": true,
+      "installed_matches_migrated_branch": true
+    },
+    {
+      "path": "bin/agentstack-memory-guard.bak-20260926-v1",
+      "live_sha256": "10347a56f78f2389d82d0685f3553e21c0c4b8596d98cffc71f4c2cea0bb623f",
+      "installed_sha256": "10347a56f78f2389d82d0685f3553e21c0c4b8596d98cffc71f4c2cea0bb623f",
+      "live_equals_installed": true,
+      "installed_matches_migrated_branch": true
+    },
+    {
+      "path": "bin/agentstack-memory-guard.bak-20260926-v2",
+      "live_sha256": "ea8c9aa4d330489c37714697615e5e7f5b60c70c0c4af2d5631bcff9e0a5d8fe",
+      "installed_sha256": "ea8c9aa4d330489c37714697615e5e7f5b60c70c0c4af2d5631bcff9e0a5d8fe",
+      "live_equals_installed": true,
+      "installed_matches_migrated_branch": true
+    },
+    {
+      "path": "bin/agentstack-owner-checkin.py",
+      "live_sha256": "e360c0730e323fde06fb5e06ed51e1e8009bb60ff8359d0e377840885fef5a52",
+      "installed_sha256": "e360c0730e323fde06fb5e06ed51e1e8009bb60ff8359d0e377840885fef5a52",
+      "live_equals_installed": true,
+      "installed_matches_migrated_branch": true
+    },
+    {
+      "path": "bin/agentstack-reap-idle-seats",
+      "live_sha256": "a2e7aaca91775542fca5cc739b1b054b1afcf79da244e0b94a09b6070f8ed6b7",
+      "installed_sha256": "a2e7aaca91775542fca5cc739b1b054b1afcf79da244e0b94a09b6070f8ed6b7",
+      "live_equals_installed": true,
+      "installed_matches_migrated_branch": true
+    },
+    {
+      "path": "bin/agentstack-reap-idle-seats.bak-20260920-two-strikes",
+      "live_sha256": "ce4d4c7730d7408f7539e41974d7e61da164ad3a0277bd2b3855db0828cae351",
+      "installed_sha256": "ce4d4c7730d7408f7539e41974d7e61da164ad3a0277bd2b3855db0828cae351",
+      "live_equals_installed": true,
+      "installed_matches_migrated_branch": true
+    },
+    {
+      "path": "bin/agentstack-restart-seat",
+      "live_sha256": "69a4a1b2277375a55b87344badc718249c0835e4061e7a906c702dbd1b771cee",
+      "installed_sha256": "83756f2ff85f828e748b14df084a9cb3e61e1e3f9c574c47caeab314509e0e4f",
+      "live_equals_installed": false,
+      "installed_matches_migrated_branch": true
+    },
+    {
+      "path": "bin/agentstack-rule-mirror-check",
+      "live_sha256": "c3a432b102ef3479811e21ecc40b240f376693a80ac729337cb6549594854f84",
+      "installed_sha256": "c3a432b102ef3479811e21ecc40b240f376693a80ac729337cb6549594854f84",
+      "live_equals_installed": true,
+      "installed_matches_migrated_branch": true
+    },
+    {
+      "path": "bin/agentstack-seat-cost.py",
+      "live_sha256": "21b1b08194b8b158434f6b9211d9bf9696daba37d93b15f0361280238e38edd1",
+      "installed_sha256": "21b1b08194b8b158434f6b9211d9bf9696daba37d93b15f0361280238e38edd1",
+      "live_equals_installed": true,
+      "installed_matches_migrated_branch": true
+    },
+    {
+      "path": "bin/agentstack-seat-stall-watch.py",
+      "live_sha256": "398b6f388a8123e6f308a44596e8eb20c7ba84777f0e8d6a752cfd29abf4f9fe",
+      "installed_sha256": "398b6f388a8123e6f308a44596e8eb20c7ba84777f0e8d6a752cfd29abf4f9fe",
+      "live_equals_installed": true,
+      "installed_matches_migrated_branch": true
+    },
+    {
+      "path": "bin/agentstack-spawn-codex",
+      "live_sha256": "1ab6d348bb9934a9f6c90a1d24a8290214e4d73bad8374368fd9edfaf1599bd4",
+      "installed_sha256": "ab7f88a96463d74059cb635efd81aaeec80ea3ae0c69f6384ef2ba28a9e552c4",
+      "live_equals_installed": false,
+      "installed_matches_migrated_branch": true
+    },
+    {
+      "path": "bin/agentstack-supervisor.py",
+      "live_sha256": "a3a9cd6e8908499d0e6495b11ef8ccdffdfeb86519a3093d452d462b61198eb4",
+      "installed_sha256": "a3a9cd6e8908499d0e6495b11ef8ccdffdfeb86519a3093d452d462b61198eb4",
+      "live_equals_installed": true,
+      "installed_matches_migrated_branch": true
+    },
+    {
+      "path": "bin/agentstack-supervisor.py.bak-20260912",
+      "live_sha256": "53bc3149c2c3becbc1339d0d411d7e399e07bd0a29d013892788d66548043939",
+      "installed_sha256": "53bc3149c2c3becbc1339d0d411d7e399e07bd0a29d013892788d66548043939",
+      "live_equals_installed": true,
+      "installed_matches_migrated_branch": true
+    },
+    {
+      "path": "bin/agentstack-supervisor.py.bak-20260918-nudge-cap",
+      "live_sha256": "3d3e755ba6adb088f138bbdf31deffe4cbfa1fd4424327e39b64426448541026",
+      "installed_sha256": "3d3e755ba6adb088f138bbdf31deffe4cbfa1fd4424327e39b64426448541026",
+      "live_equals_installed": true,
+      "installed_matches_migrated_branch": true
+    },
+    {
+      "path": "bin/agentstack-supervisor.py.bak-20260920-R062",
+      "live_sha256": "0f1f50042bc92efcf48c131815ada31d9d6f0633096b82adee8c4f426595d65d",
+      "installed_sha256": "0f1f50042bc92efcf48c131815ada31d9d6f0633096b82adee8c4f426595d65d",
+      "live_equals_installed": true,
+      "installed_matches_migrated_branch": true
+    },
+    {
+      "path": "bin/agentstack-supervisor.py.bak-20260921-heartbeat",
+      "live_sha256": "97b302f38009a96ff1948da11a5a296e4ac14611a3e9933dfd9ed63b6b337293",
+      "installed_sha256": "97b302f38009a96ff1948da11a5a296e4ac14611a3e9933dfd9ed63b6b337293",
+      "live_equals_installed": true,
+      "installed_matches_migrated_branch": true
+    },
+    {
+      "path": "bin/agentstack-supervisor.py.bak-20260923-R068",
+      "live_sha256": "ecb087b28f7c9f0a56a31ea522d02dd69c1b64922e0d4aedb1a237cdf8c44d8f",
+      "installed_sha256": "ecb087b28f7c9f0a56a31ea522d02dd69c1b64922e0d4aedb1a237cdf8c44d8f",
+      "live_equals_installed": true,
+      "installed_matches_migrated_branch": true
+    },
+    {
+      "path": "bin/agentstack-supervisor.py.bak-20260923-autoack",
+      "live_sha256": "383484b956333c3eeca9a78e30c3208f842de17203ce086fe80c83338bed3318",
+      "installed_sha256": "383484b956333c3eeca9a78e30c3208f842de17203ce086fe80c83338bed3318",
+      "live_equals_installed": true,
+      "installed_matches_migrated_branch": true
+    },
+    {
+      "path": "bin/agentstack-supervisor.py.bak-20260923-autoack2",
+      "live_sha256": "1dc53c375f922faaf79c4b86cc31cb92938c8633dafa8cc6cb000c4f89daab27",
+      "installed_sha256": "1dc53c375f922faaf79c4b86cc31cb92938c8633dafa8cc6cb000c4f89daab27",
+      "live_equals_installed": true,
+      "installed_matches_migrated_branch": true
+    },
+    {
+      "path": "bin/agentstack-supervisor.py.bak-20260923-codexto",
+      "live_sha256": "5e7465c7a7bbfeada9f677450d5966c7337ab02d08cb124a39c4ce99f94b7164",
+      "installed_sha256": "5e7465c7a7bbfeada9f677450d5966c7337ab02d08cb124a39c4ce99f94b7164",
+      "live_equals_installed": true,
+      "installed_matches_migrated_branch": true
+    },
+    {
+      "path": "bin/agentstack-supervisor.py.bak-20260923-dispatchnudge",
+      "live_sha256": "c27cf67ef8a9b9f3b58e53f377dda42ebb21b6ce3265d051f0e8810059a84e45",
+      "installed_sha256": "c27cf67ef8a9b9f3b58e53f377dda42ebb21b6ce3265d051f0e8810059a84e45",
+      "live_equals_installed": true,
+      "installed_matches_migrated_branch": true
+    },
+    {
+      "path": "bin/agentstack-supervisor.py.bak-20260923-nudgeid",
+      "live_sha256": "f00cf46e27714c031aa41b694a055d1261991e78d60eda0fe0876d5d3bc7689b",
+      "installed_sha256": "f00cf46e27714c031aa41b694a055d1261991e78d60eda0fe0876d5d3bc7689b",
+      "live_equals_installed": true,
+      "installed_matches_migrated_branch": true
+    },
+    {
+      "path": "bin/agentstack-supervisor.py.bak-20260923-stale24h",
+      "live_sha256": "8b1b5e9886e59563cc4d6e8c6b350a5a226d4c5f3246039680173b875225d3eb",
+      "installed_sha256": "8b1b5e9886e59563cc4d6e8c6b350a5a226d4c5f3246039680173b875225d3eb",
+      "live_equals_installed": true,
+      "installed_matches_migrated_branch": true
+    },
+    {
+      "path": "bin/agentstack-supervisor.py.bak-20260923-throttle",
+      "live_sha256": "33caff46ba05cb4934d00556aa8cf7f4ad4a4404d01ca17122dbb8c067dae9f4",
+      "installed_sha256": "33caff46ba05cb4934d00556aa8cf7f4ad4a4404d01ca17122dbb8c067dae9f4",
+      "live_equals_installed": true,
+      "installed_matches_migrated_branch": true
+    },
+    {
+      "path": "bin/agentstack-supervisor.py.bak-20260923-window15",
+      "live_sha256": "6fac7071a938331d7fab4e39deb1b8cd42d86a74b7543cb4480af2f185f82974",
+      "installed_sha256": "6fac7071a938331d7fab4e39deb1b8cd42d86a74b7543cb4480af2f185f82974",
+      "live_equals_installed": true,
+      "installed_matches_migrated_branch": true
+    },
+    {
+      "path": "bin/agentstack-tmux-server-migrate",
+      "live_sha256": "5d6989ac78c454f5a80561f86d8cb7933668784ceaf32bb03c7c978ecd18de1f",
+      "installed_sha256": "5d6989ac78c454f5a80561f86d8cb7933668784ceaf32bb03c7c978ecd18de1f",
+      "live_equals_installed": true,
+      "installed_matches_migrated_branch": true
+    },
+    {
+      "path": "bin/agentstack-unstick-seats.sh",
+      "live_sha256": "497c04e0acaf098bb02000c08907c9a9223e85e3fafaa30496d5bb958ade62e0",
+      "installed_sha256": "497c04e0acaf098bb02000c08907c9a9223e85e3fafaa30496d5bb958ade62e0",
+      "live_equals_installed": true,
+      "installed_matches_migrated_branch": true
+    },
+    {
+      "path": "bin/codex-stats",
+      "live_sha256": "79e330ec8a0e4f7ef883bb7b84ed8993eb6a717c779f806a3429c340c745e3e5",
+      "installed_sha256": "79e330ec8a0e4f7ef883bb7b84ed8993eb6a717c779f806a3429c340c745e3e5",
+      "live_equals_installed": true,
+      "installed_matches_migrated_branch": true
+    },
+    {
+      "path": "bin/head-send",
+      "live_sha256": "72fa772b13ca951e7a5a6007966c2129e91807995f8af3893c66e42e8ddc5277",
+      "installed_sha256": "72fa772b13ca951e7a5a6007966c2129e91807995f8af3893c66e42e8ddc5277",
+      "live_equals_installed": true,
+      "installed_matches_migrated_branch": true
+    },
+    {
+      "path": "bin/lib/agentstack-scientists.sh",
+      "live_sha256": "a9a3785e31c8e8e20a2ef2055dd9d08fb920bd85f0058e1cf31784d88e1aa22e",
+      "installed_sha256": "a9a3785e31c8e8e20a2ef2055dd9d08fb920bd85f0058e1cf31784d88e1aa22e",
+      "live_equals_installed": true,
+      "installed_matches_migrated_branch": true
+    },
+    {
+      "path": "bin/lib/agentstack-scientists.sh.bak-20260920-nohyphen",
+      "live_sha256": "65adb369be19b43c854184ae35fdf4c876d21165c3135d5670875821306e145e",
+      "installed_sha256": "65adb369be19b43c854184ae35fdf4c876d21165c3135d5670875821306e145e",
+      "live_equals_installed": true,
+      "installed_matches_migrated_branch": true
+    },
+    {
+      "path": "bin/orrery-audit-evidence",
+      "live_sha256": "00787c6dc3745b65915c89795c8d56782d551fee89e5999e7f70eb203abe92db",
+      "installed_sha256": "00787c6dc3745b65915c89795c8d56782d551fee89e5999e7f70eb203abe92db",
+      "live_equals_installed": true,
+      "installed_matches_migrated_branch": true
+    },
+    {
+      "path": "bin/orrery-audit-evidence.bak-20260921-K4",
+      "live_sha256": "1bba217b7c5f0eab61aacbe4daa572e7594aaad5f8ac3df4aaf94f3c795d8d00",
+      "installed_sha256": "1bba217b7c5f0eab61aacbe4daa572e7594aaad5f8ac3df4aaf94f3c795d8d00",
+      "live_equals_installed": true,
+      "installed_matches_migrated_branch": true
+    },
+    {
+      "path": "bin/orrery-audit-login",
+      "live_sha256": "a2fe50efb42e728436fb338779c00ce8853af67b80f583a8b6f831fcdc03c23c",
+      "installed_sha256": "a2fe50efb42e728436fb338779c00ce8853af67b80f583a8b6f831fcdc03c23c",
+      "live_equals_installed": true,
+      "installed_matches_migrated_branch": true
+    },
+    {
+      "path": "bin/orrery-audit-run",
+      "live_sha256": "dad3071b0c1fd809bb54c5e37c0121d6600d66edf70cd66296c79f620c0cb6a9",
+      "installed_sha256": "dad3071b0c1fd809bb54c5e37c0121d6600d66edf70cd66296c79f620c0cb6a9",
+      "live_equals_installed": true,
+      "installed_matches_migrated_branch": true
+    },
+    {
+      "path": "bin/orrery-ci",
+      "live_sha256": "39a6d608bf8bbc0abc7ac3c98e08586b253f259e7b40c0a198c62d2b2085d06e",
+      "installed_sha256": "39a6d608bf8bbc0abc7ac3c98e08586b253f259e7b40c0a198c62d2b2085d06e",
+      "live_equals_installed": true,
+      "installed_matches_migrated_branch": true
+    },
+    {
+      "path": "bin/orrery-head-tripwire",
+      "live_sha256": "dfea95e521b07c4a95b6aa3942eb937d0c79defc4071060410218733ea3c530b",
+      "installed_sha256": "dfea95e521b07c4a95b6aa3942eb937d0c79defc4071060410218733ea3c530b",
+      "live_equals_installed": true,
+      "installed_matches_migrated_branch": true
+    },
+    {
+      "path": "bin/orrery-head-tripwire.bak-20260912",
+      "live_sha256": "bbccdca27dc4a8c4fffb59c79ac6a48aedf60bd62668bf5092abcdaf86d877f7",
+      "installed_sha256": "bbccdca27dc4a8c4fffb59c79ac6a48aedf60bd62668bf5092abcdaf86d877f7",
+      "live_equals_installed": true,
+      "installed_matches_migrated_branch": true
+    },
+    {
+      "path": "bin/owner-quote-index",
+      "live_sha256": "12cb0015e0ebc7b0bc9461d3e18e8667fd4e1a39340f01a5660abaffe0d66d6e",
+      "installed_sha256": "12cb0015e0ebc7b0bc9461d3e18e8667fd4e1a39340f01a5660abaffe0d66d6e",
+      "live_equals_installed": true,
+      "installed_matches_migrated_branch": true
+    },
+    {
+      "path": "bin/owner-sheet-health",
+      "live_sha256": "3d5c7d7c974a36902052cc7171d9192c69efe47a7a66090c08246872851b6dc4",
+      "installed_sha256": "3d5c7d7c974a36902052cc7171d9192c69efe47a7a66090c08246872851b6dc4",
+      "live_equals_installed": true,
+      "installed_matches_migrated_branch": true
+    },
+    {
+      "path": "bin/owner-sheet-server.py",
+      "live_sha256": "4370418963fac34f020881dfcb820dcade3e18fc87f027c12a8d0ac59ee55cc4",
+      "installed_sha256": "4370418963fac34f020881dfcb820dcade3e18fc87f027c12a8d0ac59ee55cc4",
+      "live_equals_installed": true,
+      "installed_matches_migrated_branch": true
+    },
+    {
+      "path": "bin/owner-sheet-server.py.bak-20260920",
+      "live_sha256": "fb8addd2e410973d44a50c1f936ce5f824c83783cb4ecedca801fada34d28569",
+      "installed_sha256": "fb8addd2e410973d44a50c1f936ce5f824c83783cb4ecedca801fada34d28569",
+      "live_equals_installed": true,
+      "installed_matches_migrated_branch": true
+    },
+    {
+      "path": "bin/owner-sheet-server.py.bak-20260920-s2",
+      "live_sha256": "074371f7e4a6f2cb1554c19799580b2cc5641fdc5c54ece5198b511cb9943f52",
+      "installed_sha256": "074371f7e4a6f2cb1554c19799580b2cc5641fdc5c54ece5198b511cb9943f52",
+      "live_equals_installed": true,
+      "installed_matches_migrated_branch": true
+    },
+    {
+      "path": "bin/owner-sheet-server.py.bak-20260922-500",
+      "live_sha256": "1b4d67e5b08710146ce5bad10d2e593d8cea91da58f42a980ffd1b05d55bf94c",
+      "installed_sha256": "1b4d67e5b08710146ce5bad10d2e593d8cea91da58f42a980ffd1b05d55bf94c",
+      "live_equals_installed": true,
+      "installed_matches_migrated_branch": true
+    },
+    {
+      "path": "bin/owner-sheet-server.py.bak-20260922-prev",
+      "live_sha256": "c50fc6259248e1109022d59b6a56f2317726679595e225fde8123a83bc3b5104",
+      "installed_sha256": "c50fc6259248e1109022d59b6a56f2317726679595e225fde8123a83bc3b5104",
+      "live_equals_installed": true,
+      "installed_matches_migrated_branch": true
+    },
+    {
+      "path": "bin/simulator-window-guard",
+      "live_sha256": "06585f5176d047e7e177377c9183fa56833280657c205751969d42b31b3cb8fc",
+      "installed_sha256": "06585f5176d047e7e177377c9183fa56833280657c205751969d42b31b3cb8fc",
+      "live_equals_installed": true,
+      "installed_matches_migrated_branch": true
+    },
+    {
+      "path": "hooks/head-send-lint.py",
+      "live_sha256": "40864dd2bfc6d70accdd11a9ff71938c78bd48982a16e0d7a0a2c5551348411b",
+      "installed_sha256": "40864dd2bfc6d70accdd11a9ff71938c78bd48982a16e0d7a0a2c5551348411b",
+      "live_equals_installed": true,
+      "installed_matches_migrated_branch": true
+    },
+    {
+      "path": "hooks/rotate_runtime_logs.sh",
+      "live_sha256": "bd9189302fcc3c59729331fff61d2b6be4d57930a68a474c17d0de0ddb0246ff",
+      "installed_sha256": "bd9189302fcc3c59729331fff61d2b6be4d57930a68a474c17d0de0ddb0246ff",
+      "live_equals_installed": true,
+      "installed_matches_migrated_branch": true
+    },
+    {
+      "path": "hooks/settings.template.json",
+      "live_sha256": "ecf15e98a736cda0f9856e8c2fa9d7c66029fe9e4d2469ad44b17535380848a1",
+      "installed_sha256": "14cb5f80762a78ba0b34a14d9d9bf22daf2505af9162018190803c6d5436b9e3",
+      "live_equals_installed": false,
+      "installed_matches_migrated_branch": true
+    },
+    {
+      "path": "hooks/settings.template.json.bak-20260923-R068",
+      "live_sha256": "75a9d7cebd14206ca659706fe21498f0b9abb0cdbbf356de9f744df7f32abf0e",
+      "installed_sha256": "75a9d7cebd14206ca659706fe21498f0b9abb0cdbbf356de9f744df7f32abf0e",
+      "live_equals_installed": true,
+      "installed_matches_migrated_branch": true
+    },
+    {
+      "path": "hooks/spawn_child.sh",
+      "live_sha256": "f4f7bfb056157d8b14faac713a6eecf43711f33a0dd1a11f966f10b3c037038d",
+      "installed_sha256": "20dd05023964ef00af7cdd62bc3d093c7e56129bf645fc951d92ac56875e94d4",
+      "live_equals_installed": false,
+      "installed_matches_migrated_branch": true
+    },
+    {
+      "path": "hooks/spawn_child.sh.bak-20260912-fullperm",
+      "live_sha256": "f1f52389dcc207ce3bded479c4014fb20c06f355f84e3636674e994b521d42e0",
+      "installed_sha256": "f1f52389dcc207ce3bded479c4014fb20c06f355f84e3636674e994b521d42e0",
+      "live_equals_installed": true,
+      "installed_matches_migrated_branch": true
+    },
+    {
+      "path": "hooks/spawn_child.sh.bak-20260920-R061",
+      "live_sha256": "e51909c97f6ac7ad90fec8f7600722d4b47729389478a239657ab91fa1c879b3",
+      "installed_sha256": "e51909c97f6ac7ad90fec8f7600722d4b47729389478a239657ab91fa1c879b3",
+      "live_equals_installed": true,
+      "installed_matches_migrated_branch": true
+    },
+    {
+      "path": "hooks/spawn_child.sh.bak-20260920-R062",
+      "live_sha256": "d143f5223fe734afbdf1e035659fa97497ca6dcb67b5599a521c483ef4c5e2d1",
+      "installed_sha256": "d143f5223fe734afbdf1e035659fa97497ca6dcb67b5599a521c483ef4c5e2d1",
+      "live_equals_installed": true,
+      "installed_matches_migrated_branch": true
+    },
+    {
+      "path": "hooks/spawn_child.sh.bak-20260923-opus55",
+      "live_sha256": "cfb1d8e12e52f7992394874e2fd9332b4ed77aa92af34d45ef908f986731eccf",
+      "installed_sha256": "cfb1d8e12e52f7992394874e2fd9332b4ed77aa92af34d45ef908f986731eccf",
+      "live_equals_installed": true,
+      "installed_matches_migrated_branch": true
+    },
+    {
+      "path": "hooks/spawn_child.sh.bak-20260924-readycase",
+      "live_sha256": "cc156b9c48e3fed03c053415895fcb47dd6cbf5a0e1a05c7cbe8ef2ecd0bf66f",
+      "installed_sha256": "cc156b9c48e3fed03c053415895fcb47dd6cbf5a0e1a05c7cbe8ef2ecd0bf66f",
+      "live_equals_installed": true,
+      "installed_matches_migrated_branch": true
+    },
+    {
+      "path": "hooks/spawn_child.sh.bak-20260925-update-token",
+      "live_sha256": "ab3fcc20b08f047c10a4efb9348bd689fcf66d2259716258f427e6d1be683f5e",
+      "installed_sha256": "ab3fcc20b08f047c10a4efb9348bd689fcf66d2259716258f427e6d1be683f5e",
+      "live_equals_installed": true,
+      "installed_matches_migrated_branch": true
+    },
+    {
+      "path": "hooks/spawn_child.sh.bak-20260929-sonnet55",
+      "live_sha256": "c6d8b0aa87b1c77340954038e6f5597c43bccc056a7d2197008410754d9b82bf",
+      "installed_sha256": "c6d8b0aa87b1c77340954038e6f5597c43bccc056a7d2197008410754d9b82bf",
+      "live_equals_installed": true,
+      "installed_matches_migrated_branch": true
+    },
+    {
+      "path": "hooks/spawn_child.sh.bak-20261001-codex0159-trust",
+      "live_sha256": "058cadb676e8c89e1d5cf3cc133f21a59fcf0eb7fde7f51a1f8e141d43c94a07",
+      "installed_sha256": "058cadb676e8c89e1d5cf3cc133f21a59fcf0eb7fde7f51a1f8e141d43c94a07",
+      "live_equals_installed": true,
+      "installed_matches_migrated_branch": true
+    },
+    {
+      "path": "hooks/task-file-lint.py",
+      "live_sha256": "b269417574cc8976805c708168ba34204455b29b44066c662dbc479175f4c70f",
+      "installed_sha256": "b269417574cc8976805c708168ba34204455b29b44066c662dbc479175f4c70f",
+      "live_equals_installed": true,
+      "installed_matches_migrated_branch": true
+    },
+    {
+      "path": "hooks/usage-throttle-warn.py",
+      "live_sha256": "1bed2c2e42707f6ed0ba275f9d5ef6b2932e6c36178d403f4c081cce24ae5813",
+      "installed_sha256": "1bed2c2e42707f6ed0ba275f9d5ef6b2932e6c36178d403f4c081cce24ae5813",
+      "live_equals_installed": true,
+      "installed_matches_migrated_branch": true
+    },
+    {
+      "path": "hooks/watch_agent_mail_signals.sh",
+      "live_sha256": "d8fd7754707d94ea3e9871441b61719310789fd6fb324372a0c58678aea5c1e5",
+      "installed_sha256": "fbc5ee6d729cc637d28f970f749b54746cda7f0325760663702338b5527a1155",
+      "live_equals_installed": false,
+      "installed_matches_migrated_branch": true
+    },
+    {
+      "path": "hooks/watch_agent_mail_signals.sh.bak-20260912",
+      "live_sha256": "1cc3fce31b759e104fedfa83e21d09ab8719b7a4c82dcb00eafed396b3dc0813",
+      "installed_sha256": "1cc3fce31b759e104fedfa83e21d09ab8719b7a4c82dcb00eafed396b3dc0813",
+      "live_equals_installed": true,
+      "installed_matches_migrated_branch": true
+    },
+    {
+      "path": "hooks/watch_agent_mail_signals.sh.bak-20260920-stale-signals",
+      "live_sha256": "d637a5a640a900d87caec91fa8e1bcca643cf12374e93733e984948d74fc9e4f",
+      "installed_sha256": "d637a5a640a900d87caec91fa8e1bcca643cf12374e93733e984948d74fc9e4f",
+      "live_equals_installed": true,
+      "installed_matches_migrated_branch": true
+    },
+    {
+      "path": "integrations/codex_app/marketplace/plugins/agentstack-codex-app/src/agentstack_codex_app/mcp_server.py",
+      "live_sha256": "7291d7d206d9903cf5da8e4592fb287d586e5fcc29462d4a79910dee2e46980e",
+      "installed_sha256": "7291d7d206d9903cf5da8e4592fb287d586e5fcc29462d4a79910dee2e46980e",
+      "live_equals_installed": true,
+      "installed_matches_migrated_branch": true
+    },
+    {
+      "path": "config/head-send-lint.json",
+      "live_sha256": "bc6a1f2de96bd75ac7e7f4bfc2aaac989f07b6bd0bfcfee636f9ad54c9d5283f",
+      "installed_sha256": "bc6a1f2de96bd75ac7e7f4bfc2aaac989f07b6bd0bfcfee636f9ad54c9d5283f",
+      "live_equals_installed": true,
+      "installed_matches_migrated_branch": true
+    },
+    {
+      "path": "config/head-send-lint.json.bak-20260923-tune1",
+      "live_sha256": "38ac876e0ec482b53bfee33b6992357a11cb0a018583b48cd438523b775a74e3",
+      "installed_sha256": "38ac876e0ec482b53bfee33b6992357a11cb0a018583b48cd438523b775a74e3",
+      "live_equals_installed": true,
+      "installed_matches_migrated_branch": true
+    }
+  ]
+}

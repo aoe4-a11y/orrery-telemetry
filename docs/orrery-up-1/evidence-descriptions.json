@@ -1,0 +1,106 @@
+[
+  [
+    "identity.json",
+    "本家tag・fork4commit・隔離installと最終testのcommitを固定"
+  ],
+  [
+    "inventory.json",
+    "owned252・追加/backupを含む全307行のpath/SHA/移植先"
+  ],
+  [
+    "migration-map.md",
+    "各改造と移植commit、55件source不在、backup世代、upstream同等箇所の対応"
+  ],
+  [
+    "final-census.json",
+    "owned7差分・55source不在＋4owned backup・外部owned5の件数"
+  ],
+  [
+    "coverage-final.json",
+    "bin/hooks/config等8領域288regular fileの未採録0"
+  ],
+  [
+    "final-destination-check.json",
+    "現行code/config/backup286hashのdrift0、祖先5件、canonical checkout未変更"
+  ],
+  [
+    "live-to-branch.diff",
+    "現行コードと移植branchの差分全文"
+  ],
+  [
+    "live-to-install.json",
+    "71対象でraw65一致・移植branch71一致"
+  ],
+  [
+    "live-to-install.diff",
+    "現行と使い捨てinstallの6差分全文"
+  ],
+  [
+    "installed-latest-source.json",
+    "core4sourceを最新branchで置換しoptional metadata3件は現行値保持"
+  ],
+  [
+    "rehearsal.json",
+    "実installer exit0・隔離Mail/DB/dashboard正常・71comparison・teardown"
+  ],
+  [
+    "rehearsal-second.log",
+    "使い捨て実installerの出力全文とexit0"
+  ],
+  [
+    "rehearsal-warnings.txt",
+    "隔離service stub/承認skipに由来する8warningの原文"
+  ],
+  [
+    "rollback-proof.json",
+    "隔離先310recordのsnapshot/restore両exit0・元SHA復元・runtime保持"
+  ],
+  [
+    "model-default-proof.json",
+    "実Codex0.159.3のresolver gpt-6.1-sol・medium、3command exit0"
+  ],
+  [
+    "test-history.json",
+    "初回24赤と2回目2赤のassertion・導入変更・修正・未特定の範囲"
+  ],
+  [
+    "full-suite-first.log",
+    "初回全体24failed/3179passed/33skipped、exit1の出力全文"
+  ],
+  [
+    "full-suite-final.log",
+    "2回目全体2failed/3202passed/33skipped、exit1の出力全文"
+  ],
+  [
+    "last-two-focused.log",
+    "残った2件の修正確認、単独pytest出力とexit"
+  ],
+  [
+    "full-suite-verified.log",
+    "最終commitの全体pytest出力全文とexit"
+  ],
+  [
+    "queue-route.json",
+    "canonical heavy wrapperと21path探索、優先度実装0・上限変更なし"
+  ],
+  [
+    "cleanup-check.json",
+    "隔離installのhelper process残存0・実service停止0"
+  ],
+  [
+    "guide.md",
+    "所有者が実行するinstall1本とrollback3command・未測定範囲"
+  ],
+  [
+    "push-candidate.json",
+    "forkへcandidate SHAをpushしremoteと一致させた記録"
+  ],
+  [
+    "log-credential-shape-scan.json",
+    "station logの3種類のcredential shape検出件数（網羅性の限界付き）"
+  ],
+  [
+    "optional-metadata-equivalence.json",
+    "owned metadataのschema titleとproject description以外は同一、制約/依存差分なし"
+  ]
+]

@@ -1,0 +1,72 @@
+{
+  "scope": "/Volumes/DevSSD/DevStorageGovernor/artifacts/orrery-telemetry/20261001T011558Z-build-cache-33928e51/rehearsal-home/.agentstack",
+  "source_commit": "fb2cd26f9cdffe1666c440114f8b2c69fc4fe987",
+  "latest_source_checks": [
+    {
+      "installed_file": "integrations/codex_app/README.md",
+      "branch_sha256": "6fa634175ef4899712fa568361dd7c62452a89b03765ce9fb78fe3d2d121404b",
+      "installed_sha256": "7d7323304be3550ba9bd6a2e20cf1d5811fd44a49e5bed684664c2a1e26724f3",
+      "byte_equal": false,
+      "expected_policy": "core installer preserves installed optional metadata",
+      "expected_sha256": "7d7323304be3550ba9bd6a2e20cf1d5811fd44a49e5bed684664c2a1e26724f3",
+      "matches_expected_policy": true
+    },
+    {
+      "installed_file": "integrations/codex_app/pyproject.toml",
+      "branch_sha256": "98232fe3fd96cfe1fa5384233af63d026c87b06d1e885312406d735d536d968f",
+      "installed_sha256": "294e049f74c43135e8f3249abd22a4f1b8500b01c438ebd6183d9bce147ceb02",
+      "byte_equal": false,
+      "expected_policy": "core installer preserves installed optional metadata",
+      "expected_sha256": "294e049f74c43135e8f3249abd22a4f1b8500b01c438ebd6183d9bce147ceb02",
+      "matches_expected_policy": true
+    },
+    {
+      "installed_file": "integrations/codex_app/schemas/binding-record-v1.json",
+      "branch_sha256": "6c310f6ccbff19b3003a02d114272b2a0b9b35face4364b12e1448e499f5f4b6",
+      "installed_sha256": "3895fed4e17dd2fc0159575a77fef613e3b3266ff972b4c01259e95cab20130e",
+      "byte_equal": false,
+      "expected_policy": "core installer preserves installed optional metadata",
+      "expected_sha256": "3895fed4e17dd2fc0159575a77fef613e3b3266ff972b4c01259e95cab20130e",
+      "matches_expected_policy": true
+    },
+    {
+      "installed_file": "integrations/codex_app/src/agentstack_codex_app/agent_mail_client.py",
+      "branch_sha256": "8c958abac1e1f87e1d4b710b5e439b3cebebbaf5eaff838b3ccb343e7c17edb5",
+      "installed_sha256": "8c958abac1e1f87e1d4b710b5e439b3cebebbaf5eaff838b3ccb343e7c17edb5",
+      "byte_equal": true,
+      "expected_policy": "current branch source installed",
+      "expected_sha256": "8c958abac1e1f87e1d4b710b5e439b3cebebbaf5eaff838b3ccb343e7c17edb5",
+      "matches_expected_policy": true
+    },
+    {
+      "installed_file": "integrations/codex_app/src/agentstack_codex_app/mcp_server.py",
+      "branch_sha256": "620555edae70a0a2238fbbe00dfa00e350226bb602843d8f1d8e8a773666d39f",
+      "installed_sha256": "620555edae70a0a2238fbbe00dfa00e350226bb602843d8f1d8e8a773666d39f",
+      "byte_equal": true,
+      "expected_policy": "current branch source installed",
+      "expected_sha256": "620555edae70a0a2238fbbe00dfa00e350226bb602843d8f1d8e8a773666d39f",
+      "matches_expected_policy": true
+    },
+    {
+      "installed_file": "dashboard/codex_models.py",
+      "branch_sha256": "ff9b5df70e01b85b0ab5d48647c65fe36b2065d6d98b71c0f55a35515b439ccb",
+      "installed_sha256": "ff9b5df70e01b85b0ab5d48647c65fe36b2065d6d98b71c0f55a35515b439ccb",
+      "byte_equal": true,
+      "expected_policy": "current branch source installed",
+      "expected_sha256": "ff9b5df70e01b85b0ab5d48647c65fe36b2065d6d98b71c0f55a35515b439ccb",
+      "matches_expected_policy": true
+    },
+    {
+      "installed_file": "hooks/child_resume.py",
+      "branch_sha256": "e801176532c354a16232e4c41a184de626a6e3a725777e97e05957e137599c0a",
+      "installed_sha256": "e801176532c354a16232e4c41a184de626a6e3a725777e97e05957e137599c0a",
+      "byte_equal": true,
+      "expected_policy": "current branch source installed",
+      "expected_sha256": "e801176532c354a16232e4c41a184de626a6e3a725777e97e05957e137599c0a",
+      "matches_expected_policy": true
+    }
+  ],
+  "all_branch_byte_equal": false,
+  "all_expected_policy_checks_pass": true,
+  "production_optional_integration_reinstall": "未実施・未測定"
+}

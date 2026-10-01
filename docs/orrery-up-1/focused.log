@@ -1,0 +1,128 @@
+traffic: [ORRERY-UP-1-focused] running (slot slot-2, mem 11273MB, disk 107GiB)
+..F.................................................................F... [ 38%]
+........................................................................ [ 76%]
+..................F.........................                             [100%]
+=================================== FAILURES ===================================
+_________________ test_child_home_rekeys_persisted_hooks_trust _________________
+
+tmp_path = PosixPath('/private/var/folders/3h/9fn3ldps3c98n54rzk0m2c6m0000gn/T/pytest-of-huyuhutaru/pytest-0/test_child_home_rekeys_persist0')
+
+    def test_child_home_rekeys_persisted_hooks_trust(tmp_path):
+        spec = importlib.util.spec_from_file_location('upgrade_child_resume', ROOT / 'hooks/child_resume.py')
+        module = importlib.util.module_from_spec(spec)
+        sys.modules[spec.name] = module
+        spec.loader.exec_module(module)
+        source = tmp_path/'source'; source.mkdir()
+        home = tmp_path/'generated'
+        (source/'hooks.json').write_text('{}')
+        (source/'config.toml').write_text('[hooks.state."'+str(source)+'/hooks.json:abc"]\ntrusted = true\n')
+        runner = tmp_path/'runner';runner.write_text('#!/bin/sh\n');runner.chmod(0o700)
+        token = tmp_path/'credential';token.write_text('isolated-test-credential');token.chmod(0o600)
+>       module.build_home(home=home, source=source, runner=runner, child='SunnyCurie',
+            project_key=str(tmp_path), token_file=token, mcp_url='http://127.0.0.1:1/mcp',
+            mail_env='', runtime_dir=tmp_path/'runtime', bearer_mode='none', python_bin=sys.executable,
+            mcp_profile='inherit')
+
+tests/test_local_upgrade.py:46: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+home = PosixPath('/private/var/folders/3h/9fn3ldps3c98n54rzk0m2c6m0000gn/T/pytest-of-huyuhutaru/pytest-0/test_child_home_rekeys_persist0/generated')
+source = PosixPath('/private/var/folders/3h/9fn3ldps3c98n54rzk0m2c6m0000gn/T/pytest-of-huyuhutaru/pytest-0/test_child_home_rekeys_persist0/source')
+runner = PosixPath('/private/var/folders/3h/9fn3ldps3c98n54rzk0m2c6m0000gn/T/pytest-of-huyuhutaru/pytest-0/test_child_home_rekeys_persist0/runner')
+child = 'SunnyCurie'
+project_key = '/private/var/folders/3h/9fn3ldps3c98n54rzk0m2c6m0000gn/T/pytest-of-huyuhutaru/pytest-0/test_child_home_rekeys_persist0'
+token_file = PosixPath('/private/var/folders/3h/9fn3ldps3c98n54rzk0m2c6m0000gn/T/pytest-of-huyuhutaru/pytest-0/test_child_home_rekeys_persist0/credential')
+mcp_url = 'http://127.0.0.1:1/mcp', mail_env = ''
+runtime_dir = PosixPath('/private/var/folders/3h/9fn3ldps3c98n54rzk0m2c6m0000gn/T/pytest-of-huyuhutaru/pytest-0/test_child_home_rekeys_persist0/runtime')
+bearer_mode = 'none'
+python_bin = '/Volumes/DevSSD/DevStorageGovernor/artifacts/orrery-telemetry/20261001T011558Z-build-cache-33928e51/venv/bin/python'
+mcp_profile = 'inherit', overlay_setting = ''
+
+    def build_home(
+        *,
+        home: Path,
+        source: Path,
+        runner: Path,
+        child: str,
+        project_key: str,
+        token_file: Path,
+        mcp_url: str,
+        mail_env: str,
+        runtime_dir: Path,
+        bearer_mode: str,
+        python_bin: str,
+        mcp_profile: str,
+        overlay_setting: str = "",
+    ) -> Path:
+        """Build only the canonical generated home while holding the child lock."""
+    
+        _state, _token, expected_home, _mcp, lock_path = _paths(
+            runtime_dir, child
+        )
+        if home.absolute() != expected_home.absolute():
+>           raise ValueError("generated Codex home is not canonical for this child")
+E           ValueError: generated Codex home is not canonical for this child
+
+hooks/child_resume.py:1254: ValueError
+__________________ test_cli_entrypoint_matches_python_policy ___________________
+
+    def test_cli_entrypoint_matches_python_policy():
+        helper = Path(models.__file__)
+        result = subprocess.run([sys.executable, str(helper), "normalize", "luna"], capture_output=True, text=True)
+        assert result.returncode == 0 and result.stdout.strip() == "gpt-6-luna"
+        explicit = subprocess.run([sys.executable, str(helper), "effort", "gpt-6-luna", "ultra"], capture_output=True, text=True)
+>       assert explicit.returncode == 0 and explicit.stdout.strip() == "ultra"
+E       AssertionError: assert (1 == 0)
+E        +  where 1 = CompletedProcess(args=['/Volumes/DevSSD/DevStorageGovernor/artifacts/orrery-telemetry/20261001T011558Z-build-cache-339... stdout='', stderr='Error: reasoning effort disabled by R-062; set AGENTSTACK_ALLOW_XHIGH=1 only with a head ruling\n').returncode
+
+tests/test_codex_models.py:381: AssertionError
+_____________ test_codex_api_and_launcher_policy_agree[gpt-6-luna] _____________
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x10823d010>
+tmp_path = PosixPath('/private/var/folders/3h/9fn3ldps3c98n54rzk0m2c6m0000gn/T/pytest-of-huyuhutaru/pytest-0/test_codex_api_and_launcher_po1')
+model = 'gpt-6-luna'
+
+    @pytest.mark.parametrize("model", ["gpt-6-sol", "gpt-6-luna", "gpt-future"])
+    def test_codex_api_and_launcher_policy_agree(monkeypatch, tmp_path, model):
+        monkeypatch.setenv("CODEX_HOME", str(tmp_path))
+        captured = []
+        monkeypatch.setattr(server, "spawn_with_launch_spec", lambda payload, spec: captured.append(spec) or {"ok": True})
+        payload = {"standalone": True, "task": "work", "provider": "codex", "model": model}
+        assert server.do_spawn(payload)["ok"]
+        assert captured[-1].model == model
+        assert captured[-1].effort == server.codex_models.resolve_effort(model)
+        assert captured[-1].effort_arg == bool(captured[-1].effort)
+        if model == "gpt-6-luna":
+>           assert server.do_spawn({**payload, "effort": "ultra"})["ok"]
+E           assert False
+
+tests/test_spawn_v2.py:1263: AssertionError
+=============================== warnings summary ===============================
+../../../../Volumes/DevSSD/DevStorageGovernor/artifacts/orrery-telemetry/20261001T011558Z-build-cache-33928e51/venv/lib/python3.14/site-packages/_pytest/config/__init__.py:1464
+  /Volumes/DevSSD/DevStorageGovernor/artifacts/orrery-telemetry/20261001T011558Z-build-cache-33928e51/venv/lib/python3.14/site-packages/_pytest/config/__init__.py:1464: PytestConfigWarning: Unknown config option: timeout
+  
+    self._warn_or_fail_if_strict(f"Unknown config option: {key}\n")
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+============================= slowest 25 durations =============================
+6.91s call     tests/test_spawn_v2.py::test_process_group_launcher_cleanup_outlives_the_canonical_5s_grace
+5.66s call     tests/test_spawn_v2.py::test_canonical_real_launcher_timeout_still_deletes_credentials_after_5s[codex]
+5.65s call     tests/test_spawn_v2.py::test_canonical_real_launcher_timeout_still_deletes_credentials_after_5s[claude]
+2.26s call     tests/test_spawn_v2.py::test_async_killed_cleanup_reports_recovery_credential_via_spawn_status
+1.83s call     tests/test_spawn_v2.py::test_killed_cleanup_installs_unconsumed_handoff_as_owner_credential[before-copy]
+1.67s call     tests/test_spawn_v2.py::test_killed_cleanup_keeps_handoff_when_owner_path_is_not_ours_to_replace[symlink-owner]
+1.66s call     tests/test_spawn_v2.py::test_killed_cleanup_installs_unconsumed_handoff_as_owner_credential[empty-owner]
+1.66s call     tests/test_spawn_v2.py::test_killed_cleanup_without_a_usable_copy_says_so
+1.65s call     tests/test_spawn_v2.py::test_killed_cleanup_installs_unconsumed_handoff_as_owner_credential[partial-owner]
+1.65s call     tests/test_spawn_v2.py::test_cleanup_killed_past_its_grace_is_reported_and_keeps_owner_credential
+1.64s call     tests/test_spawn_v2.py::test_killed_cleanup_keeps_handoff_when_owner_path_is_not_ours_to_replace[foreign-owner]
+
+(14 durations < 1s hidden.)
+=========================== short test summary info ============================
+FAILED tests/test_local_upgrade.py::test_child_home_rekeys_persisted_hooks_trust
+FAILED tests/test_codex_models.py::test_cli_entrypoint_matches_python_policy
+FAILED tests/test_spawn_v2.py::test_codex_api_and_launcher_policy_agree[gpt-6-luna]
+3 failed, 185 passed, 1 warning in 34.59s
+traffic: [ORRERY-UP-1-focused] done (exit 1)
+
+EXIT_CODE=1

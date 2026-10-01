@@ -1,0 +1,79 @@
+........................................................................ [ 20%]
+.................................................F...................... [ 41%]
+........................................................................ [ 61%]
+....................F..F......
+=================================== FAILURES ===================================
+_ test_fresh_cache_adds_gpt6_and_unknown_future_models_without_changing_default _
+
+    def test_fresh_cache_adds_gpt6_and_unknown_future_models_without_changing_default():
+        cache([row("gpt-9-future.1"), row("gpt-6-luna", ("low", "medium", "high", "xhigh", "max")), row()])
+        catalog = models.resolve_catalog()
+        assert catalog.source == "local_cache"
+        assert "gpt-9-future.1" in catalog.models
+        assert "gpt-6-sol" in catalog.models and "gpt-6-luna" in catalog.models
+        provider = models.provider_catalog()
+        assert provider["default_model"] == "gpt-6.1-sol"
+        assert "ultra" not in provider["model_efforts"]["gpt-6-luna"]
+>       assert "ultra" in provider["model_efforts"]["gpt-6-sol"]
+E       AssertionError: assert 'ultra' in ['low', 'medium', 'high']
+
+tests/test_codex_models.py:52: AssertionError
+_______________ test_the_search_skips_a_codex_that_fails_version _______________
+
+tmp_path = PosixPath('/private/var/folders/3h/9fn3ldps3c98n54rzk0m2c6m0000gn/T/pytest-of-huyuhutaru/pytest-3/test_the_search_skips_a_codex_0')
+
+    def test_the_search_skips_a_codex_that_fails_version(tmp_path):
+        broken = _script(tmp_path / "broken-bin" / "codex", BROKEN)
+        linux = _script(tmp_path / "linux-bin" / "codex", WORKS)
+        rc, out, err = _resolve(tmp_path, path_dirs=[broken.parent, linux.parent])
+        assert rc == 0, err
+>       assert out == str(linux)
+E       AssertionError: assert '/private/var...ken-bin/codex' == '/private/var...nux-bin/codex'
+E         
+E         Skipping 109 identical leading characters in diff, use -v to show
+E         - a_codex_0/linux-bin/codex
+E         ?           ^^ --
+E         + a_codex_0/broken-bin/codex
+E         ?           ^^^^^
+
+tests/test_spawn_child_codex_bin.py:119: AssertionError
+________________ test_nothing_usable_is_an_error_that_says_why _________________
+
+tmp_path = PosixPath('/private/var/folders/3h/9fn3ldps3c98n54rzk0m2c6m0000gn/T/pytest-of-huyuhutaru/pytest-3/test_nothing_usable_is_an_erro0')
+
+    def test_nothing_usable_is_an_error_that_says_why(tmp_path):
+        windows = _windows_codex(tmp_path)
+        rc, out, err = _resolve(tmp_path, path_dirs=[windows.parent], wsl=True)
+>       assert rc == 1 and out == ""
+E       assert (0 == 1)
+
+tests/test_spawn_child_codex_bin.py:146: AssertionError
+============================= slowest 25 durations =============================
+3.05s call     tests/test_claude_child_chrome.py::test_codex_child_process_does_not_inherit_the_chrome_env
+2.72s call     tests/test_claude_child_chrome.py::test_env_default_is_ignored_for_codex_children
+2.33s call     tests/test_claude_child_chrome.py::test_default_spawn_has_repeatable_fleet_permissions_and_no_chrome
+1.90s call     tests/test_claude_child_chrome.py::test_a_later_launch_never_changes_an_earlier_conversation[chrome]
+1.73s call     tests/test_claude_child_chrome.py::test_a_later_launch_never_changes_an_earlier_conversation[inherit]
+1.62s call     tests/test_codex_launch.py::test_launcher_normalization_uses_configured_cli_version
+1.33s call     tests/test_claude_child_chrome.py::test_a_later_launch_never_changes_an_earlier_conversation[failed-chrome]
+1.08s call     tests/test_claude_child_chrome.py::test_without_a_device_the_child_holds_all_browser_actions
+1.05s call     tests/test_codex_launch.py::test_approval_flags_follow_the_installed_cli
+1.05s call     tests/test_claude_child_chrome.py::test_env_default_turns_chrome_on_for_claude_children
+1.05s call     tests/test_claude_child_chrome.py::test_policy_reaches_every_first_prompt[embed]
+1.04s call     tests/test_claude_child_chrome.py::test_chrome_request_skips_a_ready_warm_session_and_adds_chrome
+1.03s call     tests/test_claude_child_chrome.py::test_cli_device_wins_over_env_device
+1.03s call     tests/test_claude_child_chrome.py::test_chrome_spawn_writes_only_a_pending_record_for_its_launch
+1.03s call     tests/test_claude_child_chrome.py::test_policy_reaches_every_first_prompt[mail]
+1.02s call     tests/test_claude_child_chrome.py::test_policy_reaches_every_first_prompt[standalone]
+
+(9 durations < 1s hidden.)
+=========================== short test summary info ============================
+FAILED tests/test_codex_models.py::test_fresh_cache_adds_gpt6_and_unknown_future_models_without_changing_default
+FAILED tests/test_spawn_child_codex_bin.py::test_the_search_skips_a_codex_that_fails_version
+FAILED tests/test_spawn_child_codex_bin.py::test_nothing_usable_is_an_error_that_says_why
+!!!!!!!!!!!!!!!!!!!!!!!!!!!!!! KeyboardInterrupt !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+/opt/homebrew/Cellar/python@3.14/3.14.7/Frameworks/Python.framework/Versions/3.14/lib/python3.14/selectors.py:398: KeyboardInterrupt
+(to show a full traceback on KeyboardInterrupt use --full-trace)
+3 failed, 243 passed in 47.75s
+
+EXIT_CODE=2

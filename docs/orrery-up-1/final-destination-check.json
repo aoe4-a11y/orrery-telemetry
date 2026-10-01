@@ -1,0 +1,36 @@
+{
+  "measured_at": "2026-10-01T04:45:16.220204+00:00",
+  "checked_code_config_backup_env_history": 286,
+  "source_drift": [],
+  "ancestry": [
+    {
+      "ref": "2026.09.30.4",
+      "exit": 0
+    },
+    {
+      "ref": "81c3fd9",
+      "exit": 0
+    },
+    {
+      "ref": "cd092c4",
+      "exit": 0
+    },
+    {
+      "ref": "5e43de6",
+      "exit": 0
+    },
+    {
+      "ref": "e5039ff",
+      "exit": 0
+    }
+  ],
+  "canonical_branch": "fix/claude-prompt-nbsp",
+  "canonical_head": "e5039ff79663d99764d83e0cfa6961074ec60199",
+  "canonical_status": "",
+  "verified_source_commit": "36bf85a4ca054ec3a62736b526eeeb72cbc6fe10",
+  "isolated_installed_commit": "fb2cd26f9cdffe1666c440114f8b2c69fc4fe987",
+  "changes_since_isolated_install": [
+    "tests/test_runtime_defaults.py",
+    "tests/test_spawn_v2.py"
+  ]
+}

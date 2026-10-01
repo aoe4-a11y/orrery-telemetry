@@ -1,0 +1,1306 @@
+traffic: [ORRERY-UP-1-full-suite] waiting — mem 10588MB, disk 106GiB, slots in use: 2/2
+traffic: [ORRERY-UP-1-full-suite] waiting — mem 11655MB, disk 106GiB, slots in use: 2/2
+traffic: [ORRERY-UP-1-full-suite] waiting — mem 11555MB, disk 106GiB, slots in use: 2/2
+traffic: [ORRERY-UP-1-full-suite] waiting — mem 11368MB, disk 106GiB, slots in use: 2/2
+traffic: [ORRERY-UP-1-full-suite] waiting — mem 11162MB, disk 106GiB, slots in use: 2/2
+traffic: [ORRERY-UP-1-full-suite] waiting — mem 11486MB, disk 106GiB, slots in use: 2/2
+traffic: [ORRERY-UP-1-full-suite] waiting — mem 11527MB, disk 106GiB, slots in use: 2/2
+traffic: [ORRERY-UP-1-full-suite] waiting — mem 11632MB, disk 106GiB, slots in use: 2/2
+traffic: [ORRERY-UP-1-full-suite] waiting — mem 11335MB, disk 106GiB, slots in use: 2/2
+traffic: [ORRERY-UP-1-full-suite] waiting — mem 11731MB, disk 106GiB, slots in use: 2/2
+traffic: [ORRERY-UP-1-full-suite] waiting — mem 11723MB, disk 106GiB, slots in use: 2/2
+traffic: [ORRERY-UP-1-full-suite] waiting — mem 11534MB, disk 106GiB, slots in use: 2/2
+traffic: [ORRERY-UP-1-full-suite] waiting — mem 11800MB, disk 106GiB, slots in use: 2/2
+traffic: [ORRERY-UP-1-full-suite] waiting — mem 11252MB, disk 106GiB, slots in use: 2/2
+traffic: [ORRERY-UP-1-full-suite] waiting — mem 11250MB, disk 106GiB, slots in use: 2/2
+traffic: [ORRERY-UP-1-full-suite] waiting — mem 11913MB, disk 106GiB, slots in use: 2/2
+traffic: [ORRERY-UP-1-full-suite] waiting — mem 11320MB, disk 106GiB, slots in use: 2/2
+traffic: [ORRERY-UP-1-full-suite] waiting — mem 11218MB, disk 106GiB, slots in use: 2/2
+traffic: [ORRERY-UP-1-full-suite] waiting — mem 10912MB, disk 106GiB, slots in use: 2/2
+traffic: [ORRERY-UP-1-full-suite] running (slot slot-2, mem 12365MB, disk 107GiB)
+Collecting pytest-timeout
+  Downloading pytest_timeout-2.4.0-py3-none-any.whl.metadata (20 kB)
+Requirement already satisfied: pytest>=7.0.0 in /Volumes/DevSSD/DevStorageGovernor/artifacts/orrery-telemetry/20261001T011558Z-build-cache-33928e51/venv/lib/python3.14/site-packages (from pytest-timeout) (9.1.1)
+Requirement already satisfied: iniconfig>=1.0.1 in /Volumes/DevSSD/DevStorageGovernor/artifacts/orrery-telemetry/20261001T011558Z-build-cache-33928e51/venv/lib/python3.14/site-packages (from pytest>=7.0.0->pytest-timeout) (2.3.0)
+Requirement already satisfied: packaging>=22 in /Volumes/DevSSD/DevStorageGovernor/artifacts/orrery-telemetry/20261001T011558Z-build-cache-33928e51/venv/lib/python3.14/site-packages (from pytest>=7.0.0->pytest-timeout) (26.3)
+Requirement already satisfied: pluggy<2,>=1.5 in /Volumes/DevSSD/DevStorageGovernor/artifacts/orrery-telemetry/20261001T011558Z-build-cache-33928e51/venv/lib/python3.14/site-packages (from pytest>=7.0.0->pytest-timeout) (1.6.0)
+Requirement already satisfied: pygments>=2.7.2 in /Volumes/DevSSD/DevStorageGovernor/artifacts/orrery-telemetry/20261001T011558Z-build-cache-33928e51/venv/lib/python3.14/site-packages (from pytest>=7.0.0->pytest-timeout) (2.21.0)
+Downloading pytest_timeout-2.4.0-py3-none-any.whl (14 kB)
+Installing collected packages: pytest-timeout
+Successfully installed pytest-timeout-2.4.0
+..........s............................................................. [  2%]
+.........................s..................................s........... [  4%]
+........................................................................ [  6%]
+........................................................................ [  8%]
+......................sss............................................... [ 11%]
+........................................................................ [ 13%]
+..sss................................................................... [ 15%]
+........................................................................ [ 17%]
+........................................................................ [ 20%]
+....................................................sssssss....sssssssss [ 22%]
+..............................................ss........................ [ 24%]
+..................................................s..................... [ 26%]
+........................................................................ [ 28%]
+...........s.F............................................... [ 30%]
+........................................................................ [ 33%]
+..........................................FFF.FFF....................... [ 35%]
+........................................................................ [ 37%]
+........................................................................ [ 39%]
+........................................................................ [ 41%]
+........................................................................ [ 44%]
+........................................................................ [ 46%]
+........................................................................ [ 48%]
+.......................FF.F.............................F.........F..... [ 50%]
+F....................................................................... [ 53%]
+........................................................................ [ 55%]
+........................................................................ [ 57%]
+........................................................................ [ 59%]
+........................................................................ [ 61%]
+................................................s....................... [ 64%]
+..F..................................................................... [ 66%]
+........................................................................ [ 68%]
+........................................................................ [ 70%]
+........................................................................ [ 73%]
+........................................................................ [ 75%]
+.......ss.................................................s............. [ 77%]
+........................................................................ [ 79%]
+.............F.......................................................... [ 81%]
+........................................................................ [ 84%]
+.................................................................. [ 86%]
+........................................................FF.............. [ 88%]
+..........+++++++++++++++++++++++++++++++++++ Timeout ++++++++++++++++++++++++++++++++++++
+~~~~~~~~~~~~~~~~ Stack of child-resume-maintenance (6224703488) ~~~~~~~~~~~~~~~~
+  File "/opt/homebrew/Cellar/python@3.14/3.14.7/Frameworks/Python.framework/Versions/3.14/lib/python3.14/threading.py", line 1044, in _bootstrap
+    self._bootstrap_inner()
+  File "/opt/homebrew/Cellar/python@3.14/3.14.7/Frameworks/Python.framework/Versions/3.14/lib/python3.14/threading.py", line 1082, in _bootstrap_inner
+    self._context.run(self.run)
+  File "/opt/homebrew/Cellar/python@3.14/3.14.7/Frameworks/Python.framework/Versions/3.14/lib/python3.14/threading.py", line 1024, in run
+    self._target(*self._args, **self._kwargs)
+  File "/Users/huyuhutaru/tools/orrery-telemetry-wt-orrery-up-1/dashboard/server.py", line 8175, in worker
+    time.sleep(3600)
+~~~~~~~~~~~~~~~~ Stack of child-resume-maintenance (6207877120) ~~~~~~~~~~~~~~~~
+  File "/opt/homebrew/Cellar/python@3.14/3.14.7/Frameworks/Python.framework/Versions/3.14/lib/python3.14/threading.py", line 1044, in _bootstrap
+    self._bootstrap_inner()
+  File "/opt/homebrew/Cellar/python@3.14/3.14.7/Frameworks/Python.framework/Versions/3.14/lib/python3.14/threading.py", line 1082, in _bootstrap_inner
+    self._context.run(self.run)
+  File "/opt/homebrew/Cellar/python@3.14/3.14.7/Frameworks/Python.framework/Versions/3.14/lib/python3.14/threading.py", line 1024, in run
+    self._target(*self._args, **self._kwargs)
+  File "/Users/huyuhutaru/tools/orrery-telemetry-wt-orrery-up-1/dashboard/server.py", line 8175, in worker
+    time.sleep(3600)
+~~~~~~~~~~~~~~~~ Stack of child-resume-maintenance (6191050752) ~~~~~~~~~~~~~~~~
+  File "/opt/homebrew/Cellar/python@3.14/3.14.7/Frameworks/Python.framework/Versions/3.14/lib/python3.14/threading.py", line 1044, in _bootstrap
+    self._bootstrap_inner()
+  File "/opt/homebrew/Cellar/python@3.14/3.14.7/Frameworks/Python.framework/Versions/3.14/lib/python3.14/threading.py", line 1082, in _bootstrap_inner
+    self._context.run(self.run)
+  File "/opt/homebrew/Cellar/python@3.14/3.14.7/Frameworks/Python.framework/Versions/3.14/lib/python3.14/threading.py", line 1024, in run
+    self._target(*self._args, **self._kwargs)
+  File "/Users/huyuhutaru/tools/orrery-telemetry-wt-orrery-up-1/dashboard/server.py", line 8175, in worker
+    time.sleep(3600)
+~~~~~~~~~~~~~~~~~~~~~~~ Stack of Thread-220 (6174224384) ~~~~~~~~~~~~~~~~~~~~~~~
+  File "/opt/homebrew/Cellar/python@3.14/3.14.7/Frameworks/Python.framework/Versions/3.14/lib/python3.14/threading.py", line 1044, in _bootstrap
+    self._bootstrap_inner()
+  File "/opt/homebrew/Cellar/python@3.14/3.14.7/Frameworks/Python.framework/Versions/3.14/lib/python3.14/threading.py", line 1082, in _bootstrap_inner
+    self._context.run(self.run)
+  File "/Users/huyuhutaru/tools/orrery-telemetry-wt-orrery-up-1/tests/conftest.py", line 289, in run
+    self._watch()
+  File "/Users/huyuhutaru/tools/orrery-telemetry-wt-orrery-up-1/tests/conftest.py", line 297, in _watch
+    while not self.stop.wait(SAMPLE_SECONDS):
+  File "/opt/homebrew/Cellar/python@3.14/3.14.7/Frameworks/Python.framework/Versions/3.14/lib/python3.14/threading.py", line 670, in wait
+    signaled = self._cond.wait(timeout)
+  File "/opt/homebrew/Cellar/python@3.14/3.14.7/Frameworks/Python.framework/Versions/3.14/lib/python3.14/threading.py", line 373, in wait
+    gotit = waiter.acquire(True, timeout)
++++++++++++++++++++++++++++++++++++ Timeout ++++++++++++++++++++++++++++++++++++
+F.....................................F..F............................+++++++++++++++++++++++++++++++++++ Timeout ++++++++++++++++++++++++++++++++++++
+~~~~~~~~~~~~~~~~ Stack of child-resume-maintenance (6224703488) ~~~~~~~~~~~~~~~~
+  File "/opt/homebrew/Cellar/python@3.14/3.14.7/Frameworks/Python.framework/Versions/3.14/lib/python3.14/threading.py", line 1044, in _bootstrap
+    self._bootstrap_inner()
+  File "/opt/homebrew/Cellar/python@3.14/3.14.7/Frameworks/Python.framework/Versions/3.14/lib/python3.14/threading.py", line 1082, in _bootstrap_inner
+    self._context.run(self.run)
+  File "/opt/homebrew/Cellar/python@3.14/3.14.7/Frameworks/Python.framework/Versions/3.14/lib/python3.14/threading.py", line 1024, in run
+    self._target(*self._args, **self._kwargs)
+  File "/Users/huyuhutaru/tools/orrery-telemetry-wt-orrery-up-1/dashboard/server.py", line 8175, in worker
+    time.sleep(3600)
+~~~~~~~~~~~~~~~~ Stack of child-resume-maintenance (6207877120) ~~~~~~~~~~~~~~~~
+  File "/opt/homebrew/Cellar/python@3.14/3.14.7/Frameworks/Python.framework/Versions/3.14/lib/python3.14/threading.py", line 1044, in _bootstrap
+    self._bootstrap_inner()
+  File "/opt/homebrew/Cellar/python@3.14/3.14.7/Frameworks/Python.framework/Versions/3.14/lib/python3.14/threading.py", line 1082, in _bootstrap_inner
+    self._context.run(self.run)
+  File "/opt/homebrew/Cellar/python@3.14/3.14.7/Frameworks/Python.framework/Versions/3.14/lib/python3.14/threading.py", line 1024, in run
+    self._target(*self._args, **self._kwargs)
+  File "/Users/huyuhutaru/tools/orrery-telemetry-wt-orrery-up-1/dashboard/server.py", line 8175, in worker
+    time.sleep(3600)
+~~~~~~~~~~~~~~~~ Stack of child-resume-maintenance (6191050752) ~~~~~~~~~~~~~~~~
+  File "/opt/homebrew/Cellar/python@3.14/3.14.7/Frameworks/Python.framework/Versions/3.14/lib/python3.14/threading.py", line 1044, in _bootstrap
+    self._bootstrap_inner()
+  File "/opt/homebrew/Cellar/python@3.14/3.14.7/Frameworks/Python.framework/Versions/3.14/lib/python3.14/threading.py", line 1082, in _bootstrap_inner
+    self._context.run(self.run)
+  File "/opt/homebrew/Cellar/python@3.14/3.14.7/Frameworks/Python.framework/Versions/3.14/lib/python3.14/threading.py", line 1024, in run
+    self._target(*self._args, **self._kwargs)
+  File "/Users/huyuhutaru/tools/orrery-telemetry-wt-orrery-up-1/dashboard/server.py", line 8175, in worker
+    time.sleep(3600)
+~~~~~~~~~~~~~~~~~~~~~~~ Stack of Thread-220 (6174224384) ~~~~~~~~~~~~~~~~~~~~~~~
+  File "/opt/homebrew/Cellar/python@3.14/3.14.7/Frameworks/Python.framework/Versions/3.14/lib/python3.14/threading.py", line 1044, in _bootstrap
+    self._bootstrap_inner()
+  File "/opt/homebrew/Cellar/python@3.14/3.14.7/Frameworks/Python.framework/Versions/3.14/lib/python3.14/threading.py", line 1082, in _bootstrap_inner
+    self._context.run(self.run)
+  File "/Users/huyuhutaru/tools/orrery-telemetry-wt-orrery-up-1/tests/conftest.py", line 289, in run
+    self._watch()
+  File "/Users/huyuhutaru/tools/orrery-telemetry-wt-orrery-up-1/tests/conftest.py", line 297, in _watch
+    while not self.stop.wait(SAMPLE_SECONDS):
+  File "/opt/homebrew/Cellar/python@3.14/3.14.7/Frameworks/Python.framework/Versions/3.14/lib/python3.14/threading.py", line 670, in wait
+    signaled = self._cond.wait(timeout)
+  File "/opt/homebrew/Cellar/python@3.14/3.14.7/Frameworks/Python.framework/Versions/3.14/lib/python3.14/threading.py", line 373, in wait
+    gotit = waiter.acquire(True, timeout)
++++++++++++++++++++++++++++++++++++ Timeout ++++++++++++++++++++++++++++++++++++
+F+++++++++++++++++++++++++++++++++++ Timeout ++++++++++++++++++++++++++++++++++++
+~~~~~~~~~~~~~~~~ Stack of child-resume-maintenance (6224703488) ~~~~~~~~~~~~~~~~
+  File "/opt/homebrew/Cellar/python@3.14/3.14.7/Frameworks/Python.framework/Versions/3.14/lib/python3.14/threading.py", line 1044, in _bootstrap
+    self._bootstrap_inner()
+  File "/opt/homebrew/Cellar/python@3.14/3.14.7/Frameworks/Python.framework/Versions/3.14/lib/python3.14/threading.py", line 1082, in _bootstrap_inner
+    self._context.run(self.run)
+  File "/opt/homebrew/Cellar/python@3.14/3.14.7/Frameworks/Python.framework/Versions/3.14/lib/python3.14/threading.py", line 1024, in run
+    self._target(*self._args, **self._kwargs)
+  File "/Users/huyuhutaru/tools/orrery-telemetry-wt-orrery-up-1/dashboard/server.py", line 8175, in worker
+    time.sleep(3600)
+~~~~~~~~~~~~~~~~ Stack of child-resume-maintenance (6207877120) ~~~~~~~~~~~~~~~~
+  File "/opt/homebrew/Cellar/python@3.14/3.14.7/Frameworks/Python.framework/Versions/3.14/lib/python3.14/threading.py", line 1044, in _bootstrap
+    self._bootstrap_inner()
+  File "/opt/homebrew/Cellar/python@3.14/3.14.7/Frameworks/Python.framework/Versions/3.14/lib/python3.14/threading.py", line 1082, in _bootstrap_inner
+    self._context.run(self.run)
+  File "/opt/homebrew/Cellar/python@3.14/3.14.7/Frameworks/Python.framework/Versions/3.14/lib/python3.14/threading.py", line 1024, in run
+    self._target(*self._args, **self._kwargs)
+  File "/Users/huyuhutaru/tools/orrery-telemetry-wt-orrery-up-1/dashboard/server.py", line 8175, in worker
+    time.sleep(3600)
+~~~~~~~~~~~~~~~~ Stack of child-resume-maintenance (6191050752) ~~~~~~~~~~~~~~~~
+  File "/opt/homebrew/Cellar/python@3.14/3.14.7/Frameworks/Python.framework/Versions/3.14/lib/python3.14/threading.py", line 1044, in _bootstrap
+    self._bootstrap_inner()
+  File "/opt/homebrew/Cellar/python@3.14/3.14.7/Frameworks/Python.framework/Versions/3.14/lib/python3.14/threading.py", line 1082, in _bootstrap_inner
+    self._context.run(self.run)
+  File "/opt/homebrew/Cellar/python@3.14/3.14.7/Frameworks/Python.framework/Versions/3.14/lib/python3.14/threading.py", line 1024, in run
+    self._target(*self._args, **self._kwargs)
+  File "/Users/huyuhutaru/tools/orrery-telemetry-wt-orrery-up-1/dashboard/server.py", line 8175, in worker
+    time.sleep(3600)
+~~~~~~~~~~~~~~~~~~~~~~~ Stack of Thread-220 (6174224384) ~~~~~~~~~~~~~~~~~~~~~~~
+  File "/opt/homebrew/Cellar/python@3.14/3.14.7/Frameworks/Python.framework/Versions/3.14/lib/python3.14/threading.py", line 1044, in _bootstrap
+    self._bootstrap_inner()
+  File "/opt/homebrew/Cellar/python@3.14/3.14.7/Frameworks/Python.framework/Versions/3.14/lib/python3.14/threading.py", line 1082, in _bootstrap_inner
+    self._context.run(self.run)
+  File "/Users/huyuhutaru/tools/orrery-telemetry-wt-orrery-up-1/tests/conftest.py", line 289, in run
+    self._watch()
+  File "/Users/huyuhutaru/tools/orrery-telemetry-wt-orrery-up-1/tests/conftest.py", line 297, in _watch
+    while not self.stop.wait(SAMPLE_SECONDS):
+  File "/opt/homebrew/Cellar/python@3.14/3.14.7/Frameworks/Python.framework/Versions/3.14/lib/python3.14/threading.py", line 670, in wait
+    signaled = self._cond.wait(timeout)
+  File "/opt/homebrew/Cellar/python@3.14/3.14.7/Frameworks/Python.framework/Versions/3.14/lib/python3.14/threading.py", line 373, in wait
+    gotit = waiter.acquire(True, timeout)
++++++++++++++++++++++++++++++++++++ Timeout ++++++++++++++++++++++++++++++++++++
+F+++++++++++++++++++++++++++++++++++ Timeout ++++++++++++++++++++++++++++++++++++
+~~~~~~~~~~~~~~~~ Stack of child-resume-maintenance (6224703488) ~~~~~~~~~~~~~~~~
+  File "/opt/homebrew/Cellar/python@3.14/3.14.7/Frameworks/Python.framework/Versions/3.14/lib/python3.14/threading.py", line 1044, in _bootstrap
+    self._bootstrap_inner()
+  File "/opt/homebrew/Cellar/python@3.14/3.14.7/Frameworks/Python.framework/Versions/3.14/lib/python3.14/threading.py", line 1082, in _bootstrap_inner
+    self._context.run(self.run)
+  File "/opt/homebrew/Cellar/python@3.14/3.14.7/Frameworks/Python.framework/Versions/3.14/lib/python3.14/threading.py", line 1024, in run
+    self._target(*self._args, **self._kwargs)
+  File "/Users/huyuhutaru/tools/orrery-telemetry-wt-orrery-up-1/dashboard/server.py", line 8175, in worker
+    time.sleep(3600)
+~~~~~~~~~~~~~~~~ Stack of child-resume-maintenance (6207877120) ~~~~~~~~~~~~~~~~
+  File "/opt/homebrew/Cellar/python@3.14/3.14.7/Frameworks/Python.framework/Versions/3.14/lib/python3.14/threading.py", line 1044, in _bootstrap
+    self._bootstrap_inner()
+  File "/opt/homebrew/Cellar/python@3.14/3.14.7/Frameworks/Python.framework/Versions/3.14/lib/python3.14/threading.py", line 1082, in _bootstrap_inner
+    self._context.run(self.run)
+  File "/opt/homebrew/Cellar/python@3.14/3.14.7/Frameworks/Python.framework/Versions/3.14/lib/python3.14/threading.py", line 1024, in run
+    self._target(*self._args, **self._kwargs)
+  File "/Users/huyuhutaru/tools/orrery-telemetry-wt-orrery-up-1/dashboard/server.py", line 8175, in worker
+    time.sleep(3600)
+~~~~~~~~~~~~~~~~ Stack of child-resume-maintenance (6191050752) ~~~~~~~~~~~~~~~~
+  File "/opt/homebrew/Cellar/python@3.14/3.14.7/Frameworks/Python.framework/Versions/3.14/lib/python3.14/threading.py", line 1044, in _bootstrap
+    self._bootstrap_inner()
+  File "/opt/homebrew/Cellar/python@3.14/3.14.7/Frameworks/Python.framework/Versions/3.14/lib/python3.14/threading.py", line 1082, in _bootstrap_inner
+    self._context.run(self.run)
+  File "/opt/homebrew/Cellar/python@3.14/3.14.7/Frameworks/Python.framework/Versions/3.14/lib/python3.14/threading.py", line 1024, in run
+    self._target(*self._args, **self._kwargs)
+  File "/Users/huyuhutaru/tools/orrery-telemetry-wt-orrery-up-1/dashboard/server.py", line 8175, in worker
+    time.sleep(3600)
+~~~~~~~~~~~~~~~~~~~~~~~ Stack of Thread-220 (6174224384) ~~~~~~~~~~~~~~~~~~~~~~~
+  File "/opt/homebrew/Cellar/python@3.14/3.14.7/Frameworks/Python.framework/Versions/3.14/lib/python3.14/threading.py", line 1044, in _bootstrap
+    self._bootstrap_inner()
+  File "/opt/homebrew/Cellar/python@3.14/3.14.7/Frameworks/Python.framework/Versions/3.14/lib/python3.14/threading.py", line 1082, in _bootstrap_inner
+    self._context.run(self.run)
+  File "/Users/huyuhutaru/tools/orrery-telemetry-wt-orrery-up-1/tests/conftest.py", line 289, in run
+    self._watch()
+  File "/Users/huyuhutaru/tools/orrery-telemetry-wt-orrery-up-1/tests/conftest.py", line 297, in _watch
+    while not self.stop.wait(SAMPLE_SECONDS):
+  File "/opt/homebrew/Cellar/python@3.14/3.14.7/Frameworks/Python.framework/Versions/3.14/lib/python3.14/threading.py", line 670, in wait
+    signaled = self._cond.wait(timeout)
+  File "/opt/homebrew/Cellar/python@3.14/3.14.7/Frameworks/Python.framework/Versions/3.14/lib/python3.14/threading.py", line 373, in wait
+    gotit = waiter.acquire(True, timeout)
++++++++++++++++++++++++++++++++++++ Timeout ++++++++++++++++++++++++++++++++++++
+F...............F....................................................... [ 93%]
+........................................................................ [ 95%]
+........................................................................ [ 97%]
+........................................................................ [ 99%]
+...                                                                      [100%]
+=================================== FAILURES ===================================
+________ test_generated_agent_names_use_the_stock_safe_hyphen_separator ________
+
+    def test_generated_agent_names_use_the_stock_safe_hyphen_separator():
+        scientists = subprocess.run(
+            ["bash", "-c", 'source "$1" && ags_scientist_list', "scientists", str(LIB)],
+            check=True, capture_output=True, text=True,
+        ).stdout.splitlines()
+        generated = subprocess.run(
+            ["bash", "-c", 'source "$1" && ags_pick_adjective_scientist_name', "names", str(LIB)],
+            check=True, capture_output=True, text=True,
+        ).stdout.strip()
+    
+        adjective, separator, scientist = generated.partition("-")
+>       assert separator == "-"
+E       AssertionError: assert '' == '-'
+E         
+E         - -
+
+tests/test_adjective_vocab.py:61: AssertionError
+_ test_builder_is_byte_identical_to_the_pre_chrome_command_when_not_requested __
+
+    def test_builder_is_byte_identical_to_the_pre_chrome_command_when_not_requested():
+        # Covers the legacy launch site too: both sites call this one builder.
+>       assert _builder_output(False) == f"/bin/bash -lc '{PRE_CHROME_INNER}'"
+E       assert '/bin/bash -l...d-agent.sh"\'' == '/bin/bash -l...d-agent.sh"\''
+E         
+E         Skipping 204 identical leading characters in diff, use -v to show
+E         - LD_MODEL" "${MCP_ARGS[@]}"; /bin/bash "$AGENTSTACK_HOOKS_DIR/cleanup-child-agent.sh"'
+E         + LD_MODEL" --dangerously-skip-permissions --add-dir "$HOME/.agentstack" --add-dir "$HOME/tools" --add-dir /Volumes/DevSSD "${MCP_ARGS[@]}"; /bin/bash "$AGENTSTACK_HOOKS_DIR/cleanup-child-agent.sh"'
+
+tests/test_claude_child_chrome.py:161: AssertionError
+_________________ test_builder_adds_only_chrome_when_requested _________________
+
+    def test_builder_adds_only_chrome_when_requested():
+>       assert _builder_output(True) == f"/bin/bash -lc '{CHROME_INNER}'"
+E       assert '/bin/bash -l...d-agent.sh"\'' == '/bin/bash -l...d-agent.sh"\''
+E         
+E         Skipping 204 identical leading characters in diff, use -v to show
+E         - LD_MODEL" "${MCP_ARGS[@]}" --chrome; /bin/bash "$AGENTSTACK_HOOKS_DIR/cleanup-child-agent.sh"'
+E         + LD_MODEL" --dangerously-skip-permissions --add-dir "$HOME/.agentstack" --add-dir "$HOME/tools" --add-dir /Volumes/DevSSD "${MCP_ARGS[@]}" --chrome; /bin/bash "$AGENTSTACK_HOOKS_DIR/cleanup-child-agent.sh"'
+
+tests/test_claude_child_chrome.py:165: AssertionError
+__________ test_default_spawn_matches_the_pre_chrome_launcher_exactly __________
+
+tmp_path = PosixPath('/private/var/folders/3h/9fn3ldps3c98n54rzk0m2c6m0000gn/T/pytest-of-huyuhutaru/pytest-1/test_default_spawn_matches_the0')
+
+    def test_default_spawn_matches_the_pre_chrome_launcher_exactly(tmp_path):
+        """Run the launcher from before this change and this one on the same input."""
+        old_hooks = tmp_path / "old" / "hooks"
+        old_hooks.mkdir(parents=True)
+        (tmp_path / "old" / "dashboard").symlink_to(ROOT / "dashboard")
+        old_text = subprocess.run(
+            ["git", "-C", str(ROOT), "show", "0a43a3c:hooks/spawn_child.sh"],
+            text=True, capture_output=True, check=False,
+        )
+        if old_text.returncode != 0:
+            pytest.skip("pre-change launcher is not in this checkout's history")
+        (old_hooks / "spawn_child.sh").write_text(old_text.stdout, encoding="utf-8")
+    
+        runs = {}
+        for label, script in (("old", old_hooks / "spawn_child.sh"), ("new", SPAWN)):
+            (tmp_path / label).mkdir(exist_ok=True)
+            env, workdir = _launch_env(tmp_path / label)
+            result = subprocess.run(
+                ["/bin/bash", str(script), "--pre-registered", "SameChild",
+                 "--child-token-file", str(_handoff(tmp_path / label)),
+                 "mail task", str(workdir)],
+                cwd=ROOT, env=env, text=True, capture_output=True, timeout=60, check=False,
+            )
+            assert result.returncode == 0, result.stderr
+            # The whole tmux conversation (launch argv, env, injected prompt),
+            # with only per-run temp names normalized.
+            text = _log_text(env).replace(str(tmp_path / label), "<tmp>")
+            text = re.sub(r"agentstack-spawn-\d+-\d+", "<buf>", text)
+            text = re.sub(r"agentstack-spawn-prompt\.\w+", "<prompt>", text)
+            runs[label] = text
+>       assert runs["new"] == runs["old"]
+E       AssertionError: assert 'CALL\x1cnew-...1c-1000\x1d\n' == 'CALL\x1cnew-...1c-1000\x1d\n'
+E         
+E         Skipping 584 identical leading characters in diff, use -v to show
+E         + ACK_CODEX_SANDBOX=workspace-write
+E         
+E         + -e
+E         
+E         - ACK_CODEX_APPROVAL=--ask-for-approval never...
+E         
+E         ...Full output truncated (561 lines hidden), use '-vv' to show
+
+tests/test_claude_child_chrome.py:198: AssertionError
+_________ test_default_spawn_still_claims_a_ready_warm_session[sonnet] _________
+
+tmp_path = PosixPath('/private/var/folders/3h/9fn3ldps3c98n54rzk0m2c6m0000gn/T/pytest-of-huyuhutaru/pytest-1/test_default_spawn_still_claim1')
+warm_model = 'sonnet'
+
+    @pytest.mark.parametrize("warm_model", ["opus", "sonnet"])
+    def test_default_spawn_still_claims_a_ready_warm_session(tmp_path, warm_model):
+        env, workdir = _launch_env(tmp_path)
+        env["AGENTSTACK_HOOKS_DIR"] = str(_hooks_with_warm_pool(tmp_path))
+        result = _spawn(tmp_path, env, workdir, "WarmChild", "--model", warm_model)
+        assert result.returncode == 0, result.stderr
+>       assert (tmp_path / "warm.log").read_text() == "claim WarmChild\n"
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/test_claude_child_chrome.py:208: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+/opt/homebrew/Cellar/python@3.14/3.14.7/Frameworks/Python.framework/Versions/3.14/lib/python3.14/pathlib/__init__.py:787: in read_text
+    with self.open(mode='r', encoding=encoding, errors=errors, newline=newline) as f:
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = PosixPath('/private/var/folders/3h/9fn3ldps3c98n54rzk0m2c6m0000gn/T/pytest-of-huyuhutaru/pytest-1/test_default_spawn_still_claim1/warm.log')
+mode = 'r', buffering = -1, encoding = 'locale', errors = None, newline = None
+
+    def open(self, mode='r', buffering=-1, encoding=None,
+             errors=None, newline=None):
+        """
+        Open the file pointed to by this path and return a file object, as
+        the built-in open() function does.
+        """
+        if "b" not in mode:
+            encoding = io.text_encoding(encoding)
+>       return io.open(self, mode, buffering, encoding, errors, newline)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       FileNotFoundError: [Errno 2] No such file or directory: '/private/var/folders/3h/9fn3ldps3c98n54rzk0m2c6m0000gn/T/pytest-of-huyuhutaru/pytest-1/test_default_spawn_still_claim1/warm.log'
+
+/opt/homebrew/Cellar/python@3.14/3.14.7/Frameworks/Python.framework/Versions/3.14/lib/python3.14/pathlib/__init__.py:771: FileNotFoundError
+________ test_chrome_request_skips_a_ready_warm_session_and_adds_chrome ________
+
+tmp_path = PosixPath('/private/var/folders/3h/9fn3ldps3c98n54rzk0m2c6m0000gn/T/pytest-of-huyuhutaru/pytest-1/test_chrome_request_skips_a_re0')
+
+    def test_chrome_request_skips_a_ready_warm_session_and_adds_chrome(tmp_path):
+        env, workdir = _launch_env(tmp_path)
+        env["AGENTSTACK_HOOKS_DIR"] = str(_hooks_with_warm_pool(tmp_path))
+        result = _spawn(tmp_path, env, workdir, "ChromeChild", "--claude-chrome")
+        assert result.returncode == 0, result.stderr
+        assert not (tmp_path / "warm.log").exists()
+>       assert _new_session(env)[-1].endswith(f"-lc '{CHROME_INNER}'")
+E       assert False
+E        +  where False = <built-in method endswith of str object at 0x11864abb0>('-lc \'export PATH="$HOME/.local/bin:$PATH"; MCP_ARGS=(); [[ -n "$CLAUDE_CHILD_MCP_CONFIG" ]] && MCP_ARGS=(--mcp-confi...de --model "$CLAUDE_CHILD_MODEL" "${MCP_ARGS[@]}" --chrome; /bin/bash "$AGENTSTACK_HOOKS_DIR/cleanup-child-agent.sh"\'')
+E        +    where <built-in method endswith of str object at 0x11864abb0> = '/bin/zsh -lc \'export PATH="$HOME/.local/bin:$PATH"; MCP_ARGS=(); [[ -n "$CLAUDE_CHILD_MCP_CONFIG" ]] && MCP_ARGS=(--...tools" --add-dir /Volumes/DevSSD "${MCP_ARGS[@]}" --chrome; /bin/bash "$AGENTSTACK_HOOKS_DIR/cleanup-child-agent.sh"\''.endswith
+
+tests/test_claude_child_chrome.py:217: AssertionError
+_____________ test_env_default_turns_chrome_on_for_claude_children _____________
+
+tmp_path = PosixPath('/private/var/folders/3h/9fn3ldps3c98n54rzk0m2c6m0000gn/T/pytest-of-huyuhutaru/pytest-1/test_env_default_turns_chrome_0')
+
+    def test_env_default_turns_chrome_on_for_claude_children(tmp_path):
+        env, workdir = _launch_env(tmp_path)
+        env["AGENTSTACK_CLAUDE_CHILD_CHROME"] = "1"
+        env["AGENTSTACK_CLAUDE_CHILD_CHROME_DEVICE"] = "win-brave.1"
+        result = _spawn(tmp_path, env, workdir, "EnvChild")
+        assert result.returncode == 0, result.stderr
+>       assert _new_session(env)[-1].endswith(f"-lc '{CHROME_INNER}'")
+E       assert False
+E        +  where False = <built-in method endswith of str object at 0x11864a9e0>('-lc \'export PATH="$HOME/.local/bin:$PATH"; MCP_ARGS=(); [[ -n "$CLAUDE_CHILD_MCP_CONFIG" ]] && MCP_ARGS=(--mcp-confi...de --model "$CLAUDE_CHILD_MODEL" "${MCP_ARGS[@]}" --chrome; /bin/bash "$AGENTSTACK_HOOKS_DIR/cleanup-child-agent.sh"\'')
+E        +    where <built-in method endswith of str object at 0x11864a9e0> = '/bin/zsh -lc \'export PATH="$HOME/.local/bin:$PATH"; MCP_ARGS=(); [[ -n "$CLAUDE_CHILD_MCP_CONFIG" ]] && MCP_ARGS=(--...tools" --add-dir /Volumes/DevSSD "${MCP_ARGS[@]}" --chrome; /bin/bash "$AGENTSTACK_HOOKS_DIR/cleanup-child-agent.sh"\''.endswith
+
+tests/test_claude_child_chrome.py:226: AssertionError
+_ test_model_catalog_fallback_preserves_aliases_and_old_ids_without_cli_version _
+
+    def test_model_catalog_fallback_preserves_aliases_and_old_ids_without_cli_version():
+        expected = {
+            ("normalize_claude_model", ""): "claude-opus-5-5",
+            ("normalize_claude_model", "opus"): "claude-opus-5-5",
+            ("normalize_claude_model", "opus[1m]"): "claude-opus-4-8[1m]",
+            ("normalize_claude_model", "claude-opus-4-8"): "claude-opus-4-8",
+            ("normalize_claude_model", "claude-opus-5"): "claude-opus-5",
+            ("normalize_claude_model", "opus-5"): "claude-opus-5",
+            ("normalize_claude_model", "opus-5[1m]"): "claude-opus-5[1m]",
+            ("normalize_claude_model", "opus-5-5[1m]"): "claude-opus-5-5[1m]",
+            ("normalize_claude_model", "opus-5-5-1m"): "claude-opus-5-5[1m]",
+            ("normalize_claude_model", "opus55[1m]"): "claude-opus-5-5[1m]",
+            ("normalize_claude_model", "sonnet"): "claude-sonnet-5",
+            ("normalize_claude_model", "sonnet-4-6"): "claude-sonnet-4-6",
+            ("normalize_claude_model", "fable"): "claude-fable-5-1",
+            ("normalize_claude_model", "claude-fable-5"): "claude-fable-5",
+            ("normalize_claude_model", "claude-future-9"): "claude-future-9",
+            ("normalize_codex_model", ""): "gpt-6-sol",
+            ("normalize_codex_model", "sol"): "gpt-6-sol",
+            ("normalize_codex_model", "terra"): "gpt-5.6-terra",
+            ("normalize_codex_model", "luna"): "gpt-6-luna",
+            ("normalize_codex_model", "astra"): "gpt-6-astra",
+            ("normalize_codex_model", "gpt-6-astra"): "gpt-6-astra",
+            ("normalize_codex_model", "gpt-5.5"): "gpt-5.5",
+        }
+        for (function, raw), normalized in expected.items():
+            result = _model_call(function, raw, extra_env={"AGENTSTACK_CHILD_SHELL": "/usr/bin/false"})
+            assert result.returncode == 0, result.stderr
+>           assert result.stdout.strip() == normalized
+E           AssertionError: assert 'claude-sonnet-5-5' == 'claude-sonnet-5'
+E             
+E             - claude-sonnet-5
+E             + claude-sonnet-5-5
+E             ?                ++
+
+tests/test_codex_launch.py:482: AssertionError
+_____________ test_model_specific_effort_constraints_are_enforced ______________
+
+    def test_model_specific_effort_constraints_are_enforced():
+        accepted = _model_call("validate_codex_effort", "gpt-5.6-sol", "ultra")
+>       assert accepted.returncode == 0
+E       AssertionError: assert 1 == 0
+E        +  where 1 = CompletedProcess(args=['bash', '-c', '# --- Child model catalog -------------------------------------------------\n# K... stdout='', stderr='Error: reasoning effort disabled by R-062; set AGENTSTACK_ALLOW_XHIGH=1 only with a head ruling\n').returncode
+
+tests/test_codex_launch.py:487: AssertionError
+_________________ test_launcher_no_longer_hardcodes_full_auto __________________
+
+    def test_launcher_no_longer_hardcodes_full_auto():
+        text = _SPAWN.read_text(encoding="utf-8")
+        assert "--full-auto \\" not in text, "hardcoded --full-auto still in a launch line"
+        # Both launch paths take the probed flags from the child environment.
+>       assert text.count('--sandbox workspace-write $(printf "%s" "$AGENTSTACK_CODEX_APPROVAL")') == 2
+E       assert 0 == 2
+E        +  where 0 = <built-in method count of str object at 0x90517c000>('--sandbox workspace-write $(printf "%s" "$AGENTSTACK_CODEX_APPROVAL")')
+E        +    where <built-in method count of str object at 0x90517c000> = '#!/bin/bash\n# spawn_child.sh - launch a child agent (Claude / Codex) in a new tmux session\n#\n# Usage:\n#   spawn_c...it -C $WORKTREE_SOURCE worktree remove $WORKTREE_DIR && git -C $WORKTREE_SOURCE branch -D exp/${CHILD_NAME}" >&2\nfi\n'.count
+
+tests/test_codex_launch.py:517: AssertionError
+______ test_actual_codex_launch_commands_keep_models_and_optional_efforts ______
+
+    def test_actual_codex_launch_commands_keep_models_and_optional_efforts():
+        text = _SPAWN.read_text(encoding="utf-8")
+        snippets = re.findall(r'EXTRA_ARGS=\(\)\n.*?--model "\$AGENTSTACK_CODEX_MODEL" -- "\$AGENTSTACK_CODEX_TASK"', text, re.S)
+        assert len(snippets) == 2
+        with tempfile.TemporaryDirectory() as tmp:
+            root = pathlib.Path(tmp)
+            fake = root / "codex"
+            fake.write_text(f"#!{sys.executable}\nimport json,sys\nprint(json.dumps(sys.argv[1:]))\n")
+            fake.chmod(0o755)
+            for raw, effort in [("sol", "ultra"), ("luna", "max"), ("gpt-5.6-luna", "xhigh"), ("gpt-future", "")]:
+                normalized = _model_call("normalize_codex_model", raw)
+                assert normalized.returncode == 0, normalized.stderr
+                model = normalized.stdout.strip()
+                validated = _model_call("validate_codex_effort", model, effort)
+>               assert validated.returncode == 0, validated.stderr
+E               AssertionError: Error: reasoning effort disabled by R-062; set AGENTSTACK_ALLOW_XHIGH=1 only with a head ruling
+E                 
+E               assert 1 == 0
+E                +  where 1 = CompletedProcess(args=['bash', '-c', '# --- Child model catalog -------------------------------------------------\n# K... stdout='', stderr='Error: reasoning effort disabled by R-062; set AGENTSTACK_ALLOW_XHIGH=1 only with a head ruling\n').returncode
+
+tests/test_codex_launch.py:1159: AssertionError
+________ test_model_switch_removes_unsupported_effort_and_preserves_id _________
+
+provider = {'id': 'codex', 'label': 'Codex', 'program': 'codex-cli', 'models': ['gpt-6.1-sol', 'gpt-6-sol', 'gpt-6-astra', 'gpt-5.6-sol', 'gpt-5.6-terra', 'gpt-5.6-luna', ...], ...}
+
+    def test_model_switch_removes_unsupported_effort_and_preserves_id(provider):
+        result = run_ui(provider, """
+    selectSpawnModel('gpt-6.1-sol');selectSpawnEffort('ultra');out.sol=state();
+    selectSpawnModel('gpt-6-luna');out.luna=state();
+    out.lunaEfforts=SPM('spm-efforts').children.map(x=>x.dataset.effort);
+    """)
+        assert result["sol"]["payload"]["model"] == "gpt-6.1-sol"
+        assert result["sol"]["payload"]["effort"] == "ultra"
+        assert result["luna"]["payload"]["model"] == "gpt-6-luna"
+>       assert result["luna"]["payload"]["effort"] == "xhigh"
+E       AssertionError: assert 'medium' == 'xhigh'
+E         
+E         - xhigh
+E         + medium
+
+tests/test_codex_model_ui.py:45: AssertionError
+______ test_auto_selected_effort_does_not_replace_the_next_model_default _______
+
+provider = {'id': 'codex', 'label': 'Codex', 'program': 'codex-cli', 'models': ['gpt-6.1-sol', 'gpt-6-sol', 'gpt-6-astra', 'gpt-5.6-sol', 'gpt-5.6-terra', 'gpt-5.6-luna', ...], ...}
+
+    def test_auto_selected_effort_does_not_replace_the_next_model_default(provider):
+        provider["models"].append("gpt-lite")
+        provider["model_efforts"]["gpt-lite"] = ["low", "medium"]
+        provider["model_effort_defaults"]["gpt-lite"] = "low"
+        result = run_ui(provider, "selectSpawnModel('gpt-lite');out.lite=state();selectSpawnModel('gpt-6.1-sol');out.sol=state();")
+        assert result["lite"]["payload"]["effort"] == "low"
+>       assert result["sol"]["payload"]["effort"] == "xhigh"
+E       AssertionError: assert 'medium' == 'xhigh'
+E         
+E         - xhigh
+E         + medium
+
+tests/test_codex_model_ui.py:97: AssertionError
+________________ test_hook_count_matches_the_settings_template _________________
+
+    def test_hook_count_matches_the_settings_template() -> None:
+        count = _event_hook_count()
+>       assert f"event hook は{count}件" in _read("docs/hooks.md")
+E       AssertionError: assert 'event hook は10件' in '# Hooks と運用 helper\n\n> English version: [hooks.en.md](hooks.en.md)\n\n[前: 委任と child agent](delegation.md) · [README ...、head/PinkTesla の通知抑制・24時間超の孤立 signal の終了を保持しています。詳しい file/commit 対応は [移植表](orrery-up-1/migration-map.md) を参照してください。\n'
+E        +  where '# Hooks と運用 helper\n\n> English version: [hooks.en.md](hooks.en.md)\n\n[前: 委任と child agent](delegation.md) · [README ...、head/PinkTesla の通知抑制・24時間超の孤立 signal の終了を保持しています。詳しい file/commit 対応は [移植表](orrery-up-1/migration-map.md) を参照してください。\n' = _read('docs/hooks.md')
+
+tests/test_docs_consistency.py:70: AssertionError
+___________ test_picker_still_returns_a_name_when_the_server_answers ___________
+
+    def test_picker_still_returns_a_name_when_the_server_answers():
+        """Fail-closed must not brick the normal path: 'not found' means free."""
+        script = (
+            f'source "{_LIB}" >/dev/null 2>&1; '
+            + _STUB +
+            'ags_pick_available_agent_name "/p" ""'
+        )
+        name = _run_bash(script, {"STUB_RESPONSE": _NOT_FOUND}).stdout.strip()
+        adjective, separator, scientist = name.partition("-")
+>       assert separator == "-" and adjective.isalpha() and scientist.isalpha(), name
+E       AssertionError: MossyFeynman
+E       assert ('' == '-'
+E         
+E         - -)
+
+tests/test_name_availability.py:173: AssertionError
+___ test_isolated_installer_migrates_annotations_and_matches_manifest_sample ___
+
+tmp_path = PosixPath('/private/var/folders/3h/9fn3ldps3c98n54rzk0m2c6m0000gn/T/pytest-of-huyuhutaru/pytest-1/test_isolated_installer_migrat0')
+
+    @pytest.mark.skipif(
+        os.environ.get("GITHUB_ACTIONS") == "true",
+        reason="starts a real dashboard/service process; fails only on GitHub-hosted runners (no interactive user session), cause not isolated yet — run 33846626836",
+    )
+    def test_isolated_installer_migrates_annotations_and_matches_manifest_sample(tmp_path):
+        env = _clean_env(tmp_path / "home")
+        fake_bin = tmp_path / "fake-bin"
+        fake_bin.mkdir()
+        for name, body in {
+            "systemctl": _fake_systemctl(),
+            "tmux": "#!/bin/sh\nexit 0\n",
+            "uname": "#!/bin/sh\necho Linux\n",
+            "uv": "#!/bin/sh\nexit 0\n",
+        }.items():
+            command = fake_bin / name
+            command.write_text(body, encoding="utf-8")
+            command.chmod(0o755)
+    
+        home = pathlib.Path(env["HOME"])
+        install_dir = home / ".agentstack"
+        # Pin the codex the installer records. Left to PATH it resolves whatever
+        # this machine has, and the manifest then differs per developer.
+        codex_bin = home / ".local" / "bin" / "codex"
+        codex_bin.parent.mkdir(parents=True)
+        codex_bin.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+        codex_bin.chmod(0o755)
+        user_skill = home / ".claude" / "skills" / "user-owned" / "SKILL.md"
+        user_skill.parent.mkdir(parents=True)
+        user_skill.write_text("---\nname: user-owned\n---\n", encoding="utf-8")
+        legacy_path = install_dir / "dashboard" / "annotations.json"
+        legacy_path.parent.mkdir(parents=True)
+        legacy_log = install_dir / "dashboard" / "dashboard.log"
+        legacy_log.write_text("legacy dashboard crash\n", encoding="utf-8")
+        legacy_data = {
+            "WiseFaraday": {"role": "legacy", "emoji": "", "group": "runtime"}
+        }
+        legacy_path.write_text(json.dumps(legacy_data), encoding="utf-8")
+        mail_dir = install_dir / "mail"
+        with socket.socket() as probe:
+            probe.bind(("127.0.0.1", 0))
+            port = probe.getsockname()[1]
+        with socket.socket() as probe:
+            probe.bind(("127.0.0.1", 0))
+            mail_port = probe.getsockname()[1]
+        project_dir = home / "project"
+        project_dir.mkdir(parents=True)
+        worktree_root = home / "durable-worktrees"
+        codex_child_overlay = home / "codex-child-overlay.toml"
+        codex_child_overlay.write_text(
+            '[mcp_servers.browser]\ndefault_tools_approval_mode = "approve"\n',
+            encoding="utf-8",
+        )
+        env.update({
+            "PATH": f"{fake_bin}:{env['PATH']}",
+            "AGENTSTACK_HOME": str(install_dir),
+            "AGENTSTACK_MAIL_STATE_ROOT": str(mail_dir),
+            "AGENTSTACK_MAIL_SERVICE_VENV": str(pathlib.Path(sys.executable).parent.parent),
+            "AGENTSTACK_PORT": str(port),
+            "AGENTSTACK_LABEL_PREFIX": TEST_LABEL_PREFIX,
+            "AGENTSTACK_PROJECT_KEY": str(project_dir),
+            "AGENTSTACK_PROTECTED_ROOTS": str(project_dir),
+            "AGENTSTACK_DELIVERABLE_ROOTS": "",
+            "AGENTSTACK_LANG": "ja",
+            "AGENTSTACK_MURMUR": "off",
+            "AGENTSTACK_SPAWN_DIRS": f"~/code:{project_dir}",
+            "AGENTSTACK_SPAWN_ROOTS": str(project_dir),
+            "AGENTSTACK_WORKTREE_ROOT": str(worktree_root),
+            "AGENTSTACK_PORTRAITS_DIR": "~/faces",
+            "AGENTSTACK_CUSTOM_PORTRAITS": f"{project_dir}/faces.json",
+            "AGENTSTACK_CLAUDE_MODELS": "claude-sonnet-5,claude-opus-5-5",
+            "AGENTSTACK_CODEX_MODELS": "gpt-5.6-sol,gpt-5.6-luna",
+            "AGENTSTACK_CODEX_BIN": str(codex_bin),
+            "AGENTSTACK_CODEX_CHILD_CONFIG_OVERLAY": str(codex_child_overlay),
+            "AGENTSTACK_CHILD_RESUME_RETENTION_DAYS": "45",
+            "AGENTSTACK_AUTO_OPEN_CHILD": "1",
+            "AGENTSTACK_MCP_URL": f"http://127.0.0.1:{mail_port}/mcp",
+            "AGENTSTACK_TERMINAL": "auto",
+            "AGENTSTACK_TEST_PYTHON": sys.executable,
+            "AGENTSTACK_TEST_SERVICE_PID": str(tmp_path / "dashboard-service.pid"),
+        })
+    
+        install_command = ["bash", str(ROOT / "scripts" / "install.sh")]
+        install_result = subprocess.run(
+            install_command,
+            cwd=ROOT,
+            env=env,
+            text=True,
+            capture_output=True,
+            check=True,
+        )
+        assert "dashboard healthy:" in install_result.stdout
+        assert f"Verify operation: {install_dir}/bin/agentstack-selftest" in (
+            install_result.stdout
+        )
+        installed_selftest = install_dir / "bin" / "agentstack-selftest"
+        assert installed_selftest.read_bytes() == (
+            ROOT / "scripts" / "selftest.py"
+        ).read_bytes()
+        assert os.access(installed_selftest, os.X_OK)
+    
+        runtime_path = install_dir / "runtime" / "annotations.json"
+        runtime_log = install_dir / "runtime" / "dashboard.log"
+        assert json.loads(runtime_path.read_text(encoding="utf-8")) == legacy_data
+        assert runtime_log.read_text(encoding="utf-8").startswith(
+            "legacy dashboard crash\n"
+        )
+        assert not legacy_path.exists()
+        assert not legacy_log.exists()
+    
+        # Reinstall must keep every old operational log out of the payload tree,
+        # even when the canonical and first legacy migration targets already exist.
+        _stop_fake_dashboard(env)
+        legacy_log.write_text("second legacy dashboard crash\n", encoding="utf-8")
+        # Reinstall with no new value must preserve the model setting.
+        env.pop("AGENTSTACK_CLAUDE_MODELS")
+        subprocess.run(
+            install_command,
+            cwd=ROOT,
+            env=env,
+            text=True,
+            capture_output=True,
+            check=True,
+        )
+        runtime_legacy_log = install_dir / "runtime" / "dashboard.legacy.log"
+        assert runtime_legacy_log.read_text(encoding="utf-8").startswith(
+            "second legacy dashboard crash\n"
+        )
+        assert not legacy_log.exists()
+    
+        _stop_fake_dashboard(env)
+        legacy_log.write_text("third legacy dashboard crash\n", encoding="utf-8")
+        subprocess.run(
+            install_command,
+            cwd=ROOT,
+            env=env,
+            text=True,
+            capture_output=True,
+            check=True,
+        )
+        runtime_legacy_log_1 = install_dir / "runtime" / "dashboard.legacy.1.log"
+        assert runtime_legacy_log_1.read_text(encoding="utf-8").startswith(
+            "third legacy dashboard crash\n"
+        )
+        assert not legacy_log.exists()
+    
+        manifest = _as_production_label(
+            json.loads((install_dir / "install-state.json").read_text(encoding="utf-8"))
+        )
+        assert str(install_dir / "runtime") in manifest["retained_paths"]
+        assert str(install_dir / "runtime") in manifest["purge_paths"]
+        assert str(install_dir / "profiles") in manifest["retained_paths"]
+        assert str(install_dir / "profiles") in manifest["purge_paths"]
+        assert str(install_dir / "connections") in manifest["retained_paths"]
+        assert str(install_dir / "connections") in manifest["purge_paths"]
+        assert str(legacy_path) not in manifest["owned_files"]
+        expected_payload_files = {
+            str(install_dir / relative)
+            for relative in _tracked_core_payload_files()
+        }
+        assert expected_payload_files <= set(manifest["owned_files"])
+        assert str(install_dir / "VERSION") in manifest["owned_files"]
+        assert str(installed_selftest) in manifest["owned_files"]
+        assert str(
+            install_dir / "integrations/codex_app/plugin/scripts/run-mcp.sh"
+        ) in manifest["owned_files"]
+        assert str(
+            install_dir / "integrations/codex_app/src/agentstack_codex_app/mcp_server.py"
+        ) in manifest["owned_files"]
+        expected_skill_links = [
+            {
+                "path": str(home / ".claude" / "skills" / name),
+                "target": str(install_dir / "skills" / name),
+            }
+            for name in ("delegate", "log")
+        ]
+        assert manifest["skill_links"] == expected_skill_links
+        for record in expected_skill_links:
+            link = pathlib.Path(record["path"])
+            assert link.is_symlink()
+            assert link.resolve() == pathlib.Path(record["target"])
+            assert record["path"] in manifest["owned_files"]
+        assert set(_expected_owned_dirs(install_dir)) <= set(manifest["owned_dirs"])
+        systemd_unit = (
+            home
+            / ".config"
+            / "systemd"
+            / "user"
+            / f"{TEST_LABEL_PREFIX}.agentdashboard.service"
+        ).read_text(encoding="utf-8")
+        exec_start = next(
+            line for line in systemd_unit.splitlines() if line.startswith("ExecStart=")
+        )
+        assert exec_start.split()[-1] == str(install_dir / "dashboard" / "service_runner.py")
+        # The unit must hand the installer-selected interpreter to dashboard children,
+        # mirroring the launchd plist (PR #29); otherwise providers spawned from the
+        # service fall back to whatever python3 is first on PATH.
+        unit_python = exec_start[len("ExecStart="):].split()[0]
+        assert f'Environment="AGENTSTACK_PYTHON={unit_python}"' in systemd_unit
+        assert "Restart=always" in systemd_unit
+        assert (
+            f'Environment="AGENTSTACK_DASHBOARD_LOG={install_dir}/runtime/dashboard.log"'
+            in systemd_unit
+        )
+        assert (
+            f'Environment="AGENTSTACK_PERSISTENT_PROFILES_DIR={install_dir}/profiles"'
+            in systemd_unit
+        )
+        assert 'Environment="AGENTSTACK_LANG=ja"' in systemd_unit
+        assert 'Environment="AGENTSTACK_MURMUR=off"' in systemd_unit
+        assert f'Environment="AGENTSTACK_SPAWN_DIRS=~/code:{project_dir}"' in systemd_unit
+        assert f'Environment="AGENTSTACK_SPAWN_ROOTS={project_dir}"' in systemd_unit
+        assert f'Environment="AGENTSTACK_WORKTREE_ROOT={worktree_root}"' in systemd_unit
+        assert 'Environment="AGENTSTACK_PORTRAITS_DIR=~/faces"' in systemd_unit
+        assert 'Environment="AGENTSTACK_CLAUDE_MODELS=claude-sonnet-5,claude-opus-5-5"' in systemd_unit
+        assert 'Environment="AGENTSTACK_CODEX_MODELS=gpt-5.6-sol,gpt-5.6-luna"' in systemd_unit
+        assert (
+            f'Environment="AGENTSTACK_CODEX_CHILD_CONFIG_OVERLAY={codex_child_overlay}"'
+            in systemd_unit
+        )
+        assert 'Environment="AGENTSTACK_CHILD_RESUME_RETENTION_DAYS=45"' in systemd_unit
+        assert 'Environment="AGENTSTACK_AUTO_OPEN_CHILD=1"' in systemd_unit
+        generated_env = (install_dir / "env.sh").read_text(encoding="utf-8")
+        assert f"export AGENTSTACK_PERSISTENT_PROFILES_DIR={install_dir}/profiles" in generated_env
+        assert "export AGENTSTACK_LANG=ja" in generated_env
+        assert "export AGENTSTACK_MURMUR=off" in generated_env
+        assert f"export AGENTSTACK_SPAWN_DIRS='~/code:{project_dir}'" in generated_env
+        assert f"export AGENTSTACK_SPAWN_ROOTS={project_dir}" in generated_env
+        assert f"export AGENTSTACK_WORKTREE_ROOT={worktree_root}" in generated_env
+        assert (
+            f"export AGENTSTACK_CODEX_CHILD_CONFIG_OVERLAY={codex_child_overlay}"
+            in generated_env
+        )
+        assert "export AGENTSTACK_CHILD_RESUME_RETENTION_DAYS=45" in generated_env
+        assert "export AGENTSTACK_AUTO_OPEN_CHILD=1" in generated_env
+        assert "export AGENTSTACK_CLAUDE_MODELS=claude-sonnet-5,claude-opus-5-5" in generated_env
+        assert manifest["env"]["AGENTSTACK_SPAWN_DIRS"] == f"~/code:{project_dir}"
+        assert manifest["env"]["AGENTSTACK_WORKTREE_ROOT"] == str(worktree_root)
+        assert "export AGENTSTACK_PORTRAITS_DIR='~/faces'" in generated_env
+        assert manifest["env"]["AGENTSTACK_CUSTOM_PORTRAITS"] == f"{project_dir}/faces.json"
+        assert manifest["env"]["AGENTSTACK_CLAUDE_MODELS"] == "claude-sonnet-5,claude-opus-5-5"
+        assert manifest["env"]["AGENTSTACK_CODEX_MODELS"] == "gpt-5.6-sol,gpt-5.6-luna"
+        assert manifest["env"]["AGENTSTACK_CODEX_CHILD_CONFIG_OVERLAY"] == str(
+            codex_child_overlay
+        )
+        assert manifest["env"]["AGENTSTACK_CHILD_RESUME_RETENTION_DAYS"] == "45"
+        assert manifest["env"]["AGENTSTACK_AUTO_OPEN_CHILD"] == "1"
+        fixture_enroll = (
+            pathlib.Path(sys.executable).parent.parent.resolve()
+            / "bin"
+            / "agentstack-enroll"
+        )
+        assert manifest["env"]["AGENTSTACK_MAIL_ENROLL_BIN"] == str(fixture_enroll)
+        assert manifest["agent_mail"]["enroll_bin"] == str(fixture_enroll)
+    
+        sample = json.loads(INSTALL_STATE_SAMPLE.read_text(encoding="utf-8"))
+        assert set(sample) == set(manifest)
+>       assert set(sample["env"]) == set(manifest["env"])
+E       AssertionError: assert {'AGENTSTACK_...DEX_BIN', ...} == {'AGENTSTACK_...DEX_BIN', ...}
+E         
+E         Extra items in the right set:
+E         'AGENTSTACK_CODEX_SANDBOX'
+E         Use -v to get more diff
+
+tests/test_runtime_defaults.py:936: AssertionError
+__________ test_install_state_sample_settings_merge_matches_generator __________
+
+tmp_path = PosixPath('/private/var/folders/3h/9fn3ldps3c98n54rzk0m2c6m0000gn/T/pytest-of-huyuhutaru/pytest-1/test_install_state_sample_sett0')
+
+    def test_install_state_sample_settings_merge_matches_generator(tmp_path):
+        sample = json.loads(INSTALL_STATE_SAMPLE.read_text(encoding="utf-8"))
+        home = tmp_path / "home"
+        settings_path = home / ".claude" / "settings.json"
+        settings_path.parent.mkdir(parents=True)
+        settings_path.write_text("{}\n", encoding="utf-8")
+        result_path = tmp_path / "settings-merge-result.json"
+        install_dir = home / ".agentstack"
+        subprocess.run(
+            [
+                "python3",
+                str(ROOT / "scripts" / "lib" / "merge_settings.py"),
+                "--settings",
+                str(settings_path),
+                "--template",
+                str(ROOT / "hooks" / "settings.template.json"),
+                "--hooks-dir",
+                str(install_dir / "hooks"),
+                "--bin-dir",
+                str(install_dir / "bin"),
+                "--skills-dir",
+                str(install_dir / "skills"),
+                "--backup-dir",
+                str(install_dir / "backups"),
+                "--result-json",
+                str(result_path),
+            ],
+            cwd=ROOT,
+            text=True,
+            capture_output=True,
+            check=True,
+        )
+        generated = json.loads(result_path.read_text(encoding="utf-8"))
+        generated = _normalize_sample_paths(
+            generated,
+            {
+                "install_dir": str(install_dir),
+                "repo_root": str(ROOT),
+                "env": {"AGENTSTACK_PROJECT_KEY": str(tmp_path / "project")},
+            },
+        )
+        generated["before_sha256"] = "example-before-sha256"
+        generated["after_sha256"] = "example-after-sha256"
+        generated["backup"] = sample["settings_merge"]["backup"]
+    
+>       assert generated == sample["settings_merge"]
+E       AssertionError: assert {'added_entri...-sha256', ...} == {'added_entri...-sha256', ...}
+E         
+E         Omitting 13 identical items, use -vv to show
+E         Differing items:
+E         {'entries': [{'command': '/bin/bash /home/alice/.agentstack/hooks/set-ghostty-title.sh', 'event': 'SessionStart', 'mat.../alice/.agentstack/hooks/head-send-lint.py', 'event': 'PreToolUse', 'matcher': 'mcp__orrery-mail__send_message'}, ...]} != {'entries': [{'command': '/bin/bash /home/alice/.agentstack/hooks/set-ghostty-title.sh', 'event': 'SessionStart', 'mat...ash /home/alice/.agentstack/hooks/release-file-reservation.sh', 'event': 'PostToolUse', 'matcher': 'Edit|Write'}, ...]}
+E         {'added_entries': [{'command': '...
+E         
+E         ...Full output truncated (2 lines hidden), use '-vv' to show
+
+tests/test_runtime_defaults.py:1097: AssertionError
+____________________ test_a_distinct_mail_label_is_accepted ____________________
+
+tmp_path = PosixPath('/private/var/folders/3h/9fn3ldps3c98n54rzk0m2c6m0000gn/T/pytest-of-huyuhutaru/pytest-1/test_a_distinct_mail_label_is_0')
+
+    def test_a_distinct_mail_label_is_accepted(tmp_path):
+        """The null case: refusing every explicit label would be no better."""
+        import subprocess
+    
+        root = pathlib.Path(__file__).resolve().parents[1]
+        home = tmp_path / "home"
+        home.mkdir()
+        prefix = "org.agentstack.test.collision"
+    
+        def _free_port() -> int:
+            import socket
+    
+            with socket.socket() as probe:
+                probe.bind(("127.0.0.1", 0))
+                return int(probe.getsockname()[1])
+    
+        env = {key: value for key, value in os.environ.items() if not key.startswith("AGENTSTACK_")}
+        env.update({
+            "AGENTSTACK_PORT": str(_free_port()),
+            "AGENTSTACK_MCP_URL": f"http://127.0.0.1:{_free_port()}/mcp",
+            "HOME": str(home),
+            "AGENTSTACK_HOME": str(home / ".agentstack"),
+            "AGENTSTACK_PYTHON": sys.executable,
+            "AGENTSTACK_LABEL_PREFIX": prefix,
+            "AGENTSTACK_MAIL_LAUNCHD_LABEL": f"{prefix}.direct-mail",
+            "AGENTSTACK_TERMINAL": "none",
+            "AGENTSTACK_PROJECT_KEY": str(tmp_path / "project"),
+        })
+>       result = subprocess.run(
+            ["bash", str(root / "scripts" / "install.sh"), "--dashboard-only", "--dry-run"],
+            cwd=root,
+            env=env,
+            capture_output=True,
+            text=True,
+            timeout=300,
+        )
+
+tests/test_service_label_isolation.py:395: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+/opt/homebrew/Cellar/python@3.14/3.14.7/Frameworks/Python.framework/Versions/3.14/lib/python3.14/subprocess.py:557: in run
+    stdout, stderr = process.communicate(input, timeout=timeout)
+                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/opt/homebrew/Cellar/python@3.14/3.14.7/Frameworks/Python.framework/Versions/3.14/lib/python3.14/subprocess.py:1221: in communicate
+    stdout, stderr = self._communicate(input, endtime, timeout)
+                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/opt/homebrew/Cellar/python@3.14/3.14.7/Frameworks/Python.framework/Versions/3.14/lib/python3.14/subprocess.py:2153: in _communicate
+    ready = selector.select(timeout)
+            ^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <selectors.PollSelector object at 0x11a33cb90>, timeout = 299859
+
+    def select(self, timeout=None):
+        # This is shared between poll() and epoll().
+        # epoll() has a different signature and handling of timeout parameter.
+        if timeout is None:
+            timeout = None
+        elif timeout <= 0:
+            timeout = 0
+        else:
+            # poll() has a resolution of 1 millisecond, round away from
+            # zero to wait *at least* timeout seconds.
+            timeout = math.ceil(timeout * 1e3)
+        ready = []
+        try:
+>           fd_event_list = self._selector.poll(timeout)
+                            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E           Failed: Timeout (>120.0s) from pytest-timeout.
+
+/opt/homebrew/Cellar/python@3.14/3.14.7/Frameworks/Python.framework/Versions/3.14/lib/python3.14/selectors.py:398: Failed
+_______________ test_teardown_stops_a_real_runner_and_its_child ________________
+
+tmp_path = PosixPath('/private/var/folders/3h/9fn3ldps3c98n54rzk0m2c6m0000gn/T/pytest-of-huyuhutaru/pytest-1/test_teardown_stops_a_real_run0')
+
+    def test_teardown_stops_a_real_runner_and_its_child(tmp_path: Path) -> None:
+        """The graceful path, end to end: real runner, real child, no inventory.
+    
+        Everything above uses sleepers. That measures the pid bookkeeping and
+        nothing else -- whether stopping the recorded supervisor actually ends the
+        server it supervises is a separate claim, and it is the one the cleanup
+        depends on.
+    
+        Scope: this is the graceful path. The runner receives SIGTERM and forwards
+        it, and the log confirms that is what happened -- the watchdog never has to
+        act. The other route, a SIGKILL'd supervisor leaving the child to notice
+        the closed pipe, is covered by
+        ``test_dashboard_service.py::test_supervised_child_exits_if_runner_is_sigkilled``.
+    
+        A stub that ignores SIGTERM was tried here to force that route and does not
+        work: the watchdog ends the process by sending itself SIGTERM
+        (``dashboard/server.py:4828``), so ignoring the signal defeats the very
+        mechanism under test. Driving it needs the dedicated test's approach.
+        """
+        import re
+    
+        root = TESTS_DIR.parent
+        runner = root / "dashboard" / "service_runner.py"
+        home = tmp_path / "home"
+        runtime = home / ".agentstack" / "runtime"
+        runtime.mkdir(parents=True)
+        (home / ".agentstack" / "dashboard").mkdir(parents=True, exist_ok=True)
+    
+        # Under the install, the way a real one is: the provenance check requires
+        # the supervised server to live in this home, which is what makes a
+        # recorded pid this install's rather than merely a number it wrote down.
+        server = home / ".agentstack" / "dashboard" / "server_stub.py"
+        server.parent.mkdir(parents=True, exist_ok=True)
+        server.write_text(
+            "import time\n"
+            "from dashboard.server import _start_supervisor_watchdog\n"
+            "_start_supervisor_watchdog()\n"
+            "print('server-ready', flush=True)\n"
+            "while True:\n"
+            "    time.sleep(1)\n",
+            encoding="utf-8",
+        )
+    
+        log_path = runtime / "dashboard.log"
+        env = os.environ.copy()
+        env.update({
+            "PYTHONPATH": str(root),
+            "AGENTSTACK_RUNTIME_DIR": str(runtime),
+            "AGENTSTACK_DASHBOARD_LOG": str(log_path),
+            "AGENTSTACK_DASHBOARD_RUN_STATE": str(runtime / "dashboard-service.json"),
+            "AGENTSTACK_DASHBOARD_RESTART_DELAY": "0",
+        })
+        process = subprocess.Popen([sys.executable, str(runner), str(server)], env=env)
+        reaper = threading.Thread(target=process.wait, daemon=True)
+        reaper.start()
+        child_pid = 0
+        try:
+            deadline = time.monotonic() + 30
+            text = ""
+            while time.monotonic() < deadline:
+                text = log_path.read_text(encoding="utf-8") if log_path.exists() else ""
+                if "server-ready" in text:
+                    break
+                time.sleep(0.2)
+>           assert "server-ready" in text, text
+E           AssertionError: 
+E           assert 'server-ready' in ''
+
+tests/test_service_watcher_measurement.py:643: AssertionError
+_____ test_a_stale_pid_file_for_a_process_that_has_exited_is_not_an_error ______
+
+tmp_path = PosixPath('/private/var/folders/3h/9fn3ldps3c98n54rzk0m2c6m0000gn/T/pytest-of-huyuhutaru/pytest-1/test_a_stale_pid_file_for_a_pr0')
+
+    def test_a_stale_pid_file_for_a_process_that_has_exited_is_not_an_error(
+        tmp_path: Path,
+    ) -> None:
+        """The null case: nothing to stop is a clean teardown, not a refusal.
+    
+        Requiring provenance for a pid that no longer exists turned the ordinary
+        end of a test into a teardown failure.
+        """
+        import service_teardown
+    
+        home = tmp_path / "home"
+        runtime = home / ".agentstack" / "runtime"
+        runtime.mkdir(parents=True)
+        (home / ".agentstack" / "dashboard").mkdir(parents=True, exist_ok=True)
+        done = subprocess.Popen([sys.executable, "-c", "pass"])
+>       done.wait(timeout=10)
+
+tests/test_service_watcher_measurement.py:768: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+/opt/homebrew/Cellar/python@3.14/3.14.7/Frameworks/Python.framework/Versions/3.14/lib/python3.14/subprocess.py:1279: in wait
+    return self._wait(timeout=timeout)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <Popen: returncode: None args: ['/Volumes/DevSSD/DevStorageGovernor/artifact...>
+timeout = 10
+
+    def _wait(self, timeout):
+        """Internal implementation of wait() on POSIX."""
+        if self.returncode is not None:
+            return self.returncode
+    
+        if timeout is not None:
+            endtime = _time() + timeout
+            # Enter a busy loop if we have a timeout.  This busy loop was
+            # cribbed from Lib/threading.py in Thread.wait() at r71065.
+            delay = 0.0005 # 500 us -> initial delay of 1 ms
+            while True:
+                if self._waitpid_lock.acquire(False):
+                    try:
+                        if self.returncode is not None:
+                            break  # Another thread waited.
+                        (pid, sts) = self._try_wait(os.WNOHANG)
+                        assert pid == self.pid or pid == 0
+                        if pid == self.pid:
+                            self._handle_exitstatus(sts)
+                            break
+                    finally:
+                        self._waitpid_lock.release()
+                remaining = self._remaining_time(endtime)
+                if remaining <= 0:
+>                   raise TimeoutExpired(self.args, timeout)
+E                   subprocess.TimeoutExpired: Command '['/Volumes/DevSSD/DevStorageGovernor/artifacts/orrery-telemetry/20261001T011558Z-build-cache-33928e51/venv/bin/python', '-c', 'pass']' timed out after 10 seconds
+
+/opt/homebrew/Cellar/python@3.14/3.14.7/Frameworks/Python.framework/Versions/3.14/lib/python3.14/subprocess.py:2076: TimeoutExpired
+_____________ test_merge_installs_permissions_into_fresh_settings ______________
+
+    def test_merge_installs_permissions_into_fresh_settings():
+        with tempfile.TemporaryDirectory() as tmp:
+            tmpdir = pathlib.Path(tmp)
+>           written, detail, rc = _merge(tmpdir, {})
+                                  ^^^^^^^^^^^^^^^^^^
+
+tests/test_settings_permissions.py:103: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/test_settings_permissions.py:45: in _merge
+    proc = subprocess.run(cmd, text=True, stdout=subprocess.PIPE,
+/opt/homebrew/Cellar/python@3.14/3.14.7/Frameworks/Python.framework/Versions/3.14/lib/python3.14/subprocess.py:557: in run
+    stdout, stderr = process.communicate(input, timeout=timeout)
+                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/opt/homebrew/Cellar/python@3.14/3.14.7/Frameworks/Python.framework/Versions/3.14/lib/python3.14/subprocess.py:1221: in communicate
+    stdout, stderr = self._communicate(input, endtime, timeout)
+                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/opt/homebrew/Cellar/python@3.14/3.14.7/Frameworks/Python.framework/Versions/3.14/lib/python3.14/subprocess.py:2153: in _communicate
+    ready = selector.select(timeout)
+            ^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <selectors.PollSelector object at 0x11ae0b170>, timeout = None
+
+    def select(self, timeout=None):
+        # This is shared between poll() and epoll().
+        # epoll() has a different signature and handling of timeout parameter.
+        if timeout is None:
+            timeout = None
+        elif timeout <= 0:
+            timeout = 0
+        else:
+            # poll() has a resolution of 1 millisecond, round away from
+            # zero to wait *at least* timeout seconds.
+            timeout = math.ceil(timeout * 1e3)
+        ready = []
+        try:
+>           fd_event_list = self._selector.poll(timeout)
+                            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E           Failed: Timeout (>120.0s) from pytest-timeout.
+
+/opt/homebrew/Cellar/python@3.14/3.14.7/Frameworks/Python.framework/Versions/3.14/lib/python3.14/selectors.py:398: Failed
+__________ test_merge_removes_only_legacy_agentstack_skills_directory __________
+
+    def test_merge_removes_only_legacy_agentstack_skills_directory():
+        with tempfile.TemporaryDirectory() as tmp:
+            tmpdir = pathlib.Path(tmp)
+            legacy = str(tmpdir / "skills")
+            user_skills = str(tmpdir / "user-skills")
+            existing = {
+                "theme": "dark",
+                "skillsDirectories": [legacy, user_skills],
+            }
+>           written, detail, rc = _merge(tmpdir, existing)
+                                  ^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/test_settings_permissions.py:131: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/test_settings_permissions.py:45: in _merge
+    proc = subprocess.run(cmd, text=True, stdout=subprocess.PIPE,
+/opt/homebrew/Cellar/python@3.14/3.14.7/Frameworks/Python.framework/Versions/3.14/lib/python3.14/subprocess.py:557: in run
+    stdout, stderr = process.communicate(input, timeout=timeout)
+                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/opt/homebrew/Cellar/python@3.14/3.14.7/Frameworks/Python.framework/Versions/3.14/lib/python3.14/subprocess.py:1221: in communicate
+    stdout, stderr = self._communicate(input, endtime, timeout)
+                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/opt/homebrew/Cellar/python@3.14/3.14.7/Frameworks/Python.framework/Versions/3.14/lib/python3.14/subprocess.py:2153: in _communicate
+    ready = selector.select(timeout)
+            ^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <selectors.PollSelector object at 0x11ae82a50>, timeout = None
+
+    def select(self, timeout=None):
+        # This is shared between poll() and epoll().
+        # epoll() has a different signature and handling of timeout parameter.
+        if timeout is None:
+            timeout = None
+        elif timeout <= 0:
+            timeout = 0
+        else:
+            # poll() has a resolution of 1 millisecond, round away from
+            # zero to wait *at least* timeout seconds.
+            timeout = math.ceil(timeout * 1e3)
+        ready = []
+        try:
+>           fd_event_list = self._selector.poll(timeout)
+                            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E           Failed: Timeout (>120.0s) from pytest-timeout.
+
+/opt/homebrew/Cellar/python@3.14/3.14.7/Frameworks/Python.framework/Versions/3.14/lib/python3.14/selectors.py:398: Failed
+______________ test_merge_preserves_user_rules_and_is_idempotent _______________
+
+    def test_merge_preserves_user_rules_and_is_idempotent():
+        with tempfile.TemporaryDirectory() as tmp:
+            tmpdir = pathlib.Path(tmp)
+            existing = {"permissions": {"allow": ["Bash(git status:*)"], "deny": ["Bash(rm:*)"]}}
+>           written, _, rc = _merge(tmpdir, existing)
+                             ^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/test_settings_permissions.py:144: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/test_settings_permissions.py:45: in _merge
+    proc = subprocess.run(cmd, text=True, stdout=subprocess.PIPE,
+/opt/homebrew/Cellar/python@3.14/3.14.7/Frameworks/Python.framework/Versions/3.14/lib/python3.14/subprocess.py:557: in run
+    stdout, stderr = process.communicate(input, timeout=timeout)
+                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/opt/homebrew/Cellar/python@3.14/3.14.7/Frameworks/Python.framework/Versions/3.14/lib/python3.14/subprocess.py:1221: in communicate
+    stdout, stderr = self._communicate(input, endtime, timeout)
+                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/opt/homebrew/Cellar/python@3.14/3.14.7/Frameworks/Python.framework/Versions/3.14/lib/python3.14/subprocess.py:2153: in _communicate
+    ready = selector.select(timeout)
+            ^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <selectors.PollSelector object at 0x11aee9eb0>, timeout = None
+
+    def select(self, timeout=None):
+        # This is shared between poll() and epoll().
+        # epoll() has a different signature and handling of timeout parameter.
+        if timeout is None:
+            timeout = None
+        elif timeout <= 0:
+            timeout = 0
+        else:
+            # poll() has a resolution of 1 millisecond, round away from
+            # zero to wait *at least* timeout seconds.
+            timeout = math.ceil(timeout * 1e3)
+        ready = []
+        try:
+>           fd_event_list = self._selector.poll(timeout)
+                            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E           Failed: Timeout (>120.0s) from pytest-timeout.
+
+/opt/homebrew/Cellar/python@3.14/3.14.7/Frameworks/Python.framework/Versions/3.14/lib/python3.14/selectors.py:398: Failed
+________________ test_nothing_usable_is_an_error_that_says_why _________________
+
+tmp_path = PosixPath('/private/var/folders/3h/9fn3ldps3c98n54rzk0m2c6m0000gn/T/pytest-of-huyuhutaru/pytest-1/test_nothing_usable_is_an_erro0')
+
+    def test_nothing_usable_is_an_error_that_says_why(tmp_path):
+        windows = _windows_codex(tmp_path)
+        rc, out, err = _resolve(tmp_path, path_dirs=[windows.parent], wsl=True)
+>       assert rc == 1 and out == ""
+E       assert (0 == 1)
+
+tests/test_spawn_child_codex_bin.py:145: AssertionError
+=============================== warnings summary ===============================
+../../../../Volumes/DevSSD/DevStorageGovernor/artifacts/orrery-telemetry/20261001T011558Z-build-cache-33928e51/venv/lib/python3.14/site-packages/fastmcp/server/auth/providers/jwt.py:10
+  /Volumes/DevSSD/DevStorageGovernor/artifacts/orrery-telemetry/20261001T011558Z-build-cache-33928e51/venv/lib/python3.14/site-packages/fastmcp/server/auth/providers/jwt.py:10: AuthlibDeprecationWarning: authlib.jose module is deprecated, please use joserfc instead.
+  It will be compatible before version 2.0.0.
+    from authlib.jose import JsonWebKey, JsonWebToken
+
+../../../../Volumes/DevSSD/DevStorageGovernor/artifacts/orrery-telemetry/20261001T011558Z-build-cache-33928e51/venv/lib/python3.14/site-packages/authlib/integrations/httpx_client/assertion_client.py:5
+  /Volumes/DevSSD/DevStorageGovernor/artifacts/orrery-telemetry/20261001T011558Z-build-cache-33928e51/venv/lib/python3.14/site-packages/authlib/integrations/httpx_client/assertion_client.py:5: AuthlibDeprecationWarning: The httpx module is deprecated; please use httpx2 instead.
+    from ._compat import httpx2
+
+packages/agentstack_mail/tests/test_consumer.py::test_hard_process_exit_reuses_stages_and_leaves_no_debris
+  /Users/huyuhutaru/tools/orrery-telemetry-wt-orrery-up-1/packages/agentstack_mail/tests/test_consumer.py:1132: DeprecationWarning: This process (pid=53209) is multi-threaded, use of fork() may lead to deadlocks in the child.
+    pid = os.fork()
+
+packages/agentstack_mail/tests/test_service.py::test_wrapper_sigkill_leaves_child_lock_blocking_a_replacement_writer
+packages/agentstack_mail/tests/test_service.py::test_wrapper_sigkill_leaves_child_lock_blocking_a_replacement_writer
+packages/agentstack_mail/tests/test_service.py::test_missing_lock_inheritance_mutant_allows_two_real_writers
+packages/agentstack_mail/tests/test_service.py::test_missing_lock_inheritance_mutant_allows_two_real_writers
+  /opt/homebrew/Cellar/python@3.14/3.14.7/Frameworks/Python.framework/Versions/3.14/lib/python3.14/contextlib.py:109: DeprecationWarning: Use `streamable_http_client` instead.
+    self.gen = func(*args, **kwds)
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+============================= slowest 25 durations =============================
+120.02s call     tests/test_service_label_isolation.py::test_a_distinct_mail_label_is_accepted
+120.02s call     tests/test_settings_permissions.py::test_merge_preserves_user_rules_and_is_idempotent
+120.01s call     tests/test_settings_permissions.py::test_merge_removes_only_legacy_agentstack_skills_directory
+120.01s call     tests/test_settings_permissions.py::test_merge_installs_permissions_into_fresh_settings
+118.03s call     tests/test_settings_permissions.py::test_merge_replaces_legacy_product_permissions_and_hook_matchers
+30.26s call     tests/test_mail_autostart.py::test_the_sweep_leaves_a_deliberately_stopped_server_alone
+30.13s call     tests/test_service_watcher_measurement.py::test_teardown_stops_a_real_runner_and_its_child
+28.09s call     tests/test_service_label_isolation.py::test_an_explicit_mail_label_reaches_the_env_and_the_manifest
+19.92s call     tests/test_spawn_child_codex_bin.py::test_slow_usable_cli_keeps_launcher_api_and_delegate_defaults_stable[0.159.1-gpt-6.1-sol]
+19.50s call     tests/test_spawn_child_codex_bin.py::test_slow_usable_cli_keeps_launcher_api_and_delegate_defaults_stable[0.158.0-gpt-6-sol]
+18.94s call     tests/test_install_agentstack_mail.py::test_default_provisions_isolated_state_and_serves_health
+13.75s call     tests/test_mailctl_launchd.py::test_a_later_start_finds_the_runner_instead_of_racing_a_second_one
+11.12s call     tests/test_dashboard_service.py::test_launchd_in_place_upgrade_replaces_its_own_listener_with_new_code
+10.68s call     tests/test_runtime_defaults.py::test_noninteractive_assume_yes_is_explicit_audited_approval
+10.16s call     tests/test_service_watcher_measurement.py::test_teardown_reports_a_recorded_process_it_cannot_stop
+10.02s call     tests/test_service_watcher_measurement.py::test_a_stale_pid_file_for_a_process_that_has_exited_is_not_an_error
+9.86s call     packages/agentstack_mail/tests/test_cutover_gates.py::test_fault_cutover_gate_detects_its_broken_control
+8.95s call     tests/test_runtime_defaults.py::test_isolated_installer_migrates_annotations_and_matches_manifest_sample
+7.98s call     packages/agentstack_mail/tests/test_pending_decision_d11_d12.py::test_d12_selected_parity_watcher_crash_windows_are_durable_and_hermetic
+7.94s call     tests/test_install_agentstack_mail.py::test_reinstall_adopts_the_running_candidate_enroll_cli_and_wrapper_inspects
+7.85s call     tests/test_spawn_child_codex_bin.py::test_all_probes_share_one_budget
+7.66s call     tests/test_dashboard_service.py::test_macos_launchd_bootstrap_failure_falls_back_and_finishes_install
+7.08s call     tests/test_mailctl_launchd.py::test_port_grace_is_separate_from_health_grace
+7.06s call     packages/agentstack_mail/tests/test_consumer.py::test_terminal_receipt_replace_mutation_then_raise_quarantines_canonical[OSError-rollback-rolled-back.json]
+6.89s call     tests/test_spawn_v2.py::test_process_group_launcher_cleanup_outlives_the_canonical_5s_grace
+=========================== short test summary info ============================
+FAILED tests/test_adjective_vocab.py::test_generated_agent_names_use_the_stock_safe_hyphen_separator
+FAILED tests/test_claude_child_chrome.py::test_builder_is_byte_identical_to_the_pre_chrome_command_when_not_requested
+FAILED tests/test_claude_child_chrome.py::test_builder_adds_only_chrome_when_requested
+FAILED tests/test_claude_child_chrome.py::test_default_spawn_matches_the_pre_chrome_launcher_exactly
+FAILED tests/test_claude_child_chrome.py::test_default_spawn_still_claims_a_ready_warm_session[sonnet]
+FAILED tests/test_claude_child_chrome.py::test_chrome_request_skips_a_ready_warm_session_and_adds_chrome
+FAILED tests/test_claude_child_chrome.py::test_env_default_turns_chrome_on_for_claude_children
+FAILED tests/test_codex_launch.py::test_model_catalog_fallback_preserves_aliases_and_old_ids_without_cli_version
+FAILED tests/test_codex_launch.py::test_model_specific_effort_constraints_are_enforced
+FAILED tests/test_codex_launch.py::test_launcher_no_longer_hardcodes_full_auto
+FAILED tests/test_codex_launch.py::test_actual_codex_launch_commands_keep_models_and_optional_efforts
+FAILED tests/test_codex_model_ui.py::test_model_switch_removes_unsupported_effort_and_preserves_id
+FAILED tests/test_codex_model_ui.py::test_auto_selected_effort_does_not_replace_the_next_model_default
+FAILED tests/test_docs_consistency.py::test_hook_count_matches_the_settings_template
+FAILED tests/test_name_availability.py::test_picker_still_returns_a_name_when_the_server_answers
+FAILED tests/test_runtime_defaults.py::test_isolated_installer_migrates_annotations_and_matches_manifest_sample
+FAILED tests/test_runtime_defaults.py::test_install_state_sample_settings_merge_matches_generator
+FAILED tests/test_service_label_isolation.py::test_a_distinct_mail_label_is_accepted
+FAILED tests/test_service_watcher_measurement.py::test_teardown_stops_a_real_runner_and_its_child
+FAILED tests/test_service_watcher_measurement.py::test_a_stale_pid_file_for_a_process_that_has_exited_is_not_an_error
+FAILED tests/test_settings_permissions.py::test_merge_installs_permissions_into_fresh_settings
+FAILED tests/test_settings_permissions.py::test_merge_removes_only_legacy_agentstack_skills_directory
+FAILED tests/test_settings_permissions.py::test_merge_preserves_user_rules_and_is_idempotent
+FAILED tests/test_spawn_child_codex_bin.py::test_nothing_usable_is_an_error_that_says_why
+24 failed, 3179 passed, 33 skipped, 7 warnings, 17 subtests passed in 1784.85s (0:29:44)
+traffic: [ORRERY-UP-1-full-suite] done (exit 1)
+
+EXIT_CODE=1

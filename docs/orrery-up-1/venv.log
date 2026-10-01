@@ -1,0 +1,11 @@
+traffic: [ORRERY-UP-1-venv] waiting — mem 10844MB, disk 109GiB, slots in use: 2/2
+traffic: [ORRERY-UP-1-venv] waiting — mem 10789MB, disk 108GiB, slots in use: 2/2
+traffic: [ORRERY-UP-1-venv] waiting — mem 9654MB, disk 108GiB, slots in use: 2/2
+traffic: [ORRERY-UP-1-venv] waiting — mem 11637MB, disk 108GiB, slots in use: 2/2
+traffic: [ORRERY-UP-1-venv] waiting — mem 11438MB, disk 108GiB, slots in use: 2/2
+traffic: [ORRERY-UP-1-venv] waiting — mem 11230MB, disk 108GiB, slots in use: 2/2
+traffic: [ORRERY-UP-1-venv] running (slot slot-2, mem 11286MB, disk 107GiB)
+Error: [Errno 17] File exists: '/Users/huyuhutaru/tools/orrery-telemetry-wt-orrery-up-1/.venv'
+traffic: [ORRERY-UP-1-venv] done (exit 1)
+
+EXIT_CODE=1
