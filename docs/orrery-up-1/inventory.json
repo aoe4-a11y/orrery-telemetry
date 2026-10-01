@@ -2298,9 +2298,8 @@
       "owned": true,
       "live_sha256": "8c958abac1e1f87e1d4b710b5e439b3cebebbaf5eaff838b3ccb343e7c17edb5",
       "source": "integrations/codex_app/src/agentstack_codex_app/agent_mail_client.py",
-      "disposition": "upstream-equivalent-safe-error-details",
-      "evidence": "integrations/codex_app/src/agentstack_codex_app/agent_mail_client.py:_safe_error_text and _decode_tool_response retain actionable server details, add credential redaction",
-      "migration_commit": "ef51345"
+      "disposition": "upstream-source-no-local-delta",
+      "migration_commit": "2026.09.30.4"
     },
     {
       "installed": "integrations/codex_app/src/agentstack_codex_app/daemon.py",
