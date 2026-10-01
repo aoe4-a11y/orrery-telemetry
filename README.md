@@ -1,5 +1,7 @@
 # ORRERY Telemetry
 
+この fork の fleet 改造を保持した更新手順・対応表は [ORRERY-UP-1](docs/orrery-up-1/guide.md) を参照してください。実 install は所有者の terminal で対話実行します。
+
 [English](README.en.md)
 
 Claude Code、Codex CLI、Gemini など、提供元の異なる coding agent を複数動かすと、agent 同士をつなぐ役目は人間に回ってきます。片方の出力をもう片方に貼り直し、アプリやタブを行き来して、それぞれがいま何をしているかを確かめる。ORRERY Telemetry は、その伝言役を agent 同士の直接の通信に置き換え、全員の働きを一枚の画面で俯瞰し、必要なときにだけ人間が介入できるようにするツールです。agent 間の通信、同じファイルを同時に書き換えないための予約、誰が誰を起動したかの系譜を同梱の基盤が記録し、dashboard がそれを人の目で追える形に描きます。

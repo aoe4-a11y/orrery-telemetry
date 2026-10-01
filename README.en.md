@@ -1,5 +1,7 @@
 # ORRERY Telemetry
 
+For this fork's preserved fleet customizations, upgrade and rollback, see [ORRERY-UP-1](docs/orrery-up-1/guide.md). The owner runs the install interactively in their own terminal.
+
 [日本語](README.md)
 
 Run several coding agents from different vendors, such as Claude Code, Codex CLI, and Gemini, and the job of connecting them lands on you: pasting one agent's output into another, hopping between apps and tabs to see what each one is doing. ORRERY Telemetry replaces that human relay with direct communication between the agents, puts everyone's work on a single screen, and lets you step in only when you need to. The bundled infrastructure records the messages agents exchange, the file reservations that keep them from overwriting each other, and the lineage of who spawned whom, and the dashboard turns that into something a person can follow.

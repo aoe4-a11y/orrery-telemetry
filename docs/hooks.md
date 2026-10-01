@@ -184,3 +184,7 @@ Codex Desktop はさらに別の plugin hook / Bridge lifecycle を使います�
 - [Codex App 統合](codex-app.md)
 - [設定](configuration.md)
 - [トラブルシューティング](troubleshooting.md)
+
+## この fork の fleet policy（ORRERY-UP-1）
+
+Codex 既定モデルは本家の `gpt-6.1-sol` を継承し、effort は R-062 により `medium`。`xhigh` / `max` / `ultra` は head の裁定を受けた `AGENTSTACK_ALLOW_XHIGH=1` が必要です。Claude 既定は Opus 5.5、Sonnet alias は5.5、warm pool の Sonnet は5のままです。embed task は R-061 の便タグと ack 規則を含みます。R-068 の送信 lint・usage warning と、head/PinkTesla の通知抑制・24時間超の孤立 signal の終了を保持しています。詳しい file/commit 対応は [移植表](orrery-up-1/migration-map.md) を参照してください。
