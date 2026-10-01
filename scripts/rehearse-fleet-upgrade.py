@@ -40,6 +40,15 @@ def main():
         for line in text.splitlines():
             if re.match(r'export [A-Z_]*(TOKEN|SECRET|PASSWORD)[A-Z_]*=',line):
                 raise ValueError('unexpected secret export; refusing to clone env')
+        # Generated Mail deployment paths require their own isolated candidate,
+        # not a transplanted production service.env/DB. Preserve all custom
+        # operational exports, but let the documented installer provision these.
+        if rel == 'env.sh':
+            generated_mail_keys = {'AGENTSTACK_MAIL_ENV', 'AGENTSTACK_MAIL_DB',
+                'AGENTSTACK_MAIL_HOME', 'AGENTSTACK_MAIL_DIR', 'AGENTSTACK_MAIL_STATE_ROOT',
+                'AGENTSTACK_MAIL_LAUNCHD_LABEL', 'AGENTSTACK_SIGNALS_DIR'}
+            text = '\n'.join(line for line in text.splitlines()
+                if not any(line.startswith('export '+key+'=') for key in generated_mail_keys))+'\n'
         text=text.replace('/Users/huyuhutaru',str(home)).replace(str(home)+'/tools/examforge',str(project))
         dst=stack/rel;dst.parent.mkdir(parents=True,exist_ok=True);dst.write_text(text);dst.chmod(0o600)
     (stack/'install-state.json').write_text(json.dumps({'install_dir':str(stack),'owned_files':[str(stack/p) for p in seeded],'schema_version':1}))
@@ -89,7 +98,7 @@ def main():
         result['version']=(stack/'VERSION').read_text().strip()
         if result['comparison_failed'] or not result['custom_exports_retained']:raise RuntimeError('customization comparison failed')
     finally:
-        stop_dashboard(home)
+        stop_dashboard(home, label_prefix='org.agentstack.test.orrery-up-1')
         _stop_mail(home,stack/'mail',mail_port)
         result['helper_processes_stopped']=True
         (ROOT/'docs/orrery-up-1/rehearsal.json').write_text(json.dumps(result,indent=2)+'\n')

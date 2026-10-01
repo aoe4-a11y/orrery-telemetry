@@ -87,7 +87,8 @@
     "AGENTSTACK_CHILD_RESUME_RETENTION_DAYS": "30",
     "AGENTSTACK_CODEX_BIN": "/home/alice/.local/bin/codex",
     "AGENTSTACK_AUTO_OPEN_CHILD": "1",
-    "AGENTSTACK_TERMINAL": "auto"
+    "AGENTSTACK_TERMINAL": "auto",
+    "AGENTSTACK_CODEX_SANDBOX": "workspace-write"
   },
   "install_dir": "/home/alice/.agentstack",
   "notes": [
@@ -138,7 +139,34 @@
     "/home/alice/.claude/skills/delegate",
     "/home/alice/.claude/skills/log",
     "/home/alice/.config/systemd/user/org.agentstack.agentdashboard.service",
-    "/home/alice/.config/systemd/user/org.agentstack.mail-watcher.service"
+    "/home/alice/.config/systemd/user/org.agentstack.mail-watcher.service",
+    "/home/alice/.agentstack/bin/agentstack-check-seats",
+    "/home/alice/.agentstack/bin/agentstack-memory-guard",
+    "/home/alice/.agentstack/bin/agentstack-owner-checkin.py",
+    "/home/alice/.agentstack/bin/agentstack-reap-idle-seats",
+    "/home/alice/.agentstack/bin/agentstack-restart-seat",
+    "/home/alice/.agentstack/bin/agentstack-rule-mirror-check",
+    "/home/alice/.agentstack/bin/agentstack-seat-cost.py",
+    "/home/alice/.agentstack/bin/agentstack-seat-stall-watch.py",
+    "/home/alice/.agentstack/bin/agentstack-spawn-codex",
+    "/home/alice/.agentstack/bin/agentstack-supervisor.py",
+    "/home/alice/.agentstack/bin/agentstack-tmux-server-migrate",
+    "/home/alice/.agentstack/bin/agentstack-unstick-seats.sh",
+    "/home/alice/.agentstack/bin/codex-stats",
+    "/home/alice/.agentstack/bin/head-send",
+    "/home/alice/.agentstack/bin/orrery-audit-evidence",
+    "/home/alice/.agentstack/bin/orrery-audit-login",
+    "/home/alice/.agentstack/bin/orrery-audit-run",
+    "/home/alice/.agentstack/bin/orrery-ci",
+    "/home/alice/.agentstack/bin/orrery-head-tripwire",
+    "/home/alice/.agentstack/bin/owner-quote-index",
+    "/home/alice/.agentstack/bin/owner-sheet-health",
+    "/home/alice/.agentstack/bin/owner-sheet-server.py",
+    "/home/alice/.agentstack/bin/simulator-window-guard",
+    "/home/alice/.agentstack/hooks/head-send-lint.py",
+    "/home/alice/.agentstack/hooks/rotate_runtime_logs.sh",
+    "/home/alice/.agentstack/hooks/task-file-lint.py",
+    "/home/alice/.agentstack/hooks/usage-throttle-warn.py"
   ],
   "purge_paths": [
     "/home/alice/.agentstack/mail-service",
@@ -218,6 +246,11 @@
         "matcher": "mcp__orrery-mail__file_reservation_paths|mcp__mcp-agent-mail__file_reservation_paths|mcp__agent_mail__file_reservation_paths|mcp__orrery-mail__macro_file_reservation_cycle|mcp__mcp-agent-mail__macro_file_reservation_cycle|mcp__agent_mail__macro_file_reservation_cycle|mcp__orrery-mail__renew_file_reservations|mcp__mcp-agent-mail__renew_file_reservations|mcp__agent_mail__renew_file_reservations"
       },
       {
+        "command": "python3 /home/alice/.agentstack/hooks/head-send-lint.py",
+        "event": "PreToolUse",
+        "matcher": "mcp__orrery-mail__send_message"
+      },
+      {
         "command": "/bin/bash /home/alice/.agentstack/hooks/release-file-reservation.sh",
         "event": "PostToolUse",
         "matcher": "Edit|Write"
@@ -226,6 +259,16 @@
         "command": "/bin/bash /home/alice/.agentstack/hooks/mark-agent-registered.sh",
         "event": "PostToolUse",
         "matcher": "mcp__orrery-mail__register_agent|mcp__mcp-agent-mail__register_agent|mcp__agent_mail__register_agent"
+      },
+      {
+        "command": "python3 /home/alice/.agentstack/hooks/head-send-lint.py",
+        "event": "PostToolUse",
+        "matcher": "mcp__orrery-mail__send_message"
+      },
+      {
+        "command": "python3 /home/alice/.agentstack/hooks/usage-throttle-warn.py",
+        "event": "PostToolUse",
+        "matcher": "Workflow"
       },
       {
         "command": "/bin/bash /home/alice/.agentstack/hooks/release-all-reservations.sh",
@@ -268,6 +311,11 @@
         "matcher": "mcp__orrery-mail__file_reservation_paths|mcp__mcp-agent-mail__file_reservation_paths|mcp__agent_mail__file_reservation_paths|mcp__orrery-mail__macro_file_reservation_cycle|mcp__mcp-agent-mail__macro_file_reservation_cycle|mcp__agent_mail__macro_file_reservation_cycle|mcp__orrery-mail__renew_file_reservations|mcp__mcp-agent-mail__renew_file_reservations|mcp__agent_mail__renew_file_reservations"
       },
       {
+        "command": "python3 /home/alice/.agentstack/hooks/head-send-lint.py",
+        "event": "PreToolUse",
+        "matcher": "mcp__orrery-mail__send_message"
+      },
+      {
         "command": "/bin/bash /home/alice/.agentstack/hooks/release-file-reservation.sh",
         "event": "PostToolUse",
         "matcher": "Edit|Write"
@@ -276,6 +324,16 @@
         "command": "/bin/bash /home/alice/.agentstack/hooks/mark-agent-registered.sh",
         "event": "PostToolUse",
         "matcher": "mcp__orrery-mail__register_agent|mcp__mcp-agent-mail__register_agent|mcp__agent_mail__register_agent"
+      },
+      {
+        "command": "python3 /home/alice/.agentstack/hooks/head-send-lint.py",
+        "event": "PostToolUse",
+        "matcher": "mcp__orrery-mail__send_message"
+      },
+      {
+        "command": "python3 /home/alice/.agentstack/hooks/usage-throttle-warn.py",
+        "event": "PostToolUse",
+        "matcher": "Workflow"
       },
       {
         "command": "/bin/bash /home/alice/.agentstack/hooks/release-all-reservations.sh",

@@ -162,7 +162,7 @@ Start a new agent from the dashboard: pick Claude / Codex, the model, the workin
 
 - **ORRERY Mail**: one place for agent names, inboxes, and file reservations. It remains the source of truth even if the dashboard goes down.
 - **Launchers**: `agent-start` registers the name, creates the tmux session, and starts the CLI in one step, so dashboard jumps and notification targets resolve to exactly one place.
-- **Hooks**: Eight Claude event hooks stop unregistered sessions and unreserved writes, and inject arriving messages into the agent's prompt.
+- **Hooks**: Ten Claude event hooks stop unregistered sessions and unreserved writes, and inject arriving messages into the agent's prompt.
 
 Details of these mechanisms and the API are in [Hooks](docs/hooks.en.md), [Launchers](docs/launchers.en.md), and the [API reference](docs/api.en.md). Every dashboard view and control is available through the local HTTP API.
 
@@ -186,7 +186,7 @@ The Japanese documentation is canonical. The main guides have English versions.
 | [Installation](docs/install.en.md) | Environment, install details, WSL2, upgrade / uninstall |
 | [Launchers and identity](docs/launchers.en.md) | `agent-start`, naming, tokens, `CLAUDECODE` |
 | [Delegation and child agents](docs/delegation.en.md) | How children differ from built-in subagents and how to tell which one is running |
-| [Hooks and operational helpers](docs/hooks.en.md) | Eight Claude event hooks, triggers, block / release / cleanup |
+| [Hooks and operational helpers](docs/hooks.en.md) | Ten Claude event hooks, triggers, block / release / cleanup |
 | [Codex App integration](docs/codex-app.en.md) | Putting Codex Desktop root tasks / subagents on the same dashboard |
 | [Google Antigravity / Gemini provider](docs/antigravity.en.md) | Installing the optional provider and its limits |
 | [Dashboard](docs/dashboard.en.md) | DECK, NETWORK, SELECT, REPLAY, NEW AGENT, embed |

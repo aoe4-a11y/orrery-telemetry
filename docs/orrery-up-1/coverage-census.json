@@ -1,0 +1,20 @@
+{
+  "folders": [
+    "skills",
+    "dashboard",
+    "codex",
+    "claude",
+    "integrations/codex_app"
+  ],
+  "excluded_directory_names": [
+    "runtime",
+    "proxy-runtime",
+    ".venv",
+    "__pycache__",
+    ".git",
+    ".agents"
+  ],
+  "checked_regular_files": 185,
+  "uncovered_paths": [],
+  "inventory_sha256": "ad00df5a6c04e806e270c25e863fabc4f7b43b82abb7bafad211d48c451d5772"
+}

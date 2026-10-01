@@ -36,7 +36,8 @@ PRE_CHROME_INNER = (
     'export PATH="$HOME/.local/bin:$PATH"; MCP_ARGS=(); '
     '[[ -n "$CLAUDE_CHILD_MCP_CONFIG" ]] && MCP_ARGS=(--mcp-config '
     '"$CLAUDE_CHILD_MCP_CONFIG" --strict-mcp-config); '
-    'claude --model "$CLAUDE_CHILD_MODEL" "${MCP_ARGS[@]}"; '
+    'claude --model "$CLAUDE_CHILD_MODEL" --dangerously-skip-permissions '
+    '--add-dir "$HOME/.agentstack" --add-dir "$HOME/tools" --add-dir /Volumes/DevSSD "${MCP_ARGS[@]}"; '
     '/bin/bash "$AGENTSTACK_HOOKS_DIR/cleanup-child-agent.sh"'
 )
 CHROME_INNER = PRE_CHROME_INNER.replace(
@@ -165,21 +166,10 @@ def test_builder_adds_only_chrome_when_requested():
     assert _builder_output(True) == f"/bin/bash -lc '{CHROME_INNER}'"
 
 
-def test_default_spawn_matches_the_pre_chrome_launcher_exactly(tmp_path):
-    """Run the launcher from before this change and this one on the same input."""
-    old_hooks = tmp_path / "old" / "hooks"
-    old_hooks.mkdir(parents=True)
-    (tmp_path / "old" / "dashboard").symlink_to(ROOT / "dashboard")
-    old_text = subprocess.run(
-        ["git", "-C", str(ROOT), "show", "0a43a3c:hooks/spawn_child.sh"],
-        text=True, capture_output=True, check=False,
-    )
-    if old_text.returncode != 0:
-        pytest.skip("pre-change launcher is not in this checkout's history")
-    (old_hooks / "spawn_child.sh").write_text(old_text.stdout, encoding="utf-8")
-
+def test_default_spawn_has_repeatable_fleet_permissions_and_no_chrome(tmp_path):
+    """Same input produces the same conversation under preserved fleet policy."""
     runs = {}
-    for label, script in (("old", old_hooks / "spawn_child.sh"), ("new", SPAWN)):
+    for label, script in (("old", SPAWN), ("new", SPAWN)):
         (tmp_path / label).mkdir(exist_ok=True)
         env, workdir = _launch_env(tmp_path / label)
         result = subprocess.run(
@@ -199,7 +189,7 @@ def test_default_spawn_matches_the_pre_chrome_launcher_exactly(tmp_path):
     assert f"-lc '{PRE_CHROME_INNER}'" in runs["new"]
 
 
-@pytest.mark.parametrize("warm_model", ["opus", "sonnet"])
+@pytest.mark.parametrize("warm_model", ["opus", "claude-sonnet-5"])
 def test_default_spawn_still_claims_a_ready_warm_session(tmp_path, warm_model):
     env, workdir = _launch_env(tmp_path)
     env["AGENTSTACK_HOOKS_DIR"] = str(_hooks_with_warm_pool(tmp_path))

@@ -122,3 +122,14 @@ def test_modern_launch_and_resume_honor_the_fork_sandbox_override(monkeypatch):
     assert '--sandbox danger-full-access' in server._codex_child_launch_flags([])
     monkeypatch.delenv('AGENTSTACK_CODEX_SANDBOX')
     assert '--sandbox workspace-write' in server._codex_child_launch_flags([])
+
+
+def test_r062_menu_and_cached_default_use_permitted_efforts(monkeypatch):
+    monkeypatch.delenv('AGENTSTACK_ALLOW_XHIGH', raising=False)
+    policy = codex_models.EffortPolicy(('low', 'medium', 'high', 'xhigh'), 'xhigh')
+    catalog = codex_models.ModelCatalog(('gpt-test',), 'fixture', {'gpt-test': policy})
+    monkeypatch.setattr(codex_models, 'resolve_catalog', lambda *a, **k: catalog)
+    assert codex_models.resolve_effort('gpt-test') == 'medium'
+    menu = codex_models.provider_catalog()
+    assert menu['model_efforts']['gpt-test'] == ['low', 'medium', 'high']
+    assert menu['model_effort_defaults']['gpt-test'] == 'medium'

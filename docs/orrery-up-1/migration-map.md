@@ -2,7 +2,7 @@
 
 台帳: R-005 / R-026 / R-061 / R-062 / R-068 / M-011 / M-018 / M-020。
 
-採録時の owned は252件。e5039ffとの同名照合で7件差分・59件同名なし（発行時55件から増加）。aliasを辿ると生成wrapper・旧optional sourceが含まれる。全300行を下に列挙する。code .bak は36件（spawn8、supervisor13を含む）、env .bakは4件。失効した古い世代をすべて同時に動かすことはせず、現行コードの累積差分を移植し、旧世代bytesは復元可能な形で残した。
+採録時の owned は252件。e5039ffとの同名照合で7件差分・55件同名なし（owned .bak 4件を含めた生の同名なしは59件）。aliasを辿ると生成wrapper・旧optional sourceが含まれる。全305行を下に列挙する（stack内owned247件と外部owned5件を含む）。code .bak は36件（spawn8、supervisor13を含む）、env .bakは4件。失効した古い世代をすべて同時に動かすことはせず、現行コードの累積差分を移植し、旧世代bytesは復元可能な形で残した。
 
 sandbox override の移植は701b298以降で、modern spawn/resume/service環境まで同じ明示設定を渡す。
 
@@ -23,6 +23,13 @@ forkだけの4 commit（81c3fd9 / cd092c4 / 5e43de6 / e5039ff）は a4830d5 のm
 | `integrations/codex_app/marketplace/plugins/agentstack-codex-app/src/agentstack_codex_app/agent_mail_client.py` | CONTACT_REQUIRED等のserver errorを見せる改造は本家 _safe_error_text が同じ目的を実装済み。600字制限・secret redaction付きの本家側を採用。 | a4830d5 + ef51345 |
 
 ## 全件
+
+本家で既に実装済みの error 表示は tag `2026.09.30.4` の
+`integrations/codex_app/src/agentstack_codex_app/agent_mail_client.py:381-411` にある。
+該当箇所は `_ERROR_TEXT_LIMIT = 600`、
+`text = _SECRET_LIKE.sub("[redacted]", text.splitlines()[0])`、
+`return f"ORRERY Mail tool call failed: {text}"`。
+このため旧コピーの無制限の error 本文表示は再導入せず、本家の表示・redaction を使用する。
 
 | installed file | owned | 採録 SHA-256 | 対応source / 保存先 | 扱い / commit |
 |---|---|---|---|---|
@@ -336,3 +343,15 @@ forkだけの4 commit（81c3fd9 / cd092c4 / 5e43de6 / e5039ff）は a4830d5 のm
 `hooks/child_resume.py:stage_registration` は変更前のtoken/stateを undo record に残し、`finish_registration(... rollback=True)` で失敗時に戻す。現行spawnの CANONICAL_TOKEN_PREEXISTED による保護はこれで保持される。
 
 生成 env / runtime JSON / pyc / service.env は実行コードの改造として複製しない。runtime credential と Mail DBは読まず、元の稼働環境にも触れない。envのcustom exportは scripts/install.sh:write_env_file でliteralとして保持。optional envはcore installerが上書きしない。
+
+## stack 外部の owned 5件
+
+`@home/` は `/Users/huyuhutaru/` を指す。skill link はlink先文字列のSHA、plistはfile bytesのSHA。これらはpayload外の生成物で、対話installerの管理対象・owner rollback snapshot対象である。Mail serviceは稼働listener再利用時に更新されない。
+
+| installed file | owned | 採録 SHA-256 | 扱い / commit |
+|---|---|---|---|
+| `@home/.claude/skills/delegate` | yes | `9d218cc2dfb68528ad6ed9336b1214d923908e048e931714bca9ebdf56c3f95c` | 生成link/service定義。owner snapshot保存、install管理規則で保持/再生成 / 2026.09.30.4 |
+| `@home/.claude/skills/log` | yes | `f25b180b2b5f2e9e9ee62c71b976b0a41fdbac613d6a19964c4bdf14aff0c7ec` | 生成link/service定義。owner snapshot保存、install管理規則で保持/再生成 / 2026.09.30.4 |
+| `@home/Library/LaunchAgents/org.agentstack.agentdashboard.plist` | yes | `4e09bb45d77266f1ad472b7da2c3341b74189c69895beaff4e143f7ad17e4f0b` | 生成link/service定義。owner snapshot保存、install管理規則で保持/再生成 / 2026.09.30.4 |
+| `@home/Library/LaunchAgents/org.agentstack.mail-watcher.plist` | yes | `5d7c7b0890086d77b8f7dbbbe830a90e82e8ade77496fe2008da1f9c5c62c820` | 生成link/service定義。owner snapshot保存、install管理規則で保持/再生成 / 2026.09.30.4 |
+| `@home/Library/LaunchAgents/org.agentstack.mail.plist` | yes | `254b4a722b79e33dc780ea6837d68f77882d2bf4517bdc2b021f0d73af98fa52` | 生成link/service定義。owner snapshot保存、install管理規則で保持/再生成 / 2026.09.30.4 |

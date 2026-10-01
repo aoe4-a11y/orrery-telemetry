@@ -40,7 +40,8 @@ def cache(rows=None, *, age=0, **extra):
     return path
 
 
-def test_fresh_cache_adds_gpt6_and_unknown_future_models_without_changing_default():
+def test_fresh_cache_adds_gpt6_and_unknown_future_models_without_changing_default(monkeypatch):
+    monkeypatch.setenv("AGENTSTACK_ALLOW_XHIGH", "1")
     cache([row("gpt-9-future.1"), row("gpt-6-luna", ("low", "medium", "high", "xhigh", "max")), row()])
     catalog = models.resolve_catalog()
     assert catalog.source == "local_cache"

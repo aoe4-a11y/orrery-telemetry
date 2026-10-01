@@ -443,6 +443,65 @@
  
  collect_managed_agent_names() {
    if [[ -f "$MANAGED_AGENTS_FILE" ]]; then
+--- live/bin/agentstack-restart-seat
++++ branch/bin/agentstack-restart-seat
+@@ -8,7 +8,7 @@
+ 
+ NAME="${1:?seat name (e.g. WarmArchimedes)}"
+ TASK="${2:?task file (この席に渡す指示書。1行目が説明になる)}"
+-MODEL="${3:-gpt-5.6-terra}"
++MODEL="${3:-gpt-6.1-sol}"
+ EFFORT="${4:-medium}"
+ WORKDIR="${5:-$HOME/tools/osce-trainer-main}"
+ 
+@@ -29,6 +29,36 @@
+ export PARENT_AGENT="${PARENT_AGENT:-ProudTuring}"
+ export AGENTSTACK_PROJECT_KEY="${AGENTSTACK_PROJECT_KEY:-/Users/huyuhutaru/tools/examforge}"
+ 
++# The new launcher requires a formal binding sidecar. Authenticate this exact
++# reserved identity through the canonical registration library BEFORE stopping
++# its existing pane. This upgrades legacy token-only handoffs without changing
++# the name or guessing a Mail id. No credential is printed or put in the sidecar.
++REGISTER_LIB="${AGENTSTACK_REGISTER_LIB:-$HOME/.agentstack/bin/lib/agentstack-register.sh}"
++[ -r "$REGISTER_LIB" ] || { echo "ERROR: registration library unavailable; existing seat kept running" >&2; exit 1; }
++source "$REGISTER_LIB"
++ags_mail_load_token
++CHILD_REGISTRATION_TOKEN="$(ags_load_registration_token "$NAME")"
++[ -n "$CHILD_REGISTRATION_TOKEN" ] || { echo "ERROR: existing owner credential unavailable; seat kept running" >&2; exit 1; }
++export CHILD_REGISTRATION_TOKEN
++if ! ags_register_session "$AGENTSTACK_PROJECT_KEY" codex "$MODEL" "" "$WORKDIR" "$NAME" reserved >/dev/null 2>&1; then
++  echo "ERROR: existing seat authentication failed; seat kept running" >&2
++  exit 1
++fi
++[[ "${AGS_REGISTERED_AGENT_NAME:-}" == "$NAME" && "${AGS_REGISTERED_AGENT_ID:-}" =~ ^[1-9][0-9]*$ ]] || {
++  echo "ERROR: Mail did not confirm the original seat identity; seat kept running" >&2; exit 1;
++}
++"${AGENTSTACK_PYTHON:-python3}" - "$TOKEN.binding.json" "$AGS_REGISTERED_AGENT_ID" "$NAME" "$AGENTSTACK_PROJECT_KEY" <<'PY_BINDING'
++import json,os,pathlib,sys
++p=pathlib.Path(sys.argv[1])
++if p.is_symlink():raise SystemExit('ERROR: binding sidecar is a symlink; seat kept running')
++d={'agent_id':int(sys.argv[2]),'agent_name':sys.argv[3],'project_key':sys.argv[4],'program':'codex'}
++tmp=p.with_name(p.name+'.tmp.'+str(os.getpid()))
++fd=os.open(tmp,os.O_WRONLY|os.O_CREAT|os.O_EXCL,0o600)
++with os.fdopen(fd,'w') as f:
++    json.dump(d,f);f.flush();os.fsync(f.fileno())
++os.replace(tmp,p)
++PY_BINDING
++
+ if tmux has-session -t "$NAME" 2>/dev/null; then
+   echo "[restart] killing tmux session: $NAME （この席だけ。server は触らない・M-018）"
+   tmux kill-session -t "$NAME"
+--- live/bin/agentstack-spawn-codex
++++ branch/bin/agentstack-spawn-codex
+@@ -5,7 +5,7 @@
+ # Env: AGENTSTACK_PROJECT_KEY (default: /Users/huyuhutaru/tools/examforge)
+ set -euo pipefail
+ [ -f "$HOME/.agentstack/env.sh" ] && source "$HOME/.agentstack/env.sh"
+-MODEL="${1:?model (e.g. gpt-5.6-sol)}"; TASK="${2:?task file}"; WORKDIR="${3:-$PWD}"; DESC="${4:-$(head -1 "$TASK" | sed 's/^# *//' | cut -c1-120)}"; EFFORT="${5:-medium}"
++MODEL="${1:?model (e.g. gpt-6.1-sol)}"; TASK="${2:?task file}"; WORKDIR="${3:-$PWD}"; DESC="${4:-$(head -1 "$TASK" | sed 's/^# *//' | cut -c1-120)}"; EFFORT="${5:-medium}"
+ export PARENT_AGENT="${PARENT_AGENT:-ProudTuring}"
+ export AGENTSTACK_PROJECT_KEY="${AGENTSTACK_PROJECT_KEY:-/Users/huyuhutaru/tools/examforge}"
+ TOK="$(mktemp -d "${TMPDIR:-/tmp}/agentstack-spawn.XXXXXX")/child.token"
 --- live/hooks/settings.template.json
 +++ branch/hooks/settings.template.json
 @@ -36,11 +36,11 @@
@@ -572,7 +631,7 @@
 -#   --model sonnet       → claude-sonnet-5-5（2026-09-29 から。warm pool は claude-sonnet-5 のままなので cold start）
 +#   --model opus-5-5[1m] → claude-opus-5-5[1m]（current 1M。要シングルクォート: glob 回避）
 +#   --model claude-opus-5 / opus-5 → 旧 200K Opus を明示指定（引き続き有効）
-+#   --model sonnet       → claude-sonnet-5（200K。warm pool 対象）
++#   --model sonnet       → claude-sonnet-5-5（cold start。warm pool は正式 claude-sonnet-5 のみ）
  #   --model haiku/fable  → claude-haiku-4-5-20251001 / claude-fable-5-1
 -#   --codex --model 省略/sol → gpt-5.6-sol（terra / luna / astra=gpt-6-astra alias も利用可）
 +#   --codex --model 省略 → gpt-6.1-sol（CLI が古ければ gpt-6-sol、版不明なら catalog 判定）。sol も同じ。luna / astra → GPT-6、terra → GPT-5.6。
@@ -1048,10 +1107,9 @@
 +            printf '%s\n' "$CLAUDE_LEGACY_OPUS_5_1M_MODEL" ;;
 +        opus-5-5-1m|opus551m|"opus-5-5[1m]"|"opus55[1m]"|"$CLAUDE_CURRENT_OPUS_1M_MODEL")
              printf '%s\n' "$CLAUDE_CURRENT_OPUS_1M_MODEL" ;;
--        sonnet|sonnet-5|sonnet5|"$CLAUDE_DEFAULT_SONNET_MODEL")
-+        sonnet|"$CLAUDE_DEFAULT_SONNET_MODEL")
+         sonnet|sonnet-5|sonnet5|"$CLAUDE_DEFAULT_SONNET_MODEL")
              printf '%s\n' "$CLAUDE_DEFAULT_SONNET_MODEL" ;;
-+        sonnet-5|sonnet5|claude-sonnet-5)
++        claude-sonnet-5)
 +            printf '%s\n' claude-sonnet-5 ;;
          sonnet-4-6|sonnet46|"$CLAUDE_LEGACY_SONNET_MODEL")
              printf '%s\n' "$CLAUDE_LEGACY_SONNET_MODEL" ;;
@@ -1954,16 +2012,14 @@
  }
  
  # Existing failure cleanup terminates a half-started child. Preserve that
-@@ -1122,8 +1852,7 @@
+@@ -1122,7 +1852,6 @@
      printf '%s' "$last_lines" | grep -qE '% (left|context)' && return 0
      printf '%s' "$last_lines" | grep -qE 'for shortcuts' && return 0
      # Footer form "<model> <effort> · <cwd>" (no context segment).
 -    # Codex 0.156 capitalises the model in the footer ("GPT-5.6-Sol high · <cwd>").
--    printf '%s' "$last_lines" | grep -qiE '(gpt|codex|o[0-9])[^ ]* .*·' && return 0
-+    printf '%s' "$last_lines" | grep -qE '(gpt|codex|o[0-9])[^ ]* .*·' && return 0
+     printf '%s' "$last_lines" | grep -qiE '(gpt|codex|o[0-9])[^ ]* .*·' && return 0
      # Bare input prompt.
      printf '%s' "$last_lines" | grep -qE '^[[:space:]]*[▌❯>][[:space:]]*$' && return 0
-     return 1
 @@ -1139,160 +1868,27 @@
  # Prints the directory, or nothing when the proxy or token is unavailable.
  write_child_codex_home() {
@@ -2436,7 +2492,7 @@
      # tmux server. Requires tmux >= 3.0.
 -    TMUX_ENV_ARGS=(-e "CLAUDECODE=1" -e "AGENTSTACK_RESERVED_IDENTITY=1" -e "AGENT_NAME=$CHILD_NAME" -e "PROJECT_KEY=$PROJECT_KEY" -e "AGENTSTACK_PROJECT_KEY=$PROJECT_KEY" -e "AGENTSTACK_HOOKS_DIR=$HOOKS_DIR" -e "AGENTSTACK_RUNTIME_DIR=$RUNTIME_DIR" -e "AGENTSTACK_MCP_URL=$MCP_URL" -e "AGENTSTACK_MAIL_ENV=$MAIL_ENV" -e "AGENTSTACK_MAIL_HTTP_BEARER_MODE=$HTTP_BEARER_MODE" -e "AGENTSTACK_TERMINAL=$TERMINAL_SETTING" -e "AGENTSTACK_CODEX_SANDBOX=${AGENTSTACK_CODEX_SANDBOX:-workspace-write}" -e "AGENTSTACK_CODEX_APPROVAL=$(codex_approval_flags)" -e "AGENTSTACK_CODEX_NETWORK_FLAGS=$(codex_network_flags)")
 +    prime_codex_bin
-+    TMUX_ENV_ARGS=(-e "CLAUDECODE=1" -e "AGENTSTACK_RESERVED_IDENTITY=1" -e "AGENT_NAME=$CHILD_NAME" -e "PROJECT_KEY=$PROJECT_KEY" -e "AGENTSTACK_PROJECT_KEY=$PROJECT_KEY" -e "AGENTSTACK_HOOKS_DIR=$HOOKS_DIR" -e "AGENTSTACK_RUNTIME_DIR=$RUNTIME_DIR" -e "AGENTSTACK_MCP_URL=$MCP_URL" -e "AGENTSTACK_MAIL_ENV=$MAIL_ENV" -e "AGENTSTACK_MAIL_HTTP_BEARER_MODE=$HTTP_BEARER_MODE" -e "AGENTSTACK_CHILD_RESUME_RETENTION_DAYS=$CHILD_RESUME_RETENTION_DAYS" -e "AGENTSTACK_TERMINAL=$TERMINAL_SETTING" -e "AGENTSTACK_AUTO_OPEN_CHILD=$AUTO_OPEN_CHILD" -e "AGENTSTACK_CODEX_APPROVAL=$(codex_approval_flags)" -e "AGENTSTACK_CODEX_NETWORK_FLAGS=$(codex_network_flags)")
++    TMUX_ENV_ARGS=(-e "CLAUDECODE=1" -e "AGENTSTACK_RESERVED_IDENTITY=1" -e "AGENT_NAME=$CHILD_NAME" -e "PROJECT_KEY=$PROJECT_KEY" -e "AGENTSTACK_PROJECT_KEY=$PROJECT_KEY" -e "AGENTSTACK_HOOKS_DIR=$HOOKS_DIR" -e "AGENTSTACK_RUNTIME_DIR=$RUNTIME_DIR" -e "AGENTSTACK_MCP_URL=$MCP_URL" -e "AGENTSTACK_MAIL_ENV=$MAIL_ENV" -e "AGENTSTACK_MAIL_HTTP_BEARER_MODE=$HTTP_BEARER_MODE" -e "AGENTSTACK_CHILD_RESUME_RETENTION_DAYS=$CHILD_RESUME_RETENTION_DAYS" -e "AGENTSTACK_TERMINAL=$TERMINAL_SETTING" -e "AGENTSTACK_AUTO_OPEN_CHILD=$AUTO_OPEN_CHILD" -e "AGENTSTACK_CODEX_SANDBOX=${AGENTSTACK_CODEX_SANDBOX:-workspace-write}" -e "AGENTSTACK_CODEX_APPROVAL=$(codex_approval_flags)" -e "AGENTSTACK_CODEX_NETWORK_FLAGS=$(codex_network_flags)")
      if [[ "$STANDALONE" != true ]]; then
          TMUX_ENV_ARGS+=(-e "PARENT_AGENT=$PARENT_NAME")
      fi
@@ -2522,8 +2578,6 @@
                      [[ -d "$d" ]] && EXTRA_ARGS+=(--add-dir "$d")
                  done
                  IFS="$_ifs"
--                env -u OPENAI_API_KEY "$AGENTSTACK_CODEX_BIN" -C "$PWD" --sandbox "${AGENTSTACK_CODEX_SANDBOX:-workspace-write}" $(printf "%s" "$AGENTSTACK_CODEX_APPROVAL") $(printf "%s" "$AGENTSTACK_CODEX_NETWORK_FLAGS") \
--                    "${EXTRA_ARGS[@]}" --model "$AGENTSTACK_CODEX_MODEL" -c "model_reasoning_effort=$AGENTSTACK_CODEX_EFFORT"
 +                [[ -n "$AGENTSTACK_CODEX_EFFORT" ]] && EXTRA_ARGS+=(-c "model_reasoning_effort=$AGENTSTACK_CODEX_EFFORT")
 +                # The first task is one argv after `--` (never a subcommand or
 +                # a flag), read from the 0600 file the launcher wrote.
@@ -2541,7 +2595,8 @@
 +                    exit 1
 +                fi
 +                rm -f "$AGENTSTACK_CODEX_PROMPT_FILE"
-+                env -u OPENAI_API_KEY "$AGENTSTACK_CODEX_BIN" -C "$PWD" --sandbox workspace-write $(printf "%s" "$AGENTSTACK_CODEX_APPROVAL") $(printf "%s" "$AGENTSTACK_CODEX_NETWORK_FLAGS") \
+                 env -u OPENAI_API_KEY "$AGENTSTACK_CODEX_BIN" -C "$PWD" --sandbox "${AGENTSTACK_CODEX_SANDBOX:-workspace-write}" $(printf "%s" "$AGENTSTACK_CODEX_APPROVAL") $(printf "%s" "$AGENTSTACK_CODEX_NETWORK_FLAGS") \
+-                    "${EXTRA_ARGS[@]}" --model "$AGENTSTACK_CODEX_MODEL" -c "model_reasoning_effort=$AGENTSTACK_CODEX_EFFORT"
 +                    "${EXTRA_ARGS[@]}" --model "$AGENTSTACK_CODEX_MODEL" -- "$AGENTSTACK_CODEX_TASK"
                  /bin/bash "$AGENTSTACK_HOOKS_DIR/cleanup-child-agent.sh"
              '"'"''
@@ -2846,7 +2901,7 @@
  # server. Requires tmux >= 3.0.
 -TMUX_ENV_ARGS=(-e "CLAUDECODE=1" -e "AGENTSTACK_RESERVED_IDENTITY=1" -e "AGENT_NAME=$CHILD_NAME" -e "PARENT_AGENT=$PARENT_NAME" -e "PROJECT_KEY=$PROJECT_KEY" -e "AGENTSTACK_PROJECT_KEY=$PROJECT_KEY" -e "AGENTSTACK_HOOKS_DIR=$HOOKS_DIR" -e "AGENTSTACK_RUNTIME_DIR=$RUNTIME_DIR" -e "AGENTSTACK_MCP_URL=$MCP_URL" -e "AGENTSTACK_MAIL_ENV=$MAIL_ENV" -e "AGENTSTACK_MAIL_HTTP_BEARER_MODE=$HTTP_BEARER_MODE" -e "AGENTSTACK_TERMINAL=$TERMINAL_SETTING" -e "AGENTSTACK_CODEX_SANDBOX=${AGENTSTACK_CODEX_SANDBOX:-workspace-write}" -e "AGENTSTACK_CODEX_APPROVAL=$(codex_approval_flags)" -e "AGENTSTACK_CODEX_NETWORK_FLAGS=$(codex_network_flags)")
 +prime_codex_bin
-+TMUX_ENV_ARGS=(-e "CLAUDECODE=1" -e "AGENTSTACK_RESERVED_IDENTITY=1" -e "AGENT_NAME=$CHILD_NAME" -e "PARENT_AGENT=$PARENT_NAME" -e "PROJECT_KEY=$PROJECT_KEY" -e "AGENTSTACK_PROJECT_KEY=$PROJECT_KEY" -e "AGENTSTACK_HOOKS_DIR=$HOOKS_DIR" -e "AGENTSTACK_RUNTIME_DIR=$RUNTIME_DIR" -e "AGENTSTACK_MCP_URL=$MCP_URL" -e "AGENTSTACK_MAIL_ENV=$MAIL_ENV" -e "AGENTSTACK_MAIL_HTTP_BEARER_MODE=$HTTP_BEARER_MODE" -e "AGENTSTACK_CHILD_RESUME_RETENTION_DAYS=$CHILD_RESUME_RETENTION_DAYS" -e "AGENTSTACK_TERMINAL=$TERMINAL_SETTING" -e "AGENTSTACK_AUTO_OPEN_CHILD=$AUTO_OPEN_CHILD" -e "AGENTSTACK_CODEX_APPROVAL=$(codex_approval_flags)" -e "AGENTSTACK_CODEX_NETWORK_FLAGS=$(codex_network_flags)")
++TMUX_ENV_ARGS=(-e "CLAUDECODE=1" -e "AGENTSTACK_RESERVED_IDENTITY=1" -e "AGENT_NAME=$CHILD_NAME" -e "PARENT_AGENT=$PARENT_NAME" -e "PROJECT_KEY=$PROJECT_KEY" -e "AGENTSTACK_PROJECT_KEY=$PROJECT_KEY" -e "AGENTSTACK_HOOKS_DIR=$HOOKS_DIR" -e "AGENTSTACK_RUNTIME_DIR=$RUNTIME_DIR" -e "AGENTSTACK_MCP_URL=$MCP_URL" -e "AGENTSTACK_MAIL_ENV=$MAIL_ENV" -e "AGENTSTACK_MAIL_HTTP_BEARER_MODE=$HTTP_BEARER_MODE" -e "AGENTSTACK_CHILD_RESUME_RETENTION_DAYS=$CHILD_RESUME_RETENTION_DAYS" -e "AGENTSTACK_TERMINAL=$TERMINAL_SETTING" -e "AGENTSTACK_AUTO_OPEN_CHILD=$AUTO_OPEN_CHILD" -e "AGENTSTACK_CODEX_SANDBOX=${AGENTSTACK_CODEX_SANDBOX:-workspace-write}" -e "AGENTSTACK_CODEX_APPROVAL=$(codex_approval_flags)" -e "AGENTSTACK_CODEX_NETWORK_FLAGS=$(codex_network_flags)")
  if [[ -n "$AGENTSTACK_HOME_DIR" ]]; then
      TMUX_ENV_ARGS+=(-e "AGENTSTACK_HOME=$AGENTSTACK_HOME_DIR")
 +fi
@@ -2922,8 +2977,6 @@
                  [[ -d "$d" ]] && EXTRA_ARGS+=(--add-dir "$d")
              done
              IFS="$_ifs"
--            env -u OPENAI_API_KEY "$AGENTSTACK_CODEX_BIN" -C "$PWD" --sandbox "${AGENTSTACK_CODEX_SANDBOX:-workspace-write}" $(printf "%s" "$AGENTSTACK_CODEX_APPROVAL") $(printf "%s" "$AGENTSTACK_CODEX_NETWORK_FLAGS") \
--                "${EXTRA_ARGS[@]}" --model "$AGENTSTACK_CODEX_MODEL" -c "model_reasoning_effort=$AGENTSTACK_CODEX_EFFORT"
 +            [[ -n "$AGENTSTACK_CODEX_EFFORT" ]] && EXTRA_ARGS+=(-c "model_reasoning_effort=$AGENTSTACK_CODEX_EFFORT")
 +            # See the pre-registered path: the first task is one argv after `--`.
 +            # Codex never starts without its task: an unreadable or empty file ends
@@ -2940,7 +2993,8 @@
 +                exit 1
 +            fi
 +            rm -f "$AGENTSTACK_CODEX_PROMPT_FILE"
-+            env -u OPENAI_API_KEY "$AGENTSTACK_CODEX_BIN" -C "$PWD" --sandbox workspace-write $(printf "%s" "$AGENTSTACK_CODEX_APPROVAL") $(printf "%s" "$AGENTSTACK_CODEX_NETWORK_FLAGS") \
+             env -u OPENAI_API_KEY "$AGENTSTACK_CODEX_BIN" -C "$PWD" --sandbox "${AGENTSTACK_CODEX_SANDBOX:-workspace-write}" $(printf "%s" "$AGENTSTACK_CODEX_APPROVAL") $(printf "%s" "$AGENTSTACK_CODEX_NETWORK_FLAGS") \
+-                "${EXTRA_ARGS[@]}" --model "$AGENTSTACK_CODEX_MODEL" -c "model_reasoning_effort=$AGENTSTACK_CODEX_EFFORT"
 +                "${EXTRA_ARGS[@]}" --model "$AGENTSTACK_CODEX_MODEL" -- "$AGENTSTACK_CODEX_TASK"
              /bin/bash "$AGENTSTACK_HOOKS_DIR/cleanup-child-agent.sh"
          '"'"''

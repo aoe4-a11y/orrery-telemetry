@@ -30,7 +30,7 @@
 #   --model opus-1m      → claude-opus-4-8[1m]（旧来の friendly 表記を正規化）
 #   --model opus-5-5[1m] → claude-opus-5-5[1m]（current 1M。要シングルクォート: glob 回避）
 #   --model claude-opus-5 / opus-5 → 旧 200K Opus を明示指定（引き続き有効）
-#   --model sonnet       → claude-sonnet-5（200K。warm pool 対象）
+#   --model sonnet       → claude-sonnet-5-5（cold start。warm pool は正式 claude-sonnet-5 のみ）
 #   --model haiku/fable  → claude-haiku-4-5-20251001 / claude-fable-5-1
 #   --codex --model 省略 → gpt-6.1-sol（CLI が古ければ gpt-6-sol、版不明なら catalog 判定）。sol も同じ。luna / astra → GPT-6、terra → GPT-5.6。
 #   未知の形             → 明確なエラーで停止（claude-* 接頭の正式 ID は前方互換で素通り）
@@ -611,9 +611,9 @@ normalize_claude_model() {
             printf '%s\n' "$CLAUDE_LEGACY_OPUS_5_1M_MODEL" ;;
         opus-5-5-1m|opus551m|"opus-5-5[1m]"|"opus55[1m]"|"$CLAUDE_CURRENT_OPUS_1M_MODEL")
             printf '%s\n' "$CLAUDE_CURRENT_OPUS_1M_MODEL" ;;
-        sonnet|"$CLAUDE_DEFAULT_SONNET_MODEL")
+        sonnet|sonnet-5|sonnet5|"$CLAUDE_DEFAULT_SONNET_MODEL")
             printf '%s\n' "$CLAUDE_DEFAULT_SONNET_MODEL" ;;
-        sonnet-5|sonnet5|claude-sonnet-5)
+        claude-sonnet-5)
             printf '%s\n' claude-sonnet-5 ;;
         sonnet-4-6|sonnet46|"$CLAUDE_LEGACY_SONNET_MODEL")
             printf '%s\n' "$CLAUDE_LEGACY_SONNET_MODEL" ;;

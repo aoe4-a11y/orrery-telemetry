@@ -63,18 +63,20 @@ def _resolve(tmp_path, *, path_dirs, env_bin=None, installed=None, wsl=False, li
     if installed is not None:
         (home / ".agentstack" / "env.sh").write_text(
             f"export AGENTSTACK_CODEX_BIN={shlex.quote(installed)}\n", encoding="utf-8")
+    child_shell = _script(tmp_path / "test-login-shell", '#!/bin/sh\nshift\nexec /bin/bash -c "$@"\n')
     text = SPAWN.read_text(encoding="utf-8")
     start = text.index("# Codex candidate rules, and the env.sh reader")
     loader = text[start:text.index("codex_search_path() {", start)]
     script = (
         f"HOOKS_DIR={shlex.quote(str(ROOT / 'hooks') if lib else str(tmp_path / 'old-hooks'))}\n"
-        + ("CHILD_SHELL=/bin/bash\n" + _runner() if runner else "")
+        + ("CHILD_SHELL=" + shlex.quote(str(child_shell)) + "\n" + _runner() if runner else "")
         + loader
         # Stub the platform after the library is loaded; /mnt cannot exist on macOS CI.
         + ("running_under_wsl() { return 0; }\n" if wsl else "running_under_wsl() { return 1; }\n")
         + f"WSL_WINDOWS_MOUNT_ROOT={shlex.quote(str(tmp_path / 'mnt'))}\n"
         + "CODEX_VERSION_TIMEOUT_SECONDS=10\n"
         + _extract("codex_search_path") + _extract("find_codex_bin") + _extract("resolve_codex_bin")
+        + 'codex_launch_search_path() { printf "%s\\n" "$PATH:$HOME/.local/bin:$HOME/.npm-global/bin:$HOME/.nodebrew/current/bin"; }\n'
         + "resolve_codex_bin\n"
     )
     if not lib:

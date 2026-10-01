@@ -4,11 +4,11 @@
 
 [Previous: Delegation and child agents](delegation.en.md) · [Back to README](../README.en.md) · [Next: Codex App integration](codex-app.en.md)
 
-`hooks/` contains hooks that run automatically from Claude Code lifecycle events, operational helpers called explicitly by launchers, the dashboard, and skills, and the internal libraries and workers sourced or started by event hooks. There are eight Claude Code event hooks.
+`hooks/` contains hooks that run automatically from Claude Code lifecycle events, operational helpers called explicitly by launchers, the dashboard, and skills, and the internal libraries and workers sourced or started by event hooks. There are ten Claude Code event hooks.
 
 [`hooks/settings.template.json`](../hooks/settings.template.json) defines event-to-command mappings, and [`hooks/README.md`](../hooks/README.md) defines the safety policy for settings merges. This document is the user reference explaining when each component actually runs and what it guarantees.
 
-## Claude Code event hooks (8)
+## Claude Code event hooks (10)
 
 After the installer merges `settings.template.json` into `~/.claude/settings.json`, the following events run automatically.
 

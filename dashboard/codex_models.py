@@ -384,6 +384,15 @@ def candidate_models() -> tuple[str, ...]:
     return tuple(dict.fromkeys((*DEFAULT_MODELS, *sorted(discover_models()))))
 
 
+def _fleet_effort_default(policy: EffortPolicy | None) -> str:
+    if policy is None:
+        return ""
+    if policy.default not in ("xhigh", "max", "ultra") or os.environ.get("AGENTSTACK_ALLOW_XHIGH") == "1":
+        return policy.default
+    return "medium" if "medium" in policy.supported else next(
+        (level for level in policy.supported if level not in ("xhigh", "max", "ultra")), "")
+
+
 def resolve_effort(model: str, raw: str = "", catalog: ModelCatalog | None = None) -> str:
     """Unknown metadata leaves an omitted effort to Codex; never guesses a tier."""
     model = normalize_model(model)
@@ -396,7 +405,7 @@ def resolve_effort(model: str, raw: str = "", catalog: ModelCatalog | None = Non
         raise ValueError(catalog.error)
     policy = catalog.efforts.get(model)
     if not effort:
-        effort = policy.default if policy else ""
+        effort = _fleet_effort_default(policy)
     if effort in ("xhigh", "max", "ultra") and os.environ.get("AGENTSTACK_ALLOW_XHIGH") != "1":
         raise ValueError("reasoning effort disabled by R-062; set AGENTSTACK_ALLOW_XHIGH=1 only with a head ruling")
     if not effort:
@@ -409,14 +418,16 @@ def resolve_effort(model: str, raw: str = "", catalog: ModelCatalog | None = Non
 
 def provider_catalog() -> dict:
     catalog = resolve_catalog()
+    def permitted(level):
+        return level not in ("xhigh", "max", "ultra") or os.environ.get("AGENTSTACK_ALLOW_XHIGH") == "1"
     return {
         "id": "codex", "label": "Codex", "program": "codex-cli",
         "models": list(catalog.models), "default_model": catalog.default_model,
         "model_source": catalog.source, "model_error": catalog.error,
         "overflow_models": list(catalog.overflow),
-        "efforts": list(_STANDARD), "effort_default": DEFAULT_EFFORT,
-        "model_efforts": {model: list(catalog.efforts[model].supported) if model in catalog.efforts else [] for model in catalog.models},
-        "model_effort_defaults": {model: catalog.efforts[model].default if model in catalog.efforts else "" for model in catalog.models},
+        "efforts": [level for level in _STANDARD if permitted(level)], "effort_default": DEFAULT_EFFORT,
+        "model_efforts": {model: [level for level in catalog.efforts[model].supported if permitted(level)] if model in catalog.efforts else [] for model in catalog.models},
+        "model_effort_defaults": {model: _fleet_effort_default(catalog.efforts.get(model)) for model in catalog.models},
     }
 
 

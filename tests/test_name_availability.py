@@ -169,8 +169,8 @@ def test_picker_still_returns_a_name_when_the_server_answers():
         'ags_pick_available_agent_name "/p" ""'
     )
     name = _run_bash(script, {"STUB_RESPONSE": _NOT_FOUND}).stdout.strip()
-    adjective, separator, scientist = name.partition("-")
-    assert separator == "-" and adjective.isalpha() and scientist.isalpha(), name
+    assert "-" not in name and name.isalpha(), name
+    assert sum(c.isupper() for c in name) == 2, name
 
 
 def _tmux_stub(tmpdir: pathlib.Path, *, collision: bool) -> pathlib.Path:

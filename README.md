@@ -162,7 +162,7 @@ dashboard から新しい agent を起動できます。Claude / Codex、model�
 
 - **ORRERY Mail**: agent の名前、inbox、file の予約を一つに管理します。dashboard を落としてもここに正本が残ります
 - **launcher**: `agent-start` が名前の登録、tmux session の作成、CLI の起動を一続きで行い、dashboard からの jump や通知の宛先が一意に決まるようにします
-- **hook**: Claude event hook 8件が、登録なしの session や予約なしの書き込みを止め、届いたメッセージを agent の入力欄に差し込みます
+- **hook**: Claude event hook 10件が、登録なしの session や予約なしの書き込みを止め、届いたメッセージを agent の入力欄に差し込みます
 
 これらの仕組みと API の詳細は [Hooks](docs/hooks.md)、[Launcher](docs/launchers.md)、[API reference](docs/api.md) にあります。dashboard の表示・操作はすべて local HTTP API から使えます。
 
@@ -186,7 +186,7 @@ Python 3.11 以上、`git`、`tmux`、`uv` が必須で、実行時には Claude
 | [インストール](docs/install.md) | 動作環境、install の詳細、WSL2、upgrade / uninstall |
 | [Launcher と identity](docs/launchers.md) | `agent-start`、命名、token、`CLAUDECODE` |
 | [委任と child agent](docs/delegation.md) | 組み込み subagent との違い、いまどちらが動いているかの見分け方 |
-| [Hooks と運用 helper](docs/hooks.md) | Claude event hook 8 件、発火条件、block / release / cleanup |
+| [Hooks と運用 helper](docs/hooks.md) | Claude event hook 10 件、発火条件、block / release / cleanup |
 | [Codex App 統合](docs/codex-app.md) | Codex Desktop の root task / subagent を同じ dashboard に載せる |
 | [Google Antigravity / Gemini provider](docs/antigravity.md) | optional provider の導入と制約 |
 | [Dashboard](docs/dashboard.md) | DECK、NETWORK、SELECT、REPLAY、NEW AGENT、embed |

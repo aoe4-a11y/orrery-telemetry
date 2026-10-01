@@ -463,7 +463,10 @@ def test_model_catalog_fallback_preserves_aliases_and_old_ids_without_cli_versio
         ("normalize_claude_model", "opus-5-5[1m]"): "claude-opus-5-5[1m]",
         ("normalize_claude_model", "opus-5-5-1m"): "claude-opus-5-5[1m]",
         ("normalize_claude_model", "opus55[1m]"): "claude-opus-5-5[1m]",
-        ("normalize_claude_model", "sonnet"): "claude-sonnet-5",
+        ("normalize_claude_model", "sonnet"): "claude-sonnet-5-5",
+        ("normalize_claude_model", "sonnet5"): "claude-sonnet-5-5",
+        ("normalize_claude_model", "sonnet-5"): "claude-sonnet-5-5",
+        ("normalize_claude_model", "claude-sonnet-5"): "claude-sonnet-5",
         ("normalize_claude_model", "sonnet-4-6"): "claude-sonnet-4-6",
         ("normalize_claude_model", "fable"): "claude-fable-5-1",
         ("normalize_claude_model", "claude-fable-5"): "claude-fable-5",
@@ -483,15 +486,15 @@ def test_model_catalog_fallback_preserves_aliases_and_old_ids_without_cli_versio
 
 
 def test_model_specific_effort_constraints_are_enforced():
-    accepted = _model_call("validate_codex_effort", "gpt-5.6-sol", "ultra")
+    accepted = _model_call("validate_codex_effort", "gpt-5.6-sol", "ultra", extra_env={"AGENTSTACK_ALLOW_XHIGH": "1"})
     assert accepted.returncode == 0
     assert accepted.stdout.strip() == "ultra"
 
-    luna = _model_call("validate_codex_effort", "gpt-5.6-luna", "ultra")
+    luna = _model_call("validate_codex_effort", "gpt-5.6-luna", "ultra", extra_env={"AGENTSTACK_ALLOW_XHIGH": "1"})
     assert luna.returncode == 0
     assert luna.stdout.strip() == "ultra"
 
-    legacy = _model_call("validate_codex_effort", "gpt-5.5", "max")
+    legacy = _model_call("validate_codex_effort", "gpt-5.5", "max", extra_env={"AGENTSTACK_ALLOW_XHIGH": "1"})
     assert legacy.returncode == 0
     assert legacy.stdout.strip() == "max"
 
@@ -514,7 +517,7 @@ def test_launcher_no_longer_hardcodes_full_auto():
     text = _SPAWN.read_text(encoding="utf-8")
     assert "--full-auto \\" not in text, "hardcoded --full-auto still in a launch line"
     # Both launch paths take the probed flags from the child environment.
-    assert text.count('--sandbox workspace-write $(printf "%s" "$AGENTSTACK_CODEX_APPROVAL")') == 2
+    assert text.count('--sandbox "${AGENTSTACK_CODEX_SANDBOX:-workspace-write}" $(printf "%s" "$AGENTSTACK_CODEX_APPROVAL")') == 2
     assert text.count('-e "AGENTSTACK_CODEX_APPROVAL=$(codex_approval_flags)"') == 2
 
 
@@ -1155,7 +1158,7 @@ def test_actual_codex_launch_commands_keep_models_and_optional_efforts():
             normalized = _model_call("normalize_codex_model", raw)
             assert normalized.returncode == 0, normalized.stderr
             model = normalized.stdout.strip()
-            validated = _model_call("validate_codex_effort", model, effort)
+            validated = _model_call("validate_codex_effort", model, effort, extra_env={"AGENTSTACK_ALLOW_XHIGH": "1"})
             assert validated.returncode == 0, validated.stderr
             for snippet in snippets:
                 task_file = root / "task"

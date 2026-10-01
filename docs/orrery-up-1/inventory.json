@@ -2408,6 +2408,68 @@
       "source": "skills/log/SKILL.md",
       "disposition": "upstream-source-no-local-delta",
       "migration_commit": "2026.09.30.4"
+    },
+    {
+      "installed": "@home/.claude/skills/delegate",
+      "path_scope": "home-external",
+      "live_path": "/Users/huyuhutaru/.claude/skills/delegate",
+      "owned": true,
+      "live_sha256": "9d218cc2dfb68528ad6ed9336b1214d923908e048e931714bca9ebdf56c3f95c",
+      "hash_kind": "symlink-target",
+      "disposition": "generated-external-link-or-service-retained",
+      "source": null,
+      "migration_commit": "2026.09.30.4",
+      "explanation": "core skill link \u307e\u305f\u306f\u751f\u6210service\u5b9a\u7fa9\u3002owner backup\u306b\u542b\u3081\u3001installer\u7ba1\u7406\u898f\u5247\u3067\u4fdd\u6301/\u518d\u751f\u6210\u3002isolated Linux service\u8a66\u8d70\u306fmacOS plist bytes\u6bd4\u8f03\u306e\u5bfe\u8c61\u5916\u3002"
+    },
+    {
+      "installed": "@home/.claude/skills/log",
+      "path_scope": "home-external",
+      "live_path": "/Users/huyuhutaru/.claude/skills/log",
+      "owned": true,
+      "live_sha256": "f25b180b2b5f2e9e9ee62c71b976b0a41fdbac613d6a19964c4bdf14aff0c7ec",
+      "hash_kind": "symlink-target",
+      "disposition": "generated-external-link-or-service-retained",
+      "source": null,
+      "migration_commit": "2026.09.30.4",
+      "explanation": "core skill link \u307e\u305f\u306f\u751f\u6210service\u5b9a\u7fa9\u3002owner backup\u306b\u542b\u3081\u3001installer\u7ba1\u7406\u898f\u5247\u3067\u4fdd\u6301/\u518d\u751f\u6210\u3002isolated Linux service\u8a66\u8d70\u306fmacOS plist bytes\u6bd4\u8f03\u306e\u5bfe\u8c61\u5916\u3002"
+    },
+    {
+      "installed": "@home/Library/LaunchAgents/org.agentstack.agentdashboard.plist",
+      "path_scope": "home-external",
+      "live_path": "/Users/huyuhutaru/Library/LaunchAgents/org.agentstack.agentdashboard.plist",
+      "owned": true,
+      "live_sha256": "4e09bb45d77266f1ad472b7da2c3341b74189c69895beaff4e143f7ad17e4f0b",
+      "hash_kind": "file-bytes",
+      "disposition": "generated-external-link-or-service-retained",
+      "source": null,
+      "migration_commit": "2026.09.30.4",
+      "explanation": "core skill link \u307e\u305f\u306f\u751f\u6210service\u5b9a\u7fa9\u3002owner backup\u306b\u542b\u3081\u3001installer\u7ba1\u7406\u898f\u5247\u3067\u4fdd\u6301/\u518d\u751f\u6210\u3002isolated Linux service\u8a66\u8d70\u306fmacOS plist bytes\u6bd4\u8f03\u306e\u5bfe\u8c61\u5916\u3002"
+    },
+    {
+      "installed": "@home/Library/LaunchAgents/org.agentstack.mail-watcher.plist",
+      "path_scope": "home-external",
+      "live_path": "/Users/huyuhutaru/Library/LaunchAgents/org.agentstack.mail-watcher.plist",
+      "owned": true,
+      "live_sha256": "5d7c7b0890086d77b8f7dbbbe830a90e82e8ade77496fe2008da1f9c5c62c820",
+      "hash_kind": "file-bytes",
+      "disposition": "generated-external-link-or-service-retained",
+      "source": null,
+      "migration_commit": "2026.09.30.4",
+      "explanation": "core skill link \u307e\u305f\u306f\u751f\u6210service\u5b9a\u7fa9\u3002owner backup\u306b\u542b\u3081\u3001installer\u7ba1\u7406\u898f\u5247\u3067\u4fdd\u6301/\u518d\u751f\u6210\u3002isolated Linux service\u8a66\u8d70\u306fmacOS plist bytes\u6bd4\u8f03\u306e\u5bfe\u8c61\u5916\u3002"
+    },
+    {
+      "installed": "@home/Library/LaunchAgents/org.agentstack.mail.plist",
+      "path_scope": "home-external",
+      "live_path": "/Users/huyuhutaru/Library/LaunchAgents/org.agentstack.mail.plist",
+      "owned": true,
+      "live_sha256": "254b4a722b79e33dc780ea6837d68f77882d2bf4517bdc2b021f0d73af98fa52",
+      "hash_kind": "file-bytes",
+      "disposition": "generated-external-link-or-service-retained",
+      "source": null,
+      "migration_commit": "2026.09.30.4",
+      "explanation": "core skill link \u307e\u305f\u306f\u751f\u6210service\u5b9a\u7fa9\u3002owner backup\u306b\u542b\u3081\u3001installer\u7ba1\u7406\u898f\u5247\u3067\u4fdd\u6301/\u518d\u751f\u6210\u3002isolated Linux service\u8a66\u8d70\u306fmacOS plist bytes\u6bd4\u8f03\u306e\u5bfe\u8c61\u5916\u3002"
     }
-  ]
+  ],
+  "owned_inside_stack_count": 247,
+  "owned_external_count": 5
 }
