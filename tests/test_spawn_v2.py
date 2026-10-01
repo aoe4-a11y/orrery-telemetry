@@ -181,6 +181,7 @@ def test_spawn_names_keeps_home_preset_symbolic(monkeypatch):
 
 
 def test_spawn_names_advertises_codex_provider(monkeypatch):
+    monkeypatch.setenv("AGENTSTACK_CODEX_ALLOW_XHIGH", "0")
     monkeypatch.setenv("AGENTSTACK_CODEX_MODELS", "gpt-test-a, gpt-test-b")
     monkeypatch.setattr(server.subprocess, "run", lambda *a, **k: type("R", (), {"stdout": "Sunny\n\036Curie\n"})())
     providers = server.spawn_names_payload()["providers"]
@@ -190,7 +191,7 @@ def test_spawn_names_advertises_codex_provider(monkeypatch):
         "model_source": "override", "model_error": "", "overflow_models": [],
         "model_efforts": {"gpt-test-a": [], "gpt-test-b": []},
         "model_effort_defaults": {"gpt-test-a": "", "gpt-test-b": ""},
-        "efforts": ["low", "medium", "high", "xhigh", "max", "ultra"], "effort_default": "medium",
+        "efforts": ["low", "medium", "high"], "effort_default": "medium",
     }
 
 
