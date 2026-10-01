@@ -55,6 +55,7 @@ def main():
         AGENTSTACK_MAIL_WATCHER_SESSION='orrery-up-1-test-unused',
         AGENTSTACK_LABEL_PREFIX='org.agentstack.test.orrery-up-1',AGENTSTACK_TERMINAL='none',
         AGENTSTACK_AUTO_OPEN_CHILD='0',AGENTSTACK_PYTHON=sys.executable,
+        AGENTSTACK_CODEX_BIN=shutil.which('codex') or '',
         AGENTSTACK_SPAWN_DIRS=str(project),AGENTSTACK_SPAWN_ROOTS=str(home),
         AGENTSTACK_PROTECTED_ROOTS=str(project),AGENTSTACK_CODEX_ADD_DIRS='',
         AGENTSTACK_CODEX_MODELS='gpt-6.1-sol,gpt-6-astra,gpt-5.6-sol,gpt-5.6-terra,gpt-5.6-luna')
