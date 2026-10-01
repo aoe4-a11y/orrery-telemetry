@@ -373,7 +373,8 @@ def test_unknown_model_and_nonreasoning_model_omit_effort_by_default():
     assert models.resolve_effort("gpt-no-reasoning", "high") == "high"
 
 
-def test_cli_entrypoint_matches_python_policy():
+def test_cli_entrypoint_matches_python_policy(monkeypatch):
+    monkeypatch.setenv("AGENTSTACK_ALLOW_XHIGH", "1")
     helper = Path(models.__file__)
     result = subprocess.run([sys.executable, str(helper), "normalize", "luna"], capture_output=True, text=True)
     assert result.returncode == 0 and result.stdout.strip() == "gpt-6-luna"

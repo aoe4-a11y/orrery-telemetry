@@ -38,7 +38,7 @@ def test_child_home_rekeys_persisted_hooks_trust(tmp_path):
     sys.modules[spec.name] = module
     spec.loader.exec_module(module)
     source = tmp_path/'source'; source.mkdir()
-    home = tmp_path/'generated'
+    home = tmp_path/'runtime/child-agents/SunnyCurie.codex-home'
     (source/'hooks.json').write_text('{}')
     (source/'config.toml').write_text('[hooks.state."'+str(source)+'/hooks.json:abc"]\ntrusted = true\n')
     runner = tmp_path/'runner';runner.write_text('#!/bin/sh\n');runner.chmod(0o700)

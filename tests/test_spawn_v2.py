@@ -1260,6 +1260,7 @@ def test_codex_api_and_launcher_policy_agree(monkeypatch, tmp_path, model):
     assert captured[-1].effort == server.codex_models.resolve_effort(model)
     assert captured[-1].effort_arg == bool(captured[-1].effort)
     if model == "gpt-6-luna":
+        monkeypatch.setenv("AGENTSTACK_ALLOW_XHIGH", "1")
         assert server.do_spawn({**payload, "effort": "ultra"})["ok"]
         assert captured[-1].effort == "ultra"
 
