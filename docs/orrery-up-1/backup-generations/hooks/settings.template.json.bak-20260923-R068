@@ -1,0 +1,108 @@
+{
+  "permissions": {
+    "allow": [
+      "mcp__orrery-mail__health_check",
+      "mcp__orrery-mail__runtime_status",
+      "mcp__orrery-mail__ensure_project",
+      "mcp__orrery-mail__register_agent",
+      "mcp__orrery-mail__whois",
+      "mcp__orrery-mail__fetch_inbox",
+      "mcp__orrery-mail__fetch_summary",
+      "mcp__orrery-mail__fetch_topic",
+      "mcp__orrery-mail__mark_message_read",
+      "mcp__orrery-mail__acknowledge_message",
+      "mcp__orrery-mail__send_message",
+      "mcp__orrery-mail__reply_message",
+      "mcp__orrery-mail__list_contacts",
+      "mcp__orrery-mail__request_contact",
+      "mcp__orrery-mail__respond_contact",
+      "mcp__orrery-mail__set_contact_policy",
+      "mcp__orrery-mail__file_reservation_paths",
+      "mcp__orrery-mail__macro_file_reservation_cycle",
+      "mcp__orrery-mail__renew_file_reservations",
+      "mcp__orrery-mail__release_file_reservations",
+      "mcp__orrery-mail__macro_start_session",
+      "Bash(__AGENTSTACK_BIN_DIR__/agentstack-reregister:*)"
+    ],
+    "deny": [
+      "mcp__orrery-mail__hard_delete_agent",
+      "mcp__orrery-mail__hard_delete_project",
+      "mcp__orrery-mail__purge_old_messages"
+    ]
+  },
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/bin/bash /Users/huyuhutaru/.agentstack/hooks/set-ghostty-title.sh"
+          },
+          {
+            "type": "command",
+            "command": "/bin/bash /Users/huyuhutaru/.agentstack/hooks/session-start-reminder.sh"
+          }
+        ]
+      }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": "Edit|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/bin/bash /Users/huyuhutaru/.agentstack/hooks/check-file-reservation.sh"
+          }
+        ]
+      },
+      {
+        "matcher": "Edit|Write|Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/bin/bash /Users/huyuhutaru/.agentstack/hooks/check-agent-registered.sh"
+          }
+        ]
+      },
+      {
+        "matcher": "mcp__orrery-mail__file_reservation_paths|mcp__mcp-agent-mail__file_reservation_paths|mcp__agent_mail__file_reservation_paths|mcp__orrery-mail__macro_file_reservation_cycle|mcp__mcp-agent-mail__macro_file_reservation_cycle|mcp__agent_mail__macro_file_reservation_cycle|mcp__orrery-mail__renew_file_reservations|mcp__mcp-agent-mail__renew_file_reservations|mcp__agent_mail__renew_file_reservations",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/bin/bash /Users/huyuhutaru/.agentstack/hooks/invalidate-release-debounce.sh"
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "Edit|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/bin/bash /Users/huyuhutaru/.agentstack/hooks/release-file-reservation.sh"
+          }
+        ]
+      },
+      {
+        "matcher": "mcp__orrery-mail__register_agent|mcp__mcp-agent-mail__register_agent|mcp__agent_mail__register_agent",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/bin/bash /Users/huyuhutaru/.agentstack/hooks/mark-agent-registered.sh"
+          }
+        ]
+      }
+    ],
+    "SessionEnd": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/bin/bash /Users/huyuhutaru/.agentstack/hooks/release-all-reservations.sh"
+          }
+        ]
+      }
+    ]
+  }
+}

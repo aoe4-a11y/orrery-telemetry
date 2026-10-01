@@ -570,7 +570,7 @@ prepare_codex_launch_binding() {
 # Keep defaults and warm-pool identities here. Both launch paths normalize
 # through the functions below instead of carrying their own generation names.
 CLAUDE_DEFAULT_MODEL="claude-opus-5-5"
-CLAUDE_DEFAULT_SONNET_MODEL="claude-sonnet-5"
+CLAUDE_DEFAULT_SONNET_MODEL="claude-sonnet-5-5"
 CLAUDE_CURRENT_OPUS_1M_MODEL="claude-opus-5-5[1m]"
 CLAUDE_LEGACY_OPUS_5_MODEL="claude-opus-5"
 CLAUDE_LEGACY_OPUS_5_1M_MODEL="claude-opus-5[1m]"
@@ -581,7 +581,7 @@ CLAUDE_LEGACY_SONNET_1M_MODEL="claude-sonnet-4-6[1m]"
 CLAUDE_HAIKU_MODEL="claude-haiku-4-5-20251001"
 CLAUDE_FABLE_MODEL="claude-fable-5-1"
 CLAUDE_WARM_OPUS_MODEL="$CLAUDE_DEFAULT_MODEL"
-CLAUDE_WARM_SONNET_MODEL="$CLAUDE_DEFAULT_SONNET_MODEL"
+CLAUDE_WARM_SONNET_MODEL="claude-sonnet-5"  # Fleet warm pool remains on Sonnet 5.
 # Codex candidates, aliases and effort policy live in dashboard/codex_models.py.
 
 # --- Claude モデル名の正規化 ---
@@ -599,7 +599,7 @@ normalize_claude_model() {
     m="$(printf '%s' "$raw" | tr '[:upper:]' '[:lower:]' | tr -d '[:space:]')"
 
     case "$m" in
-        ""|opus|"$CLAUDE_DEFAULT_MODEL")
+        ""|opus|opus-5-5|opus55|"opus5.5"|"opus-5.5"|"$CLAUDE_DEFAULT_MODEL")
             printf '%s\n' "$CLAUDE_DEFAULT_MODEL" ;;
         opus-5|opus5|"$CLAUDE_LEGACY_OPUS_5_MODEL")
             printf '%s\n' "$CLAUDE_LEGACY_OPUS_5_MODEL" ;;
@@ -611,8 +611,10 @@ normalize_claude_model() {
             printf '%s\n' "$CLAUDE_LEGACY_OPUS_5_1M_MODEL" ;;
         opus-5-5-1m|opus551m|"opus-5-5[1m]"|"opus55[1m]"|"$CLAUDE_CURRENT_OPUS_1M_MODEL")
             printf '%s\n' "$CLAUDE_CURRENT_OPUS_1M_MODEL" ;;
-        sonnet|sonnet-5|sonnet5|"$CLAUDE_DEFAULT_SONNET_MODEL")
+        sonnet|"$CLAUDE_DEFAULT_SONNET_MODEL")
             printf '%s\n' "$CLAUDE_DEFAULT_SONNET_MODEL" ;;
+        sonnet-5|sonnet5|claude-sonnet-5)
+            printf '%s\n' claude-sonnet-5 ;;
         sonnet-4-6|sonnet46|"$CLAUDE_LEGACY_SONNET_MODEL")
             printf '%s\n' "$CLAUDE_LEGACY_SONNET_MODEL" ;;
         sonnet-1m|sonnet1m|"sonnet[1m]"|"$CLAUDE_LEGACY_SONNET_1M_MODEL")
@@ -1669,6 +1671,10 @@ codex_watch_initial_task() {
                 ;;
         esac
         [[ "$bound" == true ]] && continue
+        if printf '%s' "$pane_text" | grep -qF "Update available"; then
+            tmux send-keys -t "$session_name" Escape
+            continue
+        fi
         if codex_hooks_review_present "$pane_text"; then
             trust_attempts=$((trust_attempts + 1))
             codex_accept_hooks_review "$session_name" "$trust_attempts" "$trust_max" "$log_prefix" || return 1
@@ -2008,7 +2014,7 @@ build_embedded_task_prompt() {
     local spawned_at="$3"
     local project_key="$4"
     local task_text="$5"
-    printf 'あなたは %s（親: %s）。この起動は --embed-task mode です。ORRERY Mail への登録は親が完了済み・儀式不要です。ensure_project・register_agent・fetch_inbox は実行しないでください。現在時刻: %s。project_key は %s。以下のタスクが正本です。直ちに開始し、完了したら send_message で %s に報告してください:\n\n%s' \
+    printf 'あなたは %s（親: %s）。この起動は --embed-task mode です。ORRERY Mail への登録は親が完了済み・儀式不要です。ensure_project・register_agent・fetch_inbox は実行しないでください。現在時刻: %s。project_key は %s。便の規則（R-061）: 件名は [station]／[receipt]／[progress]／[blocked]／[plan]／[ack] のタグ 1 つで始める（無タグは [blocked] 扱い）・返信は元便のタグを継ぐ・ack_required の便は必ず ack する。以下のタスクが正本です。直ちに開始し、完了したら send_message で %s に報告してください:\n\n%s' \
         "$child_name" "$parent_name" "$spawned_at" "$project_key" \
         "$parent_name" "$task_text"
 }
@@ -2016,7 +2022,7 @@ build_embedded_task_prompt() {
 # The Claude child's tmux command. With chrome off this must stay byte-for-byte
 # the command used before --claude-chrome existed; --chrome is the only addition.
 claude_child_launch_command() {
-    local inner='export PATH="$HOME/.local/bin:$PATH"; MCP_ARGS=(); [[ -n "$CLAUDE_CHILD_MCP_CONFIG" ]] && MCP_ARGS=(--mcp-config "$CLAUDE_CHILD_MCP_CONFIG" --strict-mcp-config); claude --model "$CLAUDE_CHILD_MODEL" "${MCP_ARGS[@]}"'
+    local inner='export PATH="$HOME/.local/bin:$PATH"; MCP_ARGS=(); [[ -n "$CLAUDE_CHILD_MCP_CONFIG" ]] && MCP_ARGS=(--mcp-config "$CLAUDE_CHILD_MCP_CONFIG" --strict-mcp-config); claude --model "$CLAUDE_CHILD_MODEL" --dangerously-skip-permissions --add-dir "$HOME/.agentstack" --add-dir "$HOME/tools" --add-dir /Volumes/DevSSD "${MCP_ARGS[@]}"'
     if [[ "$CLAUDE_CHILD_CHROME" == true ]]; then
         inner+=' --chrome'
     fi

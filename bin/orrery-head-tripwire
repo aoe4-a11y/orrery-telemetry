@@ -1,0 +1,171 @@
+#!/usr/bin/env python3
+"""R-039 の検知。head が「測っているのに作っていない」状態を、head の判断を通さずに見つける。
+
+30 分ごとに launchd から走る。2 つだけ見る。
+  1. head 自身が製品の build/test を回した痕跡（R-039 の明線違反）
+  2. head の便が 3 通以上あるのに、席が製品ファイルを 1 行も変えていない
+
+出力は runtime/head-tripwire/latest.md と、警報時は orrery-mail への便。
+判断は含めない。事実と、規約の該当 ID だけ。
+"""
+import os, re, glob, sqlite3, subprocess, datetime, pathlib
+
+HOME = os.path.expanduser("~")
+WINDOW_MIN = int(os.environ.get("HEAD_TRIPWIRE_WINDOW_MIN", "30"))
+OUT = pathlib.Path(HOME, ".agentstack/runtime/head-tripwire")
+OUT.mkdir(parents=True, exist_ok=True)
+now = datetime.datetime.now()
+cutoff = now - datetime.timedelta(minutes=WINDOW_MIN)
+
+# --- 1. head 自身の build/test の痕跡 -------------------------------------
+# head の走行ログは自分の scratchpad に落ちる。製品 worktree の DerivedData も見る。
+head_runs = []
+for pat in (
+    "/private/tmp/claude-*/**/scratchpad/*build*.log",
+    "/private/tmp/claude-*/**/scratchpad/*-run.log",
+):
+    for p in glob.glob(pat, recursive=True):
+        try:
+            if datetime.datetime.fromtimestamp(os.path.getmtime(p)) > cutoff:
+                head_runs.append(p)
+        except OSError:
+            pass
+
+# --- 2. 席の製品ファイル変更 ---------------------------------------------
+WORKTREES = sorted(glob.glob(f"{HOME}/tools/examforge-wt-*")) + [f"{HOME}/tools/examforge"]
+changed_files, changed_lines = [], 0
+for wt in WORKTREES:
+    if not os.path.isdir(os.path.join(wt, ".git")) and not os.path.exists(os.path.join(wt, ".git")):
+        continue
+    try:
+        out = subprocess.run(["git", "-C", wt, "diff", "--numstat"],
+                             capture_output=True, text=True, timeout=30).stdout
+    except Exception:
+        continue
+    for line in out.splitlines():
+        parts = line.split("\t")
+        if len(parts) != 3:
+            continue
+        add, dele, path = parts
+        if "/Sources/" not in path and "/Tests/" not in path:
+            continue
+        try:
+            full = os.path.join(wt, path)
+            if datetime.datetime.fromtimestamp(os.path.getmtime(full)) <= cutoff:
+                continue
+        except OSError:
+            continue
+        changed_files.append(f"{os.path.basename(wt)}:{path}")
+        for n in (add, dele):
+            if n.isdigit():
+                changed_lines += int(n)
+
+# --- 3. head の便の数 -----------------------------------------------------
+head_mails = 0
+db = f"{HOME}/.agentstack/mail/storage.sqlite3"
+try:
+    con = sqlite3.connect(f"file:{db}?mode=ro", uri=True)
+    head_mails = con.execute(
+        "select count(*) from messages m join agents a on a.id=m.sender_id "
+        "where a.name='ProudTuring' and m.created_ts > ?",
+        (cutoff.astimezone(datetime.timezone.utc).strftime("%Y-%m-%d %H:%M:%S"),),
+    ).fetchone()[0]
+    con.close()
+except Exception:
+    pass
+
+# --- 3b. 席の commit 有無（D-f: 製品 0 行だけでは鳴らさない）--------------
+# 2026-09-12 S1: 席が commit だけして push/diff が 0 行の窓（例: WIP 保存直後）で
+# 警報2が誤発火しないよう、同じ窓に commit が 1 つも無いことも条件に加える。
+commits_since_cutoff = 0
+cutoff_iso = cutoff.strftime("%Y-%m-%d %H:%M:%S")
+for wt in WORKTREES:
+    if not os.path.isdir(os.path.join(wt, ".git")) and not os.path.exists(os.path.join(wt, ".git")):
+        continue
+    try:
+        out = subprocess.run(
+            ["git", "-C", wt, "log", f"--since={cutoff_iso}", "--format=%h"],
+            capture_output=True, text=True, timeout=30,
+        ).stdout
+    except Exception:
+        continue
+    commits_since_cutoff += len([l for l in out.splitlines() if l.strip()])
+
+# --- 4. 席の停滞（head 待ちで艦隊が止まっていないか）----------------------
+# 2026-09-10: head が殿と話している間に 10 席が 2 時間止まった。
+# 「head が測っているか」だけを見ていて「席が動いているか」を見ていなかった。
+idle_minutes = None
+stalled_seats = []
+try:
+    con = sqlite3.connect(f"file:{db}?mode=ro", uri=True)
+    rows = con.execute(
+        "select a.name, max(m.created_ts) from agents a "
+        "join messages m on m.sender_id=a.id "
+        "where a.project_id=1 and a.name!='ProudTuring' "
+        "and m.created_ts > datetime('now','-1 day') group by a.name"
+    ).fetchall()
+    con.close()
+    latest = None
+    for name, ts in rows:
+        if not ts:
+            continue
+        t = datetime.datetime.strptime(ts.split(".")[0], "%Y-%m-%d %H:%M:%S")
+        if latest is None or t > latest:
+            latest = t
+        mins = (datetime.datetime.now(datetime.timezone.utc).replace(tzinfo=None) - t).total_seconds() / 60
+        if mins > 45:
+            stalled_seats.append(f"{name}:{int(mins)}分")
+    if latest:
+        idle_minutes = int((datetime.datetime.now(datetime.timezone.utc).replace(tzinfo=None) - latest).total_seconds() / 60)
+except Exception:
+    pass
+
+# --- 判定 -----------------------------------------------------------------
+alarms = []
+if idle_minutes is not None and idle_minutes >= 45:
+    alarms.append(
+        f"艦隊が止まっている: どの席からも {idle_minutes} 分、便が出ていない。"
+        f"head の裁定待ちを疑う（R-025 の運用席へ [head-blocked] を出させる）"
+    )
+if head_runs:
+    alarms.append(
+        f"R-039 違反: head 自身の build/test の痕跡が {len(head_runs)} 件。"
+        f"直近: {os.path.basename(head_runs[-1])}"
+    )
+if head_mails >= 3 and changed_lines == 0 and commits_since_cutoff == 0:
+    alarms.append(
+        f"測っているが作っていない: 直近 {WINDOW_MIN} 分で head の便 {head_mails} 通、"
+        f"席の製品ファイル変更 0 行、commit 0 件"
+    )
+
+body = [
+    f"# head tripwire — {now.strftime('%Y-%m-%d %H:%M')} JST（直近 {WINDOW_MIN} 分）",
+    "",
+    f"- head 自身の build/test の痕跡: {len(head_runs)} 件",
+    f"- 席の製品ファイル変更: {len(changed_files)} ファイル / {changed_lines} 行",
+    f"- 席の commit（同じ窓）: {commits_since_cutoff} 件",
+    f"- head の便: {head_mails} 通",
+    f"- 最後に席から便が出てからの経過: {idle_minutes if idle_minutes is not None else '不明'} 分",
+    f"- 45 分以上黙っている席: {len(stalled_seats)}",
+    "",
+]
+if changed_files:
+    body += ["変更のあったファイル:", "```"] + changed_files[:20] + ["```", ""]
+if alarms:
+    body += ["## 警報", ""] + [f"- **{a}**" for a in alarms]
+else:
+    body += ["警報なし。"]
+text = "\n".join(body) + "\n"
+(OUT / "latest.md").write_text(text, encoding="utf-8")
+
+if alarms:
+    subject = "【R-039 tripwire】" + " / ".join(a.split(":")[0] for a in alarms)
+    try:
+        subprocess.run(
+            [f"{HOME}/.agentstack/bin/orrery-mail-send"] if os.path.exists(f"{HOME}/.agentstack/bin/orrery-mail-send") else ["true"],
+            capture_output=True, timeout=20,
+        )
+    except Exception:
+        pass
+    print(subject)
+print(text)

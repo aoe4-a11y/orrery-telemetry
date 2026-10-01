@@ -1,0 +1,470 @@
+#!/usr/bin/env python3
+"""Fleet supervisor: wake idle Codex/Claude tmux seats that hold unacknowledged mail.
+
+Runs every 60 s from launchd. Read-only except for `tmux send-keys` into a seat that is
+provably idle (no "Working (" / "esc to interrupt" in the last pane lines) while mail
+addressed to that agent is unacknowledged.
+
+Escalation: seats idle with the same unacked backlog for >= STALE_CYCLES get one short
+nudge line; seats still stuck after ESCALATE_CYCLES are written to the head report file
+so the head's patrol can act. Never kills sessions, never touches files in repos.
+"""
+import json, os, sqlite3, subprocess, time, datetime, pathlib
+
+DB = os.path.expanduser("~/.agentstack/mail/storage.sqlite3")
+STATE = pathlib.Path(os.path.expanduser("~/.agentstack/runtime/supervisor-state.json"))
+LOG = pathlib.Path(os.path.expanduser("~/.agentstack/runtime/supervisor.log"))
+REPORT = pathlib.Path(os.path.expanduser("~/.agentstack/runtime/supervisor-report.md"))
+MIN_NUDGE_INTERVAL = 300  # seconds between text nudges for the same seat (R-062: 90→300)
+# 2026-09-11: 未 ack メールが 0 の席は一度も起こされない設計だった。
+# 席が 11 あった頃は互いの便が絶えず届くので全席が常に「未 ack あり」で、
+# 便の嵐そのものが心拍だった。3 席へ絞った瞬間に心拍が消え、
+# 席は自分の駅の途中で turn を終えるたびに永久に待つようになった。
+# 対処: 直近 ACTIVE_WINDOW 秒以内に自分から便を出した席（＝駅の途中）は、
+# 未 ack が 0 でも起こす。停止中の席は黙っているので対象外のまま。
+ACTIVE_WINDOW = 1800      # seconds; 駅の途中とみなす窓
+IDLE_NUDGE_INTERVAL = 900 # seconds; 未 ack 0 の稼働席を起こす間隔（R-062: 150→900）
+ESCALATE_CYCLES = 15    # ~15 min of no progress before it is reported to the head
+# 2026-09-18 (PinkTesla, 殿指摘「codex 枠 16% が 3 日で消えた」): nudge に上限が無く、
+# nudge を受けた席が 1 分 working になるだけで「進捗」と数えられ、idle に戻ると
+# また nudge されていた。09-15〜18 に 6 席 × 約 2,150 回 = 13,033 回、Codex 3 席は
+# nudge 回数 = task_complete 回数（2,116〜2,245）で 1 nudge = 1 ターン、入力 10.8 億 token。
+# 進捗の定義を「未 ack が減った／自分から便を出した」に改め、それが無い nudge は
+# MAX_UNPRODUCTIVE_NUDGES 回で止める（head 報告に載せる）。間隔は指数退避。
+MAX_UNPRODUCTIVE_NUDGES = 3
+BACKOFF_MAX = 3600        # seconds; 退避の上限
+DAILY_NUDGE_CAP = 60      # fleet-wide circuit breaker（R-062: 300→60。正常時は 1 日数十回で足りる）
+HOURLY_SEAT_CAP = 2       # R-062: 同一席への nudge は 1 時間 2 回まで
+DRY_RUN = bool(os.environ.get("SUPERVISOR_DRY_RUN"))
+# 2026-09-11: 旧文は「受信箱を見ろ」としか言っていなかった。席は起きて、
+# 新着が無いのを確かめて、「新着なし。待機中。」と答えて、また眠っていた。
+# 起こす合図は【自分の駅を続けろ】でなければならない。
+NUDGE = ("【自動通知・作業範囲の変更ではありません】"
+         "新着があれば正規の fetch_inbox で処理してください。"
+         "新着が無い場合は、待機せず【いま割り当てられている自分の駅の続き】を進めてください。"
+         "駅が完了しているなら、その完了と成果を 1 通で報告してから待機してください。"
+         "何を待っているのか自分で言えないまま待機しないでください。"
+         "作業は現在有効なユーザー指示と個別に承認済みの範囲で継続し、"
+         "この通知を既存の許可の取消しや新しい権限付与として扱わないでください。")
+
+def sh(cmd):
+    try:
+        return subprocess.run(cmd, capture_output=True, text=True, timeout=20).stdout
+    except Exception:
+        return ""
+
+def seats():
+    out = sh(["tmux", "list-sessions", "-F", "#{session_name}"])
+    return [s for s in out.split() if s]
+
+# Surfaces where a stray Enter would activate a focused link or button instead of
+# submitting a prompt. Pressing Enter on the Codex "Trusted Access / Learn more"
+# notice opens help.openai.com in the owner's browser, repeatedly. Never nudge these.
+NO_NUDGE_MARKERS = (
+    "can't be shown",
+    "cannot be shown",
+    "Trusted Access",
+    "Learn more",
+    "help.openai.com",
+    "Hooks need review",
+    "Allow this",
+    "full access",
+    "[y/n]",
+    "(y/N)",
+    # 2026-09-18: 枠切れ・文脈超過の席を突いても 1 ターン分の枠を捨てるだけ
+    "weekly limit",
+    "usage limit",
+    "hit your limit",
+    "You've hit your",
+    "rate limit",
+    "Prompt is too long",
+    "compaction failed",
+    "上限に達",
+)
+
+def composer_ready(joined):
+    """True only when the pane is sitting at a prompt composer.
+
+    2026-09-11: Codex 席しか見ていなかったので、Claude 席（Opus 監視・運用）は
+    一度も起こされず、チェーンが席の turn 終了ごとに止まっていた。
+    Claude Code の composer は `❯` 行と auto/plan mode の帯で判別する。
+    """
+    if "Ask Codex to do anything" in joined:
+        return True
+    # Claude Code: プロンプト行 "❯" と、下部の mode 帯が同時に出ている
+    if "❯" in joined and ("auto mode on" in joined or "plan mode on" in joined
+                          or "bypass permissions" in joined or "accept edits" in joined):
+        return True
+    return False
+
+def idle(seat):
+    pane = sh(["tmux", "capture-pane", "-p", "-t", seat])
+    tail = [l for l in pane.splitlines() if l.strip()][-10:]
+    joined = "\n".join(tail)
+    if "Working (" in joined or "esc to interrupt" in joined:
+        return False, joined
+    # A modal / link surface is not an idle composer: typing here presses a button.
+    wide = "\n".join([l for l in pane.splitlines() if l.strip()][-30:])
+    if any(m in wide for m in NO_NUDGE_MARKERS):
+        return False, joined
+    if not composer_ready(joined):
+        return False, joined
+    return True, joined
+
+def recently_active():
+    """直近 ACTIVE_WINDOW 秒に自分から便を出した席 = 駅の途中。停止中の席は入らない。"""
+    try:
+        c = sqlite3.connect(f"file:{DB}?mode=ro", uri=True)
+        rows = c.execute(
+            "select a.name from messages m join agents a on a.id=m.sender_id "
+            "where m.created_ts > datetime('now', ?) group by a.name",
+            (f"-{ACTIVE_WINDOW} seconds",)).fetchall()
+        c.close()
+        names = {r[0] for r in rows}
+    except Exception:
+        names = set()
+    # 2026-09-12 M-037: 駅台帳に active な席（runtime/active-seats.txt・1 行 1 席名）は
+    # 便を出していなくても「駅の途中」とみなす（pane で質問して止まる型を起こすため）。
+    try:
+        import os
+        af = os.path.expanduser("~/.agentstack/runtime/active-seats.txt")
+        if os.path.exists(af):
+            names |= {l.strip() for l in open(af) if l.strip() and not l.startswith("#")}
+    except Exception:
+        pass
+    return names
+
+def last_outbound():
+    """席ごとの最終送信時刻（epoch）。nudge 後にこれが進めば「進捗あり」。"""
+    try:
+        c = sqlite3.connect(f"file:{DB}?mode=ro", uri=True)
+        rows = c.execute(
+            "select a.name, strftime('%s', max(m.created_ts)) from messages m "
+            "join agents a on a.id=m.sender_id group by a.name").fetchall()
+        c.close()
+        return {r[0]: int(r[1] or 0) for r in rows}
+    except Exception:
+        return {}
+
+def nudges_today():
+    try:
+        today = datetime.datetime.now().strftime("%F")
+        return sum(1 for l in LOG.read_text().splitlines()
+                   if l.startswith(f"[{today}") and ": nudge" in l)
+    except Exception:
+        return 0
+
+def unacked():
+    try:
+        c = sqlite3.connect(f"file:{DB}?mode=ro", uri=True)
+        # Only mail actually addressed to the seat AND requiring an ack counts as pending
+        # work. cc traffic is chatter and used to keep seats "escalated" forever.
+        # R-062 (2026-09-20): nudge fuel is only mail that assigns work — [station]/[blocked]
+        # (or an untagged subject, treated as [blocked] per R-061). Replies inheriting
+        # ack_required ("Re: [receipt] …") and [progress]/[ack]/[plan] never wake a seat.
+        q = ("select me.name, m.subject from messages m "
+             "join message_recipients r on r.message_id=m.id "
+             "join agents me on me.id=r.agent_id "
+             "where r.ack_ts is null and me.retired_at is null "
+             "and r.kind = 'to' and m.ack_required = 1 "
+             # 2026-09-23 head: 席が ack を忘れた古い便で nudge が何日も続き（KindPasteur 53 回）、
+             # 駅キューの配布も止まっていた。24 時間を過ぎた未 ack は待ち仕事に数えない（head の巡回で掃除する）。
+             "and m.created_ts > datetime('now', '-24 hours')")
+        import re as _re
+        counts = {}
+        for name, subj in c.execute(q):
+            s = _re.sub(r"^(Re:\s*)+", "", (subj or "").strip())
+            m = _re.match(r"^\[([a-zA-Z-]+)\]", s)
+            tag = m.group(1).lower() if m else None
+            if tag in ("station", "blocked") or tag is None:
+                counts[name] = counts.get(name, 0) + 1
+        return counts
+    except Exception:
+        return {}
+
+
+def health():
+    """Cheap self-checks for the things that silently broke before (M-020, P-004)."""
+    out = []
+    hook = os.path.expanduser("~/tools/osce-trainer-main/scripts/memory/recall_prior_statements.py")
+    ledger = os.path.expanduser("~/tools/osce-trainer-main/docs/ledger/INDEX.md")
+    if not os.path.exists(hook):
+        out.append("recall hook script MISSING (prompts would be blocked)")
+    else:
+        r = subprocess.run(["python3", hook], input='{"prompt":"healthcheck"}',
+                           capture_output=True, text=True, timeout=30)
+        if r.returncode != 0:
+            out.append(f"recall hook exits {r.returncode} (must be 0)")
+    if not os.path.exists(ledger):
+        out.append("ledger INDEX.md MISSING from the canonical checkout")
+    if "org.huyuhutaru.orrery-mail-watcher" not in sh(["launchctl", "list"]):
+        out.append("orrery mail watcher not loaded")
+    return out
+
+
+HEARTBEAT_INTERVAL = 3600  # seconds; 35 章 §7-4: head が起きない時間（M-037）の緩和
+HEAD_NAME = "ProudTuring"
+
+def heartbeat_to_head(state, outbound):
+    """Insert a low-importance [heartbeat] mail addressed to the head when the head has been
+    silent for HEARTBEAT_INTERVAL. The head's mail Monitor wakes on any non-[progress]/[ack]/[station]
+    subject, so this guarantees at most one wake per hour even when no seat mails the head
+    (2026-09-20 16:04→23:43: 7.5 h with zero head-addressed mail; the completion mail 9325 was
+    addressed to the lead only). Suppressed while the head is active (own outbound within the interval)."""
+    now = time.time()
+    last_hb = float(state.get("_heartbeat_ts", 0))
+    if now - last_hb < HEARTBEAT_INTERVAL:
+        return None
+    head_last = outbound.get(HEAD_NAME, 0)
+    if head_last and now - head_last < HEARTBEAT_INTERVAL:
+        return None
+    if DRY_RUN:
+        return "heartbeat (dry-run)"
+    try:
+        c = sqlite3.connect(DB)
+        cur = c.cursor()
+        head_id = cur.execute("select id from agents where name=?", (HEAD_NAME,)).fetchone()
+        if not head_id:
+            return None
+        head_id = head_id[0]
+        ts = datetime.datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S.%f")
+        subject = "[heartbeat] head 心拍 — 直近 %d 分 head の便なし。巡回して次駅か無変更を記録（supervisor 自動）" % (HEARTBEAT_INTERVAL // 60)
+        body = ("台帳: M-037・35 章 §7-4。head 宛の便が無い時間に head を起こすための自動便。"
+                "内容は無い。巡回（fetch_summary／状態板）だけして、変化が無ければ noop で戻る。")
+        cur.execute("insert into messages(project_id, sender_id, thread_id, topic, subject, body_md, importance, ack_required, created_ts, attachments) values (1,?,NULL,NULL,?,?,'low',0,?,'[]')",
+                    (head_id, subject, body, ts))
+        mid = cur.lastrowid
+        cur.execute("insert into message_recipients(message_id, agent_id, kind) values (?,?,'to')", (mid, head_id))
+        c.commit(); c.close()
+        state["_heartbeat_ts"] = now
+        return "heartbeat sent id=%d" % mid
+    except Exception as e:
+        return "heartbeat failed: %s" % e
+
+# R-068 (1) 2026-09-23 KindPasteur・I-1: 止まらない仕組み。
+# head が駅を runtime/station-queue/ に 1 駅 1 md で積む（先頭 3 行: "to: <席>|any" /
+# "subject: [station] …" / "---"、以下が本文）。席が STATION_IDLE_WINDOW 秒 [station] を
+# 受けておらず、作業中でもなく、仕事になる未 ack も無いとき、名前順の先頭を head 名義で
+# その席へ送り、runtime/station-queue/sent/ へ移す（移してから送る＝二重送信なし）。
+# runtime/usage.json（head が巡回ごとに書く週次 %）が THROTTLE_ONE_SEAT_PCT 以上なら、
+# 他席が 1 つでも作業中の間は配らない（実装 1 席に絞る）。1 巡回で配るのは 1 駅まで。
+QUEUE_DIR = pathlib.Path(os.path.expanduser("~/.agentstack/runtime/station-queue"))
+USAGE = pathlib.Path(os.path.expanduser("~/.agentstack/runtime/usage.json"))
+STATION_IDLE_WINDOW = 900  # 2026-09-23 head: 30 分では手すきの席が 20 分以上遊んだ
+THROTTLE_ONE_SEAT_PCT = 80
+
+def weekly_usage_pct():
+    """Claude の週枠の使用率。weekly_resets_at を過ぎた古い値は 0 とみなす（head が止まって更新されなくても、リセット後に配布を再開するため）。"""
+    try:
+        d = json.loads(USAGE.read_text())
+        ra = d.get("weekly_resets_at")
+        if ra and datetime.datetime.now(datetime.timezone.utc) >= datetime.datetime.fromisoformat(ra):
+            return 0.0
+        return float(d.get("weekly_pct", 0))
+    except Exception:
+        return 0.0
+
+def claude_seats():
+    """Claude の枠を使う席（mail の agents.model が claude-*）。週枠の抑制はこの席にだけ効かせる（Codex 席は別枠）。"""
+    try:
+        c = sqlite3.connect(f"file:{DB}?mode=ro", uri=True)
+        rows = c.execute("select name from agents where model like 'claude-%'").fetchall()
+        c.close()
+        return {r[0] for r in rows}
+    except Exception:
+        return set()
+
+def last_station_received():
+    """席ごとに、最後に [station] を to で受けた時刻（epoch）。"""
+    try:
+        c = sqlite3.connect(f"file:{DB}?mode=ro", uri=True)
+        rows = c.execute(
+            "select a.name, strftime('%s', max(m.created_ts)) from messages m "
+            "join message_recipients r on r.message_id=m.id join agents a on a.id=r.agent_id "
+            "where r.kind='to' and m.subject like '[station]%' group by a.name").fetchall()
+        c.close()
+        return {r[0]: int(r[1] or 0) for r in rows}
+    except Exception:
+        return {}
+
+def parse_station(path):
+    head, _, body = path.read_text(encoding="utf-8").partition("\n---\n")
+    fields = {}
+    for line in head.splitlines():
+        k, _, v = line.partition(":")
+        fields[k.strip().lower()] = v.strip()
+    to, subject = fields.get("to", ""), fields.get("subject", "")
+    if not to or not subject.startswith("[station]") or not body.strip():
+        return None
+    return to, subject, body.strip()
+
+def send_as_head(seat, subject, body):
+    c = sqlite3.connect(DB)
+    cur = c.cursor()
+    head_id = cur.execute("select id from agents where name=?", (HEAD_NAME,)).fetchone()
+    seat_id = cur.execute("select id from agents where name=? and retired_at is null", (seat,)).fetchone()
+    if not head_id or not seat_id:
+        c.close()
+        raise RuntimeError("unknown agent")
+    ts = datetime.datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S.%f")
+    cur.execute("insert into messages(project_id, sender_id, thread_id, topic, subject, body_md, importance, ack_required, created_ts, attachments) values (1,?,NULL,NULL,?,?,'normal',1,?,'[]')",
+                (head_id[0], subject, body + "\n\n（station-queue から supervisor が自動配布・R-068）", ts))
+    mid = cur.lastrowid
+    cur.execute("insert into message_recipients(message_id, agent_id, kind) values (?,?,'to')", (mid, seat_id[0]))
+    c.commit(); c.close()
+    return mid
+
+def dispatch_station_queue(live, pend, working):
+    if not QUEUE_DIR.is_dir():
+        return None
+    entries = sorted(p for p in QUEUE_DIR.glob("*.md") if p.is_file())
+    if not entries:
+        return None
+    weekly = weekly_usage_pct()
+    now = time.time()
+    received = last_station_received()
+    eligible = [s for s in sorted(live) if s != HEAD_NAME and s not in working
+                and pend.get(s, 0) == 0 and now - received.get(s, 0) >= STATION_IDLE_WINDOW]
+    if weekly >= THROTTLE_ONE_SEAT_PCT:
+        cl = claude_seats()
+        if any(w in cl for w in working):
+            # Claude 週枠が高いときは Claude 席を同時に 2 つ動かさない。Codex 席への配布は止めない（2026-09-23 head）。
+            eligible = [s for s in eligible if s not in cl]
+    if not eligible:
+        return None
+    for path in entries:
+        parsed = parse_station(path)
+        if not parsed:
+            continue
+        to, subject, body = parsed
+        if to == "any":
+            targets = eligible
+        elif to == "codex":
+            # 2026-09-23 head: Claude の週枠を使わせたくない駅は Codex 席（claude-* 以外）にだけ配る。
+            cl = claude_seats()
+            targets = [s for s in eligible if s not in cl]
+        else:
+            targets = [s for s in eligible if s == to]
+        if not targets:
+            continue
+        seat = targets[0]
+        if DRY_RUN:
+            return f"station-queue: would send {path.name} to {seat} (dry-run)"
+        sent_dir = QUEUE_DIR / "sent"
+        sent_dir.mkdir(exist_ok=True)
+        claimed = sent_dir / f"{datetime.datetime.now():%Y%m%dT%H%M%S}-{seat}-{path.name}"
+        path.rename(claimed)
+        try:
+            mid = send_as_head(seat, subject, body)
+        except Exception as e:
+            claimed.rename(path)
+            return f"station-queue: send of {path.name} to {seat} failed: {e}"
+        return f"station-queue: sent {path.name} to {seat} id={mid}"
+    return None
+
+def main():
+    try:
+        state = json.loads(STATE.read_text())
+    except Exception:
+        state = {}
+    pend, actions, stuck = unacked(), [], []
+    recent = recently_active()
+    outbound = last_outbound()
+    hb = heartbeat_to_head(state, outbound)
+    if hb:
+        actions.append(hb)
+    live = set(seats())
+    # R-062: seats listed in runtime/paused-seats.txt (1 name per line) are never nudged
+    # (e.g. a seat whose Codex quota is exhausted until a known reset date).
+    try:
+        pf = os.path.expanduser("~/.agentstack/runtime/paused-seats.txt")
+        if os.path.exists(pf):
+            live -= {l.strip() for l in open(pf) if l.strip() and not l.startswith("#")}
+    except Exception:
+        pass
+    today_n = nudges_today()
+    breaker = today_n >= DAILY_NUDGE_CAP
+    for seat in sorted(live):
+        n = pend.get(seat, 0)
+        if n == 0 and seat not in recent:
+            state.pop(seat, None)
+            continue
+        is_idle, pane = idle(seat)
+        st = state.get(seat) or {"cycles": 0, "n": n, "unproductive": 0}
+        if not is_idle:
+            # working now は進捗ではない（nudge 自身が 1 分 working を作る）。cycles だけ止める。
+            st["cycles"] = 0
+            st["n"] = n
+            state[seat] = st
+            continue
+        st["cycles"] = st["cycles"] + 1 if st.get("n") == n else 1
+        # 進捗判定: 未 ack が減った、または前回 nudge 後に自分から便を出した
+        prev_n = st.get("n", n)
+        last = st.get("last_nudge", 0)
+        progressed = (n < prev_n) or (outbound.get(seat, 0) > last > 0)
+        if progressed:
+            st["unproductive"] = 0
+        st["n"] = n
+        state[seat] = st
+        c = st["cycles"]
+        u = st.get("unproductive", 0)
+        now = time.time()
+        if c >= ESCALATE_CYCLES or u >= MAX_UNPRODUCTIVE_NUDGES:
+            stuck.append((seat, n, c, u))
+        if u >= MAX_UNPRODUCTIVE_NUDGES:
+            continue  # 止める。未 ack が変わるか席が便を出せば u は 0 に戻る
+        if breaker:
+            continue
+        base = MIN_NUDGE_INTERVAL if n else IDLE_NUDGE_INTERVAL
+        gap = min(base * (2 ** u), BACKOFF_MAX)
+        recent_nudges = [t for t in st.get("nudge_times", []) if now - t < 3600]
+        if len(recent_nudges) >= HOURLY_SEAT_CAP:
+            state[seat] = st
+            continue  # R-062: per-seat hourly cap
+        if now - last >= gap and idle(seat)[0]:
+            if not DRY_RUN:
+                subprocess.run(["tmux", "send-keys", "-t", seat, "-l", NUDGE], timeout=20)
+                time.sleep(0.6)  # the Codex TUI needs a beat before the submit key
+                subprocess.run(["tmux", "send-keys", "-t", seat, "Enter"], timeout=20)
+            st["last_nudge"] = now
+            st["unproductive"] = u + 1
+            st["nudge_times"] = recent_nudges + [now]
+            actions.append(f"{seat}: nudge (unacked={n}, cycles={c}, unproductive={u + 1}, gap={gap}s{', DRY' if DRY_RUN else ''})")
+        state[seat] = st
+    try:
+        working = {s for s in live if s != HEAD_NAME and not idle(s)[0]}
+        dispatched = dispatch_station_queue(live, pend, working)
+        if dispatched:
+            actions.append(dispatched)
+    except Exception as e:
+        actions.append(f"station-queue error: {e}")
+    for k in list(state):
+        if k not in live and not k.startswith("_"):
+            state.pop(k)
+    STATE.write_text(json.dumps(state))
+    ts = datetime.datetime.now().strftime("%F %T")
+    if actions:
+        with LOG.open("a") as f:
+            for a in actions:
+                f.write(f"[{ts}] {a}\n")
+    hp = health()
+    working = sum(1 for s in live if not idle(s)[0])
+    REPORT.write_text(
+        f"# fleet supervisor {ts}\n"
+        f"- seats {len(live)}, working {working}, idle-with-unacked {len([s for s in live if pend.get(s,0)])}\n"
+        f"- escalated (idle >= {ESCALATE_CYCLES} cycles, or {MAX_UNPRODUCTIVE_NUDGES} unproductive nudges → nudging stopped): "
+        + (", ".join(f"{s}(n={n},c={c},unproductive={u})" for s, n, c, u in stuck) if stuck else "none") + "\n"
+        + (f"- nudges today {today_n}/{DAILY_NUDGE_CAP}" + (" — CIRCUIT BREAKER OPEN, no nudges" if breaker else "") + "\n")
+        + ("- health: " + ("; ".join(hp) if hp else "ok") + "\n")
+        + ("- last actions: " + "; ".join(actions[:8]) + "\n" if actions else ""))
+    return 0
+
+if __name__ == "__main__":
+    try:
+        main()
+    except Exception as e:
+        try:
+            LOG.open("a").write(f"[{datetime.datetime.now():%F %T}] supervisor error: {e}\n")
+        except Exception:
+            pass
+    raise SystemExit(0)

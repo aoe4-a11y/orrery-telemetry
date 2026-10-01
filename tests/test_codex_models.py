@@ -351,13 +351,15 @@ def test_explicit_aliases_are_separate_from_omitted_default():
 
 
 @pytest.mark.parametrize("model", ["gpt-6-luna", "gpt-5.6-luna", "gpt-5.5"])
-def test_explicit_effort_is_passed_through_when_metadata_is_narrower(model):
+def test_explicit_effort_is_passed_through_when_metadata_is_narrower(model, monkeypatch):
+    monkeypatch.setenv("AGENTSTACK_ALLOW_XHIGH", "1")
     assert models.resolve_effort(model, "ultra") == "ultra"
     assert models.resolve_effort(model, "xhigh") == "xhigh"
     assert models.resolve_effort(model, "max") == "max"
 
 
-def test_fresh_effort_metadata_overrides_bundled_and_uses_valid_default():
+def test_fresh_effort_metadata_overrides_bundled_and_uses_valid_default(monkeypatch):
+    monkeypatch.setenv("AGENTSTACK_ALLOW_XHIGH", "1")
     cache([row("gpt-6-sol", ("medium", "high"))])
     assert models.resolve_effort("gpt-6-sol") == "medium"
     assert models.resolve_effort("gpt-6-sol", "xhigh") == "xhigh"

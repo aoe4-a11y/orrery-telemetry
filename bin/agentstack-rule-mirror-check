@@ -1,0 +1,66 @@
+#!/usr/bin/env python3
+"""OPS-1 (c): find rule copies that lag the canonical rules.
+
+The canonical storage policy version is the `[storage vX.Y` header in
+~/.claude/CLAUDE.md. Every mirror must state that version and carry the rules
+listed for it. Prints one line per mismatch and exits 1 if there is any.
+
+Usage: agentstack-rule-mirror-check [EXAMFORGE_REPO]
+  EXAMFORGE_REPO defaults to ~/tools/examforge-wt-first-experience; pass the
+  checkout whose docs you want to check (e.g. an up-to-date worktree).
+"""
+import re
+import sys
+from pathlib import Path
+
+HOME = Path.home()
+CANON = HOME / ".claude/CLAUDE.md"
+repo = Path(sys.argv[1]) if len(sys.argv) > 1 else HOME / "tools/examforge-wt-first-experience"
+
+# (file, rules that must appear: (label, regex))
+STORAGE_RULES = [("R-073 途中の run の片づけ", r"R-073")]
+MIRRORS = [
+    (HOME / ".codex/AGENTS.md", STORAGE_RULES + [
+        ("LOCK-PRIO EXAMFORGE_HEAVY_PRIORITY", r"EXAMFORGE_HEAVY_PRIORITY"),
+        ("iOS 27 壁紙キャッシュ PRBPosterExtensionDataStore", r"PRBPosterExtensionDataStore"),
+        ("重い作業の見張り OPS-1 (b)", r"OPS-1 \(b\)"),
+    ]),
+    (HOME / ".agentstack/runtime/station-template.md", [
+        ("R-073 途中の run の片づけ", r"R-073"),
+        ("LOCK-PRIO EXAMFORGE_HEAVY_PRIORITY", r"EXAMFORGE_HEAVY_PRIORITY"),
+        ("iOS 27 壁紙キャッシュ PRBPosterExtensionDataStore", r"PRBPosterExtensionDataStore"),
+        ("重い作業の見張り OPS-1 (b)", r"OPS-1 \(b\)"),
+    ]),
+    (repo / "docs/RESOURCE_BUDGET.md", STORAGE_RULES),
+    (repo / "docs/TWO_SEAT_OPERATIONS_JA.md", STORAGE_RULES),
+]
+VERSIONED = {HOME / ".codex/AGENTS.md", repo / "docs/RESOURCE_BUDGET.md", repo / "docs/TWO_SEAT_OPERATIONS_JA.md"}
+
+
+def storage_version(text: str):
+    m = re.search(r"storage v(\d+\.\d+)", text)
+    return m.group(1) if m else None
+
+
+canon = storage_version(CANON.read_text())
+if not canon:
+    print(f"canonical storage version not found in {CANON}")
+    sys.exit(2)
+problems = []
+for path, rules in MIRRORS:
+    if not path.exists():
+        problems.append(f"{path}: missing file")
+        continue
+    text = path.read_text()
+    if path in VERSIONED:
+        headers = re.findall(r"\[storage v(\d+\.\d+)", text) or [storage_version(text)]
+        for found in sorted(set(headers)):
+            if found != canon:
+                problems.append(f"{path}: storage v{found} (canonical v{canon})")
+    for label, pattern in rules:
+        if not re.search(pattern, text):
+            problems.append(f"{path}: lacks {label}")
+for line in problems:
+    print(line)
+print(f"rule-mirror-check: canonical storage v{canon}, mismatches {len(problems)}")
+sys.exit(1 if problems else 0)

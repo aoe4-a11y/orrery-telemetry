@@ -1,0 +1,45 @@
+#!/usr/bin/env bash
+# Restart an existing seat in place, keeping its name, token and mail history.
+# Usage: agentstack-restart-seat <SeatName> <task-file> [model] [effort] [workdir]
+# 既存席を「同じ名前・同じ身元」で建て直す。名前が変わらないので mail の履歴も切れない。
+# 使ってよい場面: 席の cwd が消えた / TUI が壊れた / 応答不能で復帰しない。
+set -euo pipefail
+[ -f "$HOME/.agentstack/env.sh" ] && source "$HOME/.agentstack/env.sh"
+
+NAME="${1:?seat name (e.g. WarmArchimedes)}"
+TASK="${2:?task file (この席に渡す指示書。1行目が説明になる)}"
+MODEL="${3:-gpt-6.1-sol}"
+EFFORT="${4:-medium}"
+WORKDIR="${5:-$HOME/tools/osce-trainer-main}"
+
+TOKEN="$HOME/.agentstack/runtime/agent_token_$NAME"
+[ -s "$TOKEN" ] || { echo "ERROR: token not found for $NAME ($TOKEN). 新規席なら agentstack-spawn-codex を使え" >&2; exit 1; }
+[ -r "$TASK" ]  || { echo "ERROR: task file not readable: $TASK" >&2; exit 1; }
+
+# 席の cwd を governor の artifact 配下に置くと close/回収で消え、以後すべての turn が
+# invalid cwd で即失敗する（M-032）。ここで機械的に拒否する。
+case "$WORKDIR" in
+  */DevStorageGovernor/artifacts/*)
+    echo "ERROR: workdir が governor artifact 配下です。close で消えて席が死にます（M-032）: $WORKDIR" >&2
+    echo "       cwd は ~/tools/osce-trainer-main か ~/tools/examforge にし、artifact は絶対パスで読め" >&2
+    exit 2;;
+esac
+[ -d "$WORKDIR" ] || { echo "ERROR: workdir が存在しません: $WORKDIR" >&2; exit 2; }
+
+export PARENT_AGENT="${PARENT_AGENT:-ProudTuring}"
+export AGENTSTACK_PROJECT_KEY="${AGENTSTACK_PROJECT_KEY:-/Users/huyuhutaru/tools/examforge}"
+
+if tmux has-session -t "$NAME" 2>/dev/null; then
+  echo "[restart] killing tmux session: $NAME （この席だけ。server は触らない・M-018）"
+  tmux kill-session -t "$NAME"
+  sleep 1
+fi
+
+cd "$WORKDIR"
+"$HOME/.agentstack/hooks/spawn_child.sh" --codex --model "$MODEL" --effort "$EFFORT" \
+  --pre-registered "$NAME" --child-token-file "$TOKEN" \
+  --embed-task --task-file "$TASK" "$WORKDIR"
+
+sleep 3
+CWD="$(tmux display-message -p -t "$NAME" '#{pane_current_path}' 2>/dev/null || true)"
+echo "[restart] done: $NAME model=$MODEL effort=$EFFORT cwd=${CWD:-<unknown>}"

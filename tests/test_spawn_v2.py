@@ -190,7 +190,7 @@ def test_spawn_names_advertises_codex_provider(monkeypatch):
         "model_source": "override", "model_error": "", "overflow_models": [],
         "model_efforts": {"gpt-test-a": [], "gpt-test-b": []},
         "model_effort_defaults": {"gpt-test-a": "", "gpt-test-b": ""},
-        "efforts": ["low", "medium", "high", "xhigh", "max", "ultra"], "effort_default": "xhigh",
+        "efforts": ["low", "medium", "high", "xhigh", "max", "ultra"], "effort_default": "medium",
     }
 
 

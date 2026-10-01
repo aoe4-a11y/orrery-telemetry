@@ -1,0 +1,169 @@
+#!/usr/bin/env python3
+"""Codex セッションの統計を、低コストで全数・増分収集する。
+
+  codex-stats collect [--since YYYY-MM-DD]   rollout を走査して DB へ（既読はスキップ）
+  codex-stats report  [--days N]             集計を出す
+  codex-stats sessions [--days N] [--seat S] 1 セッション 1 行で出す
+  codex-stats csv     [--days N] > out.csv   後で表計算に渡す用
+
+モデル呼び出しは一切しない。ローカルの rollout を読むだけ。
+DB: ~/.agentstack/runtime/codex-stats/stats.sqlite3
+"""
+import json, os, sys, glob, sqlite3, argparse, re, datetime
+
+ROOT = os.path.expanduser("~/.codex/sessions")
+DB = os.path.expanduser("~/.agentstack/runtime/codex-stats/stats.sqlite3")
+
+SCHEMA = """
+CREATE TABLE IF NOT EXISTS files(
+  path TEXT PRIMARY KEY, mtime REAL, size INTEGER, parsed_at TEXT, session_id TEXT);
+CREATE TABLE IF NOT EXISTS sessions(
+  session_id TEXT PRIMARY KEY, path TEXT, seat TEXT, cwd TEXT, cli_version TEXT,
+  started TEXT, ended TEXT, duration_s REAL, model TEXT, effort TEXT,
+  turns INTEGER, input_tokens INTEGER, cached_input_tokens INTEGER,
+  output_tokens INTEGER, reasoning_tokens INTEGER, total_tokens INTEGER,
+  tool_calls INTEGER, first_prompt TEXT);
+CREATE INDEX IF NOT EXISTS ix_sessions_started ON sessions(started);
+CREATE INDEX IF NOT EXISTS ix_sessions_seat ON sessions(seat);
+"""
+
+SEAT_RE = re.compile(r"child-agents/([A-Za-z]+)\.codex-home")
+
+def parse(path):
+    """1 rollout を stream 解析。行の事前フィルタで JSON 復号を最小化する。"""
+    meta = {}; model = effort = None; seat = None
+    turns = 0; tools = 0; first_prompt = None; turn_ids = set()
+    ti = tc = to = tr = tt = 0
+    first_ts = last_ts = None
+    with open(path, encoding="utf-8", errors="ignore") as fh:
+        for line in fh:
+            # 事前フィルタ: 必要な種別だけ復号する（444MB/日でも読める）
+            if '"token_usage_record"' in line:
+                try: p = json.loads(line)["payload"]
+                except Exception: continue
+                # turn_token_usage も thread_token_usage も【累積値】である（2026-09-10 実測:
+                # 単純合計は真値の約 6 倍になる）。session の総量は最後の thread_token_usage を取る。
+                u = p.get("thread_token_usage") or p.get("usage") or {}
+                ti = u.get("input_tokens", ti); tc = u.get("cached_input_tokens", tc)
+                to = u.get("output_tokens", to); tr = u.get("reasoning_output_tokens", tr)
+                tt = u.get("total_tokens", tt)
+                tid = p.get("turn_id")
+                if tid: turn_ids.add(tid)
+            elif '"session_meta"' in line and not meta:
+                try: d = json.loads(line)
+                except Exception: continue
+                meta = d.get("payload", {}); first_ts = d.get("timestamp")
+                m = SEAT_RE.search(json.dumps(meta.get("workspace_roots", []), ensure_ascii=False))
+                if m: seat = m.group(1)
+            elif '"turn_context"' in line and model is None:
+                try: p = json.loads(line)["payload"]
+                except Exception: continue
+                model = p.get("model"); effort = p.get("effort")
+                if seat is None:
+                    m = SEAT_RE.search(json.dumps(p.get("workspace_roots", []), ensure_ascii=False))
+                    if m: seat = m.group(1)
+            elif '"function_call"' in line or '"local_shell_call"' in line:
+                tools += 1
+            if first_prompt is None and '"role": "user"' in line:
+                try:
+                    p = json.loads(line).get("payload", {})
+                    for c in p.get("content", []) or []:
+                        t = c.get("text")
+                        if t and len(t.strip()) > 12:
+                            first_prompt = " ".join(t.split())[:400]; break
+                except Exception: pass
+            if '"timestamp"' in line[:40]:
+                try: last_ts = json.loads(line).get("timestamp") or last_ts
+                except Exception: pass
+    if seat is None:
+        m = SEAT_RE.search(path)
+        seat = m.group(1) if m else (os.path.basename(meta.get("cwd", "")) or "unknown")
+    dur = None
+    try:
+        a = datetime.datetime.fromisoformat((first_ts or "").replace("Z", "+00:00"))
+        b = datetime.datetime.fromisoformat((last_ts or "").replace("Z", "+00:00"))
+        dur = (b - a).total_seconds()
+    except Exception: pass
+    return dict(session_id=meta.get("session_id") or os.path.basename(path), path=path,
+                seat=seat, cwd=meta.get("cwd"), cli_version=meta.get("cli_version"),
+                started=first_ts, ended=last_ts, duration_s=dur, model=model, effort=effort,
+                turns=len(turn_ids) or turns, input_tokens=ti, cached_input_tokens=tc, output_tokens=to,
+                reasoning_tokens=tr, total_tokens=tt, tool_calls=tools, first_prompt=first_prompt)
+
+def collect(since=None):
+    con = sqlite3.connect(DB); con.executescript(SCHEMA)
+    known = {r[0]: (r[1], r[2]) for r in con.execute("select path,mtime,size from files")}
+    files = sorted(glob.glob(os.path.join(ROOT, "*/*/*/*.jsonl")))
+    if since:
+        files = [f for f in files if "/".join(f.split("/")[-4:-1]).replace("/", "-") >= since]
+    new = 0
+    for f in files:
+        try: st = os.stat(f)
+        except OSError: continue
+        if known.get(f) == (st.st_mtime, st.st_size):   # 既読で変化なし
+            continue
+        row = parse(f)
+        con.execute("""insert or replace into sessions values
+            (:session_id,:path,:seat,:cwd,:cli_version,:started,:ended,:duration_s,:model,:effort,
+             :turns,:input_tokens,:cached_input_tokens,:output_tokens,:reasoning_tokens,
+             :total_tokens,:tool_calls,:first_prompt)""", row)
+        con.execute("insert or replace into files values (?,?,?,datetime('now'),?)",
+                    (f, st.st_mtime, st.st_size, row["session_id"]))
+        new += 1
+    con.commit()
+    n = con.execute("select count(*) from sessions").fetchone()[0]
+    print(f"collect: 新規/更新 {new} 件 / 累計 {n} セッション")
+    con.close()
+
+def _where(days, seat):
+    w = []
+    if days: w.append(f"started >= datetime('now','-{int(days)} days')")
+    if seat: w.append(f"seat='{seat}'")
+    return ("where " + " and ".join(w)) if w else ""
+
+def report(days, seat):
+    con = sqlite3.connect(DB); con.executescript(SCHEMA); w = _where(days, seat)
+    tot = con.execute(f"select count(*),sum(turns),sum(total_tokens),sum(input_tokens),sum(output_tokens),sum(reasoning_tokens),sum(duration_s) from sessions {w}").fetchone()
+    if not tot[0]: print("該当なし（先に collect を実行）"); return
+    print(f"= 期間: 直近 {days or 'すべて'} 日 / セッション {tot[0]} / turn {tot[1] or 0:,}")
+    print(f"= トークン: 合計 {tot[2] or 0:,}（入力 {tot[3] or 0:,} / 出力 {tot[4] or 0:,} / 推論 {tot[5] or 0:,}）")
+    print(f"= 実時間: {(tot[6] or 0)/3600:.1f} 時間\n")
+    for title, sql in [
+        ("モデル/effort 別", f"select coalesce(model,'?')||'/'||coalesce(effort,'?') k, count(*), sum(turns), sum(total_tokens), sum(total_tokens)/nullif(sum(turns),0) from sessions {w} group by k order by 4 desc"),
+        ("席別",           f"select coalesce(seat,'?'), count(*), sum(turns), sum(total_tokens), sum(total_tokens)/nullif(sum(turns),0) from sessions {w} group by 1 order by 4 desc"),
+        ("日別",           f"select date(started), count(*), sum(turns), sum(total_tokens), sum(total_tokens)/nullif(sum(turns),0) from sessions {w} group by 1 order by 1"),
+    ]:
+        print(f"-- {title}")
+        print(f"   {'キー':<26}{'数':>4}{'turn':>8}{'総トークン':>15}{'/turn':>10}")
+        for r in con.execute(sql):
+            print(f"   {str(r[0]):<24} {r[1]:>4} {r[2] or 0:>7} {r[3] or 0:>16,} {int(r[4] or 0):>10,}")
+        print()
+    con.close()
+
+def sessions(days, seat):
+    con = sqlite3.connect(DB); con.executescript(SCHEMA); w = _where(days, seat)
+    for r in con.execute(f"select started,seat,model,effort,turns,total_tokens,duration_s,first_prompt from sessions {w} order by started desc"):
+        d = f"{(r[6] or 0)/60:.0f}m"
+        print(f"{(r[0] or '')[:16]}  {str(r[1])[:16]:<16} {str(r[2])[:14]:<14}{str(r[3])[:6]:<6} turn={r[4]:<5} tok={r[5] or 0:>12,} {d:>6}  {(r[7] or '')[:70]}")
+    con.close()
+
+def csv_out(days, seat):
+    import csv
+    con = sqlite3.connect(DB); con.executescript(SCHEMA); w = _where(days, seat)
+    cur = con.execute(f"select * from sessions {w} order by started")
+    wr = csv.writer(sys.stdout); wr.writerow([c[0] for c in cur.description])
+    for row in cur: wr.writerow(row)
+    con.close()
+
+if __name__ == "__main__":
+    ap = argparse.ArgumentParser()
+    ap.add_argument("cmd", choices=["collect", "report", "sessions", "csv"])
+    ap.add_argument("--days", type=int, default=None)
+    ap.add_argument("--seat", default=None)
+    ap.add_argument("--since", default=None)
+    a = ap.parse_args()
+    os.makedirs(os.path.dirname(DB), exist_ok=True)
+    if a.cmd == "collect": collect(a.since)
+    elif a.cmd == "report": report(a.days, a.seat)
+    elif a.cmd == "sessions": sessions(a.days, a.seat)
+    else: csv_out(a.days, a.seat)

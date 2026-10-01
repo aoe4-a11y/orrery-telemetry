@@ -1,0 +1,238 @@
+#!/usr/bin/env python3
+"""owner-sheet-server — serve a static owner reading table with writable cells.
+
+Why: `open <html>` shows the static receipt in the owner's browser (Brave) with
+empty cells the owner cannot type into (2026-09-20 03:5x, S30-A). A file:// page
+cannot write to disk, so this tiny localhost server injects inputs into the
+existing table and saves every change to a JSON + Markdown pair on disk.
+
+Usage:
+  owner-sheet-server.py --html <table.html> --out <scores.json> [--port 8931]
+
+Binds 127.0.0.1 only. GET / returns the transformed page (prefilled from --out
+when it exists); POST /save receives {"scores": {qid: {...}}} and rewrites
+--out and the sibling .md. No other routes.
+"""
+import argparse, json, re, html, os, sys, datetime
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+
+FILL_RE = re.compile(r"<table class='fill'>.*?</table>", re.S)
+H2_RE = re.compile(r"<h2 id='([^']+)'>")
+
+# 2026-09-20 (V-4 sheet): the field labels come from the page's own <table class='fill'>
+# rows (<th>label</th>) when present, so a sheet for the owner's private exam does not
+# carry the S30-A-only "kokushi-trainer への不満" field. These are the fallback labels.
+FIELDS = [
+    ("score", "殿の点数 (/80)", "number"),
+    ("unnatural", "不自然の型", "text"),
+    ("note", "備考", "text"),
+]
+TH_RE = re.compile(r"<th>(.*?)</th>", re.S)
+
+def fields_from_table(table_html: str):
+    labels = [re.sub(r"<[^>]+>", "", t).strip() for t in TH_RE.findall(table_html)]
+    if not labels:
+        return FIELDS
+    out = []
+    for i, label in enumerate(labels):
+        key = "score" if i == 0 else ("unnatural" if i == 1 else f"f{i}")
+        # 2026-09-21 D-1: "点数不要" in a label made the field numeric; only "/80" marks a score
+        kind = "number" if "/80" in label else "text"
+        out.append((key, label, kind))
+    return out
+
+JS = """
+<script>
+(function(){
+  // 2026-09-20 P-017 #6: the owner twice believed nothing was saved. Make the state
+  // unmistakable: a per-question summary of what is on disk, a localStorage draft
+  // that survives reloads, and a red banner until the server confirms.
+  var status=document.getElementById('save-status');
+  var summary=document.getElementById('save-summary');
+  var timer=null;
+  var KEY='owner-sheet-draft:'+location.pathname+':'+document.title;
+  function collect(){
+    var out={};
+    document.querySelectorAll('[data-q]').forEach(function(el){
+      var q=el.getAttribute('data-q'), f=el.getAttribute('data-f');
+      out[q]=out[q]||{}; out[q][f]=el.value;
+    });
+    return out;
+  }
+  function render(scores){
+    var parts=[];
+    Object.keys(scores).forEach(function(q){
+      var sc=scores[q]&&scores[q].score; if(sc!==undefined&&sc!==''){parts.push(q.replace(/^q-/,'')+'='+sc);}
+    });
+    summary.textContent=parts.length?('保存済みの点数: '+parts.join('・')):'保存済みの点数: なし';
+  }
+  function draft(){ try{ localStorage.setItem(KEY, JSON.stringify(collect())); }catch(e){} }
+  function restoreDraft(){
+    try{
+      var d=JSON.parse(localStorage.getItem(KEY)||'null'); if(!d) return false; var n=0;
+      document.querySelectorAll('[data-q]').forEach(function(el){
+        var q=el.getAttribute('data-q'), f=el.getAttribute('data-f');
+        if(d[q]&&d[q][f]&&!el.value){ el.value=d[q][f]; n++; }
+      });
+      return n>0;
+    }catch(e){ return false; }
+  }
+  function save(){
+    var scores=collect(); draft();
+    var body=JSON.stringify({scores:scores});
+    fetch('/save',{method:'POST',headers:{'Content-Type':'application/json'},body:body})
+      .then(function(r){return r.json();})
+      .then(function(j){status.textContent='保存済み '+j.saved_at+'（'+j.filled+'/'+document.querySelectorAll('h2[id]').length+' 問に点数）'; status.className='ok'; render(scores);})
+      .catch(function(e){status.textContent='保存失敗（下書きは端末に残しています）: '+e; status.className='ng';});
+  }
+  document.querySelectorAll('[data-q]').forEach(function(el){
+    el.addEventListener('input',function(){ status.textContent='未保存…（入力後 0.7 秒で自動保存）'; status.className='ng'; draft();
+      clearTimeout(timer); timer=setTimeout(save,700); });
+    el.addEventListener('change',save);
+  });
+  document.getElementById('save-btn').addEventListener('click',save);
+  render(collect());
+  if(restoreDraft()){ status.textContent='前回の未保存の下書きを復元しました。保存します…'; status.className='ng'; save(); }
+  window.addEventListener('beforeunload',function(e){ if(status.className==='ng'){ e.preventDefault(); e.returnValue='未保存の入力があります'; } });
+})();
+</script>
+"""
+
+CSS = """<style>
+.fill input,.fill textarea{width:100%;box-sizing:border-box;font:inherit;padding:.3em}
+.fill input[type=number]{width:8em}
+#save-bar{position:sticky;top:0;background:#fff8dc;border-bottom:1px solid #cc9;padding:.5em 1em;z-index:9}
+#save-status.ok{color:#080;font-weight:600}#save-status.ng{color:#b00;font-weight:600}#save-summary{font-size:.9em;color:#333;margin-top:.2em}
+</style>"""
+
+
+def transform(src: str, existing: dict) -> str:
+    ids = H2_RE.findall(src)
+    it = iter(ids)
+
+    def repl(m):
+        try:
+            q = next(it)
+        except StopIteration:
+            return m.group(0)
+        prev = existing.get(q, {})
+        rows = []
+        for key, label, kind in fields_from_table(m.group(0)):
+            val = html.escape(str(prev.get(key, "")))
+            if kind == "number":
+                ctl = f"<input type='number' min='0' max='80' step='1' data-q='{q}' data-f='{key}' value='{val}'>"
+            else:
+                ctl = f"<textarea rows='2' data-q='{q}' data-f='{key}'>{val}</textarea>"
+            rows.append(f"<tr><th>{label}</th><td>{ctl}</td></tr>")
+        return "<table class='fill'>" + "".join(rows) + "</table>"
+
+    out = FILL_RE.sub(repl, src)
+    bar = ("<div id='save-bar'><b>入力は自動保存</b>（入力後 0.7 秒・保存先はこの Mac の DevSSD-Private）。"
+           "<button id='save-btn'>いま保存</button> <span id='save-status'>未入力</span>"
+           "<div id='save-summary'></div></div>")
+    # 2026-09-20: a page without <html>/<head>/<body> wrappers (artifact-style HTML) silently
+    # lost the save bar and JS, so the owner typed into inputs that never saved (V-4 sheet).
+    # Inject robustly: CSS+bar at the top, JS at the end, whether or not the tags exist.
+    if "</head>" in out:
+        out = out.replace("</head>", CSS + "</head>", 1)
+    else:
+        out = CSS + out
+    # 2026-09-20 (S-2): the <body> offset must be taken AFTER the CSS insertion above —
+    # a stale offset put the save bar inside the <style> block (full-document page).
+    m_body = re.search(r"<body[^>]*>", out)
+    if m_body:
+        out = out[:m_body.end()] + bar + out[m_body.end():]
+    else:
+        out = bar + out
+    if "</body>" in out:
+        out = out.replace("</body>", JS + "</body>", 1)
+    else:
+        out = out + JS
+    # self-check: the bar must not sit inside a <style> or <script> block
+    for tag in ("style", "script"):
+        for blk in re.findall(rf"<{tag}[^>]*>.*?</{tag}>", out, flags=re.S):
+            if "id='save-bar'" in blk:
+                raise RuntimeError(f"save bar injected inside <{tag}> — refusing to serve")
+    return out
+
+
+def write_md(path_md: str, scores: dict, html_path: str):
+    lines = ["# S30-A 殿の点数（owner-sheet-server が保存）", "",
+             f"出典表: `{html_path}`", f"保存: {datetime.datetime.now().isoformat(timespec='seconds')}", "",
+             "| 問 | 殿の点数 (/80) | 不自然の型 | kokushi-trainer 解説への不満 |", "|---|---|---|---|"]
+    for q in sorted(scores):
+        s = scores[q]
+        cell = lambda v: str(v).replace("|", "｜").replace("\n", " ")
+        lines.append(f"| {q} | {cell(s.get('score',''))} | {cell(s.get('unnatural',''))} | {cell(s.get('kokushi_note',''))} |")
+    with open(path_md, "w") as f:
+        f.write("\n".join(lines) + "\n")
+
+
+def main():
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--html", required=True)
+    ap.add_argument("--out", required=True)
+    ap.add_argument("--port", type=int, default=8931)
+    a = ap.parse_args()
+    html_path = os.path.abspath(a.html)
+    out_json = os.path.abspath(a.out)
+    out_md = os.path.splitext(out_json)[0] + ".md"
+    os.makedirs(os.path.dirname(out_json), exist_ok=True)
+
+    def load():
+        try:
+            return json.load(open(out_json)).get("scores", {})
+        except Exception:
+            return {}
+
+    class H(BaseHTTPRequestHandler):
+        def log_message(self, fmt, *args):
+            sys.stderr.write("%s %s\n" % (datetime.datetime.now().isoformat(timespec="seconds"), fmt % args)); sys.stderr.flush()
+
+        def do_GET(self):
+            if self.path.split("?")[0] not in ("/", "/index.html"):
+                self.send_response(404); self.end_headers(); return
+            try:
+                page = transform(open(html_path, encoding="utf-8").read(), load()).encode("utf-8")
+            except Exception:
+                import traceback
+                sys.stderr.write("transform error:\n" + traceback.format_exc()); sys.stderr.flush()
+                body = b"owner-sheet-server: transform error (see server.log)"
+                self.send_response(500); self.send_header("Content-Type", "text/plain")
+                self.send_header("Content-Length", str(len(body))); self.end_headers(); self.wfile.write(body); return
+            self.send_response(200)
+            self.send_header("Content-Type", "text/html; charset=utf-8")
+            self.send_header("Content-Length", str(len(page)))
+            self.send_header("Cache-Control", "no-store")
+            self.end_headers(); self.wfile.write(page)
+
+        def do_POST(self):
+            if self.path != "/save":
+                self.send_response(404); self.end_headers(); return
+            n = int(self.headers.get("Content-Length", "0"))
+            try:
+                data = json.loads(self.rfile.read(n).decode("utf-8"))
+                scores = data.get("scores", {})
+                assert isinstance(scores, dict)
+            except Exception:
+                self.send_response(400); self.end_headers(); return
+            now = datetime.datetime.now().isoformat(timespec="seconds")
+            tmp = out_json + ".tmp"
+            with open(tmp, "w") as f:
+                json.dump({"saved_at": now, "source_html": html_path, "scores": scores}, f, ensure_ascii=False, indent=1)
+            os.replace(tmp, out_json)
+            write_md(out_md, scores, html_path)
+            filled = sum(1 for s in scores.values() if str(s.get("score", "")).strip() != "")
+            body = json.dumps({"ok": True, "saved_at": now[11:19], "filled": filled}).encode()
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers(); self.wfile.write(body)
+
+    srv = ThreadingHTTPServer(("127.0.0.1", a.port), H)
+    sys.stderr.write(f"owner-sheet-server: http://127.0.0.1:{a.port}/  html={html_path}  out={out_json}\n")
+    srv.serve_forever()
+
+
+if __name__ == "__main__":
+    main()

@@ -1,0 +1,101 @@
+#!/usr/bin/env bash
+# 監査用の証拠束を作る（決定的・無料）。判断はしない。事実だけ集める。
+# 目的: 「報告されたこと」と「実際にあるもの」を突き合わせられる形で並べる。
+# Usage: orrery-audit-evidence [出力先.md]   (既定: ~/.agentstack/runtime/audit/latest.md)
+set -uo pipefail
+[ -f "$HOME/.agentstack/env.sh" ] && source "$HOME/.agentstack/env.sh"
+OUT="${1:-$HOME/.agentstack/runtime/audit/latest.md}"
+mkdir -p "$(dirname "$OUT")"
+DB="$HOME/.agentstack/mail/storage.sqlite3"
+MAIN="$HOME/tools/osce-trainer-main"
+REL="$HOME/tools/osce-trainer-release-1.0.20"
+KOK="$HOME/tools/kokushi-trainer"
+VAULT="$HOME/tools/kokushi-corpus-vault"
+EF="$HOME/tools/examforge"
+
+exec > "$OUT" 2>&1
+echo "# ORRERY 監査証拠束 — $(date '+%Y-%m-%d %H:%M %Z')"
+echo
+echo "> このファイルは事実だけを集めた束です。判断は含みません。"
+echo "> 使い方: 「誰かが完了と言ったこと」が「実際にあるもの」と一致しているかを突き合わせる。"
+echo
+
+echo "## 1. 席の死活（便の有無ではなく画面と cwd で見る）"
+echo '```'
+"$HOME/.agentstack/bin/agentstack-check-seats" 2>/dev/null || echo "(tmux 席なし = 全席 park)"
+echo '```'
+echo
+
+echo "## 2. 便の量と、成果物の量"
+echo '```'
+for h in 6 24 72; do
+  n=$(sqlite3 "$DB" "select count(*) from messages where created_ts>datetime('now','-$h hours');" 2>/dev/null)
+  kb=$(sqlite3 "$DB" "select coalesce(sum(length(body_md))/1024,0) from messages where created_ts>datetime('now','-$h hours');" 2>/dev/null)
+  echo "直近 ${h}h: 便 ${n} 通 / 本文 ${kb} KB"
+done
+echo
+echo "-- 送信者別（直近24h） --"
+sqlite3 -column "$DB" "select s.name, count(*) from messages m join agents s on s.id=m.sender_id where m.created_ts>datetime('now','-24 hours') group by s.name order by 2 desc limit 12;" 2>/dev/null
+echo '```'
+echo
+
+echo "## 3. 「完了」と言われた便（直近48h）— 実体があるか確かめる対象"
+echo '```'
+sqlite3 "$DB" "select m.id||' | '||datetime(m.created_ts,'localtime')||' | '||s.name||' | '||substr(m.subject,1,72)
+ from messages m join agents s on s.id=m.sender_id
+ where m.created_ts>datetime('now','-48 hours')
+ and (m.subject like '%完了%' or m.subject like '%complete%' or m.subject like '%受理%' or m.subject like '%PASS%'
+      or m.subject like '%GREEN%' or m.subject like '%緑%' or m.subject like '%done%' or m.subject like '%出荷%')
+ order by m.id desc limit 25;" 2>/dev/null
+echo '```'
+echo
+
+echo "## 4. 出荷の実体 — 公開されている版と、保存されているタグ"
+echo '```'
+echo "-- App Store（ASC 生 API） --"
+( cd "$HOME/tools/osce-trainer" && python3 scripts/release/asc_jwt.py \
+  "/apps/6765927901/appStoreVersions?limit=4&fields[appStoreVersions]=versionString,appStoreState" 2>/dev/null \
+  | python3 -c "import sys,json;t=sys.stdin.read();t=t[t.index('{'):] if '{' in t else '{}';d=json.loads(t);[print(' ',a['attributes']['versionString'],a['attributes']['appStoreState']) for a in d.get('data',[])]" ) 2>/dev/null || echo "  (ASC 照会不可)"
+echo "-- OSCE 出荷タグ（remote） --"
+( cd "$REL" && git ls-remote --tags origin 2>/dev/null | grep -oE 'osce-ios-v[0-9.]+-build[0-9]+' | sort -uV | tail -6 ) || echo "  (取得不可)"
+echo "-- kokushi tag / corpus vault tag（remote） --"
+( cd "$KOK" && git ls-remote --tags origin 2>/dev/null | grep -oE 'kokushi-v[0-9.]+b[0-9]+' | sort -uV | tail -3 ) || echo "  (取得不可)"
+( cd "$VAULT" && git ls-remote --tags origin 2>/dev/null | grep -oE 'kokushi-corpus-b[0-9]+' | sort -uV | tail -3 ) || echo "  (取得不可)"
+echo '```'
+echo "**照合の観点**: 公開されている版すべてに、対応する出荷タグが remote にあるか。無ければ再現不能な公開版である。"
+echo
+
+echo "## 5. ExamForge の出口（端末内で生成された解説の件数）"
+echo '```'
+EV=$(ls -dt /Volumes/DevSSD-Private/DevStorageGovernor/artifacts/examforge/*private-evidence*/ 2>/dev/null | head -1)
+echo "最新の私的証拠 root: ${EV:-<なし>}"
+if [ -n "${EV:-}" ]; then
+  echo "Enrichment を名に含むファイル数: $(find "$EV" -iname '*enrich*' 2>/dev/null | wc -l | tr -d ' ')"
+  find "$EV" -iname '*model-state*' -o -iname '*model-hash*' 2>/dev/null | head -3
+fi
+echo '```'
+echo "**照合の観点**: 生成された解説の本文が 1 件でも実在するか。import PASS・保存成功は出口ではない（M-027）。"
+echo
+
+echo "## 6. 台帳と資産の埋まり具合"
+echo '```'
+for f in INDEX ASSETS PRODUCTS; do
+  p="$MAIN/docs/ledger/$f.md"
+  [ -f "$p" ] && echo "$f.md: $(wc -l < "$p" | tr -d ' ') 行 / 最終更新 $(stat -f %Sm -t '%m-%d %H:%M' "$p")" || echo "$f.md: 不在"
+done
+echo "資産 INDEX の判定内訳:"
+grep -oE '\[(成立|否定|要再検証)\]' "$MAIN/docs/ledger/ASSETS.md" 2>/dev/null | sort | uniq -c | sed 's/^/  /'
+echo "資産 INDEX の節:"
+grep -E '^## ' "$MAIN/docs/ledger/ASSETS.md" 2>/dev/null | sed 's/^/  /'
+echo '```'
+echo "**照合の観点**: 節が空のジャンルは、席が毎回ゼロから設計している可能性がある（M-030）。"
+echo
+
+echo "## 7. 引継ぎ正本の鮮度"
+echo '```'
+HS="$MAIN/docs/handoff/HEAD_STATE.md"
+[ -f "$HS" ] && { echo "HEAD_STATE.md: $(wc -l < "$HS" | tr -d ' ') 行 / 最終更新 $(stat -f %Sm -t '%m-%d %H:%M' "$HS")"; echo "--- 冒頭 6 行 ---"; head -6 "$HS"; } || echo "HEAD_STATE.md 不在"
+echo '```'
+echo
+echo "---"
+echo "生成: \`orrery-audit-evidence\` / 出力: $OUT"

@@ -37,7 +37,7 @@ BUNDLED_OVERFLOW = ("gpt-5.6-sol", "gpt-5.6-luna", "gpt-5.5")
 ALIASES = {"sol": DEFAULT_MODEL, "luna": "gpt-6-luna",
            "astra": "gpt-6-astra", "terra": "gpt-5.6-terra"}
 EFFORTS = ("none", "minimal", "low", "medium", "high", "xhigh", "max", "ultra")
-DEFAULT_EFFORT = "xhigh"
+DEFAULT_EFFORT = os.environ.get("AGENTSTACK_CODEX_EFFORT_DEFAULT", "medium")  # R-062
 MODEL_RE = re.compile(r"gpt-[a-z0-9]+(?:[._-][a-z0-9]+)*")
 MAX_BYTES = 2 * 1024 * 1024
 MAX_MODELS = 256
@@ -396,7 +396,11 @@ def resolve_effort(model: str, raw: str = "", catalog: ModelCatalog | None = Non
         raise ValueError(catalog.error)
     policy = catalog.efforts.get(model)
     if not effort:
-        return policy.default if policy else ""
+        effort = policy.default if policy else ""
+    if effort in ("xhigh", "max", "ultra") and os.environ.get("AGENTSTACK_ALLOW_XHIGH") != "1":
+        raise ValueError("reasoning effort disabled by R-062; set AGENTSTACK_ALLOW_XHIGH=1 only with a head ruling")
+    if not effort:
+        return ""
     if effort not in EFFORTS:
         raise ValueError("unknown Codex reasoning effort")
     # Explicit effort remains the operator choice; Codex validates it at launch.

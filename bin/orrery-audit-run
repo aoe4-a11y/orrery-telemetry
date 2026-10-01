@@ -1,0 +1,85 @@
+#!/usr/bin/env bash
+# 照合の目（常設監査）。証拠束を作り、Claude に「言われたこと」と「あるもの」を突き合わせさせる。
+# 判断するのは product の良し悪しではない。**報告が事実と合っているか**だけ。
+# Usage: orrery-audit-run
+set -uo pipefail
+[ -f "$HOME/.agentstack/env.sh" ] && source "$HOME/.agentstack/env.sh"
+AUD="$HOME/.agentstack/runtime/audit"
+mkdir -p "$AUD"
+STAMP="$(date '+%Y%m%dT%H%M%S')"
+EV="$AUD/evidence-$STAMP.md"
+REP="$AUD/report-$STAMP.md"
+
+"$HOME/.agentstack/bin/orrery-audit-evidence" "$EV" || true
+cp -f "$EV" "$AUD/latest.md" 2>/dev/null || true
+
+PROMPT=$(cat <<'EOF'
+あなたは ORRERY の「照合の目」です。常設の監査席で、head（ProudTuring）とは別人格として動きます。
+
+## あなたの仕事（これだけ）
+**「誰かが完了・PASS・green・受理と言ったこと」が「実際にあるもの」と一致しているかを突き合わせる。**
+一致していないものを見つけて、短く報告する。それだけです。
+
+## あなたの仕事ではないこと（別の席がやります）
+- アプリの善し悪し・使い勝手・利用者の気持ちの評価（これは目利き席 OrangeMaxwell の仕事。侵さない）
+- 実装・修理・設定変更・席の起動終了・端末操作（あなたは読むだけ）
+- 進捗の督促や指示（あなたは指示を出さない。事実を示すだけ）
+
+## 手順
+1. 証拠束 EVIDENCE_PATH を読む。
+2. 「完了」と言われた便のうち、**実体を確かめられるもの**を選び、自分の手で確かめる。
+   読み取り専用のコマンドは使ってよい（git ls-remote / git show / shasum / ls / sqlite3 の select / ASC の GET）。
+   **書き込み・push・削除・状態変更は禁止。**
+3. 見つけるべき型:
+   - 公開されているのに出荷タグが無い版（再現不能な公開版）
+   - 「保存した」「配布した」と言われたが remote / 実ファイル / hash が無い、一致しない
+   - 出口の言葉が手続き（受理・照合・ゲート緑）にすり替わっていて、成果物が 0 のまま続いている駅
+   - 席が死んでいるのに気づかれていない（DEAD-CWD / !ARTIFACT-CWD）
+   - 資産 INDEX の空ジャンル（毎回ゼロから設計されている疑い）
+4. 何も無ければ「異常なし」と 1 行で書く。**無理に所見を作らない。**
+
+## 書き方
+日本語。結論を先に。1 行目に何の話かを書く。識別子の羅列をしない。
+各所見は「**言われたこと** → **実際** → **どちらが正しいか確かめた手段**」の 3 点セットで書く。
+確かめられなかったものは「未確認」と書く。**確かめずに断定しない。**
+
+## 出力
+所見を REPORT_PATH に markdown で書く（あなたが Write する）。
+そのうえで、**赤（公開版のタグ欠落・配布物の hash 不一致・席の死亡・成果物 0 のまま 24h 超）が 1 つでもあれば**
+orrery-mail で ProudTuring 宛に 1 通送る（project_key=/Users/huyuhutaru/tools/examforge, sender_name=OrreryAudit）。
+赤が無ければ mail は送らない。ファイルに書くだけでよい。
+EOF
+)
+PROMPT="${PROMPT//EVIDENCE_PATH/$EV}"
+PROMPT="${PROMPT//REPORT_PATH/$REP}"
+
+cd "$HOME/tools/osce-trainer-main" || exit 1
+claude -p "$PROMPT" --permission-mode bypassPermissions >"$AUD/run-$STAMP.log" 2>&1
+RC=$?
+
+# Claude の判断段が使えないとき（headless の認証切れ等）でも監査を落とさない。
+# 証拠束は決定的に作れているので、head へ「判断待ち」として渡す。
+if [ $RC -ne 0 ] || [ ! -s "$REP" ]; then
+  REASON="$(tail -3 "$AUD/run-$STAMP.log" 2>/dev/null | tr '\n' ' ' | cut -c1-300)"
+  {
+    echo "# 監査: 証拠束は作れたが、判断段が動かなかった — $(date '+%Y-%m-%d %H:%M')"
+    echo
+    echo "**判断待ちです。** head が $EV を読んで突き合わせてください。"
+    echo
+    echo "判断段が落ちた理由（ログ末尾）:"
+    echo '```'; echo "$REASON"; echo '```'
+    echo
+    echo "よくある原因: headless の \`claude\` が認証切れ（殿が \`claude\` に再ログインすると復旧する）。"
+  } > "$REP"
+  python3 - "$REP" <<'PYEOF' 2>/dev/null || true
+import sys, subprocess, pathlib
+body = pathlib.Path(sys.argv[1]).read_text()
+subprocess.run(["/usr/bin/true"])
+PYEOF
+fi
+
+echo "[orrery-audit] rc=$RC evidence=$EV report=$REP log=$AUD/run-$STAMP.log"
+# 古い証拠束は 14 日で捨てる（ラベルで判定できる派生物・R-032）
+find "$AUD" -name 'evidence-*.md' -mtime +14 -delete 2>/dev/null
+find "$AUD" -name 'run-*.log'     -mtime +14 -delete 2>/dev/null
+exit $RC
