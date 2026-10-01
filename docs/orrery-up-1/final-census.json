@@ -72,7 +72,7 @@
     "runtime/claude-mcp-merge-result.json",
     "runtime/settings-merge-result.json"
   ],
-  "source_and_backup_hashes_checked": 284,
+  "source_and_backup_hashes_checked": 286,
   "source_drift": [],
   "same_relative_source_absent_all_count": 59,
   "same_relative_source_absent_excluding_backups": [
@@ -135,5 +135,5 @@
   "same_relative_source_absent_excluding_backups_count": 55,
   "owned_inside_stack_count": 247,
   "owned_external_count": 5,
-  "inventory_rows": 305
+  "inventory_rows": 307
 }

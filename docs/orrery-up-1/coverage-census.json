@@ -4,7 +4,8 @@
     "dashboard",
     "codex",
     "claude",
-    "integrations/codex_app"
+    "integrations/codex_app",
+    "config"
   ],
   "excluded_directory_names": [
     "runtime",
@@ -14,7 +15,7 @@
     ".git",
     ".agents"
   ],
-  "checked_regular_files": 185,
+  "checked_regular_files": 187,
   "uncovered_paths": [],
-  "inventory_sha256": "ad00df5a6c04e806e270c25e863fabc4f7b43b82abb7bafad211d48c451d5772"
+  "inventory_sha256": "79151bb533c5720b602569f6e65acdfbfd133350181c3586d1eb0e5a82341cd0"
 }

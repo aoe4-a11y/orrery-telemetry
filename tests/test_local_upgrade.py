@@ -57,6 +57,7 @@ def test_rollback_preserves_new_mail_state_and_restores_payload(tmp_path):
     module = importlib.util.module_from_spec(spec); spec.loader.exec_module(module)
     home=tmp_path/'home';live=home/'.agentstack';(live/'bin').mkdir(parents=True)
     (live/'bin/tool').write_text('old');(live/'bin/tool').chmod(0o755)
+    (live/'config').mkdir();(live/'config/head-send-lint.json').write_text('{"threshold":1}')
     (live/'mail').mkdir();(live/'mail/storage.sqlite3').write_text('initial-mail')
     (live/'runtime').mkdir();(live/'runtime/agent_token_SunnyCurie').write_text('synthetic-secret')
     project=home/'project';project.mkdir();(project/'CLAUDE.md').write_text('old-managed-doc')
@@ -65,9 +66,11 @@ def test_rollback_preserves_new_mail_state_and_restores_payload(tmp_path):
     assert not (snapshot/'files/.agentstack/mail').exists()
     assert not (snapshot/'files/.agentstack/runtime').exists()
     (live/'bin/tool').write_text('new');(live/'mail/storage.sqlite3').write_text('new-mail')
+    (live/'config/head-send-lint.json').write_text('{"threshold":2}')
     (project/'CLAUDE.md').write_text('new-managed-doc')
     module.restore(home,snapshot)
     assert (live/'bin/tool').read_text()=='old'
+    assert (live/'config/head-send-lint.json').read_text()=='{"threshold":1}'
     assert (live/'bin/tool').stat().st_mode&0o777==0o755
     assert (live/'mail/storage.sqlite3').read_text()=='new-mail'
     assert (live/'runtime/agent_token_SunnyCurie').read_text()=='synthetic-secret'

@@ -12,7 +12,7 @@ forkだけの4 commit（81c3fd9 / cd092c4 / 5e43de6 / e5039ff）は a4830d5 のm
 
 | live file | 改造と扱い | 移植commit |
 |---|---|---|
-| `hooks/spawn_child.sh` | full permissions / R-061 / R-062 / Opus5.5 / Sonnet5.5 / uppercase footer / update dialog / canonical token 保護 / Codex0.159 trust を移植。token-only restart は361de55で認証済み binding に接続。 | a4830d5 + ef51345 |
+| `hooks/spawn_child.sh` | full permissions / R-061 / R-062 / Opus5.5 / Sonnet5.5 / uppercase footer / update dialog / canonical token 保護 / Codex0.159 trust を移植。token-only restart は361de55で認証済み binding に接続。Sonnet friendly aliasとR062 menu/defaultの補完は9cccf55。 | a4830d5 + ef51345 |
 | `hooks/watch_agent_mail_signals.sh` | ProudTuring/PinkTesla 宛 signal を終了、session無し24時間超のsignalを終了。新しい lease-owner と persistent-headless 経路は保持。 | a4830d5 + ef51345 |
 | `hooks/settings.template.json` | R-068 send-message lint と Workflow usage warning を保持。固定HOMEは __AGENTSTACK_HOOKS_DIR__ へ戻してinstall先に展開。 | a4830d5 + ef51345 |
 | `bin/lib/agentstack-scientists.sh` | AdjectiveScientist 形式（hyphen無し）を保持。 | a4830d5 + ef51345 |
@@ -362,5 +362,5 @@ forkだけの4 commit（81c3fd9 / cd092c4 / 5e43de6 / e5039ff）は a4830d5 のm
 
 | installed file | owned | 採録 SHA-256 | 保存先 / commit |
 |---|---|---|---|
-| `config/head-send-lint.json` | no | `bc6a1f2de96bd75ac7e7f4bfc2aaac989f07b6bd0bfcfee636f9ad54c9d5283f` | `config/head-send-lint.json` / config保存commit |
-| `config/head-send-lint.json.bak-20260923-tune1` | no | `38ac876e0ec482b53bfee33b6992357a11cb0a018583b48cd438523b775a74e3` | `docs/orrery-up-1/backup-generations/config/head-send-lint.json.bak-20260923-tune1` / config保存commit |
+| `config/head-send-lint.json` | no | `bc6a1f2de96bd75ac7e7f4bfc2aaac989f07b6bd0bfcfee636f9ad54c9d5283f` | `config/head-send-lint.json` / a931cc3 |
+| `config/head-send-lint.json.bak-20260923-tune1` | no | `38ac876e0ec482b53bfee33b6992357a11cb0a018583b48cd438523b775a74e3` | `docs/orrery-up-1/backup-generations/config/head-send-lint.json.bak-20260923-tune1` / a931cc3 |

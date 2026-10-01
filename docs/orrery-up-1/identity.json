@@ -1,0 +1,18 @@
+{
+  "worktree": "/Users/huyuhutaru/tools/orrery-telemetry-wt-orrery-up-1",
+  "test_command": "PYTHONPATH=. .venv/bin/python -m pytest -q",
+  "codex_cli": "0.159.3",
+  "latest_tag": "2026.09.30.4",
+  "tag_sha": "27b9fb1b46bb24d28f1d6fdb3270b6d31bb5334a",
+  "fork_only": [
+    "e5039ff79663d99764d83e0cfa6961074ec60199",
+    "5e43de6083ab1b897330b631684033fa0511d423",
+    "cd092c441162b1ced76158ab08a214c6b94bf0c2",
+    "81c3fd94be26525d88f4e7a09ec41abe85908507"
+  ],
+  "diff_sha256": "9a2b2a6341dcdc51918f0ce655aed577d1dc156b108e2faeb7fd86ea4e11350c",
+  "first_full_tested_commit": "2b2ac5e",
+  "candidate_code_commit": "a931cc39bf36611262ca77d9eba68114344877c5",
+  "verification_state": "isolated install and final full suite pending; heavy lock queue",
+  "inventory_rows": 307
+}

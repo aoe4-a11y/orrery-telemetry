@@ -2475,7 +2475,7 @@
       "live_sha256": "bc6a1f2de96bd75ac7e7f4bfc2aaac989f07b6bd0bfcfee636f9ad54c9d5283f",
       "disposition": "local-addition-installed",
       "source": "config/head-send-lint.json",
-      "migration_commit": "pending-config-commit"
+      "migration_commit": "a931cc3"
     },
     {
       "installed": "config/head-send-lint.json.bak-20260923-tune1",
@@ -2483,7 +2483,7 @@
       "live_sha256": "38ac876e0ec482b53bfee33b6992357a11cb0a018583b48cd438523b775a74e3",
       "disposition": "historical-generation-preserved",
       "source": null,
-      "migration_commit": "pending-config-commit",
+      "migration_commit": "a931cc3",
       "archive": "docs/orrery-up-1/backup-generations/config/head-send-lint.json.bak-20260923-tune1"
     }
   ],
