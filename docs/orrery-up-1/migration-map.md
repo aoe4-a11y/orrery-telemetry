@@ -4,6 +4,8 @@
 
 採録時の owned は252件。e5039ffとの同名照合で7件差分・59件同名なし（発行時55件から増加）。aliasを辿ると生成wrapper・旧optional sourceが含まれる。全300行を下に列挙する。code .bak は36件（spawn8、supervisor13を含む）、env .bakは4件。失効した古い世代をすべて同時に動かすことはせず、現行コードの累積差分を移植し、旧世代bytesは復元可能な形で残した。
 
+sandbox override の移植は701b298以降で、modern spawn/resume/service環境まで同じ明示設定を渡す。
+
 forkだけの4 commit（81c3fd9 / cd092c4 / 5e43de6 / e5039ff）は a4830d5 のmerge ancestryで保持。hook trustのconfig生成は hooks/child_resume.py へ移した。
 
 ## 実装単位
