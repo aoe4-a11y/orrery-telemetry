@@ -330,13 +330,18 @@ def test_agent_start_actually_execs_claude_inside_tmux():
             f"#!/bin/bash\nprintf 'started\\n' > {marker}\nsleep 5\n",
         )
         env = _agent_start_env(root, bindir, workdir, log)
-        env["TMUX_TMPDIR"] = str(root)
+        # Unix socket addresses are short on macOS. Keep only the regenerable
+        # socket here; marker/log data remain under the test's ordinary root.
+        socket_base = "/private/tmp" if os.path.isdir("/private/tmp") else "/tmp"
+        socket_root = tempfile.TemporaryDirectory(prefix="orrery-tmux-", dir=socket_base)
+        env["TMUX_TMPDIR"] = socket_root.name
         try:
-            subprocess.run(
+            launch = subprocess.run(
                 [tmux, "-L", socket, "new-session", "-d", "-s", "probe",
                  f"{_BASH} {_AGENT_START} {workdir}"],
                 capture_output=True, text=True, env=env, timeout=60,
             )
+            assert launch.returncode == 0, launch.stdout + launch.stderr
             deadline = time.time() + 30
             while time.time() < deadline and not marker.exists():
                 time.sleep(0.5)
@@ -346,8 +351,12 @@ def test_agent_start_actually_execs_claude_inside_tmux():
                 capture_output=True, text=True, env=env, timeout=30,
             ).stdout
         finally:
-            subprocess.run([tmux, "-L", socket, "kill-server"],
-                           capture_output=True, text=True, env=env, timeout=30)
+            sessions = subprocess.run([tmux, "-L", socket, "list-sessions", "-F", "#{session_name}"],
+                                      capture_output=True, text=True, env=env, timeout=30)
+            for session_name in sessions.stdout.splitlines():
+                subprocess.run([tmux, "-L", socket, "kill-session", "-t", "=" + session_name],
+                               capture_output=True, text=True, env=env, timeout=30)
+            socket_root.cleanup()
     assert started, (
         "agent-start never exec'd the Claude binary inside tmux on a tokenless "
         f"transport.\ntmux sessions: {pane}"

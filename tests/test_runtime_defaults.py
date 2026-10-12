@@ -635,6 +635,7 @@ def test_isolated_installer_migrates_annotations_and_matches_manifest_sample(tmp
         "tmux": "#!/bin/sh\nexit 0\n",
         "uname": "#!/bin/sh\necho Linux\n",
         "uv": "#!/bin/sh\nexit 0\n",
+        "codex": "#!/bin/sh\nexit 0\n",
     }.items():
         command = fake_bin / name
         command.write_text(body, encoding="utf-8")
@@ -678,6 +679,7 @@ def test_isolated_installer_migrates_annotations_and_matches_manifest_sample(tmp
         "AGENTSTACK_SPAWN_ROOTS": str(project_dir),
         "AGENTSTACK_PORTRAITS_DIR": "~/faces",
         "AGENTSTACK_CUSTOM_PORTRAITS": f"{project_dir}/faces.json",
+        "AGENTSTACK_CODEX_BIN": str(fake_bin / "codex"),
         "AGENTSTACK_CODEX_MODELS": "gpt-5.6-sol,gpt-5.6-luna",
         "AGENTSTACK_MCP_URL": f"http://127.0.0.1:{mail_port}/mcp",
         "AGENTSTACK_TERMINAL": "auto",
@@ -843,6 +845,8 @@ def test_isolated_installer_migrates_annotations_and_matches_manifest_sample(tmp
     normalized_env["AGENTSTACK_PORTRAITS_DIR"] = ""
     normalized_env["AGENTSTACK_CUSTOM_PORTRAITS"] = ""
     normalized_env["AGENTSTACK_CODEX_MODELS"] = ""
+    assert manifest["env"]["AGENTSTACK_CODEX_BIN"] == str(fake_bin / "codex")
+    normalized_env["AGENTSTACK_CODEX_BIN"] = "__CODEX_BIN__"
     assert normalized_env == sample["env"]
     for key in ("retained_paths", "purge_paths", "notes", "services", "skill_links"):
         assert _normalize_sample_paths(manifest[key], manifest) == sample[key]
