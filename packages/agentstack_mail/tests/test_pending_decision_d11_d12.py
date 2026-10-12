@@ -1550,7 +1550,11 @@ def test_d12_selected_parity_source_order_exposes_external_application_seam() ->
         < should_attempts[2] < worker
     )
     delivery = _extract_shell_function(source, "deliver_worker")
-    submit = delivery.index('tmux send-keys -t "$session_name" C-m')
+    injection = _extract_shell_function(source, "inject_notification")
+    submit = injection.index('tmux send-keys -t "$session_name" C-m')
+    observed = injection.index('notification_is_in_input "$marker"', submit)
+    assert submit < observed
+    submit = delivery.index('inject_notification "$session_name"')
     success = delivery.index(
         'state_mark_result "$agent_name" "$msg_key" "success" "watcher"'
     )

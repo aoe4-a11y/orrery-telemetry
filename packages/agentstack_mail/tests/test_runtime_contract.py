@@ -182,6 +182,18 @@ def test_actual_tool_schemas_match_the_frozen_live_contract() -> None:
         for tool in fixture["tools"]
         if tool["name"] in COMPATIBILITY_TOOLS
     }
+    # The legacy capture stays immutable. Versioned, optional additions are
+    # checked explicitly; changing an existing or required argument is refused.
+    extension_path = fixture_path.with_name("tool-schema-extensions-v1.json")
+    extensions = json.loads(extension_path.read_text(encoding="utf-8"))
+    assert extensions["extension_version"] == 1
+    assert set(extensions["tools"]) == {"fetch_inbox"}
+    for name, extension in extensions["tools"].items():
+        additions = extension["inputSchema"]["properties"]
+        assert set(additions) == {"message_id"}
+        assert not set(additions) & set(expected[name]["inputSchema"]["properties"])
+        expected[name]["inputSchema"]["properties"].update(additions)
+
     expected_read_tool_descriptions = {
         tool["name"]: tool["description"]
         for tool in fixture["tools"]

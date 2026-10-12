@@ -427,6 +427,8 @@ def test_task_file_is_embedded_literally_for_both_launch_paths(
     assert "IGNORED POSITIONAL TASK" not in injected
     assert "登録は親が完了済み・儀式不要です" in injected
     assert "ensure_project・register_agent と起動時のタスク取得用 fetch_inbox は不要" in injected
+    assert "この省略は起動時だけ" in injected
+    assert "preview通知を受けたら fetch_inbox で全文" in injected
     assert f"あなたは {child_name}（親: ParentAgent）" in injected
     assert "現在時刻:" in injected
     assert "project_key は /shared/project" in injected

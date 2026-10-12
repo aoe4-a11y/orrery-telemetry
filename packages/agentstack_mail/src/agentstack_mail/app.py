@@ -4569,6 +4569,7 @@ async def _list_inbox(
     include_bodies: bool,
     since_ts: Optional[str],
     topic: Optional[str] = None,
+    message_id: Optional[int] = None,
 ) -> list[dict[str, Any]]:
     if project.id is None or agent.id is None:
         raise ValueError("Project and agent must have ids before listing inbox.")
@@ -4586,6 +4587,8 @@ async def _list_inbox(
             .order_by(desc(Message.created_ts))
             .limit(limit)
         )
+        if message_id is not None:
+            stmt = stmt.where(Message.id == message_id)
         if urgent_only:
             stmt = stmt.where(cast(Any, Message.importance).in_(["high", "urgent"]))
         if since_ts:
@@ -8191,6 +8194,7 @@ def build_mcp_server() -> FastMCP:
         since_ts: Optional[str] = None,
         topic: Optional[str] = None,
         format: Optional[str] = None,
+        message_id: Optional[int] = None,
     ) -> list[dict[str, Any]]:
         """
         Retrieve recent messages for an agent without mutating read/ack state.
@@ -8202,6 +8206,7 @@ def build_mcp_server() -> FastMCP:
         - `limit`: max number of messages (default 20)
         - `include_bodies`: include full Markdown bodies in the payloads
         - `topic`: filter to messages with this topic tag
+        - `message_id`: retrieve one recipient-owned message, independent of inbox age
 
         Usage patterns
         --------------
@@ -8222,6 +8227,8 @@ def build_mcp_server() -> FastMCP:
         }}}
         ```
         """
+        if message_id is not None and (type(message_id) is not int or message_id < 1):
+            raise ValueError("message_id must be a positive integer")
         # Validate limit parameter bounds
         if limit < 1:
             raise ToolExecutionError(
@@ -8251,7 +8258,7 @@ def build_mcp_server() -> FastMCP:
         try:
             project = await _get_project_by_identifier(project_key)
             agent = await _get_agent(project, agent_name)
-            items = await _list_inbox(project, agent, limit, urgent_only, include_bodies, since_ts, topic=topic)
+            items = await _list_inbox(project, agent, limit, urgent_only, include_bodies, since_ts, topic=topic, message_id=message_id)
             if settings.notifications.enabled:
                 with suppress(Exception):
                     await clear_notification_signal(settings, project.slug, agent.name)

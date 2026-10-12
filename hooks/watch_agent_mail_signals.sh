@@ -720,20 +720,6 @@ deliver_worker() {
         return 0
     fi
 
-    # 保険: それでも入力欄に本文が残っていれば C-m を 1 回だけ送り直す。入力欄は
-    # 画面上で最後にある ›（Codex）/ ❯（Claude Code）の行。履歴の同じ文面は
-    # それより上にあるので誤判定しない。長い貼り付けは Claude Code が
-    # [Pasted text …] に畳むので、それも残留とみなす。
-    sleep 1
-    local input_line
-    input_line=$(run_to "$TMUX_TIMEOUT" tmux capture-pane -t "$session_name" -p 2>/dev/null \
-        | grep -E '^[[:space:]]*(›|❯)' | tail -1) || input_line=""
-    if [[ -n "$input_line" ]] && { [[ "$input_line" == *"ORRERY Mail notification: message from ${from}"* ]] \
-        || [[ "$input_line" == *"[Pasted text"* ]]; }; then
-        log "  Notification still in the input box of '$agent_name'; resending C-m"
-        run_to "$TMUX_TIMEOUT" tmux send-keys -t "$session_name" C-m 2>/dev/null || true
-    fi
-
     state_mark_result "$agent_name" "$msg_key" "success" "watcher"
     release_delivery_lease "$agent_name" "$msg_key" "$lease_owner"
     log "  Injected notification into '$agent_name' (session: $session_name)"
