@@ -162,6 +162,22 @@ def test_unreachable_server_exits_1():
     assert code == 1, code
 
 
+
+def test_exact_id_recovery_can_read_an_old_message():
+    messages = [{"id": 20597, "from": "ProudTuring", "body_md": "complete"}]
+    assert await_reply._pick(messages, "ProudTuring", None, 20597) == messages[0]
+    assert await_reply._pick(messages, "ProudTuring", 20633) is None
+    assert await_reply._pick(messages, "ProudTuring", None, 21016) is None
+
+
+def test_tool_error_is_not_an_empty_inbox():
+    try:
+        await_reply._messages({"result": {"isError": True, "content": [{"text": "refused"}]}})
+    except RuntimeError:
+        pass
+    else:
+        raise AssertionError("tool rejection became an empty inbox")
+
 def main() -> int:
     failures = 0
     for name, fn in sorted(globals().items()):

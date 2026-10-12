@@ -1194,13 +1194,15 @@ _WATCHER_FUNCTIONS = (
     "state_mark_result",
     "acquire_delivery_lease",
     "release_delivery_lease",
+    "notification_is_in_input",
+    "inject_notification",
     "deliver_worker",
 )
 
 
 def _extract_shell_function(source: str, name: str) -> str:
     match = re.search(
-        rf"^{re.escape(name)}\(\) \{{\n(?:.*\n)*?^\}}\n",
+        rf"^{re.escape(name)}\(\) [{{(]\n(?:.*\n)*?^[}})]\n",
         source,
         re.MULTILINE,
     )
@@ -1410,7 +1412,8 @@ def test_d12_selected_parity_watcher_crash_windows_are_durable_and_hermetic(
             .read_text(encoding="utf-8")
             .splitlines()
         )
-        assert commands[-1].endswith("send-keys -t BlueLake C-m")
+        assert commands[-1].endswith("capture-pane -t BlueLake -p")
+        assert any(c.endswith("send-keys -t BlueLake C-m") for c in commands[:-1])
         _assert_injection_commands(commands, expected_count=1)
 
         if crash_point == "after_external_injection":
@@ -1525,7 +1528,11 @@ def test_d12_selected_parity_source_order_exposes_external_application_seam() ->
     worker = handler.index('deliver_worker "$signal_file" "$agent_name" "$msg_key"')
     assert should_attempt < acquire < worker
     delivery = _extract_shell_function(source, "deliver_worker")
-    submit = delivery.index('tmux send-keys -t "$session_name" C-m')
+    injection = _extract_shell_function(source, "inject_notification")
+    submit = injection.index('tmux send-keys -t "$session_name" C-m')
+    observed = injection.index('notification_is_in_input "$marker"', submit)
+    assert submit < observed
+    submit = delivery.index('inject_notification "$session_name"')
     success = delivery.index(
         'state_mark_result "$agent_name" "$msg_key" "success" "watcher"'
     )

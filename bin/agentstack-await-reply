@@ -90,6 +90,8 @@ def _call(url: str, tool: str, arguments: dict) -> dict:
 
 def _messages(response: dict) -> list[dict]:
     result = response.get("result") or {}
+    if response.get("error") or result.get("isError"):
+        raise RuntimeError("mail tool rejected the request")
     structured = result.get("structuredContent")
     if isinstance(structured, dict) and isinstance(structured.get("result"), list):
         return structured["result"]
@@ -108,7 +110,7 @@ def _messages(response: dict) -> list[dict]:
     return []
 
 
-def _pick(messages: list[dict], sender: str | None, after_id: int | None) -> dict | None:
+def _pick(messages: list[dict], sender: str | None, after_id: int | None, exact_id: int | None = None) -> dict | None:
     candidates = []
     for message in messages:
         if not isinstance(message, dict):
@@ -117,6 +119,8 @@ def _pick(messages: list[dict], sender: str | None, after_id: int | None) -> dic
             continue
         message_id = message.get("id")
         if after_id is not None and (not isinstance(message_id, int) or message_id <= after_id):
+            continue
+        if exact_id is not None and message_id != exact_id:
             continue
         candidates.append(message)
     if not candidates:
@@ -131,7 +135,9 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--agent-name", required=True)
     parser.add_argument("--project-key", default=None)
     parser.add_argument("--from", dest="sender", default=None)
-    parser.add_argument("--after-id", type=int, default=None)
+    recovery = parser.add_mutually_exclusive_group()
+    recovery.add_argument("--after-id", type=int, default=None)
+    recovery.add_argument("--message-id", type=int, default=None, help="retrieve a specific old message; --after-id only waits for newer IDs")
     parser.add_argument("--timeout", type=float, default=300.0)
     parser.add_argument("--interval", type=float, default=3.0)
     args = parser.parse_args(argv)
@@ -158,13 +164,18 @@ def main(argv: list[str] | None = None) -> int:
                     "agent_name": args.agent_name,
                     "limit": 20,
                     "include_bodies": True,
+                    **({"message_id": args.message_id} if args.message_id is not None else {}),
                 },
             )
         except (urllib.error.URLError, OSError, ValueError):
             response = None
         if response is not None:
             ever_reached = True
-            match = _pick(_messages(response), args.sender, args.after_id)
+            try:
+                match = _pick(_messages(response), args.sender, args.after_id, args.message_id)
+            except RuntimeError:
+                print("agentstack-await-reply: mail tool rejected the request; not a reply timeout", file=sys.stderr)
+                return 1
             if match is not None:
                 print(json.dumps(match, ensure_ascii=False))
                 return 0
