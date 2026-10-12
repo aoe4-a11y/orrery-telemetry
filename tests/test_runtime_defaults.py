@@ -762,6 +762,7 @@ def test_isolated_installer_migrates_annotations_and_matches_manifest_sample(tmp
         "tmux": "#!/bin/sh\nexit 0\n",
         "uname": "#!/bin/sh\necho Linux\n",
         "uv": "#!/bin/sh\nexit 0\n",
+        "codex": "#!/bin/sh\nexit 0\n",
     }.items():
         command = fake_bin / name
         command.write_text(body, encoding="utf-8")

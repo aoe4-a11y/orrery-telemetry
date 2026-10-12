@@ -25,7 +25,9 @@ dependencies = [
   "PyYAML>=6.0.2",
   "pathspec>=0.12.1",
   "python-decouple>=3.8",
-  "sqlmodel>=0.0.16",
+  # 0.0.48 rejects the naive UTC defaults used by the frozen SQLite model.
+  # Match the deployed version until an explicit datetime storage migration.
+  "sqlmodel==0.0.42",
   "sqlalchemy[asyncio]>=2.0.35",
   "aiosqlite>=0.20.0",
   "rich>=13.9.1",

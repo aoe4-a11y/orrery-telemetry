@@ -176,7 +176,12 @@ def _flags_with_env(help_text: str | None, env: dict[str, str]) -> str:
         else:
             _codex_stub(tmpdir, help_text)
             run_env["PATH"] = f"{tmpdir}:/usr/bin:/bin"
-        script = _codex_lookup() + _extract("codex_approval_flags") + "\ncodex_approval_flags\n"
+        script = _codex_lookup() + _extract("codex_approval_flags")
+        if help_text is None:
+            # Model an absent executable, even on hosts with a real Homebrew
+            # installation reachable through the launcher's fallback search.
+            script += "\nfind_codex_bin() { :; }\n"
+        script += "\ncodex_approval_flags\n"
         return _run_bash(script, run_env).stdout.strip()
 
 
@@ -916,7 +921,9 @@ def test_codex_binary_is_found_under_per_user_node_prefixes():
         assert stale.stdout.strip() == str(fake)
 
         # Nothing anywhere: the launcher still says so instead of guessing.
-        missing = _run_bash(script, {"HOME": str(home / "empty"), "PATH": "/usr/bin:/bin",
+        absent_search = '\ncodex_search_path() { printf "%s\\n" "$HOME/no-codex"; }\n'
+        missing_script = script.rsplit("resolve_codex_bin\n", 1)[0] + absent_search + "resolve_codex_bin\n"
+        missing = _run_bash(missing_script, {"HOME": str(home / "empty"), "PATH": "/usr/bin:/bin",
                                      "AGENTSTACK_CODEX_BIN": ""})
         assert missing.returncode == 1
         assert "no usable Codex CLI found" in missing.stderr
