@@ -1,9 +1,14 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <!--
-  Daily size-based rotation of ~/.agentstack/runtime/*.log (rootless
-  LaunchAgent). Scope is that one directory; the ORRERY Mail service log under
-  mail-service/runtime is deliberately not listed (not approved for rotation).
+  Daily size-based rotation of ~/.agentstack/runtime/*.log and
+  ~/.agentstack/mail-service/runtime/*.log (rootless LaunchAgent).
+  mail-service/runtime was "not approved for rotation" until 2026-10-14: head
+  mail 24844 approved it because agentstack-mailctl opens the log with ">>"
+  (O_APPEND), so copytruncate leaves no sparse hole (measured: 5.98 GB log
+  rotated with 0 lost bytes). The oldest archive is gzipped into
+  AGENTSTACK_LOG_ROTATE_ARCHIVE_DIR (encrypted DevSSD-Private records root)
+  with a SHA-checked tombstone instead of being deleted (storage v5.9).
 
   Preparation only: scripts/install.sh does not install this. Deployment is
   the head's job and needs BOTH steps — copying the plist alone starts a job
@@ -28,7 +33,7 @@
     <array>
         <string>/bin/bash</string>
         <string>-c</string>
-        <string>exec /bin/bash "$HOME/.agentstack/hooks/rotate_runtime_logs.sh" "$HOME/.agentstack/runtime"</string>
+        <string>exec /bin/bash "$HOME/.agentstack/hooks/rotate_runtime_logs.sh" "$HOME/.agentstack/runtime" "$HOME/.agentstack/mail-service/runtime"</string>
     </array>
     <key>EnvironmentVariables</key>
     <dict>
@@ -38,6 +43,8 @@
         <string>52428800</string>
         <key>AGENTSTACK_LOG_ROTATE_KEEP</key>
         <string>3</string>
+        <key>AGENTSTACK_LOG_ROTATE_ARCHIVE_DIR</key>
+        <string>/Volumes/DevSSD-Private/DevStorageGovernor/artifacts/orrery-telemetry/20261014T173010Z-private-evidence-177b78c0/records/runtime-logs</string>
     </dict>
     <key>StartCalendarInterval</key>
     <dict>

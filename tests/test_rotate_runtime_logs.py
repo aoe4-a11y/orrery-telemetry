@@ -11,6 +11,9 @@ Runnable two ways (stdlib only):
 """
 from __future__ import annotations
 
+import gzip
+import hashlib
+import json
 import os
 import pathlib
 import subprocess
@@ -61,22 +64,97 @@ def test_below_threshold_untouched() -> None:
         assert not (tmp / "small.log.1").exists()
 
 
-def test_rotation_shifts_three_archives_and_drops_oldest() -> None:
+def test_rotation_shifts_three_archives_and_archives_oldest() -> None:
     with tempfile.TemporaryDirectory() as td:
         tmp = pathlib.Path(td)
+        archive = tmp / "archive"
+        archive.mkdir()
+        env = {**_lock_env(tmp), "AGENTSTACK_LOG_ROTATE_ARCHIVE_DIR": str(archive)}
         log = tmp / "watcher.log"
+        gen1 = b""
         for n in range(1, 5):
             _fill(log, f"gen{n}")
-            proc = _run(tmp, env=_lock_env(tmp))
+            if n == 1:
+                gen1 = log.read_bytes()
+            proc = _run(tmp, env=env)
             assert proc.returncode == 0, proc.stderr
             assert f"rotated watcher.log" in proc.stdout
             assert log.stat().st_size == 0, "current file must be truncated in place"
-        # After four rotations: .1=gen4, .2=gen3, .3=gen2, gen1 dropped.
+        # After four rotations: .1=gen4, .2=gen3, .3=gen2, gen1 gzipped into the archive dir.
         assert (tmp / "watcher.log.1").read_text().startswith("gen4 ")
         assert (tmp / "watcher.log.2").read_text().startswith("gen3 ")
         assert (tmp / "watcher.log.3").read_text().startswith("gen2 ")
         assert not (tmp / "watcher.log.4").exists()
         assert not (tmp / "watcher.log.1.tmp").exists()
+        gz = sorted(archive.glob("watcher.log.3.*.gz"))
+        assert len(gz) == 1, list(archive.iterdir())
+        assert gzip.decompress(gz[0].read_bytes()) == gen1
+        lines = (archive / "tombstones.jsonl").read_text().splitlines()
+        assert len(lines) == 1
+        rec = json.loads(lines[0])
+        assert rec["sha256"] == hashlib.sha256(gen1).hexdigest()
+        assert rec["bytes"] == len(gen1)
+        assert rec["kept_copy"] == str(gz[0])
+        assert rec["kept_copy_sha256"] == hashlib.sha256(gz[0].read_bytes()).hexdigest()
+        assert "archived watcher.log.3" in proc.stdout
+
+
+def test_oldest_is_never_dropped_without_an_archive_dir() -> None:
+    with tempfile.TemporaryDirectory() as td:
+        tmp = pathlib.Path(td)
+        log = tmp / "watcher.log"
+        for n in range(1, 4):
+            _fill(log, f"gen{n}")
+            assert _run(tmp, env=_lock_env(tmp)).returncode == 0
+        _fill(log, "gen4")
+        before = {p.name: p.read_bytes() for p in tmp.glob("watcher.log*")}
+        for env in (_lock_env(tmp),
+                    {**_lock_env(tmp), "AGENTSTACK_LOG_ROTATE_ARCHIVE_DIR": str(tmp / "missing")}):
+            dry = _run(tmp, dry_run=True, env=env)
+            assert dry.returncode == 0, dry.stderr
+            assert "would skip watcher.log" in dry.stdout
+            assert "deleted without archive: 0" in dry.stdout
+            proc = _run(tmp, env=env)
+            assert proc.returncode == 0, proc.stderr
+            assert "no usable AGENTSTACK_LOG_ROTATE_ARCHIVE_DIR" in proc.stdout
+            assert "rotated" not in proc.stdout
+            assert {p.name: p.read_bytes() for p in tmp.glob("watcher.log*")} == before
+
+
+def test_symlinked_archive_dir_is_refused() -> None:
+    with tempfile.TemporaryDirectory() as td:
+        tmp = pathlib.Path(td)
+        real = tmp / "real-archive"
+        real.mkdir()
+        link = tmp / "archive-link"
+        link.symlink_to(real)
+        log = tmp / "k.log"
+        _fill(log, "new")
+        _fill(tmp / "k.log.1", "previous")
+        proc = _run(tmp, env={**_lock_env(tmp), "AGENTSTACK_LOG_ROTATE_KEEP": "1",
+                              "AGENTSTACK_LOG_ROTATE_ARCHIVE_DIR": str(link)})
+        assert proc.returncode == 0, proc.stderr
+        assert (tmp / "k.log.1").read_text().startswith("previous ")
+        assert log.read_text().startswith("new ")
+        assert list(real.iterdir()) == []
+
+
+def test_dry_run_reports_archive_step() -> None:
+    with tempfile.TemporaryDirectory() as td:
+        tmp = pathlib.Path(td)
+        archive = tmp / "archive"
+        archive.mkdir()
+        log = tmp / "k.log"
+        _fill(log, "new")
+        _fill(tmp / "k.log.1", "previous")
+        before = (tmp / "k.log.1").read_bytes()
+        proc = _run(tmp, dry_run=True, env={**_lock_env(tmp), "AGENTSTACK_LOG_ROTATE_KEEP": "1",
+                                            "AGENTSTACK_LOG_ROTATE_ARCHIVE_DIR": str(archive)})
+        assert proc.returncode == 0, proc.stderr
+        assert "would archive k.log.1" in proc.stdout
+        assert "deleted without archive: 0" in proc.stdout
+        assert (tmp / "k.log.1").read_bytes() == before
+        assert list(archive.iterdir()) == []
 
 
 def test_dry_run_changes_nothing() -> None:
@@ -303,12 +381,18 @@ def test_keep_one_with_existing_archive_and_leftover_tmp() -> None:
         _fill(tmp / "k.log.1", "previous")
         leftover = tmp / ".k.log.rotate.LEFTOVER"
         leftover.write_text("crashed run\n")
-        proc = _run(tmp, env={**_lock_env(tmp), "AGENTSTACK_LOG_ROTATE_KEEP": "1"})
+        archive = tmp / "archive"
+        archive.mkdir()
+        previous = (tmp / "k.log.1").read_bytes()
+        proc = _run(tmp, env={**_lock_env(tmp), "AGENTSTACK_LOG_ROTATE_KEEP": "1",
+                              "AGENTSTACK_LOG_ROTATE_ARCHIVE_DIR": str(archive)})
         assert proc.returncode == 0, proc.stderr
         assert log.stat().st_size == 0
         assert (tmp / "k.log.1").read_text().startswith("new ")
         assert not (tmp / "k.log.2").exists()
         assert leftover.read_text() == "crashed run\n", "foreign temp files are not touched"
+        (gz,) = archive.glob("k.log.1.*.gz")
+        assert gzip.decompress(gz.read_bytes()) == previous
 
 
 def test_open_append_writer_survives_rotation() -> None:
