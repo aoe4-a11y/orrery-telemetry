@@ -66,7 +66,23 @@ write_heartbeat() {{ :; }}
 '''
     override = "" if actual_timeout else 'run_to() { shift; "$@"; }\n'
     script = root / "run.sh"
-    script.write_text(header + HELPERS + override + '''
+    # Only error/timeout cases use this in-process fake. Leave the ordinary
+    # executable fixture and its pane/session grammar unchanged.
+    failure_fixture = '''
+tmux() {
+ [[ "$#" == 3 && "$1" == list-sessions && "$2" == -F && "$3" == '#{session_name}' ]] || return 95
+ local fixture_mode
+ fixture_mode=$(<"$FIXTURE_ROOT/mode")
+ printf '%s\\n' '["list-sessions","-F","#{session_name}"]' >> "$FIXTURE_ROOT/calls.jsonl"
+ printf '%s' "$fixture_mode" > "$FIXTURE_ROOT/failure-mode-entered"
+ case "$fixture_mode" in
+  error) return 1 ;;
+  timeout) exec /bin/sleep 2 ;;
+  *) return 95 ;;
+ esac
+}
+''' if actual_timeout else ""
+    script.write_text(header + HELPERS + override + failure_fixture + '''
 write_heartbeat() { :; }
 inject_notification() { printf '%s:%s\\n' "$2" "$3" >> "$FIXTURE_ROOT/delivered"; return "${INJECT_RESULT:-0}"; }
 ''' + body + "\nwait\n")
@@ -75,7 +91,14 @@ inject_notification() { printf '%s:%s\\n' "$2" "$3" >> "$FIXTURE_ROOT/delivered"
            "FIXTURE_ROOT": str(root), "AGENTSTACK_RUNTIME_DIR": str(root / "runtime")}
     p = subprocess.run(["/bin/bash", str(script)], env=env, text=True,
                        capture_output=True, timeout=15)
+    (root / "shell-trace.log").write_text(p.stderr)
+    (root / "shell-stdout.log").write_text(p.stdout)
     assert p.returncode == 0, p.stdout + p.stderr
+    assert (root / "calls.jsonl").exists(), {
+        "stdout": p.stdout, "stderr": p.stderr,
+        "topology_stderr": (root / "topology-stderr").read_text()
+                            if (root / "topology-stderr").exists() else "not captured",
+        "path": env["PATH"], "mode": mode}
     calls = [json.loads(s) for s in (root / "calls.jsonl").read_text().splitlines()]
     return p, calls
 
@@ -104,6 +127,7 @@ def test_topology_failure_is_unknown_and_bounded(tmp_path, mode):
     start = time.monotonic()
     p, _ = _run(tmp_path, "process_existing_signals", mode=mode, actual_timeout=True)
     assert time.monotonic() - start < 4
+    assert (tmp_path / "failure-mode-entered").read_text() == mode
     assert "Worker unknown" in p.stdout and "Worker absent" not in p.stdout
     assert signal.exists() and "Signal:" not in p.stdout
 

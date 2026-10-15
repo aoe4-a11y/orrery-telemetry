@@ -2558,6 +2558,42 @@ enable_mail_watcher() {
     fi
   fi
 
+  # A disabled label is an administrative decision, not a broken install.
+  # Read before rendering/replacing files or stopping any existing runner.
+  # Bootstrap does not need `enable` for a fresh or already enabled label;
+  # never undo a disable that races this read, including during rollback.
+  if [[ "$kind" == launchd && "$DRY_RUN" != true ]]; then
+    local disabled_status=0
+    "$PYTHON_BIN" - "$MAIL_WATCHER_LABEL" <<'PY_DISABLED' || disabled_status=$?
+import os, re, subprocess, sys
+try:
+    result = subprocess.run(["launchctl", "print-disabled", f"gui/{os.getuid()}"],
+                            capture_output=True, text=True, timeout=5, check=True)
+    text = result.stdout.strip()
+    if result.stderr.strip():
+        raise ValueError("unexpected diagnostic")
+    match = re.fullmatch(r"(?:disabled services\s*=\s*)?\{(.*)\}", text, re.S)
+    if not match:
+        raise ValueError("unrecognized disabled-services map")
+    states = {}
+    for line in match[1].splitlines():
+        if not line.strip():
+            continue
+        entry = re.fullmatch(r'\s*"([^"\\]+)"\s*=>\s*(disabled|enabled|true|false)\s*[,;]?\s*', line)
+        if not entry or entry[1] in states:
+            raise ValueError("unrecognized or duplicate disabled-services entry")
+        states[entry[1]] = entry[2]
+except (OSError, ValueError, subprocess.SubprocessError):
+    raise SystemExit(2)
+raise SystemExit(1 if states.get(sys.argv[1]) in {"disabled", "true"} else 0)
+PY_DISABLED
+    if [[ "$disabled_status" == 1 ]]; then
+      die "ORRERY Mail watcher label is disabled; preserve the administrator's decision"
+    elif [[ "$disabled_status" != 0 ]]; then
+      die "cannot verify ORRERY Mail watcher disabled state; leave it unchanged"
+    fi
+  fi
+
   if [[ "$kind" == "launchd" ]]; then
     AGENT_MAIL_WATCHER_PATH="$HOME/Library/LaunchAgents/$MAIL_WATCHER_LABEL.plist"
   else
@@ -2586,28 +2622,25 @@ enable_mail_watcher() {
 
   if [[ "$kind" == "launchd" ]]; then
     local launchd_target="gui/$(id -u)/$MAIL_WATCHER_LABEL"
-    if launchctl enable "$launchd_target"; then
-      launchctl bootout "$launchd_target" 2>/dev/null || true
-      if wait_for_launchd_unload "$launchd_target" && \
-         launchctl bootstrap "gui/$(id -u)" "$AGENT_MAIL_WATCHER_PATH"
-      then
-        # RunAtLoad does not fire when the bootstrap comes from a non-GUI
-        # context (an ssh session on the Air: loaded, runs = 0, never started).
-        # kickstart is idempotent for a job that is already running.
-        launchctl kickstart "$launchd_target" 2>/dev/null || true
-        AGENT_MAIL_WATCHER_KIND="launchd"
-        [[ -n "$previous" ]] && rm -f "$previous"
-        say "ORRERY Mail watcher runs under launchd ($MAIL_WATCHER_LABEL)"
-        return 0
-      fi
+    launchctl bootout "$launchd_target" 2>/dev/null || true
+    if wait_for_launchd_unload "$launchd_target" && \
+       launchctl bootstrap "gui/$(id -u)" "$AGENT_MAIL_WATCHER_PATH"
+    then
+      # RunAtLoad does not fire when the bootstrap comes from a non-GUI
+      # context (an ssh session on the Air: loaded, runs = 0, never started).
+      # kickstart is idempotent for a job that is already running.
+      launchctl kickstart "$launchd_target" 2>/dev/null || true
+      AGENT_MAIL_WATCHER_KIND="launchd"
+      [[ -n "$previous" ]] && rm -f "$previous"
+      say "ORRERY Mail watcher runs under launchd ($MAIL_WATCHER_LABEL)"
+      return 0
     fi
     launchctl bootout "$launchd_target" 2>/dev/null || true
     wait_for_launchd_unload "$launchd_target" || true
     rm -f "$AGENT_MAIL_WATCHER_PATH"
     if [[ -n "$previous" ]]; then
       mv "$previous" "$AGENT_MAIL_WATCHER_PATH"
-      if launchctl enable "$launchd_target" 2>/dev/null && \
-         launchctl bootstrap "gui/$(id -u)" "$AGENT_MAIL_WATCHER_PATH" 2>/dev/null; then
+      if launchctl bootstrap "gui/$(id -u)" "$AGENT_MAIL_WATCHER_PATH" 2>/dev/null; then
         warn "kept the previous ORRERY Mail watcher unit; the new one could not be registered"
         AGENT_MAIL_WATCHER_KIND="launchd"
         return 0

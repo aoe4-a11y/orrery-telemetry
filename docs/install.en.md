@@ -389,3 +389,7 @@ The installer does not automatically switch back to the third-party version. If 
 - [Configuration](configuration.en.md)
 - [Troubleshooting](troubleshooting.en.md)
 - [Third-party components](third-party.md)
+
+An administratively disabled launchd watcher label stays disabled. If `print-disabled` cannot be verified, installation stops before replacing the unit or stopping an existing runner. Neither normal registration nor rollback calls `launchctl enable` for the watcher.
+
+A successful bootout alone does not prove a stale lock. The read-only `scripts/watcher_lock_status.py` checks absence of the recorded PID and backend PIDs, absence of the exact loaded job, and stable control ownership, type, hashes and identity. Active or unknown means stop. A stale result is a snapshot, not deletion permission: recovery separately requires authorization, archived controls and a fresh check immediately before mutation.

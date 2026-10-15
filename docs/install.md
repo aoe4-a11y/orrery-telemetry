@@ -389,3 +389,7 @@ installer は third-party 版への自動切替を行いません。必要なら
 - [設定](configuration.md)
 - [トラブルシューティング](troubleshooting.md)
 - [第三者コンポーネント](third-party.md)
+
+管理者が launchd の watcher label を disabled にした場合、installer はその判断を保持します。`print-disabled` を読み取れない場合も、unit の置き換えや既存 runner の停止前に拒否します。通常登録と失敗時の復帰のどちらでも `launchctl enable` は行いません。
+
+watcher の切替では、bootout の成功だけで lock を stale と判断しません。`scripts/watcher_lock_status.py` は記録した PID と backend PID の不在、exact job の未ロード、control の所有者・型・SHA・同一性の不変を読むだけで照合します。active・unknown は停止です。stale は瞬間の証拠であり削除許可ではありません。復旧には別途承認、記録への退避、変更直前の再照合が必要です。

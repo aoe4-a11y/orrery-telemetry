@@ -24,6 +24,8 @@ import subprocess
 import sys
 import tempfile
 
+import pytest
+
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 INSTALLER = ROOT / "scripts" / "install.sh"
 REGISTER_LIB = ROOT / "bin" / "lib" / "agentstack-register.sh"
@@ -41,7 +43,7 @@ def _autostart_helpers():
     return module
 
 
-def _run_enable(tmp: pathlib.Path, platform: str, *, fail: bool = False) -> tuple[subprocess.CompletedProcess, str]:
+def _run_enable(tmp: pathlib.Path, platform: str, *, fail: bool = False, disabled: str = "clear") -> tuple[subprocess.CompletedProcess, str]:
     helpers = _autostart_helpers()
     home = tmp / "home"
     (home / "Library" / "LaunchAgents").mkdir(parents=True, exist_ok=True)
@@ -50,6 +52,24 @@ def _run_enable(tmp: pathlib.Path, platform: str, *, fail: bool = False) -> tupl
     hooks.mkdir(parents=True)
     (hooks / "watch_agent_mail_signals.sh").write_text("#!/bin/bash\n", encoding="utf-8")
     fake, log = helpers._fake_manager_bin(tmp, platform, fail=fail)
+    # All service-manager interactions remain private fakes, including reads.
+    if platform == "Darwin":
+        manager = fake / "launchctl"
+        body = manager.read_text()
+        response = {
+            "clear": "printf '%s\\n' '{}'\nexit 0\n",
+            "disabled": f"printf '%s\\n' '{{ \"{LABEL_PREFIX}.mail-watcher\" => true }}'\nexit 0\n",
+            "other": "printf '%s\\n' '{ \"some.other.job\" => true }'\nexit 0\n",
+            "disabled_word": f"printf '%s\\n' 'disabled services = {{' '  \"{LABEL_PREFIX}.mail-watcher\" => disabled' '}}'\nexit 0\n",
+            "enabled_word": f"printf '%s\\n' 'disabled services = {{' '  \"{LABEL_PREFIX}.mail-watcher\" => enabled' '}}'\nexit 0\n",
+            "malformed": "printf '%s\\n' 'not a map'\nexit 0\n",
+            "denied": "exit 1\n",
+        }[disabled]
+        body = body.replace("#!/bin/sh\n", '#!/bin/sh\nif [ "$1" = print-disabled ]; then\n'
+                            + response + 'fi\n', 1)
+        manager.write_text(body)
+    # Unlisted labels are enabled by default; bootstrap needs no enable call.
+    (tmp / "launchctl-enabled").touch()
     # No tmux session to retire; has-session must fail, everything else logs.
     helpers._write_command(
         fake, "tmux",
@@ -261,3 +281,28 @@ if __name__ == "__main__":
                 failures += 1
                 print(f"FAIL {name}: {error}")
     sys.exit(1 if failures else 0)
+
+
+@pytest.mark.parametrize("state", ["disabled", "disabled_word", "malformed", "denied"])
+def test_disabled_or_unverifiable_watcher_is_never_enabled_or_replaced(state, tmp_path):
+    unit = tmp_path / "home/Library/LaunchAgents" / (LABEL_PREFIX + ".mail-watcher.plist")
+    unit.parent.mkdir(parents=True)
+    unit.write_bytes(plistlib.dumps({"Label": LABEL_PREFIX + ".mail-watcher",
+                                     "ProgramArguments": ["/bin/bash", "existing-watch.sh"]}))
+    before = unit.read_bytes()
+    result, calls = _run_enable(tmp_path, "Darwin", disabled=state)
+    assert result.returncode != 0, result.stdout + result.stderr
+    assert unit.read_bytes() == before
+    assert not unit.with_suffix(".plist.prev").exists()
+    for action in ("enable", "bootout", "bootstrap", "kickstart"):
+        assert f"launchctl {action} " not in calls, calls
+    assert "tmux " not in calls, calls
+
+
+@pytest.mark.parametrize("state", ["other", "enabled_word", "clear"])
+def test_another_disabled_job_does_not_prevent_fresh_watcher_install(tmp_path, state):
+    result, calls = _run_enable(tmp_path, "Darwin", disabled=state)
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert "KIND=launchd" in result.stdout
+    assert "launchctl bootstrap " in calls
+    assert "launchctl enable " not in calls

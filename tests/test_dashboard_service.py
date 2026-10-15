@@ -389,6 +389,8 @@ def test_launchd_in_place_upgrade_replaces_its_own_listener_with_new_code(
         "uname": "#!/bin/sh\necho Darwin\n",
         "uv": "#!/bin/sh\nexit 0\n",
         "launchctl": """#!/bin/sh
+# Unlisted watcher labels are enabled in this private launchd domain.
+[ "$1" = print-disabled ] && { echo '{}'; exit 0; }
 case "$*" in
   *agentdashboard*) ;;
   *) [ "$1" = print ] && exit 1; exit 0 ;;
@@ -556,6 +558,8 @@ def test_supervised_in_place_upgrade_stops_old_pid_and_runs_new_code(tmp_path):
         "uname": "#!/bin/sh\necho Darwin\n",
         "uv": "#!/bin/sh\nexit 0\n",
         "launchctl": """#!/bin/sh
+# Unlisted watcher labels are enabled in this private launchd domain.
+[ "$1" = print-disabled ] && { echo '{}'; exit 0; }
 case "$1" in
   print) exit 1 ;;
   bootstrap) exit 125 ;;
@@ -863,6 +867,8 @@ def test_macos_launchd_bootstrap_failure_falls_back_and_finishes_install(tmp_pat
         "uname": "#!/bin/sh\necho Darwin\n",
         "uv": "#!/bin/sh\nexit 0\n",
         "launchctl": """#!/bin/sh
+# Unlisted watcher labels are enabled in this private launchd domain.
+[ "$1" = print-disabled ] && { echo '{}'; exit 0; }
 echo "$*" >> "$AGENTSTACK_TEST_LAUNCHCTL_LOG"
 case "$1" in
   bootstrap)
