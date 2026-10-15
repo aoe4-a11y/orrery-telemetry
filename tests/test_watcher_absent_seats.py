@@ -38,8 +38,9 @@ if args[0]=='list-sessions':
  if mode=='error':sys.exit(1)
  print('\\n'.join(names));sys.exit(0)
 target=args[args.index('-t')+1]
-assert target.startswith('='), target
 if args[0]=='has-session':sys.exit(0 if target[1:] in names and mode!='vanished' else 1)
+if not (target.startswith('=') and target.endswith(':') and target[1:-1] in names):
+ print("can't find pane: "+target,file=sys.stderr);sys.exit(1)
 if args[0]=='capture-pane':print('› Ask Codex to do anything');sys.exit(0)
 raise AssertionError('unexpected real terminal operation')
 ''')
@@ -121,7 +122,17 @@ process_existing_signals''', names=())
     assert (tmp_path / "delivered").read_text().count("Worker:") == 1
     state = json.loads((tmp_path / "runtime/notify-state.json").read_text())
     assert state["Worker:21"]["last_result"] == "success" and signal.exists()
-    assert all(c[c.index("-t") + 1] == "=Worker" for c in calls if "-t" in c)
+    assert all(c[c.index("-t") + 1] == ("=Worker" if c[0] == "has-session" else "=Worker:")
+               for c in calls if "-t" in c)
+
+
+def test_fake_tmux_rejects_session_only_targets_for_pane_operations(tmp_path):
+    p, calls = _run(tmp_path, '''
+if tmux capture-pane -t =Worker -p; then exit 93; fi
+if tmux send-keys -t =Worker -l unused; then exit 94; fi
+''')
+    assert p.stderr.count("can't find pane: =Worker") == 2
+    assert [c[0] for c in calls] == ["capture-pane", "send-keys"]
 
 
 def test_seat_disappearing_after_snapshot_keeps_old_per_message_signal(tmp_path):

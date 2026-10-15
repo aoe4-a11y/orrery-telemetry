@@ -273,6 +273,12 @@ agent_is_head() {
     esac
 }
 
+pane_target_for_session() {
+    # A bare =name is a session target, not a target-pane. The colon keeps
+    # exact session matching while selecting that session's current pane.
+    printf '=%s:\n' "$1"
+}
+
 # One bounded topology read per scan, also cached briefly for fswatch events.
 # A failed read is unknown, never evidence that an agent has closed.
 refresh_session_topology() {
@@ -455,7 +461,9 @@ deliver_worker() {
     local signal_file="$1" agent_name="$2" msg_key="$3"
     local from="$4" subject="$5" importance="$6" per_msg_file="$7"
     local body_snippet="${8:-}" body_truncated="${9:-0}"
-    local session_name="=$agent_name"
+    local session_target="=$agent_name"
+    local session_name
+    session_name=$(pane_target_for_session "$agent_name")
 
     # P-010: the Claude head reads mail straight from the DB and has no tmux pane.
     # Re-signalling its inbox every cycle spun the watcher for 3.5 h and starved every
@@ -474,7 +482,7 @@ deliver_worker() {
         return 0
     fi
 
-    if ! run_to "$TMUX_TIMEOUT" tmux has-session -t "$session_name" 2>/dev/null; then
+    if ! run_to "$TMUX_TIMEOUT" tmux has-session -t "$session_target" 2>/dev/null; then
         state_mark_result "$agent_name" "$msg_key" "session_not_found" "watcher"
         release_delivery_lease "$agent_name" "$msg_key"
         # The seat may disappear after the topology snapshot. Retain even an
