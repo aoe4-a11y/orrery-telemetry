@@ -19,6 +19,7 @@ import sys
 import threading
 import time
 import urllib.request
+from urllib.parse import urlparse
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 from service_teardown import TEST_LABEL_PREFIX  # noqa: E402
@@ -548,7 +549,7 @@ def test_installer_still_rejects_an_unmanaged_listener(tmp_path):
     os.environ.get("GITHUB_ACTIONS") == "true",
     reason="starts a real dashboard/service process; fails only on GitHub-hosted runners (no interactive user session), cause not isolated yet — run 33846626836",
 )
-def test_supervised_in_place_upgrade_stops_old_pid_and_runs_new_code(tmp_path):
+def test_supervised_in_place_upgrade_stops_old_pid_and_runs_new_code(tmp_path, _reject_disabled=False, _capture=None):
     repo = _isolated_installer_repo(tmp_path)
     _write_marker_dashboard(repo / "dashboard" / "server.py", "supervised-v1")
     fake_bin = tmp_path / "fake-bin"
@@ -575,22 +576,33 @@ exit 0
         probe.bind(("127.0.0.1", 0))
         port = probe.getsockname()[1]
     env, install_dir = _installer_upgrade_env(tmp_path, fake_bin, port)
+    if _capture is not None:
+        _capture.update(env)
+    if _reject_disabled:
+        manager = fake_bin / "launchctl"
+        manager.write_text(manager.read_text().replace("{ echo '{}'; exit 0; }", """{
+ marker="$AGENTSTACK_HOME/mail-service/runtime/agentstack-mail.pid"
+ read -r fixture_pid < "$marker"
+ kill -0 "$fixture_pid" || exit 98
+ cp "$marker" "$AGENTSTACK_HOME/first-installer-failure-mail.pid"
+ exit 1
+}"""))
     command = [
         "bash",
         str(repo / "scripts" / "install.sh"),
         "--dashboard-only",
     ]
-    first = subprocess.run(
-        command,
-        cwd=repo,
-        env=env,
-        text=True,
-        capture_output=True,
-        check=True,
-    )
     pidfile = install_dir / "runtime" / "dashboard.pid"
-    old_pid = int(pidfile.read_text(encoding="utf-8").strip())
     try:
+        first = subprocess.run(
+            command,
+            cwd=repo,
+            env=env,
+            text=True,
+            capture_output=True,
+            check=True,
+        )
+        old_pid = int(pidfile.read_text(encoding="utf-8").strip())
         assert "falling back to supervised background mode" in first.stderr
         _wait_for_marker(port, "supervised-v1")
         _write_marker_dashboard(repo / "dashboard" / "server.py", "supervised-v2")
@@ -858,7 +870,7 @@ def test_installer_skips_old_path_python_for_versioned_candidate(tmp_path):
     os.environ.get("GITHUB_ACTIONS") == "true",
     reason="starts a real dashboard/service process; fails only on GitHub-hosted runners (no interactive user session), cause not isolated yet — run 33846626836",
 )
-def test_macos_launchd_bootstrap_failure_falls_back_and_finishes_install(tmp_path):
+def test_macos_launchd_bootstrap_failure_falls_back_and_finishes_install(tmp_path, _reject_disabled=False, _capture=None):
     fake_bin = tmp_path / "fake-bin"
     fake_bin.mkdir()
     launchctl_log = tmp_path / "launchctl.log"
@@ -913,6 +925,17 @@ exit 0
         "AGENTSTACK_TEST_LAUNCHCTL_LOG": str(launchctl_log),
     })
 
+    if _capture is not None:
+        _capture.update(env)
+    if _reject_disabled:
+        manager = fake_bin / "launchctl"
+        manager.write_text(manager.read_text().replace("{ echo '{}'; exit 0; }", """{
+ marker="$AGENTSTACK_HOME/mail-service/runtime/agentstack-mail.pid"
+ read -r fixture_pid < "$marker"
+ kill -0 "$fixture_pid" || exit 98
+ cp "$marker" "$AGENTSTACK_HOME/first-installer-failure-mail.pid"
+ exit 1
+}"""))
     master_fd, slave_fd = pty.openpty()
     process = subprocess.Popen(
         ["bash", str(ROOT / "scripts" / "install.sh")],
@@ -925,13 +948,13 @@ exit 0
     )
     os.close(slave_fd)
     try:
-        os.write(master_fd, b"yes\nyes\nyes\nyes\n")
-        stdout, stderr = process.communicate(timeout=60)
-    finally:
-        os.close(master_fd)
-    assert process.returncode == 0, stderr
-    result = subprocess.CompletedProcess(process.args, process.returncode, stdout, stderr)
-    try:
+        try:
+            os.write(master_fd, b"yes\nyes\nyes\nyes\n")
+            stdout, stderr = process.communicate(timeout=60)
+        finally:
+            os.close(master_fd)
+        assert process.returncode == 0, stderr
+        result = subprocess.CompletedProcess(process.args, process.returncode, stdout, stderr)
         manifest = json.loads(
             (install_dir / "install-state.json").read_text(encoding="utf-8")
         )
@@ -1301,3 +1324,28 @@ while True:
 
     state = pathlib.Path(env["AGENTSTACK_DASHBOARD_RUN_STATE"])
     assert state.exists(), "SIGKILL must leave a marker for the next service-manager restart"
+
+
+@pytest.mark.skipif(os.environ.get("GITHUB_ACTIONS") == "true",
+                    reason="uses the same real local service fixtures as installer upgrade tests")
+@pytest.mark.parametrize("case", ["supervised", "fallback"])
+def test_first_installer_failure_still_stops_its_private_mail_service(tmp_path, case):
+    captured = {}
+    test = (test_supervised_in_place_upgrade_stops_old_pid_and_runs_new_code
+            if case == "supervised" else
+            test_macos_launchd_bootstrap_failure_falls_back_and_finishes_install)
+    with pytest.raises((subprocess.CalledProcessError, AssertionError)) as rejected:
+        test(tmp_path, _reject_disabled=True, _capture=captured)
+    detail = (rejected.value.stderr if isinstance(rejected.value, subprocess.CalledProcessError)
+              else str(rejected.value))
+    assert "cannot verify ORRERY Mail watcher disabled state" in detail
+    proof = pathlib.Path(captured["AGENTSTACK_HOME"]) / "first-installer-failure-mail.pid"
+    lines = proof.read_text().splitlines()
+    assert len(lines) == 2 and int(lines[0]) > 1
+    assert not _pid_is_alive(int(lines[0]))
+    endpoint = urlparse(captured["AGENTSTACK_MCP_URL"])
+    with socket.socket() as probe:
+        probe.settimeout(.2)
+        assert probe.connect_ex((endpoint.hostname, endpoint.port)) != 0
+    marker = pathlib.Path(captured["AGENTSTACK_HOME"]) / "mail-service/runtime/agentstack-mail.pid"
+    assert not marker.exists()
