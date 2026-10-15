@@ -151,9 +151,11 @@ dangerous command pattern の検査は `AGENTSTACK_MONITOR_DANGER_CHECK=1` の�
 
 ### `watch_agent_mail_signals.sh`
 
-`fswatch` があれば event watch、なければ2秒 polling を使います。signal file は server-owned dirty bit として削除せず、runtime の delivery state と短期 lease で同じ `(agent, message)` の重複注入を抑えます。30秒の periodic scan が取りこぼしを救済します。
+`fswatch` があれば event watch、なければ2秒 polling を使います。legacy signal は server-owned dirty bit として保持し、per-message signal の成功時・head 特別経路の既存cleanupは維持します。runtime の delivery state と短期 lease で同じ `(agent, message)` の重複注入を抑えます。30秒の periodic scan が取りこぼしを救済します。
 
 配送先は agent 名と完全一致する tmux session だけです。bare shell や無関係 session を避け、通知 text を literal send した後、submit を別 call の `C-m` で送ります。同じ pane の注入は直列化し、最後の入力欄に同じ便が残る場合だけ一度 `Enter` で再送信します。なお残る便は成功扱いにせず signal を保持し、再走査では本文を追加せず送信を再試行します。受理済みの「次の tool call 後に送信」queue は触りません。tmux call は timeout 付き worker に分離し、server stall が watcher 全体を止めないようにします。
+
+head 以外の席は、各 scan の有界な topology 取得で完全一致する session がある場合だけ配送 worker を起動します。欠席時は signal と配送 state を保持し、log は availability の遷移だけにします。tmux の取得失敗は「不在」ではなく「不明」として保留します。席の復帰後は次の scan で再評価し、不在結果の cooldown だけを解除します。成功済み便の重複抑制、busy・capture・submit 失敗の retry、head の既存特別扱いは維持します。欠席の判定で既読・ack を付けたり、古い signal を消したりしません。
 
 通知は `message_id` を持ちます。preview は切り詰めを明記し、`fetch_inbox(message_id=ID, include_bodies=true)` で宛先として受け取った便だけを全文取得できます。proxy が `body_truncated=true` を返す場合は `body_md` の断片を順に連結し、`body_next_offset` を次の `body_offset` に渡し、null で完了します。古い便の取得に `since_ts` や `urgent_only` を併用しません。`agentstack-await-reply --message-id ID` は古い便の指定取得、`--after-id ID` はそのIDより新しい返信の待機で、同時指定は不可です。tool エラーは reply timeout と区別して exit 1 になります。
 

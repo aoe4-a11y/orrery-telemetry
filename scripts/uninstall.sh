@@ -70,6 +70,9 @@ import shutil
 import signal
 import subprocess
 import sys
+import socket
+import time
+from urllib.parse import urlparse
 
 manifest_path = pathlib.Path(sys.argv[1]).expanduser()
 dry_run = sys.argv[2] == "true"
@@ -168,8 +171,79 @@ def remove_claude_mcp():
         argv.append("--dry-run")
     subprocess.run(argv, check=True)
 
+def stop_owned_mail(svc):
+    """Keep the controller/render until its bounded stop has been verified."""
+    install = pathlib.Path(data["install_dir"])
+    controller = install / "bin" / "agentstack-mailctl"
+    config = data["env"]
+    marker = pathlib.Path(svc["pidfile"])
+    env_file = pathlib.Path(config["AGENTSTACK_MAIL_ENV"])
+    runner = env_file.parent / "run-agentstack-mail.sh"
+    if str(runner) not in data.get("owned_files", []):
+        raise RuntimeError("mail runner is not owned by this manifest; controls retained")
+    if not controller.is_file():
+        raise RuntimeError("mail controller missing; controls and manifest retained")
+    pid = None
+    if marker.exists():
+        lines = marker.read_text().splitlines()
+        if len(lines) != 2 or not lines[0].isdigit() or lines[1] != str(runner):
+            raise RuntimeError("mail identity marker mismatch; controls retained")
+        pid = int(lines[0])
+        if pid <= 1:
+            raise RuntimeError("unsafe mail pid; controls retained")
+        ps = subprocess.run(["ps", "-ww", "-o", "uid=,command=", "-p", str(pid)],
+                            capture_output=True, text=True, timeout=5)
+        if ps.returncode == 1 and not ps.stdout.strip() and not ps.stderr.strip():
+            pass
+        elif ps.returncode == 0 and not ps.stderr.strip():
+            uid, command = ps.stdout.strip().split(None, 1)
+            if ps.returncode or int(uid) != os.getuid() or command != f"/bin/bash {runner}":
+                raise RuntimeError("live mail runner identity mismatch; controls retained")
+        else:
+            raise RuntimeError("cannot verify live mail runner identity; controls retained")
+    argv = [str(controller), "stop"]
+    if dry_run:
+        print("DRY-RUN would verify stopped before removing controls: " + " ".join(argv))
+        return
+    child_env = {k: v for k, v in os.environ.items()
+                 if not k.startswith("AGENTSTACK_MAIL_") and k != "AGENTSTACK_MCP_URL"}
+    child_env.update({
+        "AGENTSTACK_HOME": str(install), "AGENTSTACK_MAILCTL_SKIP_ENV": "1",
+        "AGENTSTACK_MAIL_DIR": str(marker.parent.parent),
+        "AGENTSTACK_MAIL_PIDFILE": str(marker),
+        "AGENTSTACK_MAIL_ENV": str(env_file), "AGENTSTACK_MAIL_RUNNER": str(runner),
+        "AGENTSTACK_MAIL_DB": config["AGENTSTACK_MAIL_DB"],
+        "AGENTSTACK_MCP_URL": config["AGENTSTACK_MCP_URL"],
+        "AGENTSTACK_MAIL_LAUNCHD_LABEL": config.get("AGENTSTACK_MAIL_LAUNCHD_LABEL", ""),
+        "AGENTSTACK_PYTHON": sys.executable,
+    })
+    subprocess.run(argv, env=child_env, check=True, timeout=60)
+    # Independently require the configured endpoint to be released before the
+    # destructive file-removal phase, even if a controller reported success.
+    endpoint = urlparse(config["AGENTSTACK_MCP_URL"])
+    deadline = time.monotonic() + 5
+    while True:
+        live = False
+        if pid:
+            ps = subprocess.run(["ps", "-p", str(pid), "-o", "pid="],
+                                capture_output=True, text=True, timeout=5)
+            if ps.returncode not in (0, 1) or ps.stderr.strip():
+                raise RuntimeError("cannot verify mail runner exit; controls retained")
+            live = bool(ps.stdout.strip())
+        with socket.socket() as probe:
+            probe.settimeout(0.2)
+            occupied = probe.connect_ex((endpoint.hostname, endpoint.port or (443 if endpoint.scheme == "https" else 80))) == 0
+        if not live and not occupied:
+            return
+        if time.monotonic() >= deadline:
+            raise RuntimeError("mail runner or endpoint survived stop; controls retained")
+        time.sleep(0.1)
+
 for svc in data.get("services", []):
     kind = svc.get("kind")
+    if kind == "nohup" and svc.get("role") == "ORRERY Mail":
+        stop_owned_mail(svc)
+        continue
     if kind == "launchd":
         label = svc.get("label", "")
         run(["launchctl", "bootout", f"gui/{os.getuid()}/{label}"])

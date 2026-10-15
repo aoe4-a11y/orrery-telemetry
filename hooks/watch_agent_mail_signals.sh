@@ -57,6 +57,12 @@ LEASE_TTL=120         # lease 失効時間（古い lease は強制取り直し�
 # 呼び出しを run_to で時間制限し、配送本体は background worker に切り離す。
 TMUX_TIMEOUT="${TMUX_TIMEOUT:-5}"   # tmux 1 コールの上限秒
 MAX_WORKERS="${MAX_WORKERS:-12}"    # 同時 delivery worker 上限 (server stall 時の暴走防止)
+SESSION_NAMES=""
+SESSION_TOPOLOGY="unknown"
+SESSION_CHECK_EPOCH=0
+SCANNING_SIGNALS=0
+AVAILABILITY_AGENTS=()
+AVAILABILITY_STATES=()
 mkdir -p "$STATE_DIR" "$LEASE_DIR"
 
 log() { echo "[mail-watcher $(date '+%H:%M:%S')] $*"; }
@@ -105,7 +111,7 @@ PY
 }
 
 state_should_attempt() {
-    python3 - "$STATE_FILE" "$1" "$2" "$RETRY_COOLDOWN" <<'PY'
+    python3 - "$STATE_FILE" "$1" "$2" "$RETRY_COOLDOWN" "${3:-0}" <<'PY'
 import json, sys, time
 path, agent, msg_key, cooldown = sys.argv[1], sys.argv[2], sys.argv[3], int(sys.argv[4])
 compound = f"{agent}:{msg_key}"
@@ -119,6 +125,10 @@ if not entry:
     sys.exit(0)
 if entry.get("last_result") == "success":
     sys.exit(1)
+# Presence has been proved again. Only an absence result can bypass cooldown;
+# capture/submit/busy failures retain their existing retry policy.
+if sys.argv[5] == "1" and entry.get("last_result") == "session_not_found":
+    sys.exit(0)
 last_attempt = int(entry.get("last_attempt_epoch", 0) or 0)
 if int(time.time()) - last_attempt >= cooldown:
     sys.exit(0)
@@ -256,6 +266,54 @@ trap 'exit 0' INT TERM
 mkdir -p "$SIGNALS_DIR"
 acquire_lock
 
+agent_is_head() {
+    case " ${AGENTSTACK_HEAD_AGENTS:-${AGENTSTACK_HEAD_AGENT:-ProudTuring} PinkTesla} " in
+        *" $1 "*) return 0 ;;
+        *) return 1 ;;
+    esac
+}
+
+# One bounded topology read per scan, also cached briefly for fswatch events.
+# A failed read is unknown, never evidence that an agent has closed.
+refresh_session_topology() {
+    local now names
+    now=$(date +%s)
+    if [[ "${1:-0}" != 1 ]] && (( now - SESSION_CHECK_EPOCH < 2 )); then
+        return 0
+    fi
+    SESSION_CHECK_EPOCH=$now
+    if names=$(run_to "$TMUX_TIMEOUT" tmux list-sessions -F '#{session_name}' 2>/dev/null); then
+        SESSION_NAMES="$names"
+        SESSION_TOPOLOGY="known"
+    else
+        SESSION_NAMES=""
+        SESSION_TOPOLOGY="unknown"
+    fi
+}
+
+worker_session_available() {
+    local agent="$1" availability="unknown" i=0
+    if [[ "$SCANNING_SIGNALS" != 1 ]]; then
+        refresh_session_topology
+    fi
+    if [[ "$SESSION_TOPOLOGY" == known ]]; then
+        availability="absent"
+        if printf '%s\n' "$SESSION_NAMES" | grep -qxF -- "$agent"; then
+            availability="present"
+        fi
+    fi
+    while (( i < ${#AVAILABILITY_AGENTS[@]} )); do
+        [[ "${AVAILABILITY_AGENTS[$i]}" == "$agent" ]] && break
+        i=$((i + 1))
+    done
+    if [[ "${AVAILABILITY_STATES[$i]:-}" != "$availability" ]]; then
+        AVAILABILITY_AGENTS[$i]="$agent"
+        AVAILABILITY_STATES[$i]="$availability"
+        log "Worker availability: $agent $availability (pending signals retained)"
+    fi
+    [[ "$availability" == present ]]
+}
+
 handle_signal_file() {
     local signal_file="$1"
     local agent_name parent_dir per_msg_file=0
@@ -276,6 +334,14 @@ handle_signal_file() {
 
     if [[ -z "$agent_name" ]]; then
         return
+    fi
+
+    # Defer before metadata reads, leases, Signal logs or worker creation.
+    # Keep the head's existing special path; never consume mail on absence.
+    local presence_proved=0
+    if ! agent_is_head "$agent_name"; then
+        worker_session_available "$agent_name" || return 0
+        presence_proved=1
     fi
 
     # signal は server-owned dirty bit。client は rename/delete しない。
@@ -303,7 +369,7 @@ handle_signal_file() {
     # `set -e` 下で `|| return` だと return が直前の exit code を継承して
     # 関数が non-zero で抜け、呼び出し元の while ループが止まる。
     # 早期スキップは `return 0` を明示してスクリプト継続を保証する。
-    state_should_attempt "$agent_name" "$msg_key" || return 0
+    state_should_attempt "$agent_name" "$msg_key" "$presence_proved" || return 0
 
     # 割り込みの閾値。既定は low = 従来どおり全部通す。
     #
@@ -389,15 +455,13 @@ deliver_worker() {
     local signal_file="$1" agent_name="$2" msg_key="$3"
     local from="$4" subject="$5" importance="$6" per_msg_file="$7"
     local body_snippet="${8:-}" body_truncated="${9:-0}"
-    local session_name="$agent_name"
+    local session_name="=$agent_name"
 
     # P-010: the Claude head reads mail straight from the DB and has no tmux pane.
     # Re-signalling its inbox every cycle spun the watcher for 3.5 h and starved every
     # seat (~7k log lines / 2 min, zero deliveries). Skip the head, never signal it.
     # 2026-09-20 (PinkTesla, R-058 G-1): head 代行席 (PinkTesla) も pane を持たず DB を直接読む。
-    local agent_is_head=0
-    case " ${AGENTSTACK_HEAD_AGENTS:-${AGENTSTACK_HEAD_AGENT:-ProudTuring} PinkTesla} " in *" $agent_name "*) agent_is_head=1;; *) agent_is_head=0;; esac
-    if [ "$agent_is_head" = 1 ]; then
+    if agent_is_head "$agent_name"; then
         state_mark_result "$agent_name" "$msg_key" "head_no_pane" "watcher"
         release_delivery_lease "$agent_name" "$msg_key"
         # 2026-09-12 S1 (P-010 再発): head 宛 per-message signal はこの分岐からは
@@ -413,14 +477,8 @@ deliver_worker() {
     if ! run_to "$TMUX_TIMEOUT" tmux has-session -t "$session_name" 2>/dev/null; then
         state_mark_result "$agent_name" "$msg_key" "session_not_found" "watcher"
         release_delivery_lease "$agent_name" "$msg_key"
-        # 2026-09-20 (PinkTesla, R-058 G-1): session の無い席宛の per-message signal は
-        # 30 秒ごとの周回で永久に再試行され、log を +167 MB/日 で太らせていた (927 file / 286 席)。
-        # 24 時間以上 session が無ければ unlink する。席が後で起動しても inbox は DB に残る。
-        if (( per_msg_file == 1 )) && [ -n "$(find "$signal_file" -mmin +1440 2>/dev/null)" ]; then
-            rm -f "${signal_file:?}" 2>/dev/null || true
-            rmdir "$(dirname "${signal_file:?}")" 2>/dev/null || true
-            log "Dropped stale signal for session-less agent $agent_name (msg $msg_key, >24h)"
-        fi
+        # The seat may disappear after the topology snapshot. Retain even an
+        # old per-message signal; its next appearance must still be deliverable.
         return 0
     fi
 
@@ -493,10 +551,13 @@ process_existing_signals() {
     # Match both legacy (agents/{name}.signal) and per-message
     # (agents/{name}/{msg_id}.signal) layouts. find -name globs file names so
     # both layouts surface here; handle_signal_file disambiguates by parent dir.
+    refresh_session_topology 1
+    SCANNING_SIGNALS=1
     while IFS= read -r -d '' signal_file; do
         write_heartbeat
         handle_signal_file "$signal_file"
     done < <(find "$SIGNALS_DIR" -name "*.signal" -type f -print0 2>/dev/null)
+    SCANNING_SIGNALS=0
 }
 
 if command -v fswatch &>/dev/null; then

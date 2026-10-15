@@ -19,6 +19,8 @@ import os
 import pathlib
 import sys
 import threading
+import tempfile
+from unittest.mock import patch
 
 REPO = pathlib.Path(__file__).resolve().parents[1]
 TOOL = REPO / "bin" / "agentstack-await-reply"
@@ -33,22 +35,28 @@ def test_default_project_key_is_the_invocation_directory():
     assert await_reply.DEFAULT_PROJECT_KEY == os.getcwd()
 
 
-def test_resolved_project_key_prefers_installed_env(monkeypatch, tmp_path):
-    home = tmp_path / "home"
-    project = tmp_path / "project"
-    cwd = tmp_path / "project" / "subdirectory"
-    (home / ".agentstack").mkdir(parents=True)
-    cwd.mkdir(parents=True)
-    (home / ".agentstack" / "env.sh").write_text(
-        f"export AGENTSTACK_PROJECT_KEY={project}\n", encoding="utf-8"
-    )
-    monkeypatch.setenv("HOME", str(home))
-    monkeypatch.delenv("AGENTSTACK_HOME", raising=False)
-    monkeypatch.delenv("AGENTSTACK_PROJECT_KEY", raising=False)
-    monkeypatch.delenv("PROJECT_KEY", raising=False)
-    monkeypatch.chdir(cwd)
-
-    assert await_reply._resolved_project_key() == str(project)
+def test_resolved_project_key_prefers_installed_env():
+    # Keep the documented stdlib-only entry point equivalent to pytest.
+    with tempfile.TemporaryDirectory() as temporary:
+        tmp_path = pathlib.Path(temporary)
+        home = tmp_path / "home"
+        project = tmp_path / "project"
+        cwd = project / "subdirectory"
+        (home / ".agentstack").mkdir(parents=True)
+        cwd.mkdir(parents=True)
+        (home / ".agentstack" / "env.sh").write_text(
+            f"export AGENTSTACK_PROJECT_KEY={project}\n", encoding="utf-8"
+        )
+        environment = dict(os.environ, HOME=str(home))
+        for key in ("AGENTSTACK_HOME", "AGENTSTACK_PROJECT_KEY", "PROJECT_KEY"):
+            environment.pop(key, None)
+        original_cwd = os.getcwd()
+        with patch.dict(os.environ, environment, clear=True):
+            try:
+                os.chdir(cwd)
+                assert await_reply._resolved_project_key() == str(project)
+            finally:
+                os.chdir(original_cwd)
 
 
 def _serve(batches):

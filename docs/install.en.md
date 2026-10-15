@@ -310,12 +310,18 @@ Service environment is written into plist / unit files during installation. Chan
 
 ## Uninstall
 
+On macOS, an externally managed `*mail-watcher.plist` that invokes the same watcher script prevents duplicate generic registration. Explicitly name the approved external label with `AGENTSTACK_EXTERNAL_MAIL_WATCHER_LABEL`; reuse requires matching launchd PID, watcher lock, and exact live command. The installer neither stops nor claims the external job. Unapproved or unverifiable ownership stops installation with an error. The external manager remains responsible for loading new watcher code.
+
+Reusing ORRERY Mail does not create ownership. Reinstallation preserves ownership only when the same installation's previous manifest owns the pidfile, runner, and environment file and the live runner identity agrees.
+
 ```bash
 ~/.agentstack/bin/agentstack-uninstall --dry-run
 ~/.agentstack/bin/agentstack-uninstall
 ```
 
 The uninstaller targets only files, services, and settings changes recorded in `install-state.json`.
+
+For owned ORRERY Mail, the canonical controller stops the service before any control files are removed. Both runner exit and configured-port release must be verified. Ownership or process mismatches, a missing controller, or a failed stop retain the manifest, runner, environment, and other controls and fail the uninstall. A zero exit alone does not prove teardown.
 
 - Structurally remove merged Claude settings entries
 - Remove ORRERY Telemetry-owned files

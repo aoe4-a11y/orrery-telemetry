@@ -31,10 +31,71 @@ import shutil
 import signal
 import subprocess
 import time
+import socket
+import sys
+from urllib.parse import urlparse
 
 # Tests must pass AGENTSTACK_LABEL_PREFIX=<this> so a test run can never
 # bootstrap, or boot out, the service belonging to a real install.
 TEST_LABEL_PREFIX = "org.agentstack.test"
+
+
+def stop_test_mail(home):
+    """Stop only a manifest-owned test service before its controls disappear.
+
+    A missing controller with a live marker is an error, not a clean teardown.
+    The source controller is a fallback only while the exact ownership/config
+    witness survives (for example, a test deliberately removed the installed
+    executable). No process inventory or pid-only signals are used here.
+    """
+    home = pathlib.Path(home)
+    install = home / ".agentstack"
+    marker = install / "mail-service/runtime/agentstack-mail.pid"
+    if not marker.exists():
+        return
+    manifest = install / "install-state.json"
+    def require(condition):
+        if not condition:
+            raise ValueError("test mail identity mismatch")
+    try:
+        data = json.loads(manifest.read_text())
+        require(pathlib.Path(data["install_dir"]).resolve() == install.resolve())
+        require(any(s.get("role") == "ORRERY Mail" and s.get("kind") == "nohup"
+                    and s.get("pidfile") == str(marker) for s in data["services"]))
+        config = data["env"]
+        runner = pathlib.Path(config["AGENTSTACK_MAIL_ENV"]).parent / "run-agentstack-mail.sh"
+        lines = marker.read_text().splitlines()
+        require(len(lines) == 2 and lines[0].isdigit() and int(lines[0]) > 1 and lines[1] == str(runner))
+        require(str(runner) in data["owned_files"])
+        ps = _run_command(["ps", "-ww", "-p", lines[0], "-o", "uid=,command="], timeout=5)
+        if ps.returncode == 0:
+            uid, command = ps.stdout.strip().split(None, 1)
+            require(not ps.stderr.strip() and int(uid) == os.getuid() and command == f"/bin/bash {runner}")
+        else:
+            require(ps.returncode == 1 and not ps.stdout.strip() and not ps.stderr.strip())
+    except (AssertionError, OSError, ValueError, KeyError) as exc:
+        raise RuntimeError(f"test mail ownership cannot be proved: {marker}") from exc
+    controller = install / "bin/agentstack-mailctl"
+    if not controller.is_file():
+        controller = pathlib.Path(__file__).resolve().parents[1] / "bin/agentstack-mailctl"
+    env = {"PATH": os.environ["PATH"], "HOME": str(home),
+           "CODEX_HOME": str(home / ".codex"), "AGENTSTACK_HOME": str(install),
+           "AGENTSTACK_MAILCTL_SKIP_ENV": "1", "AGENTSTACK_PYTHON": sys.executable,
+           "AGENTSTACK_MAIL_DIR": str(marker.parent.parent),
+           "AGENTSTACK_MAIL_PIDFILE": str(marker), "AGENTSTACK_MAIL_RUNNER": str(runner),
+           "AGENTSTACK_MAIL_ENV": config["AGENTSTACK_MAIL_ENV"],
+           "AGENTSTACK_MAIL_DB": config["AGENTSTACK_MAIL_DB"],
+           "AGENTSTACK_MCP_URL": config["AGENTSTACK_MCP_URL"],
+           "AGENTSTACK_MAIL_LAUNCHD_LABEL": config.get("AGENTSTACK_MAIL_LAUNCHD_LABEL", "")}
+    stopped = subprocess.run([str(controller), "stop"], env=env, text=True,
+                             capture_output=True, timeout=60)
+    if stopped.returncode:
+        raise RuntimeError(f"test mail stop failed: {stopped.stdout} {stopped.stderr}")
+    endpoint = urlparse(config["AGENTSTACK_MCP_URL"])
+    with socket.socket() as probe:
+        probe.settimeout(0.2)
+        if probe.connect_ex((endpoint.hostname, endpoint.port or (443 if endpoint.scheme == "https" else 80))) == 0:
+            raise RuntimeError("test mail endpoint survived its controller stop")
 
 
 def _run_command(args, *, timeout=None):

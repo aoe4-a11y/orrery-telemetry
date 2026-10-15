@@ -146,9 +146,11 @@ Dangerous-command pattern checking is enabled only with `AGENTSTACK_MONITOR_DANG
 
 ### `watch_agent_mail_signals.sh`
 
-It uses event watching when `fswatch` is available and two-second polling otherwise. It does not delete signal files, which are server-owned dirty bits; runtime delivery state and a short lease suppress duplicate injection of the same `(agent, message)`. A periodic scan every 30 seconds recovers missed events.
+It uses event watching when `fswatch` is available and two-second polling otherwise. Legacy signals remain server-owned dirty bits; the existing per-message cleanup on success and in the head special path remains unchanged. Runtime delivery state and a short lease suppress duplicate injection of the same `(agent, message)`. A periodic scan every 30 seconds recovers missed events.
 
 The delivery target is only the tmux session whose name exactly matches the agent. After sending notification text literally, it submits with a separate `C-m` call, avoiding bare shells and unrelated sessions. tmux calls run in timeout-controlled workers so a server stall cannot stop the entire watcher.
+
+For non-head agents, each scan takes a bounded session-topology snapshot and starts a delivery worker only for an exact session-name match. An absent agent keeps its signals and delivery state; only availability transitions are logged. A failed tmux query means unknown, rather than absent, and defers delivery. The next scan re-evaluates a returning agent and bypasses only the cooldown from an absence result. Successful-message deduplication, busy/capture/submit retries, and the existing head special case remain intact. Absence never marks mail read or acknowledged and never deletes an old signal.
 
 ## Differences for Codex
 

@@ -1358,10 +1358,10 @@ def _state_should_attempt(
 def _assert_injection_commands(commands: list[str], *, expected_count: int) -> None:
     injection_sequence = []
     for command in commands:
-        if "send-keys -t BlueLake -l " in command:
+        if "send-keys -t =BlueLake -l " in command:
             assert "D12 completion delivery" in command
             injection_sequence.append("prompt")
-        elif command.endswith("send-keys -t BlueLake C-m"):
+        elif command.endswith("send-keys -t =BlueLake C-m"):
             injection_sequence.append("submit")
     assert injection_sequence == ["prompt", "submit"] * expected_count
 
@@ -1412,8 +1412,8 @@ def test_d12_selected_parity_watcher_crash_windows_are_durable_and_hermetic(
             .read_text(encoding="utf-8")
             .splitlines()
         )
-        assert commands[-1].endswith("capture-pane -t BlueLake -p")
-        assert any(c.endswith("send-keys -t BlueLake C-m") for c in commands[:-1])
+        assert commands[-1].endswith("capture-pane -t =BlueLake -p")
+        assert any(c.endswith("send-keys -t =BlueLake C-m") for c in commands[:-1])
         _assert_injection_commands(commands, expected_count=1)
 
         if crash_point == "after_external_injection":

@@ -74,10 +74,12 @@ def _run_enable(tmp: pathlib.Path, platform: str, *, fail: bool = False) -> tupl
         "say() { printf 'SAY %s\\n' \"$*\"; }\n"
         "warn() { printf 'WARN %s\\n' \"$*\"; }\n"
         "plan() { :; }\n"
+        "die() { printf 'ERROR %s\\n' \"$*\"; exit 1; }\n"
         f"eval \"$(sed -n '/^mail_watcher_environment()/,/^}} # end mail_watcher_environment/p' {INSTALLER})\"\n"
         f"eval \"$(sed -n '/^render_mail_watcher_unit()/,/^}} # end render_mail_watcher_unit/p' {INSTALLER})\"\n"
         f"eval \"$(sed -n '/^stop_tmux_mail_watcher()/,/^}} # end stop_tmux_mail_watcher/p' {INSTALLER})\"\n"
         f"eval \"$(sed -n '/^wait_for_launchd_unload()/,/^}} # end wait_for_launchd_unload/p' {INSTALLER})\"\n"
+        f"eval \"$(sed -n '/^find_external_mail_watcher()/,/^}} # end find_external_mail_watcher/p' {INSTALLER})\"\n"
         f"eval \"$(sed -n '/^enable_mail_watcher()/,/^}} # end enable_mail_watcher/p' {INSTALLER})\"\n"
         "enable_mail_watcher\n"
         'printf "KIND=%s\\nPATH_OUT=%s\\n" "$AGENT_MAIL_WATCHER_KIND" "$AGENT_MAIL_WATCHER_PATH"\n',

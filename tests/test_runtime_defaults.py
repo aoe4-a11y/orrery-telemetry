@@ -18,6 +18,7 @@ from service_teardown import (  # noqa: E402
     TEST_LABEL_PREFIX,
     stop_dashboard,
     stop_recorded_supervisor,
+    stop_test_mail,
 )
 
 
@@ -440,7 +441,15 @@ def test_noninteractive_assume_yes_is_explicit_audited_approval(tmp_path):
         capture_output=True,
         check=True,
     )
+    marker = install_dir / "mail-service/runtime/agentstack-mail.pid"
+    first_mail_identity = marker.read_text()
+    def assert_owned_mail_survives_reinstall():
+        manifest = json.loads((install_dir / "install-state.json").read_text())
+        owned = [s for s in manifest["services"] if s.get("role") == "ORRERY Mail"]
+        assert len(owned) == 1 and owned[0]["pidfile"] == str(marker)
+        assert marker.read_text() == first_mail_identity
     try:
+        assert_owned_mail_survives_reinstall()
         assert "non-interactive shell; skipping Tier1 user-settings merge" in (
             without_approval.stderr
         )
@@ -471,6 +480,7 @@ def test_noninteractive_assume_yes_is_explicit_audited_approval(tmp_path):
         check=True,
     )
     try:
+        assert_owned_mail_survives_reinstall()
         assert f"assume-yes: applied Tier1 settings merge to {settings}" in (
             from_environment.stdout
         )
@@ -518,6 +528,7 @@ def test_noninteractive_assume_yes_is_explicit_audited_approval(tmp_path):
         check=True,
     )
     try:
+        assert_owned_mail_survives_reinstall()
         assert f"assume-yes: applied Tier1 settings merge to {settings}" in (
             from_flag.stdout
         )
@@ -533,6 +544,10 @@ def test_noninteractive_assume_yes_is_explicit_audited_approval(tmp_path):
     finally:
         _stop_fake_dashboard(env)
 
+    # Stop while the controller and its ownership witness still exist. The
+    # autouse fixture repeats this on assertion/installer failures as well.
+    stop_test_mail(home)
+    assert not marker.exists()
     uninstalled = subprocess.run(
         [
             "bash",
@@ -571,20 +586,10 @@ def _stop_any_dashboard_this_module_started(tmp_path):
     # controller understands its two-line identity marker and refuses to act
     # unless it matches this test installation's rendered runner.
     for home in (tmp_path / "home", tmp_path):
-        mailctl = home / ".agentstack" / "bin" / "agentstack-mailctl"
-        if not mailctl.is_file():
-            continue
-        stopped = subprocess.run(
-            [str(mailctl), "stop"],
-            env={**os.environ, "HOME": str(home)},
-            text=True,
-            capture_output=True,
-            check=False,
-        )
-        if stopped.returncode not in (0, 3):
-            failures.append(
-                f"{mailctl}: {stopped.stdout.strip()} {stopped.stderr.strip()}"
-            )
+        try:
+            stop_test_mail(home)
+        except Exception as exc:
+            failures.append(f"{home}: {exc}")
 
     # The fake system manager used by this module records its pid here rather
     # than in the install's runtime directory.

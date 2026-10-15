@@ -440,6 +440,7 @@ def test_bundled_watcher_reads_agentstack_per_message_signal(tmp_path):
         """#!/bin/sh
 printf '%s\n' "$*" >> "$FAKE_TMUX_LOG"
 case "$1" in
+  list-sessions) printf '%s\n' BreezyMaxwell ;;
   has-session) exit 0 ;;
   capture-pane) printf '%s\n' 'Claude Code' ;;
   send-keys) exit 0 ;;
@@ -512,8 +513,8 @@ esac
         assert state.get("BreezyMaxwell:42", {}).get("last_result") == "success"
         assert not signal_file.exists()
         calls = tmux_log.read_text(encoding="utf-8")
-        assert "has-session -t BreezyMaxwell" in calls
-        assert "capture-pane -t BreezyMaxwell" in calls
+        assert "has-session -t =BreezyMaxwell" in calls
+        assert "capture-pane -t =BreezyMaxwell" in calls
         assert "message from ProOpus [high]: per-message verification" in calls
     finally:
         watcher.terminate()

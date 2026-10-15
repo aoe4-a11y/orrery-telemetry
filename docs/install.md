@@ -308,6 +308,10 @@ dashboard port を現在の ORRERY Telemetry launchd job または supervised-ba
 
 service の environment は install 時に plist / unit へ書き込まれます。`~/.agentstack/env.sh` を変更しただけでは既存 service に反映されないため、installer を再実行するか service definition も更新してください。
 
+macOS に同じ watcher script を起動する別管理の `*mail-watcher.plist` がある場合、installer は generic job を重ねて登録しません。承認した外部 label を `AGENTSTACK_EXTERNAL_MAIL_WATCHER_LABEL` に明示した上で、launchd の PID・watcher の lock・実行中の正確な command が一致するときだけ外部管理として再利用します。外部 job を停止したり、uninstall の所有対象にしたりしません。未承認または照合不能なら停止して報告します。外部 watcher の code 切替はその管理者が行います。
+
+既存の ORRERY Mail を再利用しても、新たな所有権は取得しません。同じ install の以前の manifest が所有する pidfile・runner・env と現在の runner の実体が一致する場合だけ、再install後の manifest へ所有権を引き継ぎます。
+
 ## Uninstall
 
 ```bash
@@ -316,6 +320,8 @@ service の environment は install 時に plist / unit へ書き込まれます
 ```
 
 uninstaller は `install-state.json` に記録された file、service、settings 変更だけを対象にします。
+
+所有する ORRERY Mail は、正規 controller で停止し、runner の終了と設定された port の解放を確認してから制御用 file を外します。所有権・process の照合失敗、controller 欠落、停止の失敗では manifest・runner・env 等を残して失敗します。exit 0 だけを停止完了の証拠にはしません。
 
 - merge した Claude settings entry を構造的に除去
 - ORRERY Telemetry 所有 file を削除

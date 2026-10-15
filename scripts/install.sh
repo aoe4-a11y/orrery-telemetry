@@ -1874,10 +1874,54 @@ start_native_mail() {
   say "ORRERY Mail ready at $MCP_URL (database: $MAIL_DB)"
 }
 
+# Reuse does not create ownership. Preserve it only when this same install's
+# previous manifest owns the exact marker/render and the live runner agrees.
+previously_owned_native_mail() {
+  "$PYTHON_BIN" - "$MANIFEST" "$INSTALL_DIR" "$NATIVE_MAIL_PIDFILE" \
+    "$NATIVE_MAIL_RUNNER" "$NATIVE_MAIL_ENV" <<'PY'
+import json, os, pathlib, subprocess, sys
+def require(condition, message):
+    if not condition:
+        raise ValueError(message)
+manifest, install, marker, runner, env_file = map(pathlib.Path, sys.argv[1:])
+if not manifest.exists():
+    raise SystemExit(1)
+try:
+    data = json.loads(manifest.read_text())
+    owned = any(s.get("role") == "ORRERY Mail" and s.get("kind") == "nohup"
+                and s.get("pidfile") == str(marker) for s in data.get("services", []))
+    if not owned:
+        raise SystemExit(1)
+    require(pathlib.Path(data["install_dir"]).resolve() == install.resolve(), "install mismatch")
+    require(str(runner) in data["owned_files"] and str(env_file) in data["owned_files"], "unowned render")
+    lines = marker.read_text().splitlines()
+    require(len(lines) == 2 and lines[0].isdigit() and lines[1] == str(runner), "marker mismatch")
+    pid = int(lines[0])
+    require(pid > 1, "unsafe pid")
+    os.kill(pid, 0)
+    ps = subprocess.run(["ps", "-ww", "-o", "uid=,command=", "-p", str(pid)],
+                        capture_output=True, text=True, check=True, timeout=5)
+    uid, command = ps.stdout.strip().split(None, 1)
+    require(not ps.stderr.strip() and int(uid) == os.getuid(), "uid or ps failure")
+    require(command == f"/bin/bash {runner}", "runner mismatch")
+except (AssertionError, OSError, ValueError, KeyError, TypeError, AttributeError, subprocess.SubprocessError):
+    print("previously owned ORRERY Mail identity cannot be verified", file=sys.stderr)
+    raise SystemExit(2)
+PY
+} # end previously_owned_native_mail
+
 ensure_native_agentstack_mail() {
   AGENT_MAIL_NAME_CAPABILITY_JSON='{"status":"honored","evidence":"agentstack-cutover-profile","enforcement_mode":"passthrough","mail_dir":"","detail":"ORRERY Mail service env requires passthrough","warning":""}'
   if [[ "$NATIVE_MAIL_EXISTING" == true ]]; then
     plan "reuse existing ORRERY Mail service at $MCP_URL"
+    local ownership_status=0
+    previously_owned_native_mail || ownership_status=$?
+    if [[ "$ownership_status" == 0 ]]; then
+      AGENT_MAIL_SERVICE_KIND="nohup"
+      AGENT_MAIL_SERVICE_PATH="$NATIVE_MAIL_PIDFILE"
+    elif [[ "$ownership_status" != 1 ]]; then
+      die "refusing to discard unverified prior ORRERY Mail ownership"
+    fi
     return
   fi
   ensure_native_mail_candidate
@@ -2434,11 +2478,61 @@ PY_UNIT
 stop_tmux_mail_watcher() {
   local watcher_session="${AGENTSTACK_MAIL_WATCHER_SESSION:-mail-watcher}"
   command -v tmux >/dev/null 2>&1 || return 0
-  if tmux has-session -t "$watcher_session" 2>/dev/null; then
-    tmux kill-session -t "$watcher_session" 2>/dev/null || true
+  if tmux has-session -t "=$watcher_session" 2>/dev/null; then
+    tmux kill-session -t "=$watcher_session" 2>/dev/null || true
     say "stopped the tmux mail-watcher session; the service unit takes over"
   fi
 } # end stop_tmux_mail_watcher
+
+# A pre-existing fleet supervisor can own a different watcher label. Reuse
+# only an explicitly approved, verified lock-owning job; never claim or stop it.
+find_external_mail_watcher() {
+  "$PYTHON_BIN" - "$HOME" "$HOOKS_DIR/watch_agent_mail_signals.sh" \
+    "$MAIL_WATCHER_LABEL" \
+    "${AGENTSTACK_EXTERNAL_MAIL_WATCHER_LABEL:-}" \
+    "${AGENTSTACK_MAIL_WATCHER_PIDFILE:-${AGENTSTACK_MAIL_WATCHER_LOCK_DIR:-/tmp/orrery-mail-watcher.lock}/watcher.pid}" <<'PY'
+import os, pathlib, plistlib, re, subprocess, sys
+def require(condition, message):
+    if not condition:
+        raise ValueError(message)
+home, script, own_label, approved, marker = sys.argv[1:]
+script = str(pathlib.Path(script).absolute())
+legacy = 'source $HOME/.agentstack/env.sh; export AGENTSTACK_PROJECT_KEY; exec /bin/bash $HOME/.agentstack/hooks/watch_agent_mail_signals.sh'
+matches = []
+try:
+    for path in (pathlib.Path(home) / "Library/LaunchAgents").glob("*mail-watcher.plist"):
+        data = plistlib.loads(path.read_bytes())
+        args = data.get("ProgramArguments", [])
+        is_script = args == ["/bin/bash", script]
+        is_legacy = (script == str(pathlib.Path(home) / ".agentstack/hooks/watch_agent_mail_signals.sh")
+                     and args == ["/bin/bash", "-lc", legacy])
+        if not (is_script or is_legacy) or data.get("Label") == own_label:
+            continue
+        label = data.get("Label")
+        require(label == approved, "unapproved external watcher")
+        job = subprocess.run(["launchctl", "print", f"gui/{os.getuid()}/{label}"],
+                             capture_output=True, text=True, check=True, timeout=5)
+        pid_match = re.search(r"^\s*pid = ([0-9]+)\s*$", job.stdout, re.M)
+        require(pid_match, "external watcher has no live pid")
+        pid = int(pid_match[1])
+        require(pid > 1 and not job.stderr.strip(), "unsafe or unverified job")
+        require(pathlib.Path(marker).read_text().strip() == str(pid), "external lock mismatch")
+        os.kill(pid, 0)
+        ps = subprocess.run(["ps", "-ww", "-o", "uid=,command=", "-p", str(pid)],
+                            capture_output=True, text=True, check=True, timeout=5)
+        uid, command = ps.stdout.strip().split(None, 1)
+        require(not ps.stderr.strip() and int(uid) == os.getuid() and command == f"/bin/bash {script}", "runner mismatch")
+        matches.append(label)
+    require(len(matches) <= 1, "multiple external watchers")
+except (AssertionError, OSError, ValueError, plistlib.InvalidFileException,
+        subprocess.SubprocessError) as exc:
+    print(f"cannot verify external watcher ownership: {type(exc).__name__}", file=sys.stderr)
+    raise SystemExit(2)
+if not matches:
+    raise SystemExit(1)
+print(matches[0])
+PY
+} # end find_external_mail_watcher
 
 enable_mail_watcher() {
   local kind=""
@@ -2449,6 +2543,19 @@ enable_mail_watcher() {
   if [[ -z "$kind" ]]; then
     warn "no supported service manager found; the ORRERY Mail watcher will only run while an agent started with $BIN_DIR/agent-start keeps its tmux session alive"
     return 0
+  fi
+
+  if [[ "$kind" == launchd ]]; then
+    local external_label="" external_status=0
+    external_label=$(find_external_mail_watcher) || external_status=$?
+    if [[ "$external_status" == 0 ]]; then
+      AGENT_MAIL_WATCHER_KIND="external-launchd"
+      AGENT_MAIL_WATCHER_PATH=""
+      say "reuse external ORRERY Mail watcher ($external_label); its job and ownership are unchanged"
+      return 0
+    elif [[ "$external_status" != 1 ]]; then
+      die "refusing to register a duplicate ORRERY Mail watcher"
+    fi
   fi
 
   if [[ "$kind" == "launchd" ]]; then
@@ -2917,10 +3024,11 @@ if mail_autostart_service_path:
     owned_files.append(mail_autostart_service_path)
 if mail_watcher_path:
     owned_files.append(mail_watcher_path)
-for raw in ("$NATIVE_MAIL_ENV", "$NATIVE_MAIL_RUNNER"):
-    path = pathlib.Path(raw)
-    if path.is_file() or path.is_symlink():
-        owned_files.append(str(path))
+if mail_service_kind == "nohup":
+    for raw in ("$NATIVE_MAIL_ENV", "$NATIVE_MAIL_RUNNER"):
+        path = pathlib.Path(raw)
+        if path.is_file() or path.is_symlink():
+            owned_files.append(str(path))
 merge_result_path = pathlib.Path("$SAFE_MERGE_RESULT_FILE")
 settings_merge = None
 if merge_result_path.exists():
