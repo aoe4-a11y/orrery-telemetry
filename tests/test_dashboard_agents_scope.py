@@ -127,21 +127,28 @@ def test_live_and_full_waiting_together_each_get_their_shape(roster, http, order
         results[index] = (scope, json.loads(http(path)))
 
     threads = [threading.Thread(target=ask, args=(i, s)) for i, s in enumerate(order)]
-    threads[0].start()
-    assert entered.wait(10)  # the first computation is running
-    for thread in threads[1:]:
-        thread.start()
-    flight, key = server._HTTP_SINGLE_FLIGHT, ("agents", server.HISTORY_DAYS_DEFAULT)
-    deadline = time.monotonic() + 10
-    while True:  # both followers have joined the next computation
-        with flight._cond:
-            if flight._states.get(key, {}).get("wanted", {}).get(2) == 2:
-                break
-        assert time.monotonic() < deadline, "the followers never joined"
-        time.sleep(0.005)
-    gate.set()
-    for thread in threads:
-        thread.join(10)
+    started = []
+    try:
+        threads[0].start()
+        started.append(threads[0])
+        assert entered.wait(10)  # the first computation is running
+        for thread in threads[1:]:
+            thread.start()
+            started.append(thread)
+        flight, key = server._HTTP_SINGLE_FLIGHT, ("agents", server.HISTORY_DAYS_DEFAULT)
+        deadline = time.monotonic() + 10
+        while True:  # both followers have joined the next computation
+            with flight._cond:
+                if flight._states.get(key, {}).get("wanted", {}).get(2) == 2:
+                    break
+            assert time.monotonic() < deadline, "the followers never joined"
+            time.sleep(0.005)
+    finally:
+        # Even when a wait above fails, no request is left behind.
+        gate.set()
+        for thread in started:
+            thread.join(10)
+        assert not [t for t in started if t.is_alive()], "a request thread is still running"
     assert len(results) == 3
     for scope, payload in results.values():
         if scope == "live":
