@@ -890,7 +890,7 @@ class RuntimeDelivery(RuntimeFiles):
         return reply.stdout.splitlines()
 
     def create_wrapper(self,row,provider_session_id=None):
-        args=[sys.executable,str(Path(__file__).with_name('runtime_client.py')),'--context',str(self.client.path),
+        args=[sys.executable,str(Path(__file__).with_name('runtime_client.py')),'--context',str(self.client.path),'--',
               'execute-launch',row['launch_id'],row['receipt_nonce']]
         if provider_session_id:args.append(provider_session_id)
         try:
@@ -1020,7 +1020,7 @@ class RuntimeDelivery(RuntimeFiles):
             # The exec-only child sets its own PID in the inherited hook env;
             # it becomes the native process, while THIS process remains runner.
             child=[sys.executable,str(Path(__file__).with_name('runtime_client.py')),
-                '--context',str(c.path),'provider-exec',launch_id,nonce]
+                '--context',str(c.path),'--','provider-exec',launch_id,nonce]
             if provider_session_id:child.append(provider_session_id)
             try:process=subprocess.Popen(child,cwd=row['cwd'],env=env)
             except OSError:
