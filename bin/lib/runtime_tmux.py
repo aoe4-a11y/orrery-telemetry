@@ -194,12 +194,10 @@ class Transport:
                 'server_pid': getattr(self, 'server_pid', None)}
 
 
-def legacy_transport(*, run=None, binary=None, environ=None):
-    """Resolve once at consumer bootstrap; subsequent calls use explicit -S.
-
-    An inherited custom endpoint must prove its exact socket/server PID. A
-    dedicated global endpoint can never become a legacy consumer endpoint.
-    """
+def legacy_endpoint(*, environ=None):
+    """The socket path (and inherited server PID) legacy_transport resolves, with
+    no process and no socket check. A caller that keeps a transport compares
+    its socket with this path to know the environment still names it."""
     env = os.environ if environ is None else environ
     inherited = env.get('TMUX')
     server_pid = None
@@ -219,6 +217,18 @@ def legacy_transport(*, run=None, binary=None, environ=None):
     global_parent = Path('/tmp').resolve() / ('orrery-tmux-' + str(os.getuid()))
     if path.parent == global_parent:
         raise TargetError('GLOBAL_TMUX_LEGACY_CONSUMER_REFUSED')
+    return path, server_pid
+
+
+def legacy_transport(*, run=None, binary=None, environ=None):
+    """Resolve once at consumer bootstrap; subsequent calls use explicit -S.
+
+    An inherited custom endpoint must prove its exact socket/server PID. A
+    dedicated global endpoint can never become a legacy consumer endpoint.
+    """
+    env = os.environ if environ is None else environ
+    inherited = env.get('TMUX')
+    path, server_pid = legacy_endpoint(environ=env)
     transport = Transport(path, binary=binary, run=run, allow_absent=not inherited)
     if transport.identity is None:
         # Read-only bootstrap of an actually absent default endpoint.

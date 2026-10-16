@@ -94,6 +94,10 @@ def _checkout_dashboard_helpers(monkeypatch):
     from pathlib import Path
     from dashboard import server
     monkeypatch.setattr(server, "HOOKS_DIR", str(Path(__file__).resolve().parents[1] / "hooks"))
+    # A tmux consumer kept by an earlier test would carry that test's doubles.
+    server._reset_tmux_consumer_cache()
+    yield
+    server._reset_tmux_consumer_cache()
 
 
 @pytest.fixture(autouse=True)
