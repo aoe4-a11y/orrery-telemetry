@@ -260,10 +260,68 @@ def test_an_alias_moved_between_the_key_and_the_build_is_not_kept(endpoint, monk
         subprocess.run([TMUX, "kill-server"], env=env_b, check=False, capture_output=True)
 
 
-def test_the_key_and_the_consumer_must_name_the_same_endpoint(endpoint):
+def test_the_key_names_the_exact_socket_the_resolver_picks(endpoint):
+    """Not an ancestor: the one socket path. A key whose path differs anywhere
+    -- another root, a root nested inside, another socket name in the same
+    directory -- does not match the kept consumer."""
     server._tmux(["list-sessions", "-F", "#{session_name}"])
     consumer = server._TMUX_CONSUMER_CACHE["consumer"]
     key = server._TMUX_CONSUMER_CACHE["key"]
+    socket = Path(consumer.transport.path)
+    assert key[2] == str(socket) == str(endpoint["sockets"].resolve() / f"tmux-{os.getuid()}" / "default")
     assert server._consumer_matches_key(consumer, key)
-    other = key[:3] + (str(endpoint["root"] / "elsewhere"),) + key[4:]
-    assert not server._consumer_matches_key(consumer, other)
+    for other in (endpoint["root"] / "elsewhere" / socket.parent.name / "default",
+                  socket.parent.parent / "nested" / socket.parent.name / "default",
+                  socket.parent / "other"):
+        assert not server._consumer_matches_key(consumer, key[:2] + (str(other),) + key[3:])
+
+
+class _Kept:
+    def __init__(self, path):
+        self.transport = type("T", (), {"path": Path(path)})()
+
+
+def test_a_socket_inside_the_key_endpoint_directory_is_not_the_key_endpoint(endpoint):
+    """The ancestor test of r2 matched a consumer under a root nested inside the
+    key's TMUX_TMPDIR, or another socket name there. The exact test does not."""
+    server._tmux(["list-sessions", "-F", "#{session_name}"])
+    key = server._TMUX_CONSUMER_CACHE["key"]
+    base = endpoint["sockets"].resolve()
+    nested = base / "b" / f"tmux-{os.getuid()}" / "default"
+    sibling_name = base / f"tmux-{os.getuid()}" / "other"
+    assert not server._consumer_matches_key(_Kept(nested), key)
+    assert not server._consumer_matches_key(_Kept(sibling_name), key)
+
+
+def test_an_alias_moved_to_a_root_nested_inside_the_old_one_is_another_endpoint(endpoint, monkeypatch):
+    """A = <root>/a with Alpha; B = A/b, nested inside A, with Beta. The alias
+    moves from A to B while A keeps running: B is read, A's consumer not kept."""
+    a = endpoint["sockets"]
+    b = a / "b"
+    b.mkdir(mode=0o700)
+    alias = endpoint["root"] / "current"
+    alias.symlink_to(a)
+    monkeypatch.setenv("TMUX_TMPDIR", str(alias))
+    env_b = {**endpoint["env"], "TMUX_TMPDIR": str(b)}
+    subprocess.run([TMUX, "new-session", "-d", "-s", "Beta", "sleep 600"], env=env_b, check=True)
+    try:
+        server._reset_tmux_consumer_cache()
+        assert "Alpha" in server._tmux(["list-sessions", "-F", "#{session_name}"])
+        alias.unlink()
+        alias.symlink_to(b)
+        names = server._tmux(["list-sessions", "-F", "#{session_name}"])
+        assert "Beta" in names and "Alpha" not in names
+        kept = server._TMUX_CONSUMER_CACHE["consumer"]
+        assert str(kept.transport.path) == str(b.resolve() / f"tmux-{os.getuid()}" / "default")
+    finally:
+        subprocess.run([TMUX, "kill-server"], env=env_b, check=False, capture_output=True)
+
+
+def test_an_inherited_tmux_names_its_own_socket(endpoint, monkeypatch):
+    sock = endpoint["sockets"].resolve() / f"tmux-{os.getuid()}" / "default"
+    pid = endpoint["tmux"]("display-message", "-p", "#{pid}").stdout.strip()
+    monkeypatch.setenv("TMUX", f"{sock},{pid},0")
+    server._reset_tmux_consumer_cache()
+    assert "Alpha" in server._tmux(["list-sessions", "-F", "#{session_name}"])
+    key = server._TMUX_CONSUMER_CACHE["key"]
+    assert key[2] == str(sock) and key[3] == pid

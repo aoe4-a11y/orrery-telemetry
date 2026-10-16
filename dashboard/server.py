@@ -572,8 +572,9 @@ WARMUP_NAMES = {"warm-opus", "warm-sonnet"}
 # fifth of a /api/agents computation. What is reused is only the endpoint
 # resolution. Every use, kept or new, first passes the same entry check as a
 # build (_tmux_helper_entry: the installed helper, or the negative admission
-# when it is missing), and the key holds the resolved TMUX_TMPDIR, so an alias
-# that now points elsewhere is a new endpoint. Every command is still admitted
+# when it is missing), and the key is the exact socket path the shared resolver
+# picks now (runtime_tmux.legacy_endpoint), so an alias that now points
+# elsewhere is a new endpoint. Every command is still admitted
 # by the consumer. A restarted server makes a new socket file: rebuilt.
 _TMUX_CONSUMER_LOCK = threading.Lock()
 _TMUX_CONSUMER_CACHE: dict = {"key": None, "consumer": None, "entry": None}
@@ -609,31 +610,28 @@ def _consumer_still_current(consumer) -> bool:
 
 
 def _tmux_consumer_key():
-    # TMUX_TMPDIR resolved, as the shared resolver resolves it: a symlinked
-    # directory retargeted to another server is another endpoint.
-    tmpdir = os.environ.get('TMUX_TMPDIR')
-    return (HOOKS_DIR, os.environ.get('AGENTSTACK_HOME'), os.environ.get('TMUX'),
-            os.path.realpath(tmpdir or '/tmp'), id(_MODE_API))
+    """The endpoint the shared resolver picks now (its own legacy_endpoint, no
+    process): a retargeted TMUX_TMPDIR alias or another TMUX is another key.
+    None when it cannot be told this way; then nothing is kept."""
+    try:
+        api = _MODE_API['runtime_tmux_api']() if 'runtime_tmux_api' in _MODE_API else None
+        endpoint = api.get('legacy_endpoint') if isinstance(api, dict) else None
+        if endpoint is None:
+            return None
+        path, server_pid = endpoint(environ=os.environ)
+    except Exception:
+        return None
+    return (HOOKS_DIR, os.environ.get('AGENTSTACK_HOME'), str(path), server_pid, id(_MODE_API))
 
 
 def _consumer_matches_key(consumer, key) -> bool:
-    """The consumer's actual socket is the endpoint the key resolved: TMUX's
-    socket when TMUX is set, otherwise a socket inside the resolved
-    TMUX_TMPDIR. The key and the build resolve separately, so an alias moved
-    in between must not leave a consumer of one endpoint under the key of
-    another."""
+    """The consumer's actual socket is exactly the endpoint the key names (the
+    path the shared resolver picks now). The key and the build resolve at
+    different moments, so an alias moved in between must not leave a consumer
+    of one endpoint under the key of another."""
     transport = getattr(consumer, 'transport', None)
     path = getattr(transport, 'path', None)
-    if path is None:
-        return False
-    actual = Path(path)
-    inherited, tmpdir = key[2], key[3]
-    if inherited:
-        try:
-            return Path(inherited.rsplit(',', 2)[0]).resolve() == actual.resolve()
-        except (OSError, ValueError):
-            return False
-    return Path(tmpdir) in actual.parents
+    return path is not None and str(Path(path)) == key[2]
 
 
 def _legacy_tmux_consumer():
@@ -647,14 +645,14 @@ def _legacy_tmux_consumer():
         return None
     key = _tmux_consumer_key()
     with _TMUX_CONSUMER_LOCK:
-        if _TMUX_CONSUMER_CACHE["key"] == key and _TMUX_CONSUMER_CACHE["entry"] == entry:
+        if key is not None and _TMUX_CONSUMER_CACHE["key"] == key and _TMUX_CONSUMER_CACHE["entry"] == entry:
             consumer = _TMUX_CONSUMER_CACHE["consumer"]
             if (consumer is not None and _consumer_matches_key(consumer, key)
                     and _consumer_still_current(consumer)):
                 return consumer
     consumer = _build_legacy_tmux_consumer(entry)
     with _TMUX_CONSUMER_LOCK:
-        if (consumer is not None and _consumer_matches_key(consumer, key)
+        if (key is not None and consumer is not None and _consumer_matches_key(consumer, key)
                 and _consumer_still_current(consumer)):
             _TMUX_CONSUMER_CACHE.update(key=key, consumer=consumer, entry=entry)
         else:
