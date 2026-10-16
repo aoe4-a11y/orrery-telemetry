@@ -569,16 +569,31 @@ WARMUP_NAMES = {"warm-opus", "warm-sonnet"}
 # One consumer per tmux endpoint, kept while that endpoint's socket is the same
 # file. Building one resolves and verifies the endpoint (a display-message
 # process each time); _tmux_run used to build one per tmux command, about a
-# fifth of a /api/agents computation. Every command is still admitted by the
-# consumer; only the endpoint resolution is reused. A server that was
-# restarted makes a new socket file, so the identity check rebuilds.
+# fifth of a /api/agents computation. What is reused is only the endpoint
+# resolution. Every use, kept or new, first passes the same entry check as a
+# build (_tmux_helper_entry: the installed helper, or the negative admission
+# when it is missing), and the key holds the resolved TMUX_TMPDIR, so an alias
+# that now points elsewhere is a new endpoint. Every command is still admitted
+# by the consumer. A restarted server makes a new socket file: rebuilt.
 _TMUX_CONSUMER_LOCK = threading.Lock()
-_TMUX_CONSUMER_CACHE: dict = {"key": None, "consumer": None}
+_TMUX_CONSUMER_CACHE: dict = {"key": None, "consumer": None, "entry": None}
 
 
 def _reset_tmux_consumer_cache():
     with _TMUX_CONSUMER_LOCK:
-        _TMUX_CONSUMER_CACHE.update(key=None, consumer=None)
+        _TMUX_CONSUMER_CACHE.update(key=None, consumer=None, entry=None)
+
+
+def _tmux_helper_entry():
+    """The installed transport helper a consumer is built from. When it is
+    missing: refused for a global or unproven placement, None (bare tmux) for a
+    proven pure legacy one. Run before every use, kept consumer or not."""
+    path=Path(HOOKS_DIR).parent/'bin/lib/runtime_tmux.py'
+    if not path.is_file():
+        # Mode admission above already rejected an unresolved global install.
+        if GLOBAL_MODE or _MODE_API['unproven_client_placement'](Path(HOOKS_DIR).parent):raise RuntimeError('GLOBAL_TARGET_HELPER_UNAVAILABLE')
+        return None
+    return path, path.with_name('legacy_consumer.py').is_file()
 
 
 def _consumer_still_current(consumer) -> bool:
@@ -593,34 +608,48 @@ def _consumer_still_current(consumer) -> bool:
         return False
 
 
+def _tmux_consumer_key():
+    # TMUX_TMPDIR resolved, as the shared resolver resolves it: a symlinked
+    # directory retargeted to another server is another endpoint.
+    tmpdir = os.environ.get('TMUX_TMPDIR')
+    return (HOOKS_DIR, os.environ.get('AGENTSTACK_HOME'), os.environ.get('TMUX'),
+            os.path.realpath(tmpdir or '/tmp'), id(_MODE_API))
+
+
 def _legacy_tmux_consumer():
-    key = (HOOKS_DIR, os.environ.get('AGENTSTACK_HOME'), os.environ.get('TMUX'),
-           os.environ.get('TMUX_TMPDIR'), id(_MODE_API))
+    try:
+        entry = _tmux_helper_entry()  # the same check a build makes, every time
+    except RuntimeError:
+        _reset_tmux_consumer_cache()  # refused: nothing kept carries past a refusal
+        raise
+    if entry is None:
+        _reset_tmux_consumer_cache()
+        return None
+    key = _tmux_consumer_key()
     with _TMUX_CONSUMER_LOCK:
-        if _TMUX_CONSUMER_CACHE["key"] == key:
+        if _TMUX_CONSUMER_CACHE["key"] == key and _TMUX_CONSUMER_CACHE["entry"] == entry:
             consumer = _TMUX_CONSUMER_CACHE["consumer"]
             if consumer is not None and _consumer_still_current(consumer):
                 return consumer
-    consumer = _build_legacy_tmux_consumer()
+    consumer = _build_legacy_tmux_consumer(entry)
     with _TMUX_CONSUMER_LOCK:
         if consumer is not None and _consumer_still_current(consumer):
-            _TMUX_CONSUMER_CACHE.update(key=key, consumer=consumer)
+            _TMUX_CONSUMER_CACHE.update(key=key, consumer=consumer, entry=entry)
         else:
-            _TMUX_CONSUMER_CACHE.update(key=None, consumer=None)
+            _TMUX_CONSUMER_CACHE.update(key=None, consumer=None, entry=None)
     return consumer
 
 
-def _build_legacy_tmux_consumer():
-    path=Path(HOOKS_DIR).parent/'bin/lib/runtime_tmux.py'
-    if not path.is_file():
-        # Mode admission above already rejected an unresolved global install.
-        if GLOBAL_MODE or _MODE_API['unproven_client_placement'](Path(HOOKS_DIR).parent):raise RuntimeError('GLOBAL_TARGET_HELPER_UNAVAILABLE')
+def _build_legacy_tmux_consumer(entry=None):
+    entry = _tmux_helper_entry() if entry is None else entry
+    if entry is None:
         return None
+    path, has_factory = entry
     api=(_MODE_API['runtime_tmux_api']() if 'runtime_tmux_api' in _MODE_API else _runtime_runpy.run_path(str(path)))
     home=Path(os.environ.get('AGENTSTACK_HOME',str(Path(HOOKS_DIR).parent)))
     if 'LegacyConsumer' in api:return api['LegacyConsumer'](home)
     factory=path.with_name('legacy_consumer.py')
-    if factory.is_file():
+    if has_factory:
         return _runtime_runpy.run_path(str(factory))['LegacyConsumer'](home,transport_api=api)
     # An older complete transport may prove a pure legacy placement; otherwise
     # absence of the adapter is not permission to type into an unknown pane.

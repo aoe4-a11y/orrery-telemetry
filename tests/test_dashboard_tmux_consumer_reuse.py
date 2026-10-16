@@ -50,11 +50,16 @@ def endpoint(monkeypatch):
             return subprocess.run([TMUX, *args], env=env, capture_output=True, text=True, check=check)
 
         tmux("new-session", "-d", "-s", "Alpha", "sleep 600")
-        built, admitted = [], []
+        built, admitted, entries = [], [], []
         real_build = server._build_legacy_tmux_consumer
+        real_entry = server._tmux_helper_entry
 
-        def counting_build():
-            consumer = real_build()
+        def counting_entry():
+            entries.append(1)
+            return real_entry()
+
+        def counting_build(entry=None):
+            consumer = real_build(entry)
             built.append(consumer)
             if consumer is not None:
                 real_admission = consumer.admission
@@ -67,9 +72,11 @@ def endpoint(monkeypatch):
             return consumer
 
         monkeypatch.setattr(server, "_build_legacy_tmux_consumer", counting_build)
+        monkeypatch.setattr(server, "_tmux_helper_entry", counting_entry)
         server._reset_tmux_consumer_cache()
         try:
-            yield {"tmux": tmux, "built": built, "admitted": admitted, "sockets": sockets}
+            yield {"tmux": tmux, "built": built, "admitted": admitted, "entries": entries,
+                   "sockets": sockets, "root": root, "home": home, "env": env}
         finally:
             tmux("kill-server", check=False)
             server._reset_tmux_consumer_cache()
@@ -151,3 +158,65 @@ def test_no_socket_at_build_time_is_not_kept(endpoint):
         assert server._tmux(["list-sessions", "-F", "#{session_name}"]) == ""
     assert len(endpoint["built"]) == 2                        # no identity: built each time, as before
     assert server._TMUX_CONSUMER_CACHE["consumer"] is None
+
+
+def test_the_entry_check_runs_on_every_use_kept_or_built(endpoint):
+    for _ in range(4):
+        server._tmux(["display-message", "-p", "-t", "=Alpha", "#{session_name}"])
+    assert len(endpoint["built"]) == 1
+    assert len(endpoint["entries"]) == 4          # the build's check, also on the 3 kept uses
+
+
+def test_a_missing_helper_in_an_unproven_placement_is_refused_after_caching(endpoint):
+    """Cached first; then the helper disappears and a clients/ directory makes
+    the placement unproven. The build refuses that; so must a kept consumer --
+    inventory included, which takes no target admission."""
+    assert "Alpha" in server._tmux(["list-sessions", "-F", "#{session_name}"])
+    helper = endpoint["home"] / "bin/lib/runtime_tmux.py"
+    aside = helper.with_suffix(".aside")
+    helper.rename(aside)
+    (endpoint["home"] / "clients" / "partial").mkdir(parents=True)
+    with pytest.raises(RuntimeError, match="GLOBAL_TARGET_HELPER_UNAVAILABLE"):
+        server._legacy_tmux_consumer()
+    assert server._tmux(["list-sessions", "-F", "#{session_name}"]) == ""
+    aside.rename(helper)                          # the helper is back: a consumer again
+    assert "Alpha" in server._tmux(["list-sessions", "-F", "#{session_name}"])
+    assert len(endpoint["built"]) == 2
+
+
+def test_a_missing_helper_in_a_pure_legacy_placement_drops_the_kept_consumer(endpoint):
+    server._tmux(["list-sessions", "-F", "#{session_name}"])
+    helper = endpoint["home"] / "bin/lib/runtime_tmux.py"
+    aside = helper.with_suffix(".aside")
+    helper.rename(aside)
+    try:
+        assert server._legacy_tmux_consumer() is None   # as the build answers: bare tmux
+        assert server._TMUX_CONSUMER_CACHE["consumer"] is None
+    finally:
+        aside.rename(helper)
+
+
+def test_an_alias_retargeted_to_another_server_is_another_endpoint(endpoint, monkeypatch):
+    """TMUX_TMPDIR is a symlink to A (server with Alpha). It is pointed at B
+    (server with Beta) while A keeps running. The resolver now finds B; a kept
+    consumer must not keep reading A."""
+    root = endpoint["root"]
+    a, b = endpoint["sockets"], root / "b"
+    b.mkdir(mode=0o700)
+    alias = root / "current"
+    alias.symlink_to(a)
+    monkeypatch.setenv("TMUX_TMPDIR", str(alias))
+    env_b = {**endpoint["env"], "TMUX_TMPDIR": str(b)}
+    subprocess.run([TMUX, "new-session", "-d", "-s", "Beta", "sleep 600"], env=env_b, check=True)
+    try:
+        server._reset_tmux_consumer_cache()
+        assert "Alpha" in server._tmux(["list-sessions", "-F", "#{session_name}"])
+        assert "Alpha" in server._tmux(["list-sessions", "-F", "#{session_name}"])   # same alias: kept
+        built = len(endpoint["built"])
+        alias.unlink()
+        alias.symlink_to(b)                       # A's server still runs
+        names = server._tmux(["list-sessions", "-F", "#{session_name}"])
+        assert "Beta" in names and "Alpha" not in names
+        assert len(endpoint["built"]) == built + 1
+    finally:
+        subprocess.run([TMUX, "kill-server"], env=env_b, check=False, capture_output=True)
