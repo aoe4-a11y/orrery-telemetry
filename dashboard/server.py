@@ -616,6 +616,26 @@ def _tmux_consumer_key():
             os.path.realpath(tmpdir or '/tmp'), id(_MODE_API))
 
 
+def _consumer_matches_key(consumer, key) -> bool:
+    """The consumer's actual socket is the endpoint the key resolved: TMUX's
+    socket when TMUX is set, otherwise a socket inside the resolved
+    TMUX_TMPDIR. The key and the build resolve separately, so an alias moved
+    in between must not leave a consumer of one endpoint under the key of
+    another."""
+    transport = getattr(consumer, 'transport', None)
+    path = getattr(transport, 'path', None)
+    if path is None:
+        return False
+    actual = Path(path)
+    inherited, tmpdir = key[2], key[3]
+    if inherited:
+        try:
+            return Path(inherited.rsplit(',', 2)[0]).resolve() == actual.resolve()
+        except (OSError, ValueError):
+            return False
+    return Path(tmpdir) in actual.parents
+
+
 def _legacy_tmux_consumer():
     try:
         entry = _tmux_helper_entry()  # the same check a build makes, every time
@@ -629,11 +649,13 @@ def _legacy_tmux_consumer():
     with _TMUX_CONSUMER_LOCK:
         if _TMUX_CONSUMER_CACHE["key"] == key and _TMUX_CONSUMER_CACHE["entry"] == entry:
             consumer = _TMUX_CONSUMER_CACHE["consumer"]
-            if consumer is not None and _consumer_still_current(consumer):
+            if (consumer is not None and _consumer_matches_key(consumer, key)
+                    and _consumer_still_current(consumer)):
                 return consumer
     consumer = _build_legacy_tmux_consumer(entry)
     with _TMUX_CONSUMER_LOCK:
-        if consumer is not None and _consumer_still_current(consumer):
+        if (consumer is not None and _consumer_matches_key(consumer, key)
+                and _consumer_still_current(consumer)):
             _TMUX_CONSUMER_CACHE.update(key=key, consumer=consumer, entry=entry)
         else:
             _TMUX_CONSUMER_CACHE.update(key=None, consumer=None, entry=None)

@@ -220,3 +220,50 @@ def test_an_alias_retargeted_to_another_server_is_another_endpoint(endpoint, mon
         assert len(endpoint["built"]) == built + 1
     finally:
         subprocess.run([TMUX, "kill-server"], env=env_b, check=False, capture_output=True)
+
+
+def test_an_alias_moved_between_the_key_and_the_build_is_not_kept(endpoint, monkeypatch):
+    """The key resolves TMUX_TMPDIR, then the build resolves it again. The alias
+    is moved from A to B exactly between the two: the consumer built for B must
+    not be kept under A's key, and once the alias points at A again, A is read."""
+    root = endpoint["root"]
+    a, b = endpoint["sockets"], root / "b"
+    b.mkdir(mode=0o700)
+    alias = root / "current"
+    alias.symlink_to(a)
+    monkeypatch.setenv("TMUX_TMPDIR", str(alias))
+    env_b = {**endpoint["env"], "TMUX_TMPDIR": str(b)}
+    subprocess.run([TMUX, "new-session", "-d", "-s", "Beta", "sleep 600"], env=env_b, check=True)
+    real_key = server._tmux_consumer_key
+    moves = []
+
+    def key_then_move():
+        key = real_key()
+        if not moves:
+            moves.append(key)
+            alias.unlink()
+            alias.symlink_to(b)                   # between the key and the build
+        return key
+
+    monkeypatch.setattr(server, "_tmux_consumer_key", key_then_move)
+    try:
+        server._reset_tmux_consumer_cache()
+        server._tmux(["list-sessions", "-F", "#{session_name}"])
+        assert server._TMUX_CONSUMER_CACHE["consumer"] is None   # B's consumer was not kept under A's key
+        alias.unlink()
+        alias.symlink_to(a)                       # back to A
+        names = server._tmux(["list-sessions", "-F", "#{session_name}"])
+        assert "Alpha" in names and "Beta" not in names
+        kept = server._TMUX_CONSUMER_CACHE["consumer"]
+        assert kept is not None and Path(a).resolve() in Path(kept.transport.path).parents
+    finally:
+        subprocess.run([TMUX, "kill-server"], env=env_b, check=False, capture_output=True)
+
+
+def test_the_key_and_the_consumer_must_name_the_same_endpoint(endpoint):
+    server._tmux(["list-sessions", "-F", "#{session_name}"])
+    consumer = server._TMUX_CONSUMER_CACHE["consumer"]
+    key = server._TMUX_CONSUMER_CACHE["key"]
+    assert server._consumer_matches_key(consumer, key)
+    other = key[:3] + (str(endpoint["root"] / "elsewhere"),) + key[4:]
+    assert not server._consumer_matches_key(consumer, other)
