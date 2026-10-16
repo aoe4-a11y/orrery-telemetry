@@ -566,7 +566,51 @@ WARMUP_NAMES = {"warm-opus", "warm-sonnet"}
 # tmux
 # --------------------------------------------------------------------------- #
 
+# One consumer per tmux endpoint, kept while that endpoint's socket is the same
+# file. Building one resolves and verifies the endpoint (a display-message
+# process each time); _tmux_run used to build one per tmux command, about a
+# fifth of a /api/agents computation. Every command is still admitted by the
+# consumer; only the endpoint resolution is reused. A server that was
+# restarted makes a new socket file, so the identity check rebuilds.
+_TMUX_CONSUMER_LOCK = threading.Lock()
+_TMUX_CONSUMER_CACHE: dict = {"key": None, "consumer": None}
+
+
+def _reset_tmux_consumer_cache():
+    with _TMUX_CONSUMER_LOCK:
+        _TMUX_CONSUMER_CACHE.update(key=None, consumer=None)
+
+
+def _consumer_still_current(consumer) -> bool:
+    transport = getattr(consumer, 'transport', None)
+    tmux = getattr(consumer, 'tmux', None)
+    identity = getattr(transport, 'identity', None)
+    if identity is None or not isinstance(tmux, dict) or 'validate_socket' not in tmux:
+        return False
+    try:
+        return tmux['validate_socket'](transport.path) == identity
+    except Exception:
+        return False
+
+
 def _legacy_tmux_consumer():
+    key = (HOOKS_DIR, os.environ.get('AGENTSTACK_HOME'), os.environ.get('TMUX'),
+           os.environ.get('TMUX_TMPDIR'), id(_MODE_API))
+    with _TMUX_CONSUMER_LOCK:
+        if _TMUX_CONSUMER_CACHE["key"] == key:
+            consumer = _TMUX_CONSUMER_CACHE["consumer"]
+            if consumer is not None and _consumer_still_current(consumer):
+                return consumer
+    consumer = _build_legacy_tmux_consumer()
+    with _TMUX_CONSUMER_LOCK:
+        if consumer is not None and _consumer_still_current(consumer):
+            _TMUX_CONSUMER_CACHE.update(key=key, consumer=consumer)
+        else:
+            _TMUX_CONSUMER_CACHE.update(key=None, consumer=None)
+    return consumer
+
+
+def _build_legacy_tmux_consumer():
     path=Path(HOOKS_DIR).parent/'bin/lib/runtime_tmux.py'
     if not path.is_file():
         # Mode admission above already rejected an unresolved global install.
