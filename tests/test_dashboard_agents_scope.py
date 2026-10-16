@@ -106,9 +106,20 @@ def test_retired_follows_the_history_window(roster, http):
 
 
 @pytest.mark.parametrize("order", [("live", "full", "live"), ("full", "live", "full")])
-def test_live_and_full_waiting_together_each_get_their_shape(roster, http, order):
-    build, calls = roster
-    build.delay = 0.3
+def test_live_and_full_waiting_together_each_get_their_shape(roster, http, order, monkeypatch):
+    """The first request computes; the other two arrive while it runs and
+    share the next computation. The order is held by events, not by sleeps."""
+    _, calls = roster
+    entered, gate = threading.Event(), threading.Event()
+    real_build = server.build_agents
+
+    def first_one_blocks(history_days=server.HISTORY_DAYS_DEFAULT):
+        if not entered.is_set():
+            entered.set()
+            assert gate.wait(10)
+        return real_build(history_days)
+
+    monkeypatch.setattr(server, "build_agents", first_one_blocks)
     results = {}
 
     def ask(index, scope):
@@ -116,17 +127,28 @@ def test_live_and_full_waiting_together_each_get_their_shape(roster, http, order
         results[index] = (scope, json.loads(http(path)))
 
     threads = [threading.Thread(target=ask, args=(i, s)) for i, s in enumerate(order)]
-    for thread in threads:
+    threads[0].start()
+    assert entered.wait(10)  # the first computation is running
+    for thread in threads[1:]:
         thread.start()
-        time.sleep(0.05)  # all arrive while the first computation runs
+    flight, key = server._HTTP_SINGLE_FLIGHT, ("agents", server.HISTORY_DAYS_DEFAULT)
+    deadline = time.monotonic() + 10
+    while True:  # both followers have joined the next computation
+        with flight._cond:
+            if flight._states.get(key, {}).get("wanted", {}).get(2) == 2:
+                break
+        assert time.monotonic() < deadline, "the followers never joined"
+        time.sleep(0.005)
+    gate.set()
     for thread in threads:
-        thread.join()
+        thread.join(10)
+    assert len(results) == 3
     for scope, payload in results.values():
         if scope == "live":
             assert payload["scope"] == "live" and [r["name"] for r in payload["agents"]] == LIVE
         else:
             assert "scope" not in payload and payload["agents"] == ROWS
-    assert len(calls) <= 2  # shared computations, not one per request
+    assert len(calls) == 2  # the running one, then one shared by both followers
 
 
 def test_different_windows_do_not_share(roster, http):
