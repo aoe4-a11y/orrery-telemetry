@@ -18,6 +18,13 @@ The consumer root is agentstack_home/global-consumer/SHA256(mail_instance_id)/ag
 
 Standalone and child launch/resume use the same helper. Output slots, command, cwd and server capabilities are checked before window binding and execution. Registration and launch are distinct operations; an uncertain launch is never retried by registering another identity.
 
+Internal `execute-launch` / `provider-exec` commands terminate options with
+`--` after the fixed context, preserving even a launch nonce starting with
+`-` as a positional value. `receipt_nonce` distinguishes launch generations;
+it is not a registration token or API credential. Owner authentication still
+uses the fixed credential, and execution retains its phase, runner parent
+PID/start and trusted session-receipt checks.
+
 | Phase | Exit |
 | --- | --- |
 | planned / gated | launch-retry or launch-cancel with the current status digest |

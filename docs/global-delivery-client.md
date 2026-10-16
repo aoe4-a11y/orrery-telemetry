@@ -20,6 +20,12 @@ agent の route.json と App の external route は client_name だけを保存�
 
 `agent-start` / `agent-start-codex` / `agent-start-gemini` と子の spawn/resume は共通 runtime helper を使います。cwd・command・出力 slot・capability を先に確認し、window の bind と一意な launch の gate を経て起動します。登録 pending と launch は別の操作です。起動を再登録で回避しません。
 
+内部の `execute-launch` / `provider-exec` は固定 context の後で `--` により
+option を終端し、先頭が `-` の launch nonce も位置引数の値として保ちます。
+`receipt_nonce` は古い process を区別する起動ごとの照合値で、登録 token や
+API credential ではありません。owner の認証は固定 credential、実行の承認は
+既存の phase・runner の親 PID/start・正規 session receipt の照合を使います。
+
 | phase | 戻り方 |
 | --- | --- |
 | planned / gated | status の digest を指定して launch-retry または launch-cancel |
