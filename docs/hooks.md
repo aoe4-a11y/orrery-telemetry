@@ -184,7 +184,7 @@ Codex CLI の optional ORRERY plugin に、`PreToolUse` / `^apply_patch$` の予
 
 専用 adapter は path の取り出しだけを行い、identity・保護 root・自己予約の renew-only 確認・zero の1回 retry・unmanaged/outage policy は Claude と同じ実装です。legacy mode では `renew_file_reservations` の同じ応答で自己予約と他者の ACTIVE exclusive 衝突を確認し、重なれば予約者を理由に示して拒否します。Mail は renew と衝突照合を同じ transaction で行い、`conflict_check` に version・project・検査した paths・衝突を返します。
 
-pattern の正本は Mail の `_patterns_overlap` だけです。hook に照合実装を複製せず、directory pattern・double star・slash 正規化・文字 class・Unicode を実 Mail HTTP と両 guard で確認します。照会拒否・不正応答・scope 不一致・識別済み agent の通信失敗は fail-closed です。未識別 session の unmanaged/outage policy と global mode の既存 policy は変更しません。共有 context 解析は指定時の `AGENTSTACK_PYTHON` を使い、起動や解析の失敗を「対象なし」の許可に変えません。global mode は既存の共通 client と server の coverage / 排他制約を使います。
+pattern の正本は Mail の `_patterns_overlap` だけです。hook に照合実装を複製せず、directory pattern・double star・slash 正規化・文字 class・Unicode を実 Mail HTTP と両 guard で確認します。到達した Mail の照会拒否・不正応答・scope 不一致は fail-closed です。通信不能は identity の有無を問わず既存の `AGENTSTACK_MAIL_OUTAGE_POLICY` に従います。`warn-open` は可視警告つきで許可し、`block` は拒否します。definitive zero 後の retry 失敗は引き続き拒否します。unmanaged policy と global mode の既存 policy は変更しません。共有 context 解析は指定時の `AGENTSTACK_PYTHON` を使い、起動や解析の失敗を「対象なし」の許可に変えません。global mode は既存の共通 client と server の coverage / 排他制約を使います。
 
 **配備順序:** この hook には更新済みの Mail が必要です。Mail の更新を先に行い、その後に hook を配備してください。新 hook × 旧 Mail は `conflict_check` 欠落として拒否し、Mail の更新を案内します。旧 hook（#269 より前）× 新 Mail は追加 field を無視して従来どおり動きます。resource は引き続き非公開で、予約の一覧を hook 用に公開しません。
 

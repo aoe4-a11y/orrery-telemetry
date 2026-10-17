@@ -80,13 +80,13 @@ def reserved(mail,tmp_path):
     return mail,project
 
 
-def guard(reserved,kind,*,url=None,hook=None,target="docs/note.md"):
+def guard(reserved,kind,*,url=None,hook=None,target="docs/note.md",outage="warn-open"):
     service,project=reserved;home=project.parent/'guard-home';home.mkdir(exist_ok=True)
     env=clean_env();env.update(HOME=str(home),AGENTSTACK_HOME=str(ROOT),AGENTSTACK_PYTHON=sys.executable,
         AGENTSTACK_LABEL_PREFIX='org.agentstack.test.reservation-http',AGENTSTACK_PROJECT_KEY=str(project),
         AGENTSTACK_PROTECTED_ROOTS=str(project),AGENTSTACK_RUNTIME_DIR=str(home/'runtime'),AGENT_NAME='EditorAlpha',
         AGENTSTACK_MCP_URL=url or service['url'],AGENTSTACK_MAIL_HTTP_BEARER_MODE='disabled',
-        AGENTSTACK_MAIL_OUTAGE_POLICY='warn-open',FILE_RESERVATION_RETRY_DELAY_SECONDS='0')
+        AGENTSTACK_MAIL_OUTAGE_POLICY=outage,FILE_RESERVATION_RETRY_DELAY_SECONDS='0')
     payload={'session_id':'fixture-session','cwd':str(project),'hook_event_name':'PreToolUse'}
     if kind=='claude':
         command=['bash',str(hook or ROOT/'hooks/check-file-reservation.sh')]
@@ -128,11 +128,14 @@ def test_real_renew_carries_checked_scope_and_keeps_resources_unpublished(reserv
 
 
 @pytest.mark.parametrize('kind',['claude','codex'])
-def test_real_guards_refuse_unreachable_mail_even_with_warn_open(reserved,kind):
+@pytest.mark.parametrize('policy,expected',[('block',2),('warn-open',0)])
+def test_real_guards_use_outage_policy_for_unreachable_mail(reserved,kind,policy,expected):
     with socket.socket() as probe:
         probe.bind(('127.0.0.1',0));port=probe.getsockname()[1]
-    result=guard(reserved,kind,url=f'http://127.0.0.1:{port}/mcp')
-    assert result.returncode==2,result.stderr+result.stdout
+    result=guard(reserved,kind,url=f'http://127.0.0.1:{port}/mcp',outage=policy)
+    assert result.returncode==expected,result.stderr+result.stdout
+    if policy=='block':assert 'AGENT MAIL UNREACHABLE' in result.stderr
+    else:assert 'systemMessage' in json.loads(result.stdout)
 
 
 @pytest.mark.parametrize('pattern,target,expected',[

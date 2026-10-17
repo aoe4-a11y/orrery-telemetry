@@ -102,10 +102,6 @@ if [ -f "$POLICY_LIB_EARLY" ]; then
         agentstack_invalid_endpoint_message "check-file-reservation"
         exit 2
     fi
-    if [ "$TRANSPORT_STATE" = "unreachable" ] && [ -n "$AGENT" ]; then
-        echo "FILE RESERVATION REQUIRED: reservation service unreachable; ownership and conflicts were not verified." >&2
-        exit 2
-    fi
     if [ "$TRANSPORT_STATE" = "unreachable" ]; then
         handle_reservation_outage "agent=${AGENT:-<unbound>} path=$REL_PATH"
     fi
@@ -288,7 +284,7 @@ block_reservation_write() {
 RESPONSE="$(renew_reservation 2>/dev/null || true)"
 RENEWED="$(classify_renew_response "$RESPONSE")"
 if [ "$RENEWED" = "transport" ]; then
-    block_reservation_write "Reservation service is unreachable; ownership and conflicts were not verified."
+    handle_reservation_outage "agent=$AGENT path=$REL_PATH"
 fi
 if [ "$RENEWED" = "rejected" ]; then
     block_reservation_write "Reservation service rejected the check: $RESPONSE"

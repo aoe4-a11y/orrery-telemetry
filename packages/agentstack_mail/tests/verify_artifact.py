@@ -76,6 +76,13 @@ EXPECTED_DESCRIPTION_DIGESTS = {
 }
 
 EXPECTED_STATIC_ALLOWLIST = {
+    "reservation.renew_scoped_conflict_check": {
+        "category": "scenario_payload_addition",
+        "selector": "checkpoints.10_reservation_renewed_by_overlap.result.conflict_check",
+        "comparator_disposition": "validate_exact_value_then_omit_addition",
+        "live": "absent",
+        "core": "version 1, exact requested project and paths, and no foreign conflict in this scenario",
+    },
     "payload.agent.last_active_ts": {
         "category": "scenario_payload_field",
         "selector": "checkpoints.**.last_active_ts",
@@ -1898,7 +1905,9 @@ def _assert_expected_divergences_manifest(
             raise SystemExit(
                 f"{artifact} divergence allowlist entry {entry.get('id')!r} has invalid keys"
             )
-        if entry["comparator_disposition"] != "allow":
+        expected_disposition = EXPECTED_STATIC_ALLOWLIST.get(entry['id'], {}).get(
+            'comparator_disposition', 'allow')
+        if entry["comparator_disposition"] != expected_disposition:
             raise SystemExit(
                 f"{artifact} divergence allowlist entry {entry['id']!r} is not allowed"
             )

@@ -392,7 +392,7 @@ class ReservationHookTests(unittest.TestCase):
                 result = self.run_hook(server.url, Path(directory))
             self.assertEqual(result.returncode, 2)
 
-    def test_identified_transport_unreachable_fails_closed(self) -> None:
+    def test_initial_transport_unreachable_is_the_only_fail_open(self) -> None:
         sock = socket.socket()
         sock.bind(("127.0.0.1", 0))
         port = sock.getsockname()[1]
@@ -400,7 +400,7 @@ class ReservationHookTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             result = self.run_hook(f"http://127.0.0.1:{port}/mcp", Path(directory))
 
-        self.assertEqual(result.returncode, 2, result.stderr)
+        self.assertEqual(result.returncode, 0, result.stderr)
 
     def test_transport_failure_after_definitive_zero_blocks(self) -> None:
         with tempfile.TemporaryDirectory() as directory, _OneShotZeroServer() as server:

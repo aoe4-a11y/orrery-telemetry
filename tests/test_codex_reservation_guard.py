@@ -194,8 +194,8 @@ def test_shared_unmanaged_policy_is_preserved(sandbox, policy, expected):
         assert 'without a file reservation' in json.loads(result.stdout)['systemMessage']
 
 
-@pytest.mark.parametrize('policy,expected', [('block', 2), ('warn-open', 2)])
-def test_identified_reservation_outage_fails_closed(sandbox, policy, expected):
+@pytest.mark.parametrize('policy,expected', [('block', 2), ('warn-open', 0)])
+def test_identified_reservation_outage_follows_policy(sandbox, policy, expected):
     with Mail() as mail:
         url = mail.url
     class ClosedMail:
