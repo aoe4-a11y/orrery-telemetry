@@ -41,16 +41,15 @@ class Mail:
             def do_POST(self):
                 request = json.loads(self.rfile.read(int(self.headers['Content-Length'])))
                 parent.requests.append(request)
-                if request['method'] == 'resources/read':
-                    assert request['params']['uri'].endswith('active_only=true&format=json')
-                    result = {'contents': [{'text': json.dumps(parent.foreign)}]}
-                else:
-                    assert request['params']['name'] == 'renew_file_reservations'
-                    args = request['params']['arguments']
-                    assert 'registration_token' not in args
-                    count = int(any(path in parent.owned for path in args['paths']))
-                    result = {'structuredContent': {'renewed': count}}
-                    if parent.rejected: result['isError'] = True
+                assert request['method'] == 'tools/call'
+                assert request['params']['name'] == 'renew_file_reservations'
+                args = request['params']['arguments']
+                assert 'registration_token' not in args
+                count = int(any(path in parent.owned for path in args['paths']))
+                result = {'structuredContent': {'renewed': count, 'conflict_check': {
+                    'version': 1, 'project_key': args['project_key'], 'paths': args['paths'],
+                    'conflicts': parent.foreign}}}
+                if parent.rejected: result['isError'] = True
                 body = json.dumps({'jsonrpc': '2.0', 'id': request['id'], 'result': result}).encode()
                 self.send_response(200); self.send_header('Content-Type', 'application/json')
                 self.send_header('Content-Length', str(len(body))); self.end_headers()
@@ -90,8 +89,7 @@ def test_unreserved_patch_is_refused(sandbox):
 
 
 def test_foreign_exclusive_reason_names_owner(sandbox):
-    foreign = [{'agent': 'EditorBeta', 'path_pattern': 'docs/**', 'exclusive': True,
-                'released_ts': None, 'expires_ts': '2999-01-01T00:00:00+00:00'}]
+    foreign = [{'agent': 'EditorBeta', 'path_pattern': 'docs/**'}]
     with Mail(foreign=foreign) as mail:
         result = run(sandbox, patch('docs/note.md'), mail)
     assert result.returncode == 2 and 'EditorBeta' in result.stderr
@@ -170,29 +168,16 @@ def test_missing_core_guard_is_visible_and_blocks(sandbox):
 
 
 def test_own_lease_cannot_hide_foreign_exclusive(sandbox):
-    foreign = [{'agent': 'EditorBeta', 'path_pattern': 'note.md', 'exclusive': True,
-                'released_ts': None, 'expires_ts': '2999-01-01T00:00:00+00:00'}]
+    foreign = [{'agent': 'EditorBeta', 'path_pattern': 'note.md'}]
     with Mail(owned=['note.md'], foreign=foreign) as mail:
         result = run(sandbox, patch('note.md'), mail)
     assert result.returncode == 2 and 'EditorBeta' in result.stderr
 
 
-@pytest.mark.parametrize('field,value', [('exclusive', False), ('agent', 'EditorAlpha'),
-                                         ('expires_ts', '2000-01-01T00:00:00+00:00'),
-                                         ('released_ts', '2001-01-01T00:00:00+00:00')])
-def test_nonconflicting_rows_do_not_block_owned_patch(sandbox, field, value):
-    foreign = dict(agent='EditorBeta', path_pattern='note.md', exclusive=True,
-                   released_ts=None, expires_ts='2999-01-01T00:00:00+00:00')
-    foreign[field] = value
-    with Mail(owned=['note.md'], foreign=[foreign]) as mail:
-        result = run(sandbox, patch('note.md'), mail)
-    assert result.returncode == 0, result.stderr
-
-
 @pytest.mark.parametrize('row', [{'agent': 'EditorBeta'}, 'bad-row',
     dict(agent='EditorBeta', path_pattern='note.md', exclusive=True, released_ts=False,
          expires_ts='2999-01-01T00:00:00+00:00')])
-def test_invalid_conflict_resource_fails_closed(sandbox, row):
+def test_invalid_conflict_response_fails_closed(sandbox, row):
     with Mail(owned=['note.md'], foreign=[row]) as mail:
         result = run(sandbox, patch('note.md'), mail)
     assert result.returncode == 2 and 'conflict check rejected' in result.stderr
@@ -210,7 +195,7 @@ def test_shared_unmanaged_policy_is_preserved(sandbox, policy, expected):
 
 
 @pytest.mark.parametrize('policy,expected', [('block', 2), ('warn-open', 0)])
-def test_shared_initial_outage_policy_is_preserved(sandbox, policy, expected):
+def test_identified_reservation_outage_follows_policy(sandbox, policy, expected):
     with Mail() as mail:
         url = mail.url
     class ClosedMail:
@@ -353,18 +338,6 @@ def test_r1_inner_python_failure_cannot_become_noop(sandbox, tmp_path, selective
     assert result.returncode == 2, result.stdout + result.stderr
 
 
-@pytest.mark.parametrize('pattern,target', [('docs/**/*.md', 'docs/note.md'),
-    ('docs/**/*.md', 'docs/deep/note.md'), ('docs/', 'docs/note.md'),
-    ('**/note.md', 'note.md'), ('/docs/*.md', 'docs/note.md'),
-    ('docs\\*.md', 'docs/note.md'), ('cafe\u0301/**', 'caf\u00e9/note.md')])
-def test_r1_foreign_overlap_uses_mail_pattern_semantics(sandbox, pattern, target):
-    foreign = [dict(agent='EditorBeta', path_pattern=pattern, exclusive=True,
-                    released_ts=None, expires_ts='2999-01-01T00:00:00+00:00')]
-    with Mail(owned=[target], foreign=foreign) as mail:
-        result = run(sandbox, patch(target), mail)
-    assert result.returncode == 2 and 'EditorBeta' in result.stderr, result.stderr
-
-
 def test_r1_changelog_uses_pr_number():
     assert (ROOT / 'changelog.d/000269-codex-reservation-guard.md').is_file()
     assert not (ROOT / 'changelog.d/000267-codex-reservation-guard.md').exists()
@@ -433,28 +406,6 @@ def test_r1_global_guard_does_not_borrow_symlink_target_coverage(sandbox, tmp_pa
         assert calls == [('check_file_reservations', {'paths': [str(path)]})]
 
 
-@pytest.mark.parametrize('expression,target', [
-    ('[!x]', 'docs/a/b.md'), ('[^x]', 'docs/a/b.md'),
-    ('[.-0]', 'docs/0/0.md'),
-])
-def test_r2_own_lease_cannot_hide_foreign_class_spanning_slash(sandbox, expression, target):
-    pattern = 'docs/' + expression * 3 + '.md'
-    foreign = [dict(agent='EditorBeta', path_pattern=pattern, exclusive=True,
-                    released_ts=None, expires_ts='2999-01-01T00:00:00+00:00')]
-    with Mail(owned=[target], foreign=foreign) as mail:
-        result = run(sandbox, patch(target), mail)
-    assert result.returncode == 2 and 'EditorBeta' in result.stderr, result.stderr
-
-
-@pytest.mark.parametrize('pattern,expected', [
-    ('!', 2), ('![z-a]', 2), ('!docs/[z-a].md', 2),
-    ('!docs/**', 0), ('#[z-a]', 0),
-])
-def test_r3_invalid_negated_foreign_pattern_fails_closed(sandbox, pattern, expected):
-    foreign = [dict(agent='EditorBeta', path_pattern=pattern, exclusive=True,
-                    released_ts=None, expires_ts='2999-01-01T00:00:00+00:00')]
-    with Mail(owned=['docs/note.md'], foreign=foreign) as mail:
-        result = run(sandbox, patch('docs/note.md'), mail)
-    assert result.returncode == expected, result.stderr
-    if expected:
-        assert 'conflict check rejected' in result.stderr, result.stderr
+# ACTIVE filtering and every pattern vector previously tested through fake
+# resource rows now run against the real Mail HTTP server in
+# test_reservation_conflict_http.py. The hook only validates its certificate.

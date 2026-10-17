@@ -168,11 +168,13 @@ renew_reservation() {
     QUERY_PROJECT_KEY="$RESERVATION_PROJECT_KEY" QUERY_AGENT="$AGENT" \
         QUERY_REL_PATH="$REL_PATH" QUERY_ABS_PATH="$ABS_PATH" \
         QUERY_TOKEN="$TOKEN" QUERY_URL="$MCP_URL" \
+        QUERY_CONFLICT_VALIDATOR="$(dirname "${BASH_SOURCE[0]}")/check-reservation-conflicts.py" \
         QUERY_EXTEND_SECONDS="$RENEW_SECONDS" \
         "${AGENTSTACK_PYTHON:-python3}" - <<'PY'
 import json
 import os
 import socket
+import runpy
 import unicodedata
 import urllib.error
 import urllib.request
@@ -212,18 +214,38 @@ headers = {
 if token:
     headers["Authorization"] = "Bearer " + token
 request = urllib.request.Request(url, data=payload, headers=headers)
+
+
+class _KeepTheFirstAnswer(urllib.request.HTTPRedirectHandler):
+    def redirect_request(self, *_args, **_kwargs):
+        return None
+
+
+# A redirect is already an HTTP answer, not an outage at its destination.
+opener = urllib.request.build_opener(_KeepTheFirstAnswer)
 try:
-    with urllib.request.urlopen(request, timeout=3) as response:
-        body = response.read().decode()
+    response = opener.open(request, timeout=3)
 except urllib.error.HTTPError as exc:
-    detail = exc.read().decode(errors="replace").strip()
+    try:
+        with exc:
+            detail = exc.read().decode(errors="replace").strip()
+    except Exception:
+        detail = "response body unavailable"
     print(f"HOOK_REJECTED: HTTP {exc.code}: {detail or exc.reason}")
     raise SystemExit(0)
 except (urllib.error.URLError, TimeoutError, ConnectionError, socket.timeout) as exc:
     print(f"HOOK_TRANSPORT_UNREACHABLE: {exc}")
     raise SystemExit(0)
 except Exception as exc:
-    print(f"HOOK_REJECTED: request or response failure: {exc}")
+    print(f"HOOK_REJECTED: request failure: {exc}")
+    raise SystemExit(0)
+
+# Headers have arrived. A missing or partial proof must never become warn-open.
+try:
+    with response:
+        body = response.read().decode()
+except Exception as exc:
+    print(f"HOOK_REJECTED: response read failure: {exc}")
     raise SystemExit(0)
 
 try:
@@ -246,6 +268,15 @@ structured = result.get("structuredContent")
 renewed = structured.get("renewed") if isinstance(structured, dict) else None
 if isinstance(renewed, bool) or not isinstance(renewed, int) or renewed < 0:
     print("HOOK_REJECTED: response lacks a valid structuredContent.renewed count")
+    raise SystemExit(0)
+try:
+    validate = runpy.run_path(os.environ['QUERY_CONFLICT_VALIDATOR'])['validate_conflict_check']
+    owners = validate(structured.get('conflict_check'), project_key, paths)
+except (OSError, ValueError, KeyError, TypeError) as exc:
+    print(f"HOOK_REJECTED: Reservation conflict check rejected: {exc}")
+    raise SystemExit(0)
+if owners:
+    print('HOOK_REJECTED: Other exclusive reservation holder(s): ' + ', '.join(owners))
     raise SystemExit(0)
 print(f"HOOK_RENEWED: {renewed}")
 PY
@@ -270,31 +301,15 @@ block_reservation_write() {
     exit 2
 }
 
-# Both CLI adapters use this same read-only foreign-exclusive check. A positive
-# self renewal must not hide a conflicting lease, and resource failures block.
-check_reservation_conflicts() {
-    local conflict_detail
-    conflict_detail="$(QUERY_PROJECT_KEY="$RESERVATION_PROJECT_KEY" QUERY_AGENT="$AGENT" \
-        QUERY_REL_PATH="$REL_PATH" QUERY_ABS_PATH="$ABS_PATH" \
-        QUERY_TOKEN="$TOKEN" QUERY_URL="$MCP_URL" \
-        "${AGENTSTACK_PYTHON:-python3}" "$(dirname "${BASH_SOURCE[0]}")/check-reservation-conflicts.py" 2>&1)" \
-        || block_reservation_write "$conflict_detail"
-}
-
 RESPONSE="$(renew_reservation 2>/dev/null || true)"
 RENEWED="$(classify_renew_response "$RESPONSE")"
 if [ "$RENEWED" = "transport" ]; then
-    # No authoritative answer was obtained because the service is not there.
-    # This is the same condition the unidentified path already routes through
-    # the outage policy, and it has to be the same decision -- an identified
-    # agent is not more entitled to write uncoordinated than an anonymous one.
     handle_reservation_outage "agent=$AGENT path=$REL_PATH"
 fi
 if [ "$RENEWED" = "rejected" ]; then
     block_reservation_write "Reservation service rejected the check: $RESPONSE"
 fi
 if [[ "$RENEWED" =~ ^[1-9][0-9]*$ ]]; then
-    check_reservation_conflicts
     exit 0
 fi
 if [ "$RENEWED" != "0" ]; then
@@ -306,7 +321,6 @@ sleep "$RETRY_DELAY_SECONDS"
 RESPONSE2="$(renew_reservation 2>/dev/null || true)"
 RENEWED2="$(classify_renew_response "$RESPONSE2")"
 if [[ "$RENEWED2" =~ ^[1-9][0-9]*$ ]]; then
-    check_reservation_conflicts
     exit 0
 fi
 if [ "$RENEWED2" = "transport" ]; then
@@ -315,5 +329,4 @@ fi
 if [ "$RENEWED2" = "rejected" ]; then
     block_reservation_write "Reservation service rejected the retry: $RESPONSE2"
 fi
-check_reservation_conflicts
 block_reservation_write "Agent '$AGENT' has no reservation for this protected file."
