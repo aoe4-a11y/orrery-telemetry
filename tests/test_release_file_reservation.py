@@ -56,16 +56,7 @@ class _Server:
             def do_POST(self) -> None:  # noqa: N802
                 body = self.rfile.read(int(self.headers.get("Content-Length", "0")))
                 request = json.loads(body)
-                if request.get("method") == "resources/read":
-                    parent.resource_requests.append(request)
-                    response = json.dumps({"jsonrpc": "2.0", "id": request["id"],
-                                           "result": {"contents": [{"text": "[]"}]}}).encode()
-                    self.send_response(200)
-                    self.send_header("Content-Type", "application/json")
-                    self.send_header("Content-Length", str(len(response)))
-                    self.end_headers()
-                    self.wfile.write(response)
-                    return
+                assert request['method'] == 'tools/call'
                 parent.requests.append(
                     {
                         "headers": {
@@ -75,6 +66,13 @@ class _Server:
                     }
                 )
                 status, response = parent.responder(len(parent.requests))
+                document = json.loads(response)
+                structured = document.get('result', {}).get('structuredContent', {})
+                if 'renewed' in structured:
+                    args = request['params']['arguments']
+                    structured['conflict_check'] = {'version': 1, 'project_key': args['project_key'],
+                        'paths': args['paths'], 'conflicts': []}
+                    response = json.dumps(document).encode()
                 self.send_response(status)
                 self.send_header("Content-Type", "application/json")
                 self.send_header("Content-Length", str(len(response)))

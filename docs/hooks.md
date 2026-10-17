@@ -182,9 +182,11 @@ dangerous command pattern の検査は `AGENTSTACK_MONITOR_DANGER_CHECK=1` の�
 
 Codex CLI の optional ORRERY plugin に、`PreToolUse` / `^apply_patch$` の予約 guard があります。Codex の `tool_input.command` に入る patch 本文から、Add / Update / Delete の全 path と Move の移動元・移動先を取り出し、payload の絶対 cwd で解決して [`check-file-reservation.sh`](../hooks/check-file-reservation.sh) に渡します。header と filename は Codex 0.159.2 の状態別規則に合わせ、先頭空白名を保持し、Add/Delete のインデント付き header と Update の context を区別します。Environment 選択 header は拒否します。Delete と Move 元は親 directory を解決した entry、書き込みは参照先の物理 path を確認します。global mode は server が最終 symlink を参照先に正規化するため、その entry の削除を拒否します。
 
-専用 adapter は path の取り出しだけを行い、identity・保護 root・自己予約の renew-only 確認・zero の1回 retry・unmanaged/outage policy は Claude と同じ実装です。legacy mode では自己予約を確認した後、公開 reservation resource の他者 exclusive も確認し、重なれば予約者を理由に示して拒否します。
+専用 adapter は path の取り出しだけを行い、identity・保護 root・自己予約の renew-only 確認・zero の1回 retry・unmanaged/outage policy は Claude と同じ実装です。legacy mode では `renew_file_reservations` の同じ応答で自己予約と他者の ACTIVE exclusive 衝突を確認し、重なれば予約者を理由に示して拒否します。Mail は renew と衝突照合を同じ transaction で行い、`conflict_check` に version・project・検査した paths・衝突を返します。
 
-core の照合処理は外部依存を増やさず、directory pattern・double star・slash 正規化・文字 class・Unicode の入力 vector で Mail 本体の PathSpec/gitignore 判定との一致を試験します。照会拒否・不正応答・競合照会の通信失敗は fail-closed です。共有 context 解析は指定時の `AGENTSTACK_PYTHON` を使い、起動や解析の失敗を「対象なし」の許可に変えません。global mode は既存の共通 client と server の coverage / 排他制約を使います。
+pattern の正本は Mail の `_patterns_overlap` だけです。hook に照合実装を複製せず、directory pattern・double star・slash 正規化・文字 class・Unicode を実 Mail HTTP と両 guard で確認します。照会拒否・不正応答・scope 不一致・識別済み agent の通信失敗は fail-closed です。未識別 session の unmanaged/outage policy と global mode の既存 policy は変更しません。共有 context 解析は指定時の `AGENTSTACK_PYTHON` を使い、起動や解析の失敗を「対象なし」の許可に変えません。global mode は既存の共通 client と server の coverage / 排他制約を使います。
+
+**配備順序:** この hook には更新済みの Mail が必要です。Mail の更新を先に行い、その後に hook を配備してください。新 hook × 旧 Mail は `conflict_check` 欠落として拒否し、Mail の更新を案内します。旧 hook（#269 より前）× 新 Mail は追加 field を無視して従来どおり動きます。resource は引き続き非公開で、予約の一覧を hook 用に公開しません。
 
 Codex が guard の exit 2 と stderr を編集前の拒否として扱うため、対象のうち1つでも予約が無ければ patch 全体を実行しません。複数 path の照会は25秒で打ち切り、失敗を拒否にします。shell 経由の書き込みは両 CLI ともこの予約 guard の対象外です。Codex での予約 release は従来どおり model が明示的に行い、自動 release は足しません。
 
