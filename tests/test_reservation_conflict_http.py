@@ -249,3 +249,45 @@ def test_stale_direct_helper_caller_cannot_bypass_conflict_check():
         env=clean_env(),text=True,capture_output=True,timeout=5)
     assert result.returncode==2
     assert 'update the guard and Mail together' in result.stderr
+
+
+@pytest.mark.parametrize('kind',['claude','codex'])
+@pytest.mark.parametrize('stage,expected',[('before-headers',0),('after-headers-timeout',2),('after-headers-truncated',2),('redirect',2),('error-body-timeout',2)])
+def test_renew_response_read_failure_is_not_an_outage(reserved,kind,stage,expected):
+    service,_=reserved
+    release=threading.Event()
+    headers_sent=threading.Event()
+    unavailable=socket.socket()
+    unavailable.bind(('127.0.0.1',0))
+    class Relay(BaseHTTPRequestHandler):
+        def log_message(self,*args):pass
+        def do_GET(self):
+            self.send_response(200);self.send_header('Content-Length','0');self.end_headers()
+        def do_POST(self):
+            request=json.loads(self.rfile.read(int(self.headers['Content-Length'])))
+            if stage=='redirect':
+                self.send_response(302)
+                self.send_header('Location',f'http://127.0.0.1:{unavailable.getsockname()[1]}/missing')
+                self.send_header('Content-Length','0');self.end_headers();headers_sent.set();return
+            document=rpc(service['url'],request['method'],request['params'])
+            body=json.dumps(document).encode()
+            if stage=='before-headers':release.wait(6)
+            self.send_response(503 if stage=='error-body-timeout' else 200);self.send_header('Content-Type','application/json')
+            self.send_header('Content-Length',str(len(body)));self.end_headers();self.wfile.flush()
+            headers_sent.set()
+            if stage in ('after-headers-timeout','error-body-timeout'):release.wait(6)
+            try:
+                self.wfile.write(body[:1] if stage=='after-headers-truncated' else body)
+                self.wfile.flush()
+            except (BrokenPipeError,ConnectionResetError):pass
+    relay=ThreadingHTTPServer(('127.0.0.1',0),Relay)
+    thread=threading.Thread(target=relay.serve_forever,daemon=True);thread.start()
+    try:
+        result=guard(reserved,kind,url=f'http://127.0.0.1:{relay.server_port}/mcp',outage='warn-open')
+        if stage!='before-headers':assert headers_sent.is_set()
+    finally:release.set();relay.shutdown();relay.server_close();thread.join(timeout=3);unavailable.close()
+    assert result.returncode==expected,result.stderr+result.stdout
+    if expected:
+        assert 'systemMessage' not in result.stdout
+        assert ('response' in result.stderr.lower() or 'HTTP 302' in result.stderr)
+    else:assert 'systemMessage' in json.loads(result.stdout)

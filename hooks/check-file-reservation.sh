@@ -214,18 +214,38 @@ headers = {
 if token:
     headers["Authorization"] = "Bearer " + token
 request = urllib.request.Request(url, data=payload, headers=headers)
+
+
+class _KeepTheFirstAnswer(urllib.request.HTTPRedirectHandler):
+    def redirect_request(self, *_args, **_kwargs):
+        return None
+
+
+# A redirect is already an HTTP answer, not an outage at its destination.
+opener = urllib.request.build_opener(_KeepTheFirstAnswer)
 try:
-    with urllib.request.urlopen(request, timeout=3) as response:
-        body = response.read().decode()
+    response = opener.open(request, timeout=3)
 except urllib.error.HTTPError as exc:
-    detail = exc.read().decode(errors="replace").strip()
+    try:
+        with exc:
+            detail = exc.read().decode(errors="replace").strip()
+    except Exception:
+        detail = "response body unavailable"
     print(f"HOOK_REJECTED: HTTP {exc.code}: {detail or exc.reason}")
     raise SystemExit(0)
 except (urllib.error.URLError, TimeoutError, ConnectionError, socket.timeout) as exc:
     print(f"HOOK_TRANSPORT_UNREACHABLE: {exc}")
     raise SystemExit(0)
 except Exception as exc:
-    print(f"HOOK_REJECTED: request or response failure: {exc}")
+    print(f"HOOK_REJECTED: request failure: {exc}")
+    raise SystemExit(0)
+
+# Headers have arrived. A missing or partial proof must never become warn-open.
+try:
+    with response:
+        body = response.read().decode()
+except Exception as exc:
+    print(f"HOOK_REJECTED: response read failure: {exc}")
     raise SystemExit(0)
 
 try:
