@@ -44,8 +44,7 @@ class RestartAdversarialTests(unittest.TestCase):
                                 (seat[key] / 'sentinel').unlink(); seat[key].rmdir()
                             else: seat[key].unlink()
                     if only != 'managed': seat['managed'].write_text('OtherSeat\n')
-                    handoff = fixture.base / 'handoff-copy'
-                    handoff.write_text(TOKEN); handoff.chmod(0o600); seat['handoff'] = handoff
+                    seat['handoff'] = fixture_module.fixture_handoff(seat['token'].parent)
                     before = seat[only].read_bytes() if only != 'home' else (seat['home']/'sentinel').read_bytes()
                     fixture.failed_launch(seat)
                     after = seat[only].read_bytes() if only != 'home' else (seat['home']/'sentinel').read_bytes()

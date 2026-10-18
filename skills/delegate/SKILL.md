@@ -123,7 +123,7 @@ tmux, use a built-in child tool, or invoke the launcher's direct mode as a
 substitute.
 
 1. Verify `AGENTSTACK_PROJECT_KEY` is set to the shared project key, not a random cwd.
-2. Let the helper name the child. Omit `--name` and it draws a free `Adjective-Scientist` name from the same picker top-level registration uses, so the name always has a dashboard portrait. Only pass `--name` when the caller needs a specific existing identity; an off-list name is accepted with a warning (no portrait), or rejected outright under `AGENTSTACK_STRICT_AGENT_NAMES=1`.
+2. Let the helper name the child. Omit `--name` and it draws a free `AdjectiveScientist` name from the same picker top-level registration uses, so the name always has a dashboard portrait. Only pass `--name` when the caller needs a specific existing identity; an off-list name is accepted with a warning (no portrait), or rejected outright under `AGENTSTACK_STRICT_AGENT_NAMES=1`.
 3. Pre-register the child with a child-owned token and write that token to a temporary 0600 file. Prefer the helper so the parent LLM never sees the token:
 
    ```bash
@@ -131,8 +131,7 @@ substitute.
    mkdir -p "$HANDOFF_DIR"
    chmod 700 "$HANDOFF_DIR"
    CHILD_TOKEN_FILE="$HANDOFF_DIR/$(python3 -c 'import uuid; print(uuid.uuid4().hex)').token"
-   chmod 600 "$CHILD_TOKEN_FILE"
-   trap 'rm -f "$CHILD_TOKEN_FILE"' EXIT
+   # The helper creates a unique 0600 handoff and the launcher consumes it.
 
    CHILD_NAME="$("${AGENTSTACK_PREREGISTER_CHILD:-$AGENTSTACK_HOME/bin/agentstack-preregister-child}" \
      --project-key "$AGENTSTACK_PROJECT_KEY" \
@@ -152,7 +151,7 @@ substitute.
    ```bash
    TASK_FILE="$(mktemp "${TMPDIR:-/tmp}/agentstack-task.XXXXXX")"
    chmod 600 "$TASK_FILE"
-   trap 'rm -f "$CHILD_TOKEN_FILE" "$TASK_FILE"' EXIT
+   trap 'rm -f "$TASK_FILE"' EXIT
    cat > "$TASK_FILE" <<'AGENTSTACK_TASK'
    <complete task text>
    AGENTSTACK_TASK

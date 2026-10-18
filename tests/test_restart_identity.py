@@ -45,7 +45,7 @@ class RestartIdentityTests(unittest.TestCase):
     def setUp(self) -> None:
         self.temp = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)
-        self.base = Path(self.temp.name)
+        self.base = Path(self.temp.name).resolve()
         # Extracted Python probes run in this interpreter, including unittest.
         environment = patch.dict(os.environ, isolated_user_environment(self.base / "user-home"), clear=True)
         environment.start()

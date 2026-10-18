@@ -11,14 +11,14 @@ headは新規spawnを一時止め、実行中launcherが0であることをPID�
 ## Stageとactivation
 
 1. 候補commitを固定し、`$HOME/.agentstack/releases/seat-lifecycle/<commit>/hooks` に変更hookだけを置きます。少なくともspawn_child.sh・cleanup-child-agent.sh・seat_lifecycle.pyが対象です。未変更の依存hookは元のlive fileへ1fileずつsymlinkを置き、dirを丸ごとcopyしません。このreleaseは使用中に書き換えません。
-2. 新しいseat_lifecycle.pyをglobal hooksにも追加し、set-ghostty-title.shの共通list lockとbin/lib/agentstack-register.shの名前lockを有効にします。**globalのcleanup-child-agent.shは旧byteのまま残します。** 既に動いている席の終端commandはこの旧pathを使い続けます。
+2. 旧cleanup-child-agent.shを同じreleaseのlegacy/へ元byteのまま保存し、project-context.shへの単一file参照も置きます。新しいseat_lifecycle.pyをglobal hooksにも追加し、set-ghostty-title.shの共通list lockとbin/lib/agentstack-register.shの名前lockを有効にします。旧席の終了動作は、この保存した旧cleanupで維持します。
 3. 差分manifestで指定したbin helper・register lib・dashboard/server.pyだけを、backup照合後に同dirのtemporaryからatomic replaceします。未変更file・mail package・settingsの全体は上書きしません。env.shは既存exportを保持したまま、`AGENTSTACK_LIFECYCLE_HOOKS_DIR=<release>/hooks` の1keyだけをheadが追加します。新しいwrapper/restart/preregister/dashboardはこのkeyを優先します。
-4. global spawn_child.shだけを、上記releaseを指定してexecする短いshimへ切り替えます。旧親がglobal pathを呼んでも新規spawnは新世代へ入ります。旧cleanupのpathは切り替えません。headがdashboardをその正確なserviceだけ再開してから、新規要求の停止を解除します。
-5. 各destinationのSHA/mode、hook release、envの他key不変、旧cleanupのSHA不変を照合します。新規の合成席で両providerの起動・遅延終了・同名restartをheadの承認範囲で通し、既存席が旧cleanupを使うことも確認します。このlive検査は作者の隔離fixtureでは代用しません。
+4. global spawn_child.shを、AGENTSTACK_HOMEのcanonical install rootを保ち、上記releaseを指定してexecする短いshimへ切り替えます。global cleanup-child-agent.shは固定した2経路のdispatcherにします。LAUNCH_JOURNALかLIFECYCLE_NAMEのどちらかがあれば新releaseのguarded cleanupへ渡し、不正な証拠でもlegacyへfallbackしません。両方が無い旧席だけ、保存したlegacy cleanupへ渡します。globalのSessionEndもこの入口を通ります。headがdashboardをその正確なserviceだけ再開してから、新規要求の停止を解除します。
+5. 各destinationのSHA/mode、hook release、envの他key不変、保存した旧cleanupのSHA不変を照合します。新規の合成席で両providerの起動・遅延終了・同名restartをheadの承認範囲で通し、既存席が旧cleanupを使うことも確認します。このlive検査は作者の隔離fixtureでは代用しません。
 
 ## Rollback
 
-新規spawnを止めてlauncherが0と確認し、global spawn shim・dashboard・wrapperの入口を照合済みbackupへ戻します。envの上記1keyだけを以前の有無/値へ戻し、他keyは変えません。必要な正確なdashboard serviceだけを再開します。token/state/homeは戻したり消したりしません。
+新規spawnを止めてlauncherが0と確認し、global spawn shim・cleanup dispatcher・dashboard・wrapperの入口を照合済みbackupへ戻します。envの上記1keyだけを以前の有無/値へ戻し、他keyは変えません。必要な正確なdashboard serviceだけを再開します。token/state/homeは戻したり消したりしません。新世代が残っている間は、global SessionEnd用dispatcherも保持します。旧入口へ戻った後の新規launchはlegacy側へ渡し、既存の新世代だけを固定releaseへ渡します。
 
 新世代で既に起動した席はrelease内のcleanupを参照しています。そのrelease・module・互換性を保つregister/list writerを、席が使っている間は残します。全ての依存が終わりheadが旧世代への復帰を受理した後だけ、残るglobal変更を元byteへ戻します。旧cleanup・旧env・旧source・backup・記録を消す操作は、この手順にありません。
 

@@ -56,9 +56,13 @@ def test_fresh_workdir_trust_prompt_is_accepted_without_waiting_out_timeout(tmp_
     )
     _executable(bindir / "claude", "#!/bin/bash\nexit 0\n")
 
-    handoff = tmp_path / "child-token"
+    handoff = runtime / "spawn-tokens" / (__import__("uuid").uuid4().hex + ".token")
+    handoff.parent.mkdir(parents=True)
     handoff.write_text("child-owner-token", encoding="utf-8")
     handoff.chmod(0o600)
+    sys.path.insert(0, str(ROOT / "hooks"))
+    from seat_lifecycle import bind_handoff
+    bind_handoff(runtime, handoff, "Fresh-Curie", "/shared/project")
 
     env = os.environ.copy()
     env.update({
