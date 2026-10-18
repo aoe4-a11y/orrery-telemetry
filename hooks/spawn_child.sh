@@ -1055,7 +1055,7 @@ warn_if_uninjected() {
 # Prints the config path, or nothing when the proxy is unavailable — callers
 # fall back to the shared endpoint rather than failing the spawn.
 write_child_mcp_config() {
-    local child_name="$1" token_file="$2"
+    local child_name="$1" token_file="$2" report_ownership="${3:-false}"
     local runner="${AGENTSTACK_MCP_PROXY:-${AGENTSTACK_HOME_DIR:-$HOME/.agentstack}/integrations/codex_app/plugin/scripts/run-mcp.sh}"
     [[ -n "$token_file" && -f "$token_file" && -x "$runner" ]] || return 0
 
@@ -1065,11 +1065,13 @@ write_child_mcp_config() {
     python3 - "$config_path" "$runner" "$child_name" "$PROJECT_KEY" "$token_file" \
         "$MCP_URL" "$MAIL_ENV" "$RUNTIME_DIR" \
         "${AGENTSTACK_CLAUDE_JSON:-$HOME/.claude.json}" "$HTTP_BEARER_MODE" \
-        "${AGENTSTACK_PYTHON:-}" <<'PY' || return 0
+        "${AGENTSTACK_PYTHON:-}" "$report_ownership" <<'PY' || return 0
 # NOTE: no line here may start with "}" in column 0 — the shell function is
 # extracted by "up to the first line that is just a closing brace".
 import json
+import atexit
 import os
+import pathlib
 import sys
 
 path, runner, child, project_key, token_file, mcp_url, mail_env, runtime_dir, claude_json, bearer_mode, python_bin = sys.argv[1:12]
@@ -1124,11 +1126,28 @@ else:
     names.add("orrery-mail")
 
 config = dict(mcpServers=dict((name, server) for name in sorted(names)))
-with open(path, "w", encoding="utf-8") as handle:
+owned = []
+ready = False
+report_ownership = sys.argv[12] == "true"
+if report_ownership:
+    atexit.register(lambda: print(json.dumps(dict(path=path if ready else "", owned=owned))))
+try:
+    handle = open(path, "x", encoding="utf-8")
+except FileExistsError:
+    if report_ownership:
+        # This launch did not create it; leave its bytes and ownership intact.
+        ready = True
+        raise SystemExit(0)
+    handle = open(path, "w", encoding="utf-8")
+else:
+    identity = os.fstat(handle.fileno())
+    owned.append((path, identity.st_dev, identity.st_ino, "file"))
+with handle:
+    os.fchmod(handle.fileno(), 0o600)
     json.dump(config, handle, indent=2)
-os.chmod(path, 0o600)
+ready = True
 PY
-    printf '%s\n' "$config_path"
+    [[ "$report_ownership" == true ]] || printf '%s\n' "$config_path"
 }
 
 # Ready = the REPL is accepting input. Do not depend on a single footer string:
@@ -1186,7 +1205,7 @@ codex_pane_ready() {
 #
 # Prints the directory, or nothing when the proxy or token is unavailable.
 write_child_codex_home() {
-    local child_name="$1" token_file="$2"
+    local child_name="$1" token_file="$2" report_ownership="${3:-false}"
     local runner="${AGENTSTACK_MCP_PROXY:-${AGENTSTACK_HOME_DIR:-$HOME/.agentstack}/integrations/codex_app/plugin/scripts/run-mcp.sh}"
     local source_home="${CODEX_HOME:-$HOME/.codex}"
     [[ -n "$token_file" && -f "$token_file" && -x "$runner" && -d "$source_home" ]] || return 0
@@ -1194,7 +1213,9 @@ write_child_codex_home() {
     local home_dir="$RUNTIME_DIR/child-agents/${child_name}.codex-home"
     python3 - "$home_dir" "$source_home" "$runner" "$child_name" "$PROJECT_KEY" \
         "$token_file" "$MCP_URL" "$MAIL_ENV" "$RUNTIME_DIR" "$HTTP_BEARER_MODE" \
-        "${AGENTSTACK_PYTHON:-}" <<'PY' || return 0
+        "${AGENTSTACK_PYTHON:-}" "$report_ownership" <<'PY' || return 0
+import atexit
+import json
 import os
 import pathlib
 import re
@@ -1203,7 +1224,24 @@ import sys
 home, source, runner, child, project_key, token_file, mcp_url, mail_env, runtime_dir, bearer_mode, python_bin = sys.argv[1:12]
 home_path = pathlib.Path(home)
 source_path = pathlib.Path(source)
-home_path.mkdir(parents=True, exist_ok=True)
+report_ownership = sys.argv[12] == "true"
+owned = []
+ready = False
+if report_ownership:
+    atexit.register(lambda: print(json.dumps(dict(path=home if ready else "", owned=owned))))
+try:
+    home_path.mkdir(mode=0o700, parents=True, exist_ok=False)
+except FileExistsError:
+    if report_ownership:
+        ready = True
+        raise SystemExit(0)
+else:
+    fd = os.open(home_path, os.O_RDONLY | getattr(os, "O_DIRECTORY", 0) | getattr(os, "O_NOFOLLOW", 0))
+    try:
+        identity = os.fstat(fd)
+        owned.append((home, identity.st_dev, identity.st_ino, "directory"))
+    finally:
+        os.close(fd)
 
 # Everything except config.toml stays shared with the real home, so the child
 # keeps its login and writes its session history where the user expects it.
@@ -1339,8 +1377,9 @@ for name in claimed:
 target = home_path / "config.toml"
 target.write_text("\n".join(lines) + "\n", encoding="utf-8")
 os.chmod(target, 0o600)
+ready = True
 PY
-    printf '%s\n' "$home_dir"
+    [[ "$report_ownership" == true ]] || printf '%s\n' "$home_dir"
 }
 
 # Generate the direct-spawn registration token in a 0600 one-shot file.  The
@@ -1549,6 +1588,7 @@ if [[ -n "$PRE_REGISTERED" ]]; then
     PRE_REGISTERED_SESSION_STARTED=false
     PRE_REGISTERED_SUCCESS=false
     PREREG_AUTH_OWNERSHIP='{"owned":[],"observed":[]}'
+    PREREG_ARTIFACT_OWNERSHIP='{"path":"","owned":[]}'
     cleanup_preregister_failure() {
         if [[ "$PRE_REGISTERED_SUCCESS" == true ]]; then
             return
@@ -1564,13 +1604,16 @@ if [[ -n "$PRE_REGISTERED" ]]; then
         fi
         # The creation helpers report identities from their open file handles.
         # Sampling these paths here would accidentally claim a later writer.
-        if ! python3 - "$PREREG_AUTH_OWNERSHIP" <<'PY'
+        if ! python3 - "$PREREG_AUTH_OWNERSHIP" "$PREREG_ARTIFACT_OWNERSHIP" <<'PY'
 import json
 import pathlib
+import shutil
 import sys
 
 ownership = json.loads(sys.argv[1])
-for name, device, inode in ownership["observed"]:
+artifacts = json.loads(sys.argv[2])["owned"]
+observed = ownership["observed"] + [entry[:3] for entry in artifacts]
+for name, device, inode in observed:
     try:
         current = pathlib.Path(name).lstat()
     except FileNotFoundError:
@@ -1585,14 +1628,24 @@ for name, device, inode in ownership["owned"]:
         continue
     if (current.st_dev, current.st_ino) == (device, inode):
         path.unlink()
+for name, device, inode, kind in artifacts:
+    path = pathlib.Path(name)
+    try:
+        current = path.lstat()
+    except FileNotFoundError:
+        continue
+    if (current.st_dev, current.st_ino) != (device, inode):
+        continue
+    if kind == "directory":
+        shutil.rmtree(path)
+    else:
+        path.unlink()
 PY
         then
             echo "[spawn_child] identity changed after adoption; preserving seat artifacts" >&2
             cleanup_worktree
             return
         fi
-        [[ "$PREREG_MCP_PREEXISTED" == true ]] || rm -f -- "${PREREG_MCP_FILE:?}"
-        [[ "$PREREG_HOME_PREEXISTED" == true ]] || rm -rf -- "${PREREG_CODEX_HOME:?}"
         cleanup_worktree
         if [[ "$PREREG_MANAGED_PREEXISTED" != true && -f "$MANAGED_FILE" ]]; then
             python3 - "$MANAGED_FILE" "$CHILD_NAME" <<'PY' 2>/dev/null || true
@@ -1678,7 +1731,12 @@ PY
         CHILD_CODEX_BIN="$(resolve_codex_bin)"
         TMUX_ENV_ARGS+=(-e "AGENTSTACK_CODEX_BIN=$CHILD_CODEX_BIN")
         TMUX_ENV_ARGS+=(-e "AGENTSTACK_CODEX_MODEL=$CHILD_MODEL" -e "AGENTSTACK_CODEX_EFFORT=$CODEX_EFFORT")
-        CHILD_CODEX_HOME="$(write_child_codex_home "$CHILD_NAME" "$CHILD_TOKEN_FILE")"
+        CHILD_CODEX_HOME="$(write_child_codex_home "$CHILD_NAME" "$CHILD_TOKEN_FILE" true)"
+        if [[ -n "$CHILD_CODEX_HOME" ]]; then
+            PREREG_ARTIFACT_OWNERSHIP="$CHILD_CODEX_HOME"
+            CHILD_CODEX_HOME="$(python3 -c 'import json,sys; print(json.loads(sys.argv[1])["path"])' "$PREREG_ARTIFACT_OWNERSHIP")"
+        fi
+        TMUX_ENV_ARGS+=(-e "AGENTSTACK_LAUNCH_ARTIFACT_OWNERSHIP=$PREREG_ARTIFACT_OWNERSHIP")
         TMUX_ENV_ARGS+=(-e "AGENTSTACK_CODEX_ADD_DIRS_RESOLVED=$(codex_child_add_dirs "$CHILD_CODEX_HOME")")
         if [[ -n "$CHILD_CODEX_HOME" ]]; then
             echo "[spawn_child/pre-reg] Child CODEX_HOME with authenticated ORRERY Mail: $CHILD_CODEX_HOME" >&2
@@ -1843,7 +1901,12 @@ ${TASK}"
         if [[ "$WARM_CLAIMED" == false ]]; then
             # Cold start（フォールバック）
             echo "[spawn_child/pre-reg] Cold start..." >&2
-            CHILD_MCP_CONFIG="$(write_child_mcp_config "$CHILD_NAME" "$CHILD_TOKEN_FILE")"
+            CHILD_MCP_CONFIG="$(write_child_mcp_config "$CHILD_NAME" "$CHILD_TOKEN_FILE" true)"
+            if [[ -n "$CHILD_MCP_CONFIG" ]]; then
+                PREREG_ARTIFACT_OWNERSHIP="$CHILD_MCP_CONFIG"
+                CHILD_MCP_CONFIG="$(python3 -c 'import json,sys; print(json.loads(sys.argv[1])["path"])' "$PREREG_ARTIFACT_OWNERSHIP")"
+            fi
+            TMUX_ENV_ARGS+=(-e "AGENTSTACK_LAUNCH_ARTIFACT_OWNERSHIP=$PREREG_ARTIFACT_OWNERSHIP")
             if [[ -n "$CHILD_MCP_CONFIG" ]]; then
                 echo "[spawn_child/pre-reg] Child MCP proxy config: $CHILD_MCP_CONFIG" >&2
             else

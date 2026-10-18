@@ -145,6 +145,30 @@ sys.exit(0)
         self.assertEqual((seat["home"] / "sentinel").read_text(), "existing seat data")
         self.assertEqual(seat["managed"].read_text(), f"{NAME}\nOtherSeat\n")
 
+    def enable_proxy(self, seat: dict) -> Path:
+        source = self.base / "source-codex"
+        source.mkdir()
+        (source / "config.toml").write_text('model = "fixture"\n')
+        (source / "sentinel").write_text("shared fixture remains")
+        proxy = self.base / "bin/proxy"
+        executable(proxy, "#!/bin/sh\nexit 0\n")
+        seat["env"].update(CODEX_HOME=str(source), AGENTSTACK_MCP_PROXY=str(proxy),
+                           AGENTSTACK_CLAUDE_JSON=str(self.base / "absent-claude-config"))
+        return source
+
+    def write_mcp_with_ownership(self, seat: dict) -> dict:
+        match = re.search(r"^write_child_mcp_config\(\) \{.*?^\}", SPAWN.read_text(), re.S | re.M)
+        self.assertIsNotNone(match)
+        prelude = ('RUNTIME_DIR="$AGENTSTACK_RUNTIME_DIR"\n'
+                   'PROJECT_KEY="$AGENTSTACK_PROJECT_KEY"\n'
+                   'HTTP_BEARER_MODE=disabled\nMCP_URL=http://127.0.0.1:1/mcp\nMAIL_ENV=/fixture/missing.env\n')
+        result = subprocess.run(["/bin/bash", "-c", prelude + match.group(0) +
+                                 '\nwrite_child_mcp_config "$1" "$2" true\n',
+                                 "fixture", NAME, str(seat["token"])],
+                                env=seat["env"], capture_output=True, text=True, timeout=10)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        return json.loads(result.stdout)
+
     def test_child_exit_preserves_existing_identity(self) -> None:
         seat = self.arrange(True)
         self.failed_launch(seat)
@@ -214,6 +238,113 @@ sys.exit(0)
         for key in ("token", "state"):
             self.assertTrue(seat[key].is_file(), key)
             self.assertEqual(seat[key].read_text(), "concurrent-fixture-owner")
+
+    def test_parent_trap_preserves_unowned_home_and_config(self) -> None:
+        seat = self.arrange(False)
+        tmux = self.base / "bin/tmux"
+        code = tmux.read_text()
+        original = "    if os.environ.get('FIXTURE_EARLY_FAILURE') == '1':\n        sys.exit(17)"
+        replacement = """    if os.environ.get('FIXTURE_EARLY_FAILURE') == '1':
+        runtime = pathlib.Path(os.environ['AGENTSTACK_RUNTIME_DIR'])
+        home = runtime / 'child-agents/RestartFixture.codex-home'
+        config = runtime / 'child-agents/RestartFixture.mcp.json'
+        assert not home.exists() and not config.exists()
+        home.mkdir()
+        (home / 'other-owner-session').write_text('concurrent fixture data')
+        config.write_text('concurrent fixture config')
+        sys.exit(17)"""
+        self.assertIn(original, code)
+        tmux.write_text(code.replace(original, replacement))
+        self.failed_launch(seat, early=True)
+        self.assertTrue((seat["home"] / "other-owner-session").is_file())
+        self.assertEqual(seat["config"].read_text(), "concurrent fixture config")
+
+    def test_parent_trap_removes_home_created_by_writer(self) -> None:
+        seat = self.arrange(False)
+        source = self.enable_proxy(seat)
+        self.failed_launch(seat, early=True)
+        self.assertFalse(seat["home"].exists())
+        self.assertEqual((source / "sentinel").read_text(), "shared fixture remains")
+
+    def test_parent_trap_preserves_replaced_writer_home(self) -> None:
+        seat = self.arrange(False)
+        self.enable_proxy(seat)
+        tmux = self.base / "bin/tmux"
+        original = "    if os.environ.get('FIXTURE_EARLY_FAILURE') == '1':\n        sys.exit(17)"
+        replacement = """    if os.environ.get('FIXTURE_EARLY_FAILURE') == '1':
+        home = pathlib.Path(os.environ['AGENTSTACK_RUNTIME_DIR']) / 'child-agents/RestartFixture.codex-home'
+        assert home.exists()
+        home.rename(home.with_name(home.name + '.old-inode'))
+        home.mkdir()
+        (home / 'other-owner-session').write_text('replacement fixture data')
+        sys.exit(17)"""
+        code = tmux.read_text()
+        self.assertIn(original, code)
+        tmux.write_text(code.replace(original, replacement))
+        self.failed_launch(seat, early=True)
+        self.assertEqual((seat["home"] / "other-owner-session").read_text(), "replacement fixture data")
+
+    def test_existing_home_bytes_remain_unchanged_with_proxy(self) -> None:
+        seat = self.arrange(True)
+        self.enable_proxy(seat)
+        config = seat["home"] / "config.toml"
+        config.write_text("existing fixture config\n")
+        self.failed_launch(seat, early=True)
+        self.assertEqual(config.read_text(), "existing fixture config\n")
+        self.assert_existing(seat)
+
+    def test_automatic_cleanup_preserves_unowned_home_and_config(self) -> None:
+        seat = self.arrange(False)
+        tmux = self.base / "bin/tmux"
+        original = "    child_env = dict(os.environ)"
+        replacement = """    runtime = pathlib.Path(os.environ['AGENTSTACK_RUNTIME_DIR'])
+    home = runtime / 'child-agents/RestartFixture.codex-home'
+    home.mkdir()
+    (home / 'other-owner-session').write_text('concurrent fixture data')
+    (runtime / 'child-agents/RestartFixture.mcp.json').write_text('concurrent fixture config')
+    child_env = dict(os.environ)"""
+        code = tmux.read_text()
+        self.assertIn(original, code)
+        tmux.write_text(code.replace(original, replacement))
+        self.failed_launch(seat)
+        self.assertTrue((seat["home"] / "other-owner-session").is_file())
+        self.assertEqual(seat["config"].read_text(), "concurrent fixture config")
+
+    def test_mcp_writer_reports_created_file_for_automatic_cleanup(self) -> None:
+        seat = self.arrange(True)
+        self.enable_proxy(seat)
+        seat["config"].unlink()
+        ownership = self.write_mcp_with_ownership(seat)
+        identity = seat["config"].stat()
+        self.assertEqual(ownership["owned"], [[str(seat["config"]), identity.st_dev, identity.st_ino, "file"]])
+        env = dict(seat["env"], AGENT_NAME=NAME,
+                   AGENTSTACK_LAUNCH_AUTH_OWNERSHIP=json.dumps({"observed": []}),
+                   AGENTSTACK_LAUNCH_ARTIFACT_OWNERSHIP=json.dumps(ownership))
+        subprocess.run(["/bin/bash", str(CLEANUP)], env=env, check=True, timeout=10)
+        self.assertFalse(seat["config"].exists())
+        self.assertTrue((seat["home"] / "sentinel").is_file())
+
+    def test_mcp_writer_does_not_claim_or_rewrite_existing_file(self) -> None:
+        seat = self.arrange(True)
+        self.enable_proxy(seat)
+        before = seat["config"].read_bytes()
+        ownership = self.write_mcp_with_ownership(seat)
+        self.assertEqual(ownership["owned"], [])
+        self.assertEqual(seat["config"].read_bytes(), before)
+
+    def test_automatic_cleanup_preserves_replaced_writer_config(self) -> None:
+        seat = self.arrange(True)
+        self.enable_proxy(seat)
+        seat["config"].unlink()
+        ownership = self.write_mcp_with_ownership(seat)
+        seat["config"].rename(seat["config"].with_name("old-config-inode"))
+        seat["config"].write_text("replacement fixture config")
+        env = dict(seat["env"], AGENT_NAME=NAME,
+                   AGENTSTACK_LAUNCH_AUTH_OWNERSHIP=json.dumps({"observed": []}),
+                   AGENTSTACK_LAUNCH_ARTIFACT_OWNERSHIP=json.dumps(ownership))
+        subprocess.run(["/bin/bash", str(CLEANUP)], env=env, check=True, timeout=10)
+        self.assertEqual(seat["config"].read_text(), "replacement fixture config")
+        self.assertTrue(seat["token"].is_file())
 
     def test_early_failure_removes_original_new_identity(self) -> None:
         seat = self.arrange(False)
