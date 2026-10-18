@@ -475,7 +475,7 @@ def check_handoff(runtime: Path, path: Path, name: str, project: str, info, data
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("command", choices=("held", "lock-exec", "begin", "invalidate", "check", "delete", "record", "managed-add", "managed-ensure", "retire-args", "failure-retire-args", "available"))
+    parser.add_argument("command", choices=("held", "lock-exec", "begin", "invalidate", "check", "delete", "record", "managed-add", "managed-ensure", "retire-args", "failure-retire-args", "available", "cleanup-route"))
     parser.add_argument("--runtime", required=True)
     parser.add_argument("--name", required=True)
     parser.add_argument("--project", default="")
@@ -509,7 +509,12 @@ def main():
         return 0
     if not seat.inherited_lock():
         raise ValueError("lifecycle operation requires held seat lock")
-    if args.command == "begin":
+    if args.command == "cleanup-route":
+        # A durable lease/journal is authoritative generation state. Invalid or
+        # stale evidence still means new generation: never fall back to legacy.
+        evidence = os.path.lexists(seat.lease_path) or any(seat.journals.glob(seat.key + ".*.json"))
+        print("guarded" if evidence else "legacy")
+    elif args.command == "begin":
         print(json.dumps(seat.begin(args.project, Path(args.managed))))
     elif args.command == "invalidate":
         seat.invalidate()

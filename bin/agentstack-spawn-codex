@@ -5,8 +5,9 @@
 # Env: AGENTSTACK_PROJECT_KEY (default: /Users/huyuhutaru/tools/examforge)
 set -euo pipefail
 [ -f "$HOME/.agentstack/env.sh" ] && source "$HOME/.agentstack/env.sh"
+export AGENTSTACK_HOME="${AGENTSTACK_HOME:-$HOME/.agentstack}"
 HOOKS_DIR="${AGENTSTACK_LIFECYCLE_HOOKS_DIR:-${AGENTSTACK_HOOKS_DIR:-$HOME/.agentstack/hooks}}"
-export AGENTSTACK_HOOKS_DIR="$HOOKS_DIR"
+export AGENTSTACK_HOOKS_DIR="${AGENTSTACK_HOOKS_DIR:-$AGENTSTACK_HOME/hooks}"
 MODEL="${1:?model (e.g. gpt-5.6-sol)}"; TASK="${2:?task file}"; WORKDIR="${3:-$PWD}"; DESC="${4:-$(head -1 "$TASK" | sed 's/^# *//' | python3 -c 'import sys; print(sys.stdin.read().strip()[:60])')}"; EFFORT="${5:-medium}"
 export PARENT_AGENT="${PARENT_AGENT:-ProudTuring}"
 export AGENTSTACK_PROJECT_KEY="${AGENTSTACK_PROJECT_KEY:-/Users/huyuhutaru/tools/examforge}"

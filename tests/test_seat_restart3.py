@@ -83,17 +83,23 @@ class Restart3Tests(unittest.TestCase):
         self.assertEqual(record.read_text(), '{"permanent":true}\n')
 
     def test_tmux_client_environment_has_no_lifecycle_authority(self):
-        seat = self.lane.arrange()
-        fake = FAKE_TMUX.replace("if verb == 'new-session':", "if verb == 'new-session':\n    base.with_suffix('.client-env').write_text(json.dumps(dict(os.environ)))")
-        fixtures.executable(self.lane.base/'bin/tmux', fake)
-        child = self.lane.launch(seat, extra_env={'AGENTSTACK_MATERIALS_APPENDED':'1', 'AGENTSTACK_LAUNCH_ATTEMPT_ID':'fixture-attempt', 'AGENTSTACK_LIFECYCLE_HOOKS_DIR':str(ROOT/'hooks'), 'AGENTSTACK_PRESERVE_SEAT_IDENTITY':'1'})
-        client = json.loads((self.lane.base/'tmux-verbs.client-env').read_text())
-        for key in ('AGENTSTACK_LIFECYCLE_HOOKS_DIR','AGENTSTACK_PRESERVE_SEAT_IDENTITY','AGENTSTACK_SEAT_LOCK_FD','AGENTSTACK_DIRECT_CANDIDATE','AGENTSTACK_LIFECYCLE_NAME','AGENTSTACK_LAUNCH_JOURNAL','AGENTSTACK_LAUNCH_ATTEMPT_ID','AGENTSTACK_MATERIALS_APPENDED'):
-            self.assertNotIn(key, client, key)
-        self.assertIn('AGENTSTACK_LAUNCH_JOURNAL', child)
-        self.assertEqual(child['AGENTSTACK_LIFECYCLE_NAME'], fixtures.NAME)
-        self.assertEqual(child['AGENTSTACK_LIFECYCLE_HOOKS_DIR'], str(ROOT/'hooks'))
-        self.assertEqual(child['AGENTSTACK_PRESERVE_SEAT_IDENTITY'], '0')
+        for provider in ('codex','claude'):
+            with self.subTest(provider=provider):
+                lane = lifecycle.LifecycleTests(); lane.setUp()
+                try:
+                    seat = lane.arrange()
+                    fake = FAKE_TMUX.replace("if verb == 'new-session':", "if verb == 'new-session':\n    base.with_suffix('.client-env').write_text(json.dumps(dict(os.environ)))")
+                    fixtures.executable(lane.base/'bin/tmux', fake)
+                    child = lane.launch(seat, provider, extra_env={'AGENTSTACK_FUTURE_SECRET':'secret-canary','UNKNOWN_SECRET':'secret-canary','AGENTSTACK_MATERIALS_APPENDED':'1','AGENTSTACK_LAUNCH_ATTEMPT_ID':'fixture-attempt','AGENTSTACK_LIFECYCLE_HOOKS_DIR':str(ROOT/'hooks'),'AGENTSTACK_PRESERVE_SEAT_IDENTITY':'1'})
+                    client = json.loads((lane.base/'tmux-verbs.client-env').read_text())
+                    for key in client:
+                        self.assertFalse(key.startswith(('AGENTSTACK_','CHILD_')), key)
+                    for key in ('PROJECT_KEY','PARENT_AGENT','UNKNOWN_SECRET'): self.assertNotIn(key,client)
+                    self.assertIn('AGENTSTACK_LAUNCH_JOURNAL',child)
+                    self.assertEqual(child['AGENTSTACK_LIFECYCLE_NAME'],fixtures.NAME)
+                    self.assertEqual(child['AGENTSTACK_LIFECYCLE_HOOKS_DIR'],str(ROOT/'hooks'))
+                    self.assertEqual(child['AGENTSTACK_PRESERVE_SEAT_IDENTITY'],'0')
+                finally: lane.doCleanups()
 
     def test_per_entry_check_protects_replacement_after_initial_validation(self):
         seat = self.lane.arrange()
@@ -217,11 +223,20 @@ class Restart3Tests(unittest.TestCase):
         import threading
         seat = self.lane.arrange()
         calls = []
+        rejected = []
+        from schema_mail_fake import validate_call, tool_schemas
+        tool_schemas()
         class Handler(BaseHTTPRequestHandler):
             def log_message(self, *args): pass
             def do_POST(self):
                 request = json.loads(self.rfile.read(int(self.headers['Content-Length'])))
                 method = request['params']['name']; calls.append(method)
+                try:
+                    validate_call(method, request['params']['arguments'])
+                except Exception as exc:
+                    rejected.append(str(exc))
+                    body = {'result':{'isError':True,'content':[{'type':'text','text':str(exc)}]}}
+                    self.send_response(200); self.end_headers(); self.wfile.write(json.dumps(body).encode()); return
                 data = {'name':fixtures.NAME,'registration_token':fixtures.TOKEN} if method == 'register_agent' else {}
                 body = {'result':{'structuredContent':data,'content':[{'type':'text','text':json.dumps(data)}]}}
                 self.send_response(200); self.end_headers(); self.wfile.write(json.dumps(body).encode())
@@ -230,8 +245,10 @@ class Restart3Tests(unittest.TestCase):
         task = self.lane.base/'task.md'; task.write_text('---\nfixture front matter\n---\nfixture work')
         try:
             env = dict(seat['env'], AGENTSTACK_MCP_URL=f'http://127.0.0.1:{server.server_port}/mcp', AGENTSTACK_DIRECT_CANDIDATE='Restart-Fixture', FIXTURE_EARLY_FAILURE='1')
+            fixtures.freeze_tmux_fixture(env)
             args = ['/bin/bash', str(fixtures.SPAWN), '--codex', '--model', 'gpt-5.5', '--resources', 'fixture.txt', '--task-file', str(task), str(seat['work'])]
             result = subprocess.run(args, env=env, capture_output=True, text=True, timeout=25)
+            self.assertEqual(rejected, [], 'real tools/list contract rejected launcher arguments')
             self.assertEqual(result.returncode, 17, result.stderr)
             self.assertIn('file_reservation_paths', calls)
             self.assertEqual(calls[-2:], ['release_file_reservations', 'retire_agent'])
@@ -247,25 +264,33 @@ class Restart3Tests(unittest.TestCase):
         import tempfile
         real_tmux = shutil.which('tmux')
         if not real_tmux: self.skipTest('tmux unavailable')
-        line = next(line for line in fixtures.SPAWN.read_text().splitlines() if ' tmux new-session 9>&-' in line)
-        sanitization = shlex.split(line.strip().split(' tmux new-session')[0])
-        with tempfile.TemporaryDirectory(prefix='orrery-r3-socket-', dir='/tmp') as socket_dir:
-            socket = str(Path(socket_dir)/'server.sock')
-            base = [real_tmux, '-S', socket]
-            seat = self.lane.arrange()
-            keys = ['AGENTSTACK_LIFECYCLE_HOOKS_DIR','AGENTSTACK_PRESERVE_SEAT_IDENTITY','AGENTSTACK_SEAT_LOCK_FD','AGENTSTACK_DIRECT_CANDIDATE','AGENTSTACK_LIFECYCLE_NAME','AGENTSTACK_LAUNCH_JOURNAL','AGENTSTACK_LAUNCH_ATTEMPT_ID','AGENTSTACK_MATERIALS_APPENDED']
-            environment = dict(seat['env'], **dict.fromkeys(keys, 'fixture-canary'))
-            try:
-                result = subprocess.run([*sanitization, *base, 'new-session', '-d', '-s', 'FixtureOnly', '-e', 'AGENTSTACK_LAUNCH_JOURNAL=child-fixture-journal', '-e', 'AGENTSTACK_LIFECYCLE_HOOKS_DIR=child-selected-release', '/bin/sleep 15'], env=environment, capture_output=True, text=True, timeout=10)
-                self.assertEqual(result.returncode, 0, result.stderr)
-                global_env = subprocess.check_output([*base, 'show-environment', '-g'], env=seat['env'], text=True)
-                for key in keys: self.assertNotIn(key+'=', global_env)
-                child_env = subprocess.check_output([*base, 'show-environment', '-t', 'FixtureOnly'], env=seat['env'], text=True)
-                self.assertIn('AGENTSTACK_LAUNCH_JOURNAL=child-fixture-journal', child_env)
-                self.assertIn('AGENTSTACK_LIFECYCLE_HOOKS_DIR=child-selected-release', child_env)
-            finally:
-                # This exact new private socket never addresses the fleet server.
-                subprocess.run([*base, 'kill-server'], env=seat['env'], capture_output=True, timeout=10)
+        source = fixtures.SPAWN.read_text()
+        lines = [line for line in source.splitlines() if 'tmux new-session' in line and 'TMUX_CLIENT_ENV' in line]
+        self.assertEqual(len(lines), 2, 'both providers must use the allowlist')
+        start = source.index('    TMUX_CLIENT_ENV=(env -i)')
+        end = source.index('    done', start) + len('    done')
+        allowlist = source[start:end]
+        for provider, line in zip(('codex','claude'), lines):
+            with self.subTest(provider=provider), tempfile.TemporaryDirectory(prefix='orrery-r4-socket-', dir='/tmp') as socket_dir:
+                self.assertIn('9>&-', line, 'tmux server must not retain the name lock')
+                socket = str(Path(socket_dir)/'server.sock')
+                base = [real_tmux, '-S', socket]
+                keys = ['AGENTSTACK_HOOKS_DIR','AGENTSTACK_HOME','AGENTSTACK_PROJECT_KEY','PROJECT_KEY','AGENTSTACK_FUTURE_SECRET', 'UNKNOWN_FUTURE_SECRET','AGENTSTACK_LIFECYCLE_HOOKS_DIR','AGENTSTACK_PRESERVE_SEAT_IDENTITY','AGENTSTACK_SEAT_LOCK_FD','AGENTSTACK_DIRECT_CANDIDATE','AGENTSTACK_LIFECYCLE_NAME','AGENTSTACK_LAUNCH_JOURNAL','AGENTSTACK_LAUNCH_ATTEMPT_ID','AGENTSTACK_MATERIALS_APPENDED']
+                environment = dict(os.environ, **dict.fromkeys(keys, 'fixture-canary'))
+                command = line.strip().split('tmux new-session')[0] + 'tmux -S "$1" new-session 9>&- -d -s FixtureOnly -e AGENTSTACK_LAUNCH_JOURNAL=child-fixture-journal -e AGENTSTACK_LIFECYCLE_HOOKS_DIR=child-selected-release "/bin/sleep 15"'
+                try:
+                    result = subprocess.run(['/bin/bash','-c',allowlist+'\n'+command,'fixture',socket], env=environment, capture_output=True, text=True, timeout=10)
+                    self.assertEqual(result.returncode, 0, result.stderr)
+                    global_env = subprocess.check_output([*base, 'show-environment', '-g'], env=environment, text=True)
+                    for key in keys: self.assertNotIn(key+'=', global_env)
+                    child_env = subprocess.check_output([*base, 'show-environment', '-t', 'FixtureOnly'], env=environment, text=True)
+                    self.assertIn('AGENTSTACK_LAUNCH_JOURNAL=child-fixture-journal', child_env)
+                    self.assertIn('AGENTSTACK_LIFECYCLE_HOOKS_DIR=child-selected-release', child_env)
+                    subprocess.run([*base,'new-session','-d','-s','Unrelated','/bin/sleep 15'],env=environment,check=True,timeout=10)
+                    later = subprocess.check_output([*base,'show-environment','-t','Unrelated'],env=environment,text=True)
+                    for key in keys: self.assertNotIn(key+'=',later)
+                finally:
+                    subprocess.run([*base, 'kill-server'], env=environment, capture_output=True, timeout=10)
 
     def test_collection_isolation_precedes_dashboard_import_and_blocks_keychain(self):
         seat = self.lane.arrange()

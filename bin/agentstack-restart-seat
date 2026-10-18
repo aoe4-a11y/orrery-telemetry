@@ -7,6 +7,7 @@ set -euo pipefail
 ORIGINAL_ARGV=("$@")
 CALLER_PROJECT="${AGENTSTACK_PROJECT_KEY:-${PROJECT_KEY:-}}"
 [ -f "$HOME/.agentstack/env.sh" ] && source "$HOME/.agentstack/env.sh"
+export AGENTSTACK_HOME="${AGENTSTACK_HOME:-$HOME/.agentstack}"
 
 NAME="${1:?seat name (e.g. WarmArchimedes)}"
 TASK="${2:?task file (この席に渡す指示書。1行目が説明になる)}"

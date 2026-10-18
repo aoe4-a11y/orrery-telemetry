@@ -82,6 +82,11 @@ def test_fresh_workdir_trust_prompt_is_accepted_without_waiting_out_timeout(tmp_
         "FAKE_TMUX_ALIVE": str(tmux_alive),
         "FAKE_TRUST_ACCEPTED": str(trust_accepted),
     })
+    stub = bindir / 'tmux'
+    fake = stub.read_text()
+    import shlex
+    bindings = ''.join(f'export {key}={shlex.quote(value)}\n' for key,value in env.items() if key.startswith('FAKE_'))
+    stub.write_text(fake.replace('#!/bin/bash\n', '#!/bin/bash\n' + bindings, 1))
     pathlib.Path(env["HOME"]).mkdir()
 
     started = time.monotonic()

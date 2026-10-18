@@ -62,7 +62,8 @@ ORIGINAL_ARGV=("$@")
 
 HOOKS_DIR="${AGENTSTACK_LIFECYCLE_HOOKS_DIR:-${AGENTSTACK_HOOKS_DIR:-$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)}}"
 LIFECYCLE_HELPER="$HOOKS_DIR/seat_lifecycle.py"
-export AGENTSTACK_HOOKS_DIR="$HOOKS_DIR"
+export AGENTSTACK_LIFECYCLE_HOOKS_DIR="$HOOKS_DIR"
+export AGENTSTACK_HOOKS_DIR="${AGENTSTACK_HOOKS_DIR:-${AGENTSTACK_HOME:-$HOME/.agentstack}/hooks}"
 RUNTIME_DIR="${AGENTSTACK_RUNTIME_DIR:-${AGENTSTACK_HOME:-$HOME/.agentstack}/runtime}"
 export AGENTSTACK_RUNTIME_DIR="$RUNTIME_DIR"
 MANAGED_FILE="${AGENTSTACK_MANAGED_AGENTS_FILE:-$RUNTIME_DIR/managed_agents.txt}"
@@ -72,9 +73,11 @@ HTTP_BEARER_MODE="${AGENTSTACK_MAIL_HTTP_BEARER_MODE:-auto}"
 PROJECT_KEY="${PROJECT_KEY:-${AGENTSTACK_PROJECT_KEY:-}}"
 TERMINAL_SETTING="${AGENTSTACK_TERMINAL:-auto}"
 AGENTSTACK_HOME_DIR="${AGENTSTACK_HOME:-}"
-if [[ -z "$AGENTSTACK_HOME_DIR" && -d "$HOOKS_DIR/.." ]]; then
-    AGENTSTACK_HOME_DIR="$(cd "$HOOKS_DIR/.." && pwd)"
+if [[ -z "$AGENTSTACK_HOME_DIR" ]]; then
+    # A partial release hooks directory is never the installation root.
+    AGENTSTACK_HOME_DIR="$HOME/.agentstack"
 fi
+export AGENTSTACK_HOME="$AGENTSTACK_HOME_DIR"
 REREGISTER_HELPER="${AGENTSTACK_HOME_DIR:+$AGENTSTACK_HOME_DIR/bin/agentstack-reregister}"
 
 # Source the shared register lib early (function definitions only — no side
@@ -340,7 +343,7 @@ import os
 import pathlib
 import stat
 import sys
-sys.path.insert(0, os.environ.get("AGENTSTACK_HOOKS_DIR", ""))
+sys.path.insert(0, os.environ.get("AGENTSTACK_LIFECYCLE_HOOKS_DIR") or os.environ.get("AGENTSTACK_HOOKS_DIR", ""))
 from seat_lifecycle import record_intent, check_handoff
 
 agent_name, project_key, source, token_file, state_file, consume = sys.argv[1:7]
@@ -480,7 +483,7 @@ import os
 import pathlib
 import stat
 import sys
-sys.path.insert(0, os.environ.get("AGENTSTACK_HOOKS_DIR", ""))
+sys.path.insert(0, os.environ.get("AGENTSTACK_LIFECYCLE_HOOKS_DIR") or os.environ.get("AGENTSTACK_HOOKS_DIR", ""))
 from seat_lifecycle import record_intent
 
 state_path = pathlib.Path(sys.argv[1])
@@ -1125,7 +1128,7 @@ import atexit
 import os
 import pathlib
 import sys
-sys.path.insert(0, os.environ.get("AGENTSTACK_HOOKS_DIR", ""))
+sys.path.insert(0, os.environ.get("AGENTSTACK_LIFECYCLE_HOOKS_DIR") or os.environ.get("AGENTSTACK_HOOKS_DIR", ""))
 from seat_lifecycle import record_intent, refresh_generated_file
 
 path, runner, child, project_key, token_file, mcp_url, mail_env, runtime_dir, claude_json, bearer_mode, python_bin = sys.argv[1:12]
@@ -1285,7 +1288,7 @@ import os
 import pathlib
 import re
 import sys
-sys.path.insert(0, os.environ.get("AGENTSTACK_HOOKS_DIR", ""))
+sys.path.insert(0, os.environ.get("AGENTSTACK_LIFECYCLE_HOOKS_DIR") or os.environ.get("AGENTSTACK_HOOKS_DIR", ""))
 from seat_lifecycle import record_intent, record_home_entry, refresh_generated_file
 
 home, source, runner, child, project_key, token_file, mcp_url, mail_env, runtime_dir, bearer_mode, python_bin = sys.argv[1:12]
@@ -1760,7 +1763,9 @@ if [[ -n "$PRE_REGISTERED" ]]; then
                 local failure_args
                 if failure_args="$(lifecycle failure-retire-args)"; then
                     lifecycle check || return
-                    call_mcp "release_file_reservations" "$failure_args" >/dev/null || return
+                    local release_args
+                    release_args="$(printf '%s' "$failure_args" | python3 -c 'import json,sys; a=json.load(sys.stdin); print(json.dumps({k:a[k] for k in ("project_key","agent_name")}))')"
+                    call_mcp "release_file_reservations" "$release_args" >/dev/null || true
                     lifecycle check || return
                     call_mcp "retire_agent" "$failure_args" >/dev/null || return
                 else
@@ -1835,7 +1840,15 @@ if [[ -n "$PRE_REGISTERED" ]]; then
     # shell exit hooks (e.g. a ~/.zshrc zshexit / bash trap that runs `tmux
     # kill-session`): without it, exiting this session can cascade-kill the whole
     # tmux server. Requires tmux >= 3.0.
-    TMUX_ENV_ARGS=(-e "CLAUDECODE=1" -e "AGENTSTACK_RESERVED_IDENTITY=1" -e "AGENT_NAME=$CHILD_NAME" -e "PROJECT_KEY=$PROJECT_KEY" -e "AGENTSTACK_PROJECT_KEY=$PROJECT_KEY" -e "AGENTSTACK_HOOKS_DIR=$HOOKS_DIR" -e "AGENTSTACK_RUNTIME_DIR=$RUNTIME_DIR" -e "AGENTSTACK_MCP_URL=$MCP_URL" -e "AGENTSTACK_MAIL_ENV=$MAIL_ENV" -e "AGENTSTACK_MAIL_HTTP_BEARER_MODE=$HTTP_BEARER_MODE" -e "AGENTSTACK_TERMINAL=$TERMINAL_SETTING" -e "AGENTSTACK_CODEX_SANDBOX=${AGENTSTACK_CODEX_SANDBOX:-workspace-write}" -e "AGENTSTACK_CODEX_APPROVAL=$(codex_approval_flags)" -e "AGENTSTACK_CODEX_NETWORK_FLAGS=$(codex_network_flags)")
+    # tmux may start the shared server here. Give that server only OS/session
+    # transport settings; child authority is passed explicitly with -e below.
+    TMUX_CLIENT_ENV=(env -i)
+    for os_key in HOME PATH USER LOGNAME SHELL TERM LANG LC_ALL LC_CTYPE TMPDIR TMUX_TMPDIR SSH_AUTH_SOCK DISPLAY XAUTHORITY TERMINFO TERMINFO_DIRS __CF_USER_TEXT_ENCODING; do
+        if [[ -n "${!os_key+x}" ]]; then
+            TMUX_CLIENT_ENV+=("$os_key=${!os_key}")
+        fi
+    done
+    TMUX_ENV_ARGS=(-e "CLAUDECODE=1" -e "AGENTSTACK_RESERVED_IDENTITY=1" -e "AGENT_NAME=$CHILD_NAME" -e "PROJECT_KEY=$PROJECT_KEY" -e "AGENTSTACK_PROJECT_KEY=$PROJECT_KEY" -e "AGENTSTACK_HOOKS_DIR=$AGENTSTACK_HOOKS_DIR" -e "AGENTSTACK_RUNTIME_DIR=$RUNTIME_DIR" -e "AGENTSTACK_MCP_URL=$MCP_URL" -e "AGENTSTACK_MAIL_ENV=$MAIL_ENV" -e "AGENTSTACK_MAIL_HTTP_BEARER_MODE=$HTTP_BEARER_MODE" -e "AGENTSTACK_TERMINAL=$TERMINAL_SETTING" -e "AGENTSTACK_CODEX_SANDBOX=${AGENTSTACK_CODEX_SANDBOX:-workspace-write}" -e "AGENTSTACK_CODEX_APPROVAL=$(codex_approval_flags)" -e "AGENTSTACK_CODEX_NETWORK_FLAGS=$(codex_network_flags)")
     TMUX_ENV_ARGS+=(-e "AGENTSTACK_LIFECYCLE_HOOKS_DIR=$HOOKS_DIR")
     TMUX_ENV_ARGS+=(-e "AGENTSTACK_LAUNCH_JOURNAL=$AGENTSTACK_LAUNCH_JOURNAL" -e "AGENTSTACK_LIFECYCLE_NAME=$CHILD_NAME")
     TMUX_ENV_ARGS+=(-e "AGENTSTACK_PRESERVE_SEAT_IDENTITY=$PREREG_PRESERVE_IDENTITY" -e "CHILD_RESOURCES=${CHILD_RESOURCES:-}")
@@ -1876,7 +1889,7 @@ ${TASK}"
         else
             CODEX_PROMPT="You are ${CHILD_NAME}. The parent agent is ${PARENT_NAME}. The child name ${CHILD_NAME} is already reserved, so do not register under another name. The canonical task is in your ORRERY Mail inbox. First, if ${REREGISTER_HELPER:-agentstack-reregister} exists, run PROJECT_KEY=${PROJECT_KEY} ${REREGISTER_HELPER:-agentstack-reregister} ${CHILD_NAME}; when that succeeds, skip register_agent and fetch_inbox for ${CHILD_NAME}. The helper reads the child-owned 0600 token file; never request or print its token. Do not infer the task from this prompt; treat the inbox request as authoritative."
         fi
-        env -u AGENTSTACK_LIFECYCLE_HOOKS_DIR -u AGENTSTACK_PRESERVE_SEAT_IDENTITY -u AGENTSTACK_REFRESH_CHILD_CONFIG -u AGENTSTACK_DIRECT_REGISTRATION_NAME -u AGENTSTACK_SEAT_LOCK_FD -u AGENTSTACK_DIRECT_CANDIDATE -u AGENTSTACK_LIFECYCLE_NAME -u AGENTSTACK_LAUNCH_JOURNAL -u AGENTSTACK_LAUNCH_ATTEMPT_ID -u AGENTSTACK_MATERIALS_APPENDED -u AGENTSTACK_LAUNCH_AUTH_OWNERSHIP -u AGENTSTACK_LAUNCH_ARTIFACT_OWNERSHIP tmux new-session 9>&- -d -s "$CHILD_NAME" \
+        "${TMUX_CLIENT_ENV[@]}" tmux new-session 9>&- -d -s "$CHILD_NAME" \
             -c "$WORK_DIR" \
             "${TMUX_ENV_ARGS[@]}" \
             "$CHILD_SHELL"' -lc '"'"'
@@ -1900,7 +1913,7 @@ ${TASK}"
                 IFS="$_ifs"
                 env -u OPENAI_API_KEY "$AGENTSTACK_CODEX_BIN" -C "$PWD" --sandbox "${AGENTSTACK_CODEX_SANDBOX:-workspace-write}" $(printf "%s" "$AGENTSTACK_CODEX_APPROVAL") $(printf "%s" "$AGENTSTACK_CODEX_NETWORK_FLAGS") \
                     "${EXTRA_ARGS[@]}" --model "$AGENTSTACK_CODEX_MODEL" -c "model_reasoning_effort=$AGENTSTACK_CODEX_EFFORT"
-                /bin/bash "$AGENTSTACK_HOOKS_DIR/cleanup-child-agent.sh"
+                /bin/bash "$AGENTSTACK_LIFECYCLE_HOOKS_DIR/cleanup-child-agent.sh"
             '"'"''
         PRE_REGISTERED_SESSION_STARTED=true
         lifecycle record --session-started
@@ -2042,12 +2055,12 @@ ${TASK}"
             else
                 echo "[spawn_child/pre-reg] No MCP proxy available; child uses the shared ORRERY Mail endpoint" >&2
             fi
-            env -u AGENTSTACK_LIFECYCLE_HOOKS_DIR -u AGENTSTACK_PRESERVE_SEAT_IDENTITY -u AGENTSTACK_REFRESH_CHILD_CONFIG -u AGENTSTACK_DIRECT_REGISTRATION_NAME -u AGENTSTACK_SEAT_LOCK_FD -u AGENTSTACK_DIRECT_CANDIDATE -u AGENTSTACK_LIFECYCLE_NAME -u AGENTSTACK_LAUNCH_JOURNAL -u AGENTSTACK_LAUNCH_ATTEMPT_ID -u AGENTSTACK_MATERIALS_APPENDED -u AGENTSTACK_LAUNCH_AUTH_OWNERSHIP -u AGENTSTACK_LAUNCH_ARTIFACT_OWNERSHIP tmux new-session 9>&- -d -s "$CHILD_NAME" \
+            "${TMUX_CLIENT_ENV[@]}" tmux new-session 9>&- -d -s "$CHILD_NAME" \
                 -c "$WORK_DIR" \
                 "${TMUX_ENV_ARGS[@]}" \
                 -e "CLAUDE_CHILD_MODEL=$CHILD_MODEL" \
                 -e "CLAUDE_CHILD_MCP_CONFIG=$CHILD_MCP_CONFIG" \
-                "$CHILD_SHELL"' -lc '"'"'export PATH="$HOME/.local/bin:$PATH"; MCP_ARGS=(); [[ -n "$CLAUDE_CHILD_MCP_CONFIG" ]] && MCP_ARGS=(--mcp-config "$CLAUDE_CHILD_MCP_CONFIG" --strict-mcp-config); claude --model "$CLAUDE_CHILD_MODEL" --dangerously-skip-permissions --add-dir "$HOME/.agentstack" --add-dir "$HOME/tools" --add-dir /Volumes/DevSSD "${MCP_ARGS[@]}"; /bin/bash "$AGENTSTACK_HOOKS_DIR/cleanup-child-agent.sh"'"'"''
+                "$CHILD_SHELL"' -lc '"'"'export PATH="$HOME/.local/bin:$PATH"; MCP_ARGS=(); [[ -n "$CLAUDE_CHILD_MCP_CONFIG" ]] && MCP_ARGS=(--mcp-config "$CLAUDE_CHILD_MCP_CONFIG" --strict-mcp-config); claude --model "$CLAUDE_CHILD_MODEL" --dangerously-skip-permissions --add-dir "$HOME/.agentstack" --add-dir "$HOME/tools" --add-dir /Volumes/DevSSD "${MCP_ARGS[@]}"; /bin/bash "$AGENTSTACK_LIFECYCLE_HOOKS_DIR/cleanup-child-agent.sh"'"'"''
             PRE_REGISTERED_SESSION_STARTED=true
             lifecycle record --session-started
             SPAWN_TRAP_SESSION="$CHILD_NAME"
@@ -2369,7 +2382,9 @@ print(json.dumps({
         encoding="utf-8").strip(),
 }))
 ' "$PROJECT_KEY" "$agent_name" "$token_file")
-    call_mcp "release_file_reservations" "$retire_args" >/dev/null || return
+    local release_args
+    release_args="$(printf '%s' "$retire_args" | python3 -c 'import json,sys; a=json.load(sys.stdin); print(json.dumps({k:a[k] for k in ("project_key","agent_name")}))')"
+    call_mcp "release_file_reservations" "$release_args" >/dev/null || true
     call_mcp "retire_agent" "$retire_args"
 }
 
@@ -2488,7 +2503,7 @@ export AGENTSTACK_DIRECT_REGISTRATION_NAME="$CHILD_NAME"
 python3 - "$RUNTIME_DIR" "$CHILD_TOKEN_FILE" "$CHILD_NAME" "$PROJECT_KEY" <<'PYTICKET'
 import sys
 from pathlib import Path
-sys.path.insert(0, __import__('os').environ['AGENTSTACK_HOOKS_DIR'])
+sys.path.insert(0, __import__('os').environ.get('AGENTSTACK_LIFECYCLE_HOOKS_DIR') or __import__('os').environ['AGENTSTACK_HOOKS_DIR'])
 from seat_lifecycle import bind_handoff
 bind_handoff(Path(sys.argv[1]), Path(sys.argv[2]), sys.argv[3], sys.argv[4])
 PYTICKET

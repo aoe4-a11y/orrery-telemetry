@@ -85,6 +85,11 @@ def _fake_launch_env(
         "FAKE_TMUX_ALIVE": str(tmux_alive),
         "FAKE_CODEX": "1" if codex else "0",
     })
+    stub = bindir / 'tmux'
+    fake = stub.read_text()
+    import shlex
+    bindings = ''.join(f'export {key}={shlex.quote(value)}\n' for key,value in env.items() if key.startswith('FAKE_'))
+    stub.write_text(fake.replace('#!/bin/bash\n', '#!/bin/bash\n' + bindings, 1))
     return env, workdir
 
 

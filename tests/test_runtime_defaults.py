@@ -72,6 +72,43 @@ exit 0
 """
 
 
+def _fake_launchctl():
+    return """#!/usr/bin/env python3
+import json, os, pathlib, plistlib, subprocess, sys, time
+stack=pathlib.Path(os.environ['AGENTSTACK_HOME'])
+state=stack/'fake-launchctl-loaded.json'
+loaded=json.loads(state.read_text()) if state.exists() else []
+args=sys.argv[1:]; verb=args[0]
+if verb=='bootstrap':
+    plist=plistlib.loads(pathlib.Path(args[2]).read_bytes())
+    label=plist['Label']
+else:
+    label=args[-1].rsplit('/',1)[-1]
+if not label.startswith('org.agentstack.test.'):
+    sys.exit(77)
+with (stack/'fake-launchctl.log').open('a') as stream: stream.write(' '.join(args)+'\\n')
+if verb=='print':
+    if label not in loaded: sys.exit(1)
+    pid=pathlib.Path(os.environ['AGENTSTACK_TEST_SERVICE_PID'])
+    if label.endswith('.agentdashboard') and pid.exists(): print('    pid = '+pid.read_text().strip())
+elif verb=='bootout':
+    if label in loaded: loaded.remove(label)
+    if label.endswith('.agentdashboard'):
+        from service_teardown import stop_recorded_supervisor
+        stop_recorded_supervisor(os.environ['AGENTSTACK_TEST_SERVICE_PID'],str(stack.parent))
+elif verb=='bootstrap':
+    if label not in loaded: loaded.append(label)
+    if label.endswith('.agentdashboard'):
+        process=subprocess.Popen([os.environ['AGENTSTACK_TEST_PYTHON'],str(stack/'dashboard/service_runner.py')],stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL,start_new_session=True)
+        pathlib.Path(os.environ['AGENTSTACK_TEST_SERVICE_PID']).write_text(str(process.pid)+'\\n')
+        for _ in range(100):
+            if (stack/'runtime/dashboard-service.json').exists(): break
+            time.sleep(.05)
+        else: sys.exit(1)
+state.write_text(json.dumps(loaded))
+"""
+
+
 def _stop_fake_dashboard(env: dict[str, str]) -> None:
     """Stop the fake system manager's dashboard and wait for its port.
 
@@ -385,7 +422,7 @@ def test_noninteractive_assume_yes_is_explicit_audited_approval(tmp_path):
     _exercise_noninteractive_installer(tmp_path)
 
 
-def _exercise_noninteractive_installer(tmp_path, *, uninstall=True):
+def _exercise_noninteractive_installer(tmp_path, *, uninstall=True, platform="Linux"):
     home = tmp_path / "home"
     env = _clean_env(home)
     fake_bin = tmp_path / "fake-bin"
@@ -393,11 +430,16 @@ def _exercise_noninteractive_installer(tmp_path, *, uninstall=True):
     for name, body in {
         "systemctl": _fake_systemctl(),
         "tmux": "#!/bin/sh\nexit 0\n",
-        "uname": "#!/bin/sh\necho Linux\n",
+        "uname": f"#!/bin/sh\necho {platform}\n",
         "uv": "#!/bin/sh\nexit 0\n",
     }.items():
         command = fake_bin / name
         command.write_text(body, encoding="utf-8")
+        command.chmod(0o755)
+
+    if platform == "Darwin":
+        command = fake_bin / "launchctl"
+        command.write_text(_fake_launchctl(), encoding="utf-8")
         command.chmod(0o755)
 
     install_dir = home / ".agentstack"
@@ -435,6 +477,8 @@ def _exercise_noninteractive_installer(tmp_path, *, uninstall=True):
         "AGENTSTACK_TEST_PYTHON": sys.executable,
         "AGENTSTACK_TEST_SERVICE_PID": str(tmp_path / "dashboard-service.pid"),
     })
+    install_dir.mkdir(parents=True, exist_ok=True)
+    (install_dir/'env.sh').write_text("export AGENTSTACK_LIFECYCLE_HOOKS_DIR=/obsolete/release/hooks\nexport EXAMFORGE_HEAVY_SLOTS=2\n")
     command = ["bash", str(ROOT / "scripts" / "install.sh")]
 
     without_approval = subprocess.run(
@@ -538,6 +582,9 @@ def _exercise_noninteractive_installer(tmp_path, *, uninstall=True):
     finally:
         _stop_fake_dashboard(env)
 
+    exports = (install_dir/'env.sh').read_text()
+    assert 'AGENTSTACK_LIFECYCLE_HOOKS_DIR=' not in exports
+    assert 'EXAMFORGE_HEAVY_SLOTS=2' in exports
     if not uninstall:
         return
 

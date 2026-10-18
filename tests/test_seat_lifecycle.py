@@ -62,6 +62,7 @@ class LifecycleTests(unittest.TestCase):
 
     def launch(self, seat, provider='codex', expect=0, extra_env=None):
         env = dict(seat['env'], **(extra_env or {}))
+        fixtures.freeze_tmux_fixture(env)
         args = ['/bin/bash', str(fixtures.SPAWN), '--model', 'gpt-5.5' if provider == 'codex' else 'fable',
                 '--pre-registered', fixtures.NAME, '--child-token-file', str(seat['handoff']),
                 '--embed-task']

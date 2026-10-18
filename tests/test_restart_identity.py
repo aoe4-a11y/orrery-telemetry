@@ -28,8 +28,20 @@ TOKEN = "fixture-only-token"
 
 
 def executable(path: Path, content: str) -> None:
+    if path.name == 'tmux' and content.startswith('#!/usr/bin/env python3'):
+        # The launcher gives tmux only OS settings. Fake instrumentation is
+        # configured through its own file, never a production env exception.
+        injection = "import json as _json, os as _os, pathlib as _pathlib\n_fixture = _pathlib.Path(__file__).with_name('tmux-fixture.json')\nif _fixture.exists(): _os.environ.update(_json.loads(_fixture.read_text()))\n"
+        head, tail = content.split('\n', 1)
+        content = head + '\n' + injection + tail
     path.write_text(content, encoding="utf-8")
     path.chmod(0o700)
+
+def freeze_tmux_fixture(env):
+    directory = Path(env['PATH'].split(os.pathsep)[0])
+    (directory / 'tmux-fixture.json').write_text(json.dumps(
+        {key:value for key,value in env.items() if key.startswith('FIXTURE_')}))
+
 
 def fixture_handoff(runtime):
     from seat_lifecycle import bind_handoff
@@ -142,11 +154,13 @@ sys.exit(0)
             "FIXTURE_CLEANUP": str(CLEANUP),
             "FIXTURE_TMUX_LOG": str(self.base / "tmux-verbs"),
         }
+        freeze_tmux_fixture(env)
         return dict(env=env, work=work, token=token, state=state,
                     config=config, home=home, managed=managed, handoff=handoff)
 
     def failed_launch(self, seat: dict, early: bool = False, require_tmux: bool = True) -> None:
         env = dict(seat["env"], FIXTURE_EARLY_FAILURE="1" if early else "0")
+        freeze_tmux_fixture(env)
         args = [
             "/bin/bash", str(SPAWN), "--codex", "--model", "gpt-5.5",
             "--pre-registered", NAME,
@@ -251,7 +265,7 @@ sys.exit(0)
         code = tmux.read_text()
         original = "    if os.environ.get('FIXTURE_EARLY_FAILURE') == '1':\n        sys.exit(17)"
         replacement = """    if os.environ.get('FIXTURE_EARLY_FAILURE') == '1':
-        runtime = pathlib.Path(os.environ['AGENTSTACK_RUNTIME_DIR'])
+        runtime = pathlib.Path(next(args[i+1].split('=',1)[1] for i,a in enumerate(args) if a == '-e' and args[i+1].startswith('AGENTSTACK_RUNTIME_DIR=')))
         paths = [runtime / 'agent_token_RestartFixture',
                  runtime / 'child-agents/RestartFixture.json']
         for path in paths:
@@ -271,7 +285,7 @@ sys.exit(0)
         code = tmux.read_text()
         original = "    if os.environ.get('FIXTURE_EARLY_FAILURE') == '1':\n        sys.exit(17)"
         replacement = """    if os.environ.get('FIXTURE_EARLY_FAILURE') == '1':
-        runtime = pathlib.Path(os.environ['AGENTSTACK_RUNTIME_DIR'])
+        runtime = pathlib.Path(next(args[i+1].split('=',1)[1] for i,a in enumerate(args) if a == '-e' and args[i+1].startswith('AGENTSTACK_RUNTIME_DIR=')))
         home = runtime / 'child-agents/RestartFixture.codex-home'
         config = runtime / 'child-agents/RestartFixture.mcp.json'
         assert not home.exists() and not config.exists()
@@ -298,7 +312,7 @@ sys.exit(0)
         tmux = self.base / "bin/tmux"
         original = "    if os.environ.get('FIXTURE_EARLY_FAILURE') == '1':\n        sys.exit(17)"
         replacement = """    if os.environ.get('FIXTURE_EARLY_FAILURE') == '1':
-        home = pathlib.Path(os.environ['AGENTSTACK_RUNTIME_DIR']) / 'child-agents/RestartFixture.codex-home'
+        home = pathlib.Path(next(args[i+1].split('=',1)[1] for i,a in enumerate(args) if a == '-e' and args[i+1].startswith('AGENTSTACK_RUNTIME_DIR='))) / 'child-agents/RestartFixture.codex-home'
         assert home.exists()
         home.rename(home.with_name(home.name + '.old-inode'))
         home.mkdir()
@@ -323,7 +337,7 @@ sys.exit(0)
         seat = self.arrange(False)
         tmux = self.base / "bin/tmux"
         original = "    child_env = dict(os.environ)"
-        replacement = """    runtime = pathlib.Path(os.environ['AGENTSTACK_RUNTIME_DIR'])
+        replacement = """    runtime = pathlib.Path(next(args[i+1].split('=',1)[1] for i,a in enumerate(args) if a == '-e' and args[i+1].startswith('AGENTSTACK_RUNTIME_DIR=')))
     home = runtime / 'child-agents/RestartFixture.codex-home'
     home.mkdir()
     (home / 'other-owner-session').write_text('concurrent fixture data')
