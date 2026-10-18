@@ -12,16 +12,17 @@
 #   spawn_child.sh --pre-registered <name> --child-token-file <path> --standalone "<task>"
 #
 # モデル指定（--model。Codex は gpt-5.6-sol 既定で旧 model 名も有効）:
-#   --model 省略/opus    → claude-opus-5（200K。warm pool 対象）
+#   --model 省略/opus    → claude-opus-5-5（2026-09-22 公開。素で 1M context・Opus 5 比 40% 安・thinking 常時オン。要 CLI 2.1.280+）
+#   --model opus-5       → claude-opus-5（旧既定・200K。warm pool 対象外）
 #   --model opus[1m]     → claude-opus-4-8[1m]（legacy 1M。要シングルクォート: glob 回避）
 #   --model opus-1m      → claude-opus-4-8[1m]（旧来の friendly 表記を正規化）
 #   --model claude-opus-4-8 → 旧 200K Opus を明示指定（引き続き有効）
-#   --model sonnet       → claude-sonnet-5（200K。warm pool 対象）
+#   --model sonnet       → claude-sonnet-5-5（2026-09-29 から。warm pool は claude-sonnet-5 のままなので cold start）
 #   --model haiku/fable  → claude-haiku-4-5-20251001 / claude-fable-5-1
 #   --codex --model 省略/sol → gpt-5.6-sol（terra / luna / astra=gpt-6-astra alias も利用可）
 #   未知の形             → 明確なエラーで停止（claude-* 接頭の正式 ID は前方互換で素通り）
 #   ※ 正規化は normalize_claude_model() / normalize_codex_model() が担当。warm pool は要求モデルが
-#     事前起動モデル（opus=claude-opus-5/200K, sonnet=claude-sonnet-5/200K）と
+#     事前起動モデル（opus=claude-opus-5-5/1M, sonnet=claude-sonnet-5/200K）と
 #     完全一致するときだけ claim する（[1m]/fable 等は cold-start で正しく起動）。
 #
 # リソース管理:
@@ -208,7 +209,9 @@ open_child_terminal() {
 # フラグの処理
 USE_CODEX=false
 CLAUDE_MODEL=""
-CODEX_EFFORT="xhigh"
+# R-062 (2026-09-20, 殿裁定・R-022 再徹底): 既定は medium。判断席だけ --effort high を明示する。
+# xhigh は AGENTSTACK_ALLOW_XHIGH=1 を付けた時だけ受け付ける（34 章: uncached 上位 25 の 19 が high/xhigh）。
+CODEX_EFFORT="${AGENTSTACK_CODEX_EFFORT_DEFAULT:-medium}"
 RESOURCES=""
 RESOURCE_TTL=14400
 UNSAFE_NO_RESOURCES=false
@@ -337,6 +340,8 @@ agent_name, project_key, source, token_file, state_file, consume = sys.argv[1:7]
 source_path = pathlib.Path(source)
 token_path = pathlib.Path(token_file)
 state_path = pathlib.Path(state_file)
+token_preexisted = token_path.exists() or token_path.is_symlink()
+state_preexisted = state_path.exists() or state_path.is_symlink()
 flags = os.O_RDONLY
 if hasattr(os, "O_NOFOLLOW"):
     flags |= os.O_NOFOLLOW
@@ -382,8 +387,10 @@ if consume == "true" and source_path != token_path:
     try:
         source_path.unlink()
     except Exception:
-        token_path.unlink(missing_ok=True)
-        state_path.unlink(missing_ok=True)
+        if not token_preexisted:
+            token_path.unlink(missing_ok=True)
+        if not state_preexisted:
+            state_path.unlink(missing_ok=True)
         raise
 print(token_path)
 PY
@@ -426,8 +433,9 @@ PY
 # --- Child model catalog -------------------------------------------------
 # Keep defaults and warm-pool identities here. Both launch paths normalize
 # through the functions below instead of carrying their own generation names.
-CLAUDE_DEFAULT_MODEL="claude-opus-5"
-CLAUDE_DEFAULT_SONNET_MODEL="claude-sonnet-5"
+CLAUDE_DEFAULT_MODEL="claude-opus-5-5"
+CLAUDE_PREV_OPUS_MODEL="claude-opus-5"
+CLAUDE_DEFAULT_SONNET_MODEL="claude-sonnet-5-5"
 CLAUDE_CURRENT_OPUS_1M_MODEL="claude-opus-5[1m]"
 CLAUDE_LEGACY_OPUS_MODEL="claude-opus-4-8"
 CLAUDE_LEGACY_OPUS_1M_MODEL="claude-opus-4-8[1m]"
@@ -436,7 +444,7 @@ CLAUDE_LEGACY_SONNET_1M_MODEL="claude-sonnet-4-6[1m]"
 CLAUDE_HAIKU_MODEL="claude-haiku-4-5-20251001"
 CLAUDE_FABLE_MODEL="claude-fable-5-1"
 CLAUDE_WARM_OPUS_MODEL="$CLAUDE_DEFAULT_MODEL"
-CLAUDE_WARM_SONNET_MODEL="$CLAUDE_DEFAULT_SONNET_MODEL"
+CLAUDE_WARM_SONNET_MODEL="claude-sonnet-5"  # warm pool は旧 5 で事前起動。5-5 は cold start
 CODEX_DEFAULT_MODEL="gpt-5.6-sol"
 CODEX_TERRA_MODEL="gpt-5.6-terra"
 CODEX_LUNA_MODEL="gpt-5.6-luna"
@@ -458,8 +466,10 @@ normalize_claude_model() {
     m="$(printf '%s' "$raw" | tr '[:upper:]' '[:lower:]' | tr -d '[:space:]')"
 
     case "$m" in
-        ""|opus|opus-5|opus5|"$CLAUDE_DEFAULT_MODEL")
+        ""|opus|opus-5-5|opus55|"opus5.5"|"opus-5.5"|"$CLAUDE_DEFAULT_MODEL")
             printf '%s\n' "$CLAUDE_DEFAULT_MODEL" ;;
+        opus-5|opus5|"$CLAUDE_PREV_OPUS_MODEL")
+            printf '%s\n' "$CLAUDE_PREV_OPUS_MODEL" ;;
         opus-1m|opus1m|"opus[1m]"|claude-opus-4-8-1m|"$CLAUDE_LEGACY_OPUS_1M_MODEL")
             printf '%s\n' "$CLAUDE_LEGACY_OPUS_1M_MODEL" ;;
         opus-200k|opus200k|"$CLAUDE_LEGACY_OPUS_MODEL")
@@ -481,7 +491,7 @@ normalize_claude_model() {
                 # 正式 ID は前方互換で素通り（新モデル ID 対応）
                 printf '%s\n' "$m"
             else
-                echo "Error: unknown model '$raw'. Valid forms: opus / opus[1m] / opus-5[1m] / claude-opus-4-8 / sonnet / sonnet-4-6 / haiku / fable / claude-<id>" >&2
+                echo "Error: unknown model '$raw'. Valid forms: opus(=5.5) / opus-5 / opus[1m] / opus-5[1m] / claude-opus-4-8 / sonnet / sonnet-4-6 / haiku / fable / claude-<id>" >&2
                 return 1
             fi
             ;;
@@ -513,9 +523,16 @@ normalize_codex_model() {
 
 validate_codex_effort() {
     local model="$1"
-    local raw_effort="${2:-xhigh}"
+    local raw_effort="${2:-medium}"
     local effort
     effort="$(printf '%s' "$raw_effort" | tr '[:upper:]' '[:lower:]' | tr -d '[:space:]')"
+    case "$effort" in
+        xhigh|max|ultra)
+            if [[ "${AGENTSTACK_ALLOW_XHIGH:-0}" != "1" ]]; then
+                echo "Error: reasoning effort '$effort' is disabled by R-062 (R-022: 機械駅 medium・判断 high・xhigh 不使用). Set AGENTSTACK_ALLOW_XHIGH=1 only with a head ruling." >&2
+                return 1
+            fi ;;
+    esac
 
     case "$effort" in
         low|medium|high|xhigh|max|ultra) ;;
@@ -791,7 +808,7 @@ pane_nonblank_tail() {
 # without scrollback, because a capture that included history kept showing an
 # already-accepted dialog and the launcher pressed Enter on every poll.
 codex_trust_dialog_present() {
-    printf '%s' "$1" | grep -qi "Do you trust"
+    printf '%s' "$1" | grep -qiE "Do you trust|Trust this folder\?"
 }
 
 # Claude Code 2.1.259 replaced "Do you trust ..." with a "Quick safety check"
@@ -836,6 +853,10 @@ claude_pane_ready() {
     # Only an empty input row counts. A selected dialog row also starts with
     # the cursor glyph ("❯ No, exit") and must not read as ready.
     printf '%s' "$last_lines" | grep -qE '^[[:space:]]*❯[[:space:]]*$' && return 0
+    # Claude Code 2.1.286 fills the empty input row with a placeholder
+    # ('❯ Try "edit <file> to..."') and drops "? for shortcuts" from the footer.
+    # The placeholder only appears on an empty input row, never on a dialog row.
+    printf '%s' "$last_lines" | grep -qE '^[[:space:]]*❯[[:space:]]+Try "' && return 0
     return 1
 }
 
@@ -1109,7 +1130,8 @@ codex_pane_ready() {
     printf '%s' "$last_lines" | grep -qE '% (left|context)' && return 0
     printf '%s' "$last_lines" | grep -qE 'for shortcuts' && return 0
     # Footer form "<model> <effort> · <cwd>" (no context segment).
-    printf '%s' "$last_lines" | grep -qE '(gpt|codex|o[0-9])[^ ]* .*·' && return 0
+    # Codex 0.156 capitalises the model in the footer ("GPT-5.6-Sol high · <cwd>").
+    printf '%s' "$last_lines" | grep -qiE '(gpt|codex|o[0-9])[^ ]* .*·' && return 0
     # Bare input prompt.
     printf '%s' "$last_lines" | grep -qE '^[[:space:]]*[▌❯>][[:space:]]*$' && return 0
     return 1
@@ -1388,7 +1410,7 @@ build_embedded_task_prompt() {
     local spawned_at="$3"
     local project_key="$4"
     local task_text="$5"
-    printf 'あなたは %s（親: %s）。この起動は --embed-task mode です。ORRERY Mail への登録は親が完了済み・儀式不要です。ensure_project・register_agent・fetch_inbox は実行しないでください。現在時刻: %s。project_key は %s。以下のタスクが正本です。直ちに開始し、完了したら send_message で %s に報告してください:\n\n%s' \
+    printf 'あなたは %s（親: %s）。この起動は --embed-task mode です。ORRERY Mail への登録は親が完了済み・儀式不要です。ensure_project・register_agent と起動時のタスク取得用 fetch_inbox は不要です。この省略は起動時だけです。起動後に便のpreview通知を受けたら fetch_inbox で全文を読み、指示とack_requiredを確認してください。現在時刻: %s。project_key は %s。便の規則（R-061）: 件名は [station]／[receipt]／[progress]／[blocked]／[plan]／[ack] のタグ 1 つで始める（無タグは [blocked] 扱い）・返信は元便のタグを継ぐ・ack_required の便は必ず ack する。待って turn を終える時は、何を待つかを書いた [blocked] を出してから終える（M-055・出さないと席の片づけで閉じられる）。以下のタスクが正本です。直ちに開始し、完了したら send_message で %s に報告してください:\n\n%s' \
         "$child_name" "$parent_name" "$spawned_at" "$project_key" \
         "$parent_name" "$task_text"
 }
@@ -1409,6 +1431,14 @@ if [[ -n "$TASK_FILE" ]]; then
     fi
 fi
 CHILD_STATE_DIR="$RUNTIME_DIR/child-agents"
+
+# METHOD-COPY-1: new task arguments use one project spelling and exact input references.
+# Historical tasks/roots remain immutable. An explicit task takes precedence.
+if [[ "$PROJECT_KEY" == "/Users/huyuhutaru/tools/examforge" && -n "$TASK" ]]; then
+    TASK="${TASK}
+
+材料の保存（METHOD-COPY-1 / R-080 / storage v5.9）: governor の新規 project は examforge。保管済み PDF は originals の path+SHA を参照し、駅ごとの写しを作らない。worktree は agentstack-station-materials worktree で source の sparse profile を1駅1個。comms・docs/receipts・docs/evidence・docs/reports の過去記録を materialize せず、必要な記録は元の path で読む。node_modules・build・生成画像を丸ごと写さない。会話記録は対象 rollout の path+SHA+byte prefix だけを残し、CODEX_HOME・sessions の symlink をたどって丸ごと copy しない。必要な独立 file だけ同一 volume の APFS clone を使う。既存原本・記録・root は消さない・動かさない。詳細: ~/.agentstack/runtime/tasks/STATION-MATERIALS.md。タスクにこれと異なる明示権限がある場合はタスクを優先する。"
+fi
 
 if [[ -z "$PROJECT_KEY" ]]; then
     echo "Error: AGENTSTACK_PROJECT_KEY or PROJECT_KEY is required" >&2
@@ -1464,6 +1494,25 @@ if [[ -n "$PRE_REGISTERED" ]]; then
     # caller's ambient CHILD_REGISTRATION_TOKEN here; that may be the parent's
     # owner token. Adopt the 0600 one-shot into durable child-owned files and
     # unlink the handoff only after both writes succeed.
+    # Existing seat artifacts belong to the caller, not this launch attempt.
+    PREREG_CANONICAL_TOKEN="$(child_token_file_path "$CHILD_NAME")"
+    PREREG_STATE_FILE="$CHILD_STATE_DIR/$CHILD_NAME.json"
+    PREREG_MCP_FILE="$CHILD_STATE_DIR/$CHILD_NAME.mcp.json"
+    PREREG_CODEX_HOME="$CHILD_STATE_DIR/$CHILD_NAME.codex-home"
+    PREREG_TOKEN_PREEXISTED=false
+    PREREG_STATE_PREEXISTED=false
+    PREREG_MCP_PREEXISTED=false
+    PREREG_HOME_PREEXISTED=false
+    PREREG_MANAGED_PREEXISTED=false
+    [[ -e "$PREREG_CANONICAL_TOKEN" || -L "$PREREG_CANONICAL_TOKEN" ]] && PREREG_TOKEN_PREEXISTED=true
+    [[ -e "$PREREG_STATE_FILE" || -L "$PREREG_STATE_FILE" ]] && PREREG_STATE_PREEXISTED=true
+    [[ -e "$PREREG_MCP_FILE" || -L "$PREREG_MCP_FILE" ]] && PREREG_MCP_PREEXISTED=true
+    [[ -e "$PREREG_CODEX_HOME" || -L "$PREREG_CODEX_HOME" ]] && PREREG_HOME_PREEXISTED=true
+    grep -qxF "$CHILD_NAME" "$MANAGED_FILE" 2>/dev/null && PREREG_MANAGED_PREEXISTED=true
+    PREREG_PRESERVE_IDENTITY=0
+    if [[ "$PREREG_TOKEN_PREEXISTED" == true || "$PREREG_STATE_PREEXISTED" == true || "$PREREG_MCP_PREEXISTED" == true || "$PREREG_HOME_PREEXISTED" == true ]]; then
+        PREREG_PRESERVE_IDENTITY=1
+    fi
     PRE_REGISTERED_TOKEN_CREATED=false
     PRE_REGISTERED_SESSION_STARTED=false
     PRE_REGISTERED_SUCCESS=false
@@ -1475,11 +1524,14 @@ if [[ -n "$PRE_REGISTERED" ]]; then
         if [[ "$PRE_REGISTERED_SESSION_STARTED" == true ]]; then
             tmux kill-session -t "=$CHILD_NAME" >/dev/null 2>&1 || true
         fi
-        if [[ "$PRE_REGISTERED_TOKEN_CREATED" == true ]]; then
-            rm -f "$CHILD_TOKEN_FILE" "$CHILD_STATE_DIR/$CHILD_NAME.json"
-        fi
+        # A restart of an existing seat passes its canonical token; losing it on a
+        # failed restart destroyed BronzeHopper and RubyWatt (2026-09-25).
+        [[ "$PREREG_TOKEN_PREEXISTED" == true ]] || rm -f -- "${PREREG_CANONICAL_TOKEN:?}"
+        [[ "$PREREG_STATE_PREEXISTED" == true ]] || rm -f -- "${PREREG_STATE_FILE:?}"
+        [[ "$PREREG_MCP_PREEXISTED" == true ]] || rm -f -- "${PREREG_MCP_FILE:?}"
+        [[ "$PREREG_HOME_PREEXISTED" == true ]] || rm -rf -- "${PREREG_CODEX_HOME:?}"
         cleanup_worktree
-        if [[ -f "$MANAGED_FILE" ]]; then
+        if [[ "$PREREG_MANAGED_PREEXISTED" != true && -f "$MANAGED_FILE" ]]; then
             python3 - "$MANAGED_FILE" "$CHILD_NAME" <<'PY' 2>/dev/null || true
 import pathlib
 import sys
@@ -1548,6 +1600,7 @@ PY
     # kill-session`): without it, exiting this session can cascade-kill the whole
     # tmux server. Requires tmux >= 3.0.
     TMUX_ENV_ARGS=(-e "CLAUDECODE=1" -e "AGENTSTACK_RESERVED_IDENTITY=1" -e "AGENT_NAME=$CHILD_NAME" -e "PROJECT_KEY=$PROJECT_KEY" -e "AGENTSTACK_PROJECT_KEY=$PROJECT_KEY" -e "AGENTSTACK_HOOKS_DIR=$HOOKS_DIR" -e "AGENTSTACK_RUNTIME_DIR=$RUNTIME_DIR" -e "AGENTSTACK_MCP_URL=$MCP_URL" -e "AGENTSTACK_MAIL_ENV=$MAIL_ENV" -e "AGENTSTACK_MAIL_HTTP_BEARER_MODE=$HTTP_BEARER_MODE" -e "AGENTSTACK_TERMINAL=$TERMINAL_SETTING" -e "AGENTSTACK_CODEX_SANDBOX=${AGENTSTACK_CODEX_SANDBOX:-workspace-write}" -e "AGENTSTACK_CODEX_APPROVAL=$(codex_approval_flags)" -e "AGENTSTACK_CODEX_NETWORK_FLAGS=$(codex_network_flags)")
+    TMUX_ENV_ARGS+=(-e "AGENTSTACK_PRESERVE_SEAT_IDENTITY=$PREREG_PRESERVE_IDENTITY")
     if [[ "$STANDALONE" != true ]]; then
         TMUX_ENV_ARGS+=(-e "PARENT_AGENT=$PARENT_NAME")
     fi
@@ -1627,6 +1680,14 @@ ${TASK}"
                 continue
             fi
             # Trust ダイアログ: "Do you trust the contents of this directory?"
+            # Codex 0.156 shows "Update available · a → b" at startup (2026-09-25).
+            # Skip it; the fleet upgrades the CLI deliberately, not mid-spawn.
+            if echo "$PANE_TEXT" | grep -qF "Update available"; then
+                echo "[spawn_child] Codex update dialog detected; skipping (esc)" >&2
+                tmux send-keys -t "$CHILD_NAME" Escape
+                sleep 2
+                continue
+            fi
             if codex_hooks_review_present "$PANE_TEXT"; then
                 HOOKS_REVIEW_ATTEMPTS=$(( ${HOOKS_REVIEW_ATTEMPTS:-0} + 1 ))
                 if ! codex_accept_hooks_review "$CHILD_NAME" "$HOOKS_REVIEW_ATTEMPTS" 5 "spawn_child"; then
@@ -1735,7 +1796,7 @@ ${TASK}"
                 "${TMUX_ENV_ARGS[@]}" \
                 -e "CLAUDE_CHILD_MODEL=$CHILD_MODEL" \
                 -e "CLAUDE_CHILD_MCP_CONFIG=$CHILD_MCP_CONFIG" \
-                "$CHILD_SHELL"' -lc '"'"'export PATH="$HOME/.local/bin:$PATH"; MCP_ARGS=(); [[ -n "$CLAUDE_CHILD_MCP_CONFIG" ]] && MCP_ARGS=(--mcp-config "$CLAUDE_CHILD_MCP_CONFIG" --strict-mcp-config); claude --model "$CLAUDE_CHILD_MODEL" "${MCP_ARGS[@]}"; /bin/bash "$AGENTSTACK_HOOKS_DIR/cleanup-child-agent.sh"'"'"''
+                "$CHILD_SHELL"' -lc '"'"'export PATH="$HOME/.local/bin:$PATH"; MCP_ARGS=(); [[ -n "$CLAUDE_CHILD_MCP_CONFIG" ]] && MCP_ARGS=(--mcp-config "$CLAUDE_CHILD_MCP_CONFIG" --strict-mcp-config); claude --model "$CLAUDE_CHILD_MODEL" --dangerously-skip-permissions --add-dir "$HOME/.agentstack" --add-dir "$HOME/tools" --add-dir /Volumes/DevSSD "${MCP_ARGS[@]}"; /bin/bash "$AGENTSTACK_HOOKS_DIR/cleanup-child-agent.sh"'"'"''
             PRE_REGISTERED_SESSION_STARTED=true
             SPAWN_TRAP_SESSION="$CHILD_NAME"
 
@@ -2514,7 +2575,7 @@ else
         "${TMUX_ENV_ARGS[@]}" \
         -e "CLAUDE_CHILD_MODEL=$CHILD_MODEL" \
         -e "CLAUDE_CHILD_MCP_CONFIG=$CHILD_MCP_CONFIG" \
-        "$CHILD_SHELL"' -lc '"'"'export PATH="$HOME/.local/bin:$PATH"; MCP_ARGS=(); [[ -n "$CLAUDE_CHILD_MCP_CONFIG" ]] && MCP_ARGS=(--mcp-config "$CLAUDE_CHILD_MCP_CONFIG" --strict-mcp-config); claude --model "$CLAUDE_CHILD_MODEL" "${MCP_ARGS[@]}"; /bin/bash "$AGENTSTACK_HOOKS_DIR/cleanup-child-agent.sh"'"'"''
+        "$CHILD_SHELL"' -lc '"'"'export PATH="$HOME/.local/bin:$PATH"; MCP_ARGS=(); [[ -n "$CLAUDE_CHILD_MCP_CONFIG" ]] && MCP_ARGS=(--mcp-config "$CLAUDE_CHILD_MCP_CONFIG" --strict-mcp-config); claude --model "$CLAUDE_CHILD_MODEL" --dangerously-skip-permissions --add-dir "$HOME/.agentstack" --add-dir "$HOME/tools" --add-dir /Volumes/DevSSD "${MCP_ARGS[@]}"; /bin/bash "$AGENTSTACK_HOOKS_DIR/cleanup-child-agent.sh"'"'"''
     CHILD_SESSION_STARTED=true
     SPAWN_TRAP_SESSION="$CHILD_NAME"
     # Claude REPL起動待機
