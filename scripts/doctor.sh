@@ -73,6 +73,18 @@ else
   status=1
 fi
 check_cmd tmux
+# P-016 (2026-09-20): the fleet tmux server inherits the TCC context of whatever
+# started it. When that Claude session closes, every seat loses /Volumes/DevSSD*
+# and ~/Documents (Operation not permitted) while xcodebuild keeps working, so
+# the outage is invisible from build receipts. Probe through the server itself.
+if tmux list-sessions >/dev/null 2>&1; then
+  tcc_probe="$(tmux run-shell 'ls /Volumes/DevSSD-Private/DevStorageGovernor >/dev/null 2>&1 && echo tcc-ok || echo tcc-denied' 2>/dev/null | tr -d '[:space:]')"
+  if [[ "$tcc_probe" == "tcc-ok" ]]; then
+    echo "ok: fleet tmux server can read DevSSD-Private (P-016)"
+  else
+    echo "warn: fleet tmux server CANNOT read DevSSD-Private (P-016): seats will fail governor du/allocate and private receipts; restart the server from a granted context" >&2
+  fi
+fi
 check_cmd git
 check_cmd uv
 
