@@ -23,6 +23,7 @@ import re
 import shutil
 import threading
 import time
+from pathlib import Path
 
 import pytest
 
@@ -30,7 +31,7 @@ from user_home_isolation import isolated_user_environment
 
 
 @pytest.fixture(autouse=True)
-def _isolated_user_directories(tmp_path, monkeypatch):
+def _isolated_user_directories(request, tmp_path_factory, monkeypatch):
     """An installer fixture may inherit config roots independently of HOME.
 
     In particular, a delegated Codex home can contain an AGENTS.md symlink to
@@ -38,8 +39,15 @@ def _isolated_user_directories(tmp_path, monkeypatch):
     constructs subprocess environments; explicit per-test overrides remain free
     to select their own temporary roots.
     """
+    # A combined invocation can load this conftest with a sibling package as
+    # rootdir. Do not change that package's HOME after its settings modules
+    # have been imported during collection.
+    if not request.node.path.resolve().is_relative_to(Path(__file__).parent.resolve()):
+        return
     ambient = dict(os.environ)
-    isolated = isolated_user_environment(tmp_path / "user-home", ambient)
+    # Keep the safety fixture out of the test's own output directory: tests
+    # that verify failed writes leave no files must still observe an empty dir.
+    isolated = isolated_user_environment(tmp_path_factory.mktemp("user-home"), ambient)
     for key in ambient.keys() - isolated.keys():
         monkeypatch.delenv(key, raising=False)
     for key, value in isolated.items():
