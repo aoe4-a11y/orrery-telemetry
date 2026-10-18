@@ -13,6 +13,8 @@ import sys
 import pytest
 import time
 
+from user_home_isolation import isolated_user_environment
+
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 from service_teardown import (  # noqa: E402
     TEST_LABEL_PREFIX,
@@ -172,8 +174,7 @@ def _expected_owned_dirs(install_dir: pathlib.Path) -> list[str]:
 
 
 def _clean_env(home: pathlib.Path) -> dict[str, str]:
-    env = os.environ.copy()
-    env["HOME"] = str(home)
+    env = isolated_user_environment(home)
     env.pop("AGENTSTACK_RUNTIME_DIR", None)
     env.pop("AGENTSTACK_MANAGED_AGENTS_FILE", None)
     env.pop("AGENTSTACK_MAIL_ENV", None)

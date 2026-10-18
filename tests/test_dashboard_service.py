@@ -177,6 +177,7 @@ def _installer_upgrade_env(
     env = os.environ.copy()
     env.update({
         "HOME": str(home),
+        "CODEX_HOME": str(home / ".codex"),
         "PATH": f"{fake_bin}:{env['PATH']}",
         "AGENTSTACK_PYTHON": sys.executable,
         "AGENTSTACK_HOME": str(install_dir),
@@ -265,6 +266,7 @@ def test_launchd_install_explicitly_kickstarts_before_checking_health(
     env = os.environ.copy()
     env.update({
         "HOME": str(home),
+        "CODEX_HOME": str(home / ".codex"),
         "PATH": f"{fake_bin}:{env['PATH']}",
         "AGENTSTACK_TERMINAL": "none",
         # Hermetic: nothing listens on port 1, so the installer plans a fresh
@@ -345,6 +347,7 @@ exit 0
     env.update(
         {
             "HOME": str(home),
+        "CODEX_HOME": str(home / ".codex"),
             "PATH": f"{fake_bin}:{env['PATH']}",
             "AGENTSTACK_ENV_FILE": str(tmp_path / "missing-env.sh"),
             "AGENTSTACK_LABEL_PREFIX": "org.agentstack.test.order",
@@ -512,6 +515,7 @@ def test_installer_still_rejects_an_unmanaged_listener(tmp_path):
     env = os.environ.copy()
     env.update({
         "HOME": str(tmp_path / "home"),
+        "CODEX_HOME": str(tmp_path / "home" / ".codex"),
         "AGENTSTACK_PYTHON": sys.executable,
         "AGENTSTACK_PORT": str(port),
         "AGENTSTACK_LABEL_PREFIX": "org.agentstack.foreign-listener-test",
@@ -675,6 +679,7 @@ def test_doctor_rejects_loaded_but_not_running_launchd_job(tmp_path):
     env = os.environ.copy()
     env.update({
         "HOME": str(home),
+        "CODEX_HOME": str(home / ".codex"),
         "PATH": f"{fake_bin}:{env['PATH']}",
     })
 
@@ -894,6 +899,7 @@ exit 0
     env = os.environ.copy()
     env.update({
         "HOME": str(home),
+        "CODEX_HOME": str(home / ".codex"),
         "PATH": f"{fake_bin}:{env['PATH']}",
         "AGENTSTACK_PYTHON": sys.executable,
         "AGENTSTACK_HOME": str(install_dir),

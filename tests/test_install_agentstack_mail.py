@@ -14,6 +14,7 @@ import urllib.request
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 from service_teardown import stop_dashboard
+from user_home_isolation import isolated_user_environment
 
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
@@ -138,7 +139,7 @@ def _base_env(
 ) -> dict[str, str]:
     project = tmp_path / "project"
     project.mkdir()
-    env = os.environ.copy()
+    env = isolated_user_environment(home)
     env.update(
         {
             "HOME": str(home),
