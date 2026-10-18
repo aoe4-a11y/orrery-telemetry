@@ -221,6 +221,7 @@ def test_an_explicit_mail_label_reaches_the_env_and_the_manifest(tmp_path):
     macOS only, and everything after the first side effect lives in the
     cleanup block: a failure here must not leave a job or a dashboard behind.
     """
+    import hashlib
     import json
     import socket
     import subprocess
@@ -229,7 +230,9 @@ def test_an_explicit_mail_label_reaches_the_env_and_the_manifest(tmp_path):
     home = tmp_path / "home"
     home.mkdir()
     # Not "<prefix>.mail": that is the autostart wrapper's own label.
-    label = "org.agentstack.test.explicit-label.direct-mail"
+    prefix = "org.agentstack.test.explicit-label-" + hashlib.sha256(str(home).encode()).hexdigest()[:12]
+    label = f"{prefix}.direct-mail"
+    owned_labels = (label, f"{prefix}.mail", f"{prefix}.mail-watcher")
 
     def _free_port() -> int:
         with socket.socket() as probe:
@@ -252,18 +255,25 @@ def test_an_explicit_mail_label_reaches_the_env_and_the_manifest(tmp_path):
             "AGENTSTACK_MAIL_SERVICE_VENV": str(
                 pathlib.Path(sys.executable).parent.parent
             ),
-        "AGENTSTACK_LABEL_PREFIX": "org.agentstack.test.explicit-label",
+        "AGENTSTACK_LABEL_PREFIX": prefix,
         "AGENTSTACK_MAIL_LAUNCHD_LABEL": label,
         "AGENTSTACK_TERMINAL": "none",
         "AGENTSTACK_PROJECT_KEY": str(tmp_path / "project"),
     })
 
     def _bootout():
-        subprocess.run(
-            ["launchctl", "bootout", f"gui/{os.getuid()}/{label}"],
-            capture_output=True,
-            text=True,
-        )
+        for owned_label in owned_labels:
+            target = f"gui/{os.getuid()}/{owned_label}"
+            before = subprocess.run(["launchctl", "print", target], capture_output=True, text=True)
+            if before.returncode != 0:
+                continue
+            # Only this isolated HOME proves ownership; a label alone does not.
+            assert str(home) + "/" in before.stdout, target
+            removed = subprocess.run(["launchctl", "bootout", target], capture_output=True, text=True)
+            assert removed.returncode == 0, removed.stderr
+            after = subprocess.run(["launchctl", "print", target], capture_output=True, text=True)
+            assert after.returncode != 0, target
+
 
     try:
         # A previous failed run can leave the job loaded, and the controller
@@ -294,7 +304,7 @@ def test_an_explicit_mail_label_reaches_the_env_and_the_manifest(tmp_path):
 
         try:
             try:
-                stop_dashboard(home, label_prefix="org.agentstack.test.explicit-label")
+                stop_dashboard(home, label_prefix=prefix)
             finally:
                 mailctl = home / ".agentstack" / "bin" / "agentstack-mailctl"
                 if mailctl.is_file():
