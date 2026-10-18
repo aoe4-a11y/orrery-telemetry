@@ -337,6 +337,8 @@ agent_name, project_key, source, token_file, state_file, consume = sys.argv[1:7]
 source_path = pathlib.Path(source)
 token_path = pathlib.Path(token_file)
 state_path = pathlib.Path(state_file)
+token_preexisted = token_path.exists() or token_path.is_symlink()
+state_preexisted = state_path.exists() or state_path.is_symlink()
 flags = os.O_RDONLY
 if hasattr(os, "O_NOFOLLOW"):
     flags |= os.O_NOFOLLOW
@@ -382,8 +384,10 @@ if consume == "true" and source_path != token_path:
     try:
         source_path.unlink()
     except Exception:
-        token_path.unlink(missing_ok=True)
-        state_path.unlink(missing_ok=True)
+        if not token_preexisted:
+            token_path.unlink(missing_ok=True)
+        if not state_preexisted:
+            state_path.unlink(missing_ok=True)
         raise
 print(token_path)
 PY
@@ -1464,6 +1468,25 @@ if [[ -n "$PRE_REGISTERED" ]]; then
     # caller's ambient CHILD_REGISTRATION_TOKEN here; that may be the parent's
     # owner token. Adopt the 0600 one-shot into durable child-owned files and
     # unlink the handoff only after both writes succeed.
+    # Existing seat artifacts belong to the caller, not this launch attempt.
+    PREREG_CANONICAL_TOKEN="$(child_token_file_path "$CHILD_NAME")"
+    PREREG_STATE_FILE="$CHILD_STATE_DIR/$CHILD_NAME.json"
+    PREREG_MCP_FILE="$CHILD_STATE_DIR/$CHILD_NAME.mcp.json"
+    PREREG_CODEX_HOME="$CHILD_STATE_DIR/$CHILD_NAME.codex-home"
+    PREREG_TOKEN_PREEXISTED=false
+    PREREG_STATE_PREEXISTED=false
+    PREREG_MCP_PREEXISTED=false
+    PREREG_HOME_PREEXISTED=false
+    PREREG_MANAGED_PREEXISTED=false
+    [[ -e "$PREREG_CANONICAL_TOKEN" || -L "$PREREG_CANONICAL_TOKEN" ]] && PREREG_TOKEN_PREEXISTED=true
+    [[ -e "$PREREG_STATE_FILE" || -L "$PREREG_STATE_FILE" ]] && PREREG_STATE_PREEXISTED=true
+    [[ -e "$PREREG_MCP_FILE" || -L "$PREREG_MCP_FILE" ]] && PREREG_MCP_PREEXISTED=true
+    [[ -e "$PREREG_CODEX_HOME" || -L "$PREREG_CODEX_HOME" ]] && PREREG_HOME_PREEXISTED=true
+    grep -qxF "$CHILD_NAME" "$MANAGED_FILE" 2>/dev/null && PREREG_MANAGED_PREEXISTED=true
+    PREREG_PRESERVE_IDENTITY=0
+    if [[ "$PREREG_TOKEN_PREEXISTED" == true || "$PREREG_STATE_PREEXISTED" == true || "$PREREG_MCP_PREEXISTED" == true || "$PREREG_HOME_PREEXISTED" == true ]]; then
+        PREREG_PRESERVE_IDENTITY=1
+    fi
     PRE_REGISTERED_TOKEN_CREATED=false
     PRE_REGISTERED_SESSION_STARTED=false
     PRE_REGISTERED_SUCCESS=false
@@ -1475,11 +1498,12 @@ if [[ -n "$PRE_REGISTERED" ]]; then
         if [[ "$PRE_REGISTERED_SESSION_STARTED" == true ]]; then
             tmux kill-session -t "=$CHILD_NAME" >/dev/null 2>&1 || true
         fi
-        if [[ "$PRE_REGISTERED_TOKEN_CREATED" == true ]]; then
-            rm -f "$CHILD_TOKEN_FILE" "$CHILD_STATE_DIR/$CHILD_NAME.json"
-        fi
+        [[ "$PREREG_TOKEN_PREEXISTED" == true ]] || rm -f -- "${PREREG_CANONICAL_TOKEN:?}"
+        [[ "$PREREG_STATE_PREEXISTED" == true ]] || rm -f -- "${PREREG_STATE_FILE:?}"
+        [[ "$PREREG_MCP_PREEXISTED" == true ]] || rm -f -- "${PREREG_MCP_FILE:?}"
+        [[ "$PREREG_HOME_PREEXISTED" == true ]] || rm -rf -- "${PREREG_CODEX_HOME:?}"
         cleanup_worktree
-        if [[ -f "$MANAGED_FILE" ]]; then
+        if [[ "$PREREG_MANAGED_PREEXISTED" != true && -f "$MANAGED_FILE" ]]; then
             python3 - "$MANAGED_FILE" "$CHILD_NAME" <<'PY' 2>/dev/null || true
 import pathlib
 import sys
@@ -1548,6 +1572,7 @@ PY
     # kill-session`): without it, exiting this session can cascade-kill the whole
     # tmux server. Requires tmux >= 3.0.
     TMUX_ENV_ARGS=(-e "CLAUDECODE=1" -e "AGENTSTACK_RESERVED_IDENTITY=1" -e "AGENT_NAME=$CHILD_NAME" -e "PROJECT_KEY=$PROJECT_KEY" -e "AGENTSTACK_PROJECT_KEY=$PROJECT_KEY" -e "AGENTSTACK_HOOKS_DIR=$HOOKS_DIR" -e "AGENTSTACK_RUNTIME_DIR=$RUNTIME_DIR" -e "AGENTSTACK_MCP_URL=$MCP_URL" -e "AGENTSTACK_MAIL_ENV=$MAIL_ENV" -e "AGENTSTACK_MAIL_HTTP_BEARER_MODE=$HTTP_BEARER_MODE" -e "AGENTSTACK_TERMINAL=$TERMINAL_SETTING" -e "AGENTSTACK_CODEX_SANDBOX=${AGENTSTACK_CODEX_SANDBOX:-workspace-write}" -e "AGENTSTACK_CODEX_APPROVAL=$(codex_approval_flags)" -e "AGENTSTACK_CODEX_NETWORK_FLAGS=$(codex_network_flags)")
+    TMUX_ENV_ARGS+=(-e "AGENTSTACK_PRESERVE_SEAT_IDENTITY=$PREREG_PRESERVE_IDENTITY")
     if [[ "$STANDALONE" != true ]]; then
         TMUX_ENV_ARGS+=(-e "PARENT_AGENT=$PARENT_NAME")
     fi
