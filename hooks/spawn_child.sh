@@ -318,8 +318,8 @@ child_token_file_path() {
 
 # Copy a child token from a 0600 file into the durable per-child runtime files.
 # The secret is read inside Python and never appears in a process argv or tmux
-# environment.  A dashboard handoff is one-shot, so its source is unlinked only
-# after both durable files have been atomically installed.
+# environment. Existing files authenticate the handoff and stay byte-identical.
+# A dashboard handoff is consumed only after missing durable files are installed.
 adopt_child_token_file() {
     local agent_name="$1" project_key="$2" source_file="$3"
     local consume_source="${4:-false}" token_file state_file
@@ -327,6 +327,7 @@ adopt_child_token_file() {
     state_file="$CHILD_STATE_DIR/$agent_name.json"
     python3 - "$agent_name" "$project_key" "$source_file" "$token_file" \
         "$state_file" "$consume_source" <<'PY'
+import hmac
 import json
 import os
 import pathlib
@@ -355,40 +356,72 @@ finally:
 if not registration_token or len(registration_token) > 4096:
     raise ValueError("token handoff is empty or too large")
 
+# An existing durable identity is authoritative. A handoff may authenticate it,
+# but cannot rotate its token or replace its metadata as a launch side effect.
+for path, preexisted, is_state in (
+    (token_path, token_preexisted, False),
+    (state_path, state_preexisted, True),
+):
+    if not preexisted:
+        continue
+    existing_fd = os.open(path, flags)
+    with os.fdopen(existing_fd, "r", encoding="utf-8") as handle:
+        if not stat.S_ISREG(os.fstat(handle.fileno()).st_mode):
+            raise ValueError("existing child identity is not a regular file")
+        existing = handle.read()
+    if is_state:
+        existing = json.loads(existing).get("registration_token")
+    else:
+        existing = existing.strip()
+    if not isinstance(existing, str) or not hmac.compare_digest(
+        existing.encode("utf-8"), registration_token.encode("utf-8")
+    ):
+        raise ValueError("token handoff conflicts with existing child identity")
+
 token_path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
 os.chmod(token_path.parent, 0o700)
 state_path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
 os.chmod(state_path.parent, 0o700)
 
-token_tmp = token_path.with_name(token_path.name + f".tmp.{os.getpid()}")
-state_tmp = state_path.with_name(state_path.name + f".tmp.{os.getpid()}")
-with open(token_tmp, "x", encoding="utf-8") as f:
-    f.write(registration_token)
-    f.flush()
-    os.fsync(f.fileno())
-os.chmod(token_tmp, 0o600)
-with open(state_tmp, "x", encoding="utf-8") as f:
-    json.dump({
+state_payload = json.dumps({
         "agent_name": agent_name,
         "project_key": project_key,
         "registration_token": registration_token,
-    }, f)
-    f.flush()
-    os.fsync(f.fileno())
-os.chmod(state_tmp, 0o600)
-os.replace(token_tmp, token_path)
-os.replace(state_tmp, state_path)
-os.chmod(token_path, 0o600)
-os.chmod(state_path, 0o600)
-if consume == "true" and source_path != token_path:
-    try:
+})
+temporary = []
+created = []
+try:
+    for path, preexisted, payload in (
+        (token_path, token_preexisted, registration_token),
+        (state_path, state_preexisted, state_payload),
+    ):
+        if preexisted:
+            continue
+        tmp = path.with_name(path.name + f".tmp.{os.getpid()}")
+        with open(tmp, "x", encoding="utf-8") as handle:
+            temporary.append(tmp)
+            os.chmod(tmp, 0o600)
+            handle.write(payload)
+            handle.flush()
+            os.fsync(handle.fileno())
+            identity = os.fstat(handle.fileno())
+        # Never overwrite an identity that appeared after the preflight check.
+        os.link(tmp, path)
+        created.append((path, identity.st_dev, identity.st_ino))
+    if consume == "true" and source_path != token_path:
         source_path.unlink()
-    except Exception:
-        if not token_preexisted:
-            token_path.unlink(missing_ok=True)
-        if not state_preexisted:
-            state_path.unlink(missing_ok=True)
-        raise
+except Exception:
+    for path, device, inode in reversed(created):
+        try:
+            current = path.lstat()
+        except FileNotFoundError:
+            continue
+        if (current.st_dev, current.st_ino) == (device, inode):
+            path.unlink()
+    raise
+finally:
+    for tmp in temporary:
+        tmp.unlink(missing_ok=True)
 print(token_path)
 PY
 }
@@ -1484,7 +1517,7 @@ if [[ -n "$PRE_REGISTERED" ]]; then
     [[ -e "$PREREG_CODEX_HOME" || -L "$PREREG_CODEX_HOME" ]] && PREREG_HOME_PREEXISTED=true
     grep -qxF "$CHILD_NAME" "$MANAGED_FILE" 2>/dev/null && PREREG_MANAGED_PREEXISTED=true
     PREREG_PRESERVE_IDENTITY=0
-    if [[ "$PREREG_TOKEN_PREEXISTED" == true || "$PREREG_STATE_PREEXISTED" == true || "$PREREG_MCP_PREEXISTED" == true || "$PREREG_HOME_PREEXISTED" == true ]]; then
+    if [[ "$PREREG_TOKEN_PREEXISTED" == true || "$PREREG_STATE_PREEXISTED" == true || "$PREREG_MCP_PREEXISTED" == true || "$PREREG_HOME_PREEXISTED" == true || "$PREREG_MANAGED_PREEXISTED" == true ]]; then
         PREREG_PRESERVE_IDENTITY=1
     fi
     PRE_REGISTERED_TOKEN_CREATED=false
@@ -1529,7 +1562,7 @@ PY
             adopt_child_token_file "$CHILD_NAME" "$PROJECT_KEY" \
                 "$ONE_SHOT_TOKEN_FILE" true
         )"; then
-            echo "Error: --child-token-file is unreadable, insecure, or empty: $ONE_SHOT_TOKEN_FILE" >&2
+            echo "Error: --child-token-file is unreadable, insecure, empty, or conflicts with existing identity: $ONE_SHOT_TOKEN_FILE" >&2
             exit 1
         fi
         PRE_REGISTERED_TOKEN_CREATED=true

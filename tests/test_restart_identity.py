@@ -119,7 +119,7 @@ sys.exit(0)
         return dict(env=env, work=work, token=token, state=state,
                     config=config, home=home, managed=managed, handoff=handoff)
 
-    def failed_launch(self, seat: dict, early: bool = False) -> None:
+    def failed_launch(self, seat: dict, early: bool = False, require_tmux: bool = True) -> None:
         env = dict(seat["env"], FIXTURE_EARLY_FAILURE="1" if early else "0")
         result = subprocess.run([
             "/bin/bash", str(SPAWN), "--codex", "--model", "gpt-5.5",
@@ -127,6 +127,8 @@ sys.exit(0)
             "--embed-task", "fixture work", str(seat["work"]),
         ], env=env, cwd=seat["work"], capture_output=True, text=True, timeout=20)
         self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)
+        if not require_tmux:
+            return
         log = self.base / "tmux-verbs"
         self.assertTrue(log.is_file(), result.stdout + result.stderr)
         verbs = log.read_text().splitlines()
@@ -148,6 +150,46 @@ sys.exit(0)
         seat = self.arrange(True)
         self.failed_launch(seat, early=True)
         self.assert_existing(seat)
+
+    def test_conflicting_handoff_keeps_existing_identity_bytes(self) -> None:
+        seat = self.arrange(True)
+        before = {key: seat[key].read_bytes() for key in ("token", "state")}
+        seat["handoff"] = self.base / "different-handoff"
+        seat["handoff"].write_text("different-fixture-only-token")
+        seat["handoff"].chmod(0o600)
+        self.failed_launch(seat, early=True, require_tmux=False)
+        for key, value in before.items():
+            self.assertEqual(seat[key].read_bytes(), value, key)
+        self.assertTrue(seat["handoff"].is_file())
+        self.assert_existing(seat)
+
+    def test_matching_handoff_preserves_existing_state_metadata(self) -> None:
+        seat = self.arrange(True)
+        state = json.loads(seat["state"].read_text())
+        state["fixture_metadata"] = "must remain byte-identical"
+        seat["state"].write_text(json.dumps(state, indent=2) + "\n")
+        before = seat["state"].read_bytes()
+        self.failed_launch(seat, early=True)
+        self.assertEqual(seat["state"].read_bytes(), before)
+
+    def test_conflicting_handoff_keeps_state_only_identity(self) -> None:
+        seat = self.arrange(True)
+        seat["token"].unlink()
+        before = seat["state"].read_bytes()
+        seat["handoff"] = self.base / "different-handoff"
+        seat["handoff"].write_text("different-fixture-only-token")
+        seat["handoff"].chmod(0o600)
+        self.failed_launch(seat, early=True, require_tmux=False)
+        self.assertFalse(seat["token"].exists())
+        self.assertEqual(seat["state"].read_bytes(), before)
+        self.assertTrue(seat["handoff"].is_file())
+
+    def test_managed_name_only_is_existing_identity(self) -> None:
+        seat = self.arrange(False)
+        before = f"{NAME}\nOtherSeat\n"
+        seat["managed"].write_text(before)
+        self.failed_launch(seat)
+        self.assertEqual(seat["managed"].read_text(), before)
 
     def test_fresh_child_failure_removes_new_identity(self) -> None:
         seat = self.arrange(False)
@@ -192,7 +234,9 @@ sys.exit(0)
         handoff.chmod(0o600)
         if existing:
             token.write_text(TOKEN)
-            state.write_text("{}")
+            state.write_text(json.dumps({"registration_token": TOKEN,
+                                         "fixture_metadata": "retained"}))
+        before = {p: p.read_bytes() for p in (token, state) if p.exists()}
         original_unlink = Path.unlink
 
         def fail_handoff(path: Path, *args, **kwargs):
@@ -207,12 +251,48 @@ sys.exit(0)
         self.assertTrue(handoff.is_file())
         self.assertEqual(token.exists(), existing)
         self.assertEqual(state.exists(), existing)
+        for path, payload in before.items():
+            self.assertEqual(path.read_bytes(), payload)
 
     def test_adoption_failure_keeps_existing_identity(self) -> None:
         self.adoption_failure(True)
 
     def test_adoption_failure_rolls_back_new_identity(self) -> None:
         self.adoption_failure(False)
+
+    def publication_failure(self, replace_token: bool) -> None:
+        match = re.search(r"adopt_child_token_file\(\) \{.*?<<'PY'\n(.*?)\nPY\n",
+                          SPAWN.read_text(), re.S)
+        self.assertIsNotNone(match)
+        handoff, token, state = (self.base / name for name in ("handoff", "token", "state"))
+        handoff.write_text(TOKEN)
+        handoff.chmod(0o600)
+        original_link = os.link
+
+        def fail_state(source, destination):
+            if destination == state:
+                if replace_token:
+                    token.unlink()
+                    token.write_text("another-fixture-owner")
+                raise PermissionError("injected state publication failure")
+            return original_link(source, destination)
+
+        argv = ["adopt", NAME, "/fixture/project", str(handoff), str(token), str(state), "true"]
+        with patch.object(sys, "argv", argv), patch.object(os, "link", fail_state):
+            with self.assertRaises(PermissionError), contextlib.redirect_stdout(io.StringIO()):
+                exec(compile(match.group(1), str(SPAWN), "exec"), {})
+        self.assertTrue(handoff.is_file())
+        self.assertFalse(state.exists())
+        self.assertEqual(token.exists(), replace_token)
+        if replace_token:
+            self.assertEqual(token.read_text(), "another-fixture-owner")
+        self.assertEqual(list(self.base.glob("*.tmp.*")), [])
+
+    def test_state_publication_failure_rolls_back_new_token(self) -> None:
+        self.publication_failure(False)
+
+    def test_failed_publication_preserves_a_concurrent_token_owner(self) -> None:
+        self.publication_failure(True)
 
 
 if __name__ == "__main__":
