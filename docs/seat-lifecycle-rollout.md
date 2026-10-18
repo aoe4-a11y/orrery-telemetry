@@ -18,7 +18,7 @@ headは新規spawnを一時止め、実行中launcherが0であることをPID�
 
 ## Rollback
 
-新規spawnを止めてlauncherが0と確認し、global spawn shim・cleanup dispatcher・dashboard・wrapperの入口を照合済みbackupへ戻します。envの上記1keyだけを以前の有無/値へ戻し、他keyは変えません。必要な正確なdashboard serviceだけを再開します。token/state/homeは戻したり消したりしません。新世代が残っている間は、global SessionEnd用dispatcherも保持します。旧入口へ戻った後の新規launchはlegacy側へ渡し、既存の新世代だけを固定releaseへ渡します。
+新規spawnを止めてlauncherが0と確認し、global spawn shim・dashboard・wrapperの入口を照合済みbackupへ戻します。cleanup dispatcherは新世代の依存が全て終わるまで保持します。envの上記1keyだけを以前の有無/値へ戻し、他keyは変えません。必要な正確なdashboard serviceだけを再開します。token/state/homeは戻したり消したりしません。新世代が残っている間は、global SessionEnd用dispatcherも保持します。旧入口へ戻った後の新規launchはlegacy側へ渡し、既存の新世代だけを固定releaseへ渡します。
 
 新世代で既に起動した席はrelease内のcleanupを参照しています。そのrelease・module・互換性を保つregister/list writerを、席が使っている間は残します。全ての依存が終わりheadが旧世代への復帰を受理した後だけ、残るglobal変更を元byteへ戻します。旧cleanup・旧env・旧source・backup・記録を消す操作は、この手順にありません。
 
