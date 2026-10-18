@@ -86,12 +86,14 @@ class Restart3Tests(unittest.TestCase):
         seat = self.lane.arrange()
         fake = FAKE_TMUX.replace("if verb == 'new-session':", "if verb == 'new-session':\n    base.with_suffix('.client-env').write_text(json.dumps(dict(os.environ)))")
         fixtures.executable(self.lane.base/'bin/tmux', fake)
-        child = self.lane.launch(seat, extra_env={'AGENTSTACK_MATERIALS_APPENDED':'1', 'AGENTSTACK_LAUNCH_ATTEMPT_ID':'fixture-attempt'})
+        child = self.lane.launch(seat, extra_env={'AGENTSTACK_MATERIALS_APPENDED':'1', 'AGENTSTACK_LAUNCH_ATTEMPT_ID':'fixture-attempt', 'AGENTSTACK_LIFECYCLE_HOOKS_DIR':str(ROOT/'hooks'), 'AGENTSTACK_PRESERVE_SEAT_IDENTITY':'1'})
         client = json.loads((self.lane.base/'tmux-verbs.client-env').read_text())
-        for key in ('AGENTSTACK_SEAT_LOCK_FD','AGENTSTACK_DIRECT_CANDIDATE','AGENTSTACK_LIFECYCLE_NAME','AGENTSTACK_LAUNCH_JOURNAL','AGENTSTACK_LAUNCH_ATTEMPT_ID','AGENTSTACK_MATERIALS_APPENDED'):
+        for key in ('AGENTSTACK_LIFECYCLE_HOOKS_DIR','AGENTSTACK_PRESERVE_SEAT_IDENTITY','AGENTSTACK_SEAT_LOCK_FD','AGENTSTACK_DIRECT_CANDIDATE','AGENTSTACK_LIFECYCLE_NAME','AGENTSTACK_LAUNCH_JOURNAL','AGENTSTACK_LAUNCH_ATTEMPT_ID','AGENTSTACK_MATERIALS_APPENDED'):
             self.assertNotIn(key, client, key)
         self.assertIn('AGENTSTACK_LAUNCH_JOURNAL', child)
         self.assertEqual(child['AGENTSTACK_LIFECYCLE_NAME'], fixtures.NAME)
+        self.assertEqual(child['AGENTSTACK_LIFECYCLE_HOOKS_DIR'], str(ROOT/'hooks'))
+        self.assertEqual(child['AGENTSTACK_PRESERVE_SEAT_IDENTITY'], '0')
 
     def test_per_entry_check_protects_replacement_after_initial_validation(self):
         seat = self.lane.arrange()
@@ -251,15 +253,16 @@ class Restart3Tests(unittest.TestCase):
             socket = str(Path(socket_dir)/'server.sock')
             base = [real_tmux, '-S', socket]
             seat = self.lane.arrange()
-            keys = ['AGENTSTACK_SEAT_LOCK_FD','AGENTSTACK_DIRECT_CANDIDATE','AGENTSTACK_LIFECYCLE_NAME','AGENTSTACK_LAUNCH_JOURNAL','AGENTSTACK_LAUNCH_ATTEMPT_ID','AGENTSTACK_MATERIALS_APPENDED']
+            keys = ['AGENTSTACK_LIFECYCLE_HOOKS_DIR','AGENTSTACK_PRESERVE_SEAT_IDENTITY','AGENTSTACK_SEAT_LOCK_FD','AGENTSTACK_DIRECT_CANDIDATE','AGENTSTACK_LIFECYCLE_NAME','AGENTSTACK_LAUNCH_JOURNAL','AGENTSTACK_LAUNCH_ATTEMPT_ID','AGENTSTACK_MATERIALS_APPENDED']
             environment = dict(seat['env'], **dict.fromkeys(keys, 'fixture-canary'))
             try:
-                result = subprocess.run([*sanitization, *base, 'new-session', '-d', '-s', 'FixtureOnly', '-e', 'AGENTSTACK_LAUNCH_JOURNAL=child-fixture-journal', '/bin/sleep 15'], env=environment, capture_output=True, text=True, timeout=10)
+                result = subprocess.run([*sanitization, *base, 'new-session', '-d', '-s', 'FixtureOnly', '-e', 'AGENTSTACK_LAUNCH_JOURNAL=child-fixture-journal', '-e', 'AGENTSTACK_LIFECYCLE_HOOKS_DIR=child-selected-release', '/bin/sleep 15'], env=environment, capture_output=True, text=True, timeout=10)
                 self.assertEqual(result.returncode, 0, result.stderr)
                 global_env = subprocess.check_output([*base, 'show-environment', '-g'], env=seat['env'], text=True)
                 for key in keys: self.assertNotIn(key+'=', global_env)
                 child_env = subprocess.check_output([*base, 'show-environment', '-t', 'FixtureOnly'], env=seat['env'], text=True)
                 self.assertIn('AGENTSTACK_LAUNCH_JOURNAL=child-fixture-journal', child_env)
+                self.assertIn('AGENTSTACK_LIFECYCLE_HOOKS_DIR=child-selected-release', child_env)
             finally:
                 # This exact new private socket never addresses the fleet server.
                 subprocess.run([*base, 'kill-server'], env=seat['env'], capture_output=True, timeout=10)
