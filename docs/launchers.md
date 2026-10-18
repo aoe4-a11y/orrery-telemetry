@@ -99,6 +99,14 @@ ${AGENTSTACK_RUNTIME_DIR:-$HOME/.agentstack/runtime}/child-agents/<name>.json
 
 pre-registered child へ親 token は渡しません。dashboard spawn は child 専用 token を生成し、mode `0600` の一時 token file 経由で `spawn_child.sh --pre-registered` へ渡します。token を transcript、command-line argument、dashboard response に表示しないためです。
 
+既存の席を `--pre-registered` で建て直す場合、起動失敗や child 終了時の自動 cleanup は、起動前からあった token・state・MCP config・Codex home・managed list の登録を保持します。失敗した起動が新しく作った物だけを片づけます。既存 identity を引き継ぐ child には `AGENTSTACK_PRESERVE_SEAT_IDENTITY=1` が渡され、自動 cleanup による reservation release / remote retire も行いません。管理者が明示的に `cleanup-child-agent.sh <name>` を呼ぶ場合は従来どおりその席を片づけます。
+
+handoff の token が既存 token/state と異なる場合は起動前に拒否し、既存 file と handoff を残します。同じ token でも既存 token/state の byte は書き換えません。managed list の名前行だけが既存の場合も自動 cleanup から保護します。
+
+新規 token/state の作成時に得た device/inode は親の失敗 trap と自動 cleanup に渡します。起動の途中で別 inode に置き換わっていれば、その席の artifact と登録を残します。state から token を復元した場合も、今回作った token だけが失敗時の削除対象です。
+
+同じ所有境界を Codex home と MCP config にも適用します。pre-registered 起動の writer は既存物の byte を更新せず、新規作成した物だけ device/inode を報告します。writer が動かなかった場合や別 inode へ置換された場合、親 trap と自動 cleanup はその home/config を消しません。通常の writer 呼び出しは従来どおり path を返します。
+
 `/delegate` の既定経路は `--pre-registered --embed-task --task-file <path>` です。親が mode `0600` の一時ファイルへタスク全文を書き、launcher が child 名、親名、spawn 時刻、project key、完了時の `send_message` 指示とともに Claude / Codex の最初の prompt へ埋め込みます。登録・再登録・`fetch_inbox` の起動儀式は不要です。この prompt が唯一の正本なので、同じ child へ task mail を別送してはいけません。`--task-file` は位置引数の task より優先し、backtick や `$()` を shell に解釈させず渡すための境界でもあります。
 
 `CHILD_REGISTRATION_TOKEN` は歴史的な変数名ですが、top-level identity の再認証でも使われます。

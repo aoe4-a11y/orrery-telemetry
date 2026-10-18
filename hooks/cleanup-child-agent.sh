@@ -10,6 +10,37 @@ if [[ -z "${1:-}" && -z "$AGENT_NAME_ENV_AT_ENTRY" ]]; then
     exit 0
 fi
 
+# A restart owns the launched process, not the pre-existing seat identity.
+# Automatic SessionEnd/inline cleanup preserves its auth, home and reservations.
+# Explicit named administrative cleanup retains its existing semantics.
+if [[ "${AGENTSTACK_PRESERVE_SEAT_IDENTITY:-0}" == "1" && -z "${1:-}" ]]; then
+    exit 0
+fi
+
+# A fresh launch can also lose ownership while its process is running. Do not
+# release/retire or delete another writer's identity from an automatic hook.
+if [[ -z "${1:-}" && -n "${AGENTSTACK_LAUNCH_AUTH_OWNERSHIP:-}" ]]; then
+    if ! python3 - "$AGENTSTACK_LAUNCH_AUTH_OWNERSHIP" "${AGENTSTACK_LAUNCH_ARTIFACT_OWNERSHIP:-}" <<'PY'
+import json
+import pathlib
+import sys
+
+observed = json.loads(sys.argv[1])["observed"]
+if sys.argv[2]:
+    observed += [entry[:3] for entry in json.loads(sys.argv[2])["owned"]]
+for name, device, inode in observed:
+    try:
+        current = pathlib.Path(name).lstat()
+    except FileNotFoundError:
+        continue
+    if (current.st_dev, current.st_ino) != (device, inode):
+        raise SystemExit(1)
+PY
+    then
+        exit 0
+    fi
+fi
+
 HOOKS_DIR="${AGENTSTACK_HOOKS_DIR:-$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)}"
 RUNTIME_DIR="${AGENTSTACK_RUNTIME_DIR:-$HOME/.agentstack/runtime}"
 PROJECT_CONTEXT_LIB="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/project-context.sh"
@@ -222,7 +253,30 @@ except OSError:
     raise SystemExit(0)
 path.write_text("\n".join(line for line in lines if line != name) + "\n", encoding="utf-8")
 PYEOF
-rm -f "$STATE_FILE" "$TOKEN_FILE" "$MCP_CONFIG_FILE"
-rm -rf "$CODEX_HOME_DIR"
+rm -f -- "${STATE_FILE:?}" "${TOKEN_FILE:?}"
+if [[ -z "${1:-}" && -n "${AGENTSTACK_LAUNCH_ARTIFACT_OWNERSHIP:-}" ]]; then
+    python3 - "$AGENTSTACK_LAUNCH_ARTIFACT_OWNERSHIP" <<'PY'
+import json
+import pathlib
+import shutil
+import sys
+
+for name, device, inode, kind in json.loads(sys.argv[1])["owned"]:
+    path = pathlib.Path(name)
+    try:
+        current = path.lstat()
+    except FileNotFoundError:
+        continue
+    if (current.st_dev, current.st_ino) != (device, inode):
+        continue
+    if kind == "directory":
+        shutil.rmtree(path)
+    elif kind == "file":
+        path.unlink()
+PY
+else
+    rm -f -- "${MCP_CONFIG_FILE:?}"
+    rm -rf -- "${CODEX_HOME_DIR:?}"
+fi
 
 exit 0

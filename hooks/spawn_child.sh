@@ -318,15 +318,16 @@ child_token_file_path() {
 
 # Copy a child token from a 0600 file into the durable per-child runtime files.
 # The secret is read inside Python and never appears in a process argv or tmux
-# environment.  A dashboard handoff is one-shot, so its source is unlinked only
-# after both durable files have been atomically installed.
+# environment. Existing files authenticate the handoff and stay byte-identical.
+# A dashboard handoff is consumed only after missing durable files are installed.
 adopt_child_token_file() {
     local agent_name="$1" project_key="$2" source_file="$3"
-    local consume_source="${4:-false}" token_file state_file
+    local consume_source="${4:-false}" report_ownership="${5:-false}" token_file state_file
     token_file="$(child_token_file_path "$agent_name")" || return 1
     state_file="$CHILD_STATE_DIR/$agent_name.json"
     python3 - "$agent_name" "$project_key" "$source_file" "$token_file" \
-        "$state_file" "$consume_source" <<'PY'
+        "$state_file" "$consume_source" "$report_ownership" <<'PY'
+import hmac
 import json
 import os
 import pathlib
@@ -334,9 +335,13 @@ import stat
 import sys
 
 agent_name, project_key, source, token_file, state_file, consume = sys.argv[1:7]
+report_ownership = len(sys.argv) > 7 and sys.argv[7] == "true"
 source_path = pathlib.Path(source)
 token_path = pathlib.Path(token_file)
 state_path = pathlib.Path(state_file)
+token_preexisted = token_path.exists() or token_path.is_symlink()
+state_preexisted = state_path.exists() or state_path.is_symlink()
+observed = []
 flags = os.O_RDONLY
 if hasattr(os, "O_NOFOLLOW"):
     flags |= os.O_NOFOLLOW
@@ -353,39 +358,81 @@ finally:
 if not registration_token or len(registration_token) > 4096:
     raise ValueError("token handoff is empty or too large")
 
+# An existing durable identity is authoritative. A handoff may authenticate it,
+# but cannot rotate its token or replace its metadata as a launch side effect.
+for path, preexisted, is_state in (
+    (token_path, token_preexisted, False),
+    (state_path, state_preexisted, True),
+):
+    if not preexisted:
+        continue
+    existing_fd = os.open(path, flags)
+    with os.fdopen(existing_fd, "r", encoding="utf-8") as handle:
+        identity = os.fstat(handle.fileno())
+        if not stat.S_ISREG(identity.st_mode):
+            raise ValueError("existing child identity is not a regular file")
+        existing = handle.read()
+        observed.append((path, identity.st_dev, identity.st_ino))
+    if is_state:
+        existing = json.loads(existing).get("registration_token")
+    else:
+        existing = existing.strip()
+    if not isinstance(existing, str) or not hmac.compare_digest(
+        existing.encode("utf-8"), registration_token.encode("utf-8")
+    ):
+        raise ValueError("token handoff conflicts with existing child identity")
+
 token_path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
 os.chmod(token_path.parent, 0o700)
 state_path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
 os.chmod(state_path.parent, 0o700)
 
-token_tmp = token_path.with_name(token_path.name + f".tmp.{os.getpid()}")
-state_tmp = state_path.with_name(state_path.name + f".tmp.{os.getpid()}")
-with open(token_tmp, "x", encoding="utf-8") as f:
-    f.write(registration_token)
-    f.flush()
-    os.fsync(f.fileno())
-os.chmod(token_tmp, 0o600)
-with open(state_tmp, "x", encoding="utf-8") as f:
-    json.dump({
+state_payload = json.dumps({
         "agent_name": agent_name,
         "project_key": project_key,
         "registration_token": registration_token,
-    }, f)
-    f.flush()
-    os.fsync(f.fileno())
-os.chmod(state_tmp, 0o600)
-os.replace(token_tmp, token_path)
-os.replace(state_tmp, state_path)
-os.chmod(token_path, 0o600)
-os.chmod(state_path, 0o600)
-if consume == "true" and source_path != token_path:
-    try:
+})
+temporary = []
+created = []
+try:
+    for path, preexisted, payload in (
+        (token_path, token_preexisted, registration_token),
+        (state_path, state_preexisted, state_payload),
+    ):
+        if preexisted:
+            continue
+        tmp = path.with_name(path.name + f".tmp.{os.getpid()}")
+        with open(tmp, "x", encoding="utf-8") as handle:
+            temporary.append(tmp)
+            os.chmod(tmp, 0o600)
+            handle.write(payload)
+            handle.flush()
+            os.fsync(handle.fileno())
+            identity = os.fstat(handle.fileno())
+        # Never overwrite an identity that appeared after the preflight check.
+        os.link(tmp, path)
+        created.append((path, identity.st_dev, identity.st_ino))
+    if consume == "true" and source_path != token_path:
         source_path.unlink()
-    except Exception:
-        token_path.unlink(missing_ok=True)
-        state_path.unlink(missing_ok=True)
-        raise
-print(token_path)
+except Exception:
+    for path, device, inode in reversed(created):
+        try:
+            current = path.lstat()
+        except FileNotFoundError:
+            continue
+        if (current.st_dev, current.st_ino) == (device, inode):
+            path.unlink()
+    raise
+finally:
+    for tmp in temporary:
+        tmp.unlink(missing_ok=True)
+if report_ownership:
+    print(json.dumps({
+        "owned": [(str(path), device, inode) for path, device, inode in created],
+        "observed": [(str(path), device, inode) for path, device, inode in observed + created],
+    }))
+else:
+    print(token_path)
 PY
 }
 
@@ -393,11 +440,11 @@ PY
 # exposing the token to the shell.  This is compatibility-only; new dashboard
 # spawns always arrive through adopt_child_token_file's one-shot path.
 restore_child_token_file_from_state() {
-    local agent_name="$1" state_file token_file
+    local agent_name="$1" report_ownership="${2:-false}" state_file token_file
     state_file="$CHILD_STATE_DIR/$agent_name.json"
     token_file="$(child_token_file_path "$agent_name")" || return 1
     [[ -f "$state_file" ]] || return 1
-    python3 - "$state_file" "$token_file" <<'PY'
+    python3 - "$state_file" "$token_file" "$report_ownership" <<'PY'
 import json
 import os
 import pathlib
@@ -406,20 +453,35 @@ import sys
 
 state_path = pathlib.Path(sys.argv[1])
 token_path = pathlib.Path(sys.argv[2])
-if stat.S_IMODE(state_path.stat().st_mode) & 0o077:
-    raise PermissionError("child state permissions must be 0600")
-data = json.loads(state_path.read_text(encoding="utf-8"))
+fd = os.open(state_path, os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0))
+with os.fdopen(fd, "r", encoding="utf-8") as handle:
+    state_identity = os.fstat(handle.fileno())
+    if not stat.S_ISREG(state_identity.st_mode) or stat.S_IMODE(state_identity.st_mode) & 0o077:
+        raise PermissionError("child state must be a regular 0600 file")
+    data = json.load(handle)
 token = data.get("registration_token")
 if not isinstance(token, str) or not token:
     raise ValueError("child state has no registration token")
 token_path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
 tmp = token_path.with_name(token_path.name + f".tmp.{os.getpid()}")
-with open(tmp, "x", encoding="utf-8") as handle:
-    handle.write(token)
-os.chmod(tmp, 0o600)
-os.replace(tmp, token_path)
-os.chmod(token_path, 0o600)
-print(token_path)
+try:
+    with open(tmp, "x", encoding="utf-8") as handle:
+        os.chmod(tmp, 0o600)
+        handle.write(token)
+        handle.flush()
+        os.fsync(handle.fileno())
+        identity = os.fstat(handle.fileno())
+    os.link(tmp, token_path)
+finally:
+    tmp.unlink(missing_ok=True)
+if sys.argv[3] == "true":
+    print(json.dumps({
+        "owned": [(str(token_path), identity.st_dev, identity.st_ino)],
+        "observed": [(str(token_path), identity.st_dev, identity.st_ino),
+                     (str(state_path), state_identity.st_dev, state_identity.st_ino)],
+    }))
+else:
+    print(token_path)
 PY
 }
 
@@ -993,7 +1055,7 @@ warn_if_uninjected() {
 # Prints the config path, or nothing when the proxy is unavailable — callers
 # fall back to the shared endpoint rather than failing the spawn.
 write_child_mcp_config() {
-    local child_name="$1" token_file="$2"
+    local child_name="$1" token_file="$2" report_ownership="${3:-false}"
     local runner="${AGENTSTACK_MCP_PROXY:-${AGENTSTACK_HOME_DIR:-$HOME/.agentstack}/integrations/codex_app/plugin/scripts/run-mcp.sh}"
     [[ -n "$token_file" && -f "$token_file" && -x "$runner" ]] || return 0
 
@@ -1003,11 +1065,13 @@ write_child_mcp_config() {
     python3 - "$config_path" "$runner" "$child_name" "$PROJECT_KEY" "$token_file" \
         "$MCP_URL" "$MAIL_ENV" "$RUNTIME_DIR" \
         "${AGENTSTACK_CLAUDE_JSON:-$HOME/.claude.json}" "$HTTP_BEARER_MODE" \
-        "${AGENTSTACK_PYTHON:-}" <<'PY' || return 0
+        "${AGENTSTACK_PYTHON:-}" "$report_ownership" <<'PY' || return 0
 # NOTE: no line here may start with "}" in column 0 — the shell function is
 # extracted by "up to the first line that is just a closing brace".
 import json
+import atexit
 import os
+import pathlib
 import sys
 
 path, runner, child, project_key, token_file, mcp_url, mail_env, runtime_dir, claude_json, bearer_mode, python_bin = sys.argv[1:12]
@@ -1062,11 +1126,28 @@ else:
     names.add("orrery-mail")
 
 config = dict(mcpServers=dict((name, server) for name in sorted(names)))
-with open(path, "w", encoding="utf-8") as handle:
+owned = []
+ready = False
+report_ownership = sys.argv[12] == "true"
+if report_ownership:
+    atexit.register(lambda: print(json.dumps(dict(path=path if ready else "", owned=owned))))
+try:
+    handle = open(path, "x", encoding="utf-8")
+except FileExistsError:
+    if report_ownership:
+        # This launch did not create it; leave its bytes and ownership intact.
+        ready = True
+        raise SystemExit(0)
+    handle = open(path, "w", encoding="utf-8")
+else:
+    identity = os.fstat(handle.fileno())
+    owned.append((path, identity.st_dev, identity.st_ino, "file"))
+with handle:
+    os.fchmod(handle.fileno(), 0o600)
     json.dump(config, handle, indent=2)
-os.chmod(path, 0o600)
+ready = True
 PY
-    printf '%s\n' "$config_path"
+    [[ "$report_ownership" == true ]] || printf '%s\n' "$config_path"
 }
 
 # Ready = the REPL is accepting input. Do not depend on a single footer string:
@@ -1124,7 +1205,7 @@ codex_pane_ready() {
 #
 # Prints the directory, or nothing when the proxy or token is unavailable.
 write_child_codex_home() {
-    local child_name="$1" token_file="$2"
+    local child_name="$1" token_file="$2" report_ownership="${3:-false}"
     local runner="${AGENTSTACK_MCP_PROXY:-${AGENTSTACK_HOME_DIR:-$HOME/.agentstack}/integrations/codex_app/plugin/scripts/run-mcp.sh}"
     local source_home="${CODEX_HOME:-$HOME/.codex}"
     [[ -n "$token_file" && -f "$token_file" && -x "$runner" && -d "$source_home" ]] || return 0
@@ -1132,7 +1213,9 @@ write_child_codex_home() {
     local home_dir="$RUNTIME_DIR/child-agents/${child_name}.codex-home"
     python3 - "$home_dir" "$source_home" "$runner" "$child_name" "$PROJECT_KEY" \
         "$token_file" "$MCP_URL" "$MAIL_ENV" "$RUNTIME_DIR" "$HTTP_BEARER_MODE" \
-        "${AGENTSTACK_PYTHON:-}" <<'PY' || return 0
+        "${AGENTSTACK_PYTHON:-}" "$report_ownership" <<'PY' || return 0
+import atexit
+import json
 import os
 import pathlib
 import re
@@ -1141,7 +1224,24 @@ import sys
 home, source, runner, child, project_key, token_file, mcp_url, mail_env, runtime_dir, bearer_mode, python_bin = sys.argv[1:12]
 home_path = pathlib.Path(home)
 source_path = pathlib.Path(source)
-home_path.mkdir(parents=True, exist_ok=True)
+report_ownership = sys.argv[12] == "true"
+owned = []
+ready = False
+if report_ownership:
+    atexit.register(lambda: print(json.dumps(dict(path=home if ready else "", owned=owned))))
+try:
+    home_path.mkdir(mode=0o700, parents=True, exist_ok=False)
+except FileExistsError:
+    if report_ownership:
+        ready = True
+        raise SystemExit(0)
+else:
+    fd = os.open(home_path, os.O_RDONLY | getattr(os, "O_DIRECTORY", 0) | getattr(os, "O_NOFOLLOW", 0))
+    try:
+        identity = os.fstat(fd)
+        owned.append((home, identity.st_dev, identity.st_ino, "directory"))
+    finally:
+        os.close(fd)
 
 # Everything except config.toml stays shared with the real home, so the child
 # keeps its login and writes its session history where the user expects it.
@@ -1277,8 +1377,9 @@ for name in claimed:
 target = home_path / "config.toml"
 target.write_text("\n".join(lines) + "\n", encoding="utf-8")
 os.chmod(target, 0o600)
+ready = True
 PY
-    printf '%s\n' "$home_dir"
+    [[ "$report_ownership" == true ]] || printf '%s\n' "$home_dir"
 }
 
 # Generate the direct-spawn registration token in a 0600 one-shot file.  The
@@ -1464,9 +1565,30 @@ if [[ -n "$PRE_REGISTERED" ]]; then
     # caller's ambient CHILD_REGISTRATION_TOKEN here; that may be the parent's
     # owner token. Adopt the 0600 one-shot into durable child-owned files and
     # unlink the handoff only after both writes succeed.
+    # Existing seat artifacts belong to the caller, not this launch attempt.
+    PREREG_CANONICAL_TOKEN="$(child_token_file_path "$CHILD_NAME")"
+    PREREG_STATE_FILE="$CHILD_STATE_DIR/$CHILD_NAME.json"
+    PREREG_MCP_FILE="$CHILD_STATE_DIR/$CHILD_NAME.mcp.json"
+    PREREG_CODEX_HOME="$CHILD_STATE_DIR/$CHILD_NAME.codex-home"
+    PREREG_TOKEN_PREEXISTED=false
+    PREREG_STATE_PREEXISTED=false
+    PREREG_MCP_PREEXISTED=false
+    PREREG_HOME_PREEXISTED=false
+    PREREG_MANAGED_PREEXISTED=false
+    [[ -e "$PREREG_CANONICAL_TOKEN" || -L "$PREREG_CANONICAL_TOKEN" ]] && PREREG_TOKEN_PREEXISTED=true
+    [[ -e "$PREREG_STATE_FILE" || -L "$PREREG_STATE_FILE" ]] && PREREG_STATE_PREEXISTED=true
+    [[ -e "$PREREG_MCP_FILE" || -L "$PREREG_MCP_FILE" ]] && PREREG_MCP_PREEXISTED=true
+    [[ -e "$PREREG_CODEX_HOME" || -L "$PREREG_CODEX_HOME" ]] && PREREG_HOME_PREEXISTED=true
+    grep -qxF "$CHILD_NAME" "$MANAGED_FILE" 2>/dev/null && PREREG_MANAGED_PREEXISTED=true
+    PREREG_PRESERVE_IDENTITY=0
+    if [[ "$PREREG_TOKEN_PREEXISTED" == true || "$PREREG_STATE_PREEXISTED" == true || "$PREREG_MCP_PREEXISTED" == true || "$PREREG_HOME_PREEXISTED" == true || "$PREREG_MANAGED_PREEXISTED" == true ]]; then
+        PREREG_PRESERVE_IDENTITY=1
+    fi
     PRE_REGISTERED_TOKEN_CREATED=false
     PRE_REGISTERED_SESSION_STARTED=false
     PRE_REGISTERED_SUCCESS=false
+    PREREG_AUTH_OWNERSHIP='{"owned":[],"observed":[]}'
+    PREREG_ARTIFACT_OWNERSHIP='{"path":"","owned":[]}'
     cleanup_preregister_failure() {
         if [[ "$PRE_REGISTERED_SUCCESS" == true ]]; then
             return
@@ -1475,11 +1597,57 @@ if [[ -n "$PRE_REGISTERED" ]]; then
         if [[ "$PRE_REGISTERED_SESSION_STARTED" == true ]]; then
             tmux kill-session -t "=$CHILD_NAME" >/dev/null 2>&1 || true
         fi
-        if [[ "$PRE_REGISTERED_TOKEN_CREATED" == true ]]; then
-            rm -f "$CHILD_TOKEN_FILE" "$CHILD_STATE_DIR/$CHILD_NAME.json"
+        if [[ -z "$PREREG_AUTH_OWNERSHIP" ]]; then
+            # Adoption failed before it handed any owned identity to us.
+            cleanup_worktree
+            return
+        fi
+        # The creation helpers report identities from their open file handles.
+        # Sampling these paths here would accidentally claim a later writer.
+        if ! python3 - "$PREREG_AUTH_OWNERSHIP" "$PREREG_ARTIFACT_OWNERSHIP" <<'PY'
+import json
+import pathlib
+import shutil
+import sys
+
+ownership = json.loads(sys.argv[1])
+artifacts = json.loads(sys.argv[2])["owned"]
+observed = ownership["observed"] + [entry[:3] for entry in artifacts]
+for name, device, inode in observed:
+    try:
+        current = pathlib.Path(name).lstat()
+    except FileNotFoundError:
+        continue
+    if (current.st_dev, current.st_ino) != (device, inode):
+        raise SystemExit(1)
+for name, device, inode in ownership["owned"]:
+    path = pathlib.Path(name)
+    try:
+        current = path.lstat()
+    except FileNotFoundError:
+        continue
+    if (current.st_dev, current.st_ino) == (device, inode):
+        path.unlink()
+for name, device, inode, kind in artifacts:
+    path = pathlib.Path(name)
+    try:
+        current = path.lstat()
+    except FileNotFoundError:
+        continue
+    if (current.st_dev, current.st_ino) != (device, inode):
+        continue
+    if kind == "directory":
+        shutil.rmtree(path)
+    else:
+        path.unlink()
+PY
+        then
+            echo "[spawn_child] identity changed after adoption; preserving seat artifacts" >&2
+            cleanup_worktree
+            return
         fi
         cleanup_worktree
-        if [[ -f "$MANAGED_FILE" ]]; then
+        if [[ "$PREREG_MANAGED_PREEXISTED" != true && -f "$MANAGED_FILE" ]]; then
             python3 - "$MANAGED_FILE" "$CHILD_NAME" <<'PY' 2>/dev/null || true
 import pathlib
 import sys
@@ -1501,25 +1669,27 @@ PY
 
     if [[ -n "$CHILD_TOKEN_FILE" ]]; then
         ONE_SHOT_TOKEN_FILE="$CHILD_TOKEN_FILE"
-        if ! CHILD_TOKEN_FILE="$(
+        if ! PREREG_AUTH_OWNERSHIP="$(
             adopt_child_token_file "$CHILD_NAME" "$PROJECT_KEY" \
-                "$ONE_SHOT_TOKEN_FILE" true
+                "$ONE_SHOT_TOKEN_FILE" true true
         )"; then
-            echo "Error: --child-token-file is unreadable, insecure, or empty: $ONE_SHOT_TOKEN_FILE" >&2
+            echo "Error: --child-token-file is unreadable, insecure, empty, or conflicts with existing identity: $ONE_SHOT_TOKEN_FILE" >&2
             exit 1
         fi
+        CHILD_TOKEN_FILE="$PREREG_CANONICAL_TOKEN"
         PRE_REGISTERED_TOKEN_CREATED=true
     else
         CHILD_TOKEN_FILE="$(child_token_file_path "$CHILD_NAME")"
         if [[ ! -s "$CHILD_TOKEN_FILE" ]]; then
-            if ! CHILD_TOKEN_FILE="$(
-                restore_child_token_file_from_state "$CHILD_NAME"
+            if ! PREREG_AUTH_OWNERSHIP="$(
+                restore_child_token_file_from_state "$CHILD_NAME" true
             )"; then
                 echo "Error: pre-registered child token is required for $CHILD_NAME" >&2
                 echo "  Generate/register the child with a child-owned token, then pass --child-token-file <path>." >&2
                 echo "  Existing state fallback: $CHILD_STATE_DIR/$CHILD_NAME.json" >&2
                 exit 1
             fi
+            CHILD_TOKEN_FILE="$PREREG_CANONICAL_TOKEN"
         fi
     fi
 
@@ -1548,6 +1718,8 @@ PY
     # kill-session`): without it, exiting this session can cascade-kill the whole
     # tmux server. Requires tmux >= 3.0.
     TMUX_ENV_ARGS=(-e "CLAUDECODE=1" -e "AGENTSTACK_RESERVED_IDENTITY=1" -e "AGENT_NAME=$CHILD_NAME" -e "PROJECT_KEY=$PROJECT_KEY" -e "AGENTSTACK_PROJECT_KEY=$PROJECT_KEY" -e "AGENTSTACK_HOOKS_DIR=$HOOKS_DIR" -e "AGENTSTACK_RUNTIME_DIR=$RUNTIME_DIR" -e "AGENTSTACK_MCP_URL=$MCP_URL" -e "AGENTSTACK_MAIL_ENV=$MAIL_ENV" -e "AGENTSTACK_MAIL_HTTP_BEARER_MODE=$HTTP_BEARER_MODE" -e "AGENTSTACK_TERMINAL=$TERMINAL_SETTING" -e "AGENTSTACK_CODEX_SANDBOX=${AGENTSTACK_CODEX_SANDBOX:-workspace-write}" -e "AGENTSTACK_CODEX_APPROVAL=$(codex_approval_flags)" -e "AGENTSTACK_CODEX_NETWORK_FLAGS=$(codex_network_flags)")
+    TMUX_ENV_ARGS+=(-e "AGENTSTACK_PRESERVE_SEAT_IDENTITY=$PREREG_PRESERVE_IDENTITY")
+    TMUX_ENV_ARGS+=(-e "AGENTSTACK_LAUNCH_AUTH_OWNERSHIP=$PREREG_AUTH_OWNERSHIP")
     if [[ "$STANDALONE" != true ]]; then
         TMUX_ENV_ARGS+=(-e "PARENT_AGENT=$PARENT_NAME")
     fi
@@ -1559,7 +1731,12 @@ PY
         CHILD_CODEX_BIN="$(resolve_codex_bin)"
         TMUX_ENV_ARGS+=(-e "AGENTSTACK_CODEX_BIN=$CHILD_CODEX_BIN")
         TMUX_ENV_ARGS+=(-e "AGENTSTACK_CODEX_MODEL=$CHILD_MODEL" -e "AGENTSTACK_CODEX_EFFORT=$CODEX_EFFORT")
-        CHILD_CODEX_HOME="$(write_child_codex_home "$CHILD_NAME" "$CHILD_TOKEN_FILE")"
+        CHILD_CODEX_HOME="$(write_child_codex_home "$CHILD_NAME" "$CHILD_TOKEN_FILE" true)"
+        if [[ -n "$CHILD_CODEX_HOME" ]]; then
+            PREREG_ARTIFACT_OWNERSHIP="$CHILD_CODEX_HOME"
+            CHILD_CODEX_HOME="$(python3 -c 'import json,sys; print(json.loads(sys.argv[1])["path"])' "$PREREG_ARTIFACT_OWNERSHIP")"
+        fi
+        TMUX_ENV_ARGS+=(-e "AGENTSTACK_LAUNCH_ARTIFACT_OWNERSHIP=$PREREG_ARTIFACT_OWNERSHIP")
         TMUX_ENV_ARGS+=(-e "AGENTSTACK_CODEX_ADD_DIRS_RESOLVED=$(codex_child_add_dirs "$CHILD_CODEX_HOME")")
         if [[ -n "$CHILD_CODEX_HOME" ]]; then
             echo "[spawn_child/pre-reg] Child CODEX_HOME with authenticated ORRERY Mail: $CHILD_CODEX_HOME" >&2
@@ -1724,7 +1901,12 @@ ${TASK}"
         if [[ "$WARM_CLAIMED" == false ]]; then
             # Cold start（フォールバック）
             echo "[spawn_child/pre-reg] Cold start..." >&2
-            CHILD_MCP_CONFIG="$(write_child_mcp_config "$CHILD_NAME" "$CHILD_TOKEN_FILE")"
+            CHILD_MCP_CONFIG="$(write_child_mcp_config "$CHILD_NAME" "$CHILD_TOKEN_FILE" true)"
+            if [[ -n "$CHILD_MCP_CONFIG" ]]; then
+                PREREG_ARTIFACT_OWNERSHIP="$CHILD_MCP_CONFIG"
+                CHILD_MCP_CONFIG="$(python3 -c 'import json,sys; print(json.loads(sys.argv[1])["path"])' "$PREREG_ARTIFACT_OWNERSHIP")"
+            fi
+            TMUX_ENV_ARGS+=(-e "AGENTSTACK_LAUNCH_ARTIFACT_OWNERSHIP=$PREREG_ARTIFACT_OWNERSHIP")
             if [[ -n "$CHILD_MCP_CONFIG" ]]; then
                 echo "[spawn_child/pre-reg] Child MCP proxy config: $CHILD_MCP_CONFIG" >&2
             else

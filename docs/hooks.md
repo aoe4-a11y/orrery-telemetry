@@ -141,6 +141,8 @@ source 専用 helper で、`RESOLVED_AGENT` と解決 source を caller へ返�
 
 child の Claude / Codex command の後段へ連結され、REPL が戻った時だけ実行されます。全 reservation を release し、child owner token で identity を retire して、child の state、token、MCP config、分離した Codex home を削除します。remote release / retire と managed-list 更新は best-effort で試し、その後に local child state を片付けます。
 
+既存席の建て直しで launcher が `AGENTSTACK_PRESERVE_SEAT_IDENTITY=1` を渡した場合、自動 cleanup は何も変更せず終了します。起動失敗時も、launcher は起動前からあった identity の材料と managed list 登録を保持します。名前を引数で指定する管理者の明示的 cleanup はこの保全フラグの対象外です。
+
 これは Claude Code `SessionEnd` hook ではありません。`SessionEnd` は crash や resume でも発生しうるため、remote identity の retire をその event へ結びつけていません。
 
 ### `monitor_child_agent.sh`
