@@ -121,11 +121,15 @@ sys.exit(0)
 
     def failed_launch(self, seat: dict, early: bool = False, require_tmux: bool = True) -> None:
         env = dict(seat["env"], FIXTURE_EARLY_FAILURE="1" if early else "0")
-        result = subprocess.run([
+        args = [
             "/bin/bash", str(SPAWN), "--codex", "--model", "gpt-5.5",
-            "--pre-registered", NAME, "--child-token-file", str(seat["handoff"]),
-            "--embed-task", "fixture work", str(seat["work"]),
-        ], env=env, cwd=seat["work"], capture_output=True, text=True, timeout=20)
+            "--pre-registered", NAME,
+        ]
+        if seat["handoff"] is not None:
+            args.extend(["--child-token-file", str(seat["handoff"])])
+        args.extend(["--embed-task", "fixture work", str(seat["work"])])
+        result = subprocess.run(args, env=env, cwd=seat["work"],
+                                capture_output=True, text=True, timeout=20)
         self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)
         if not require_tmux:
             return
@@ -191,6 +195,69 @@ sys.exit(0)
         self.failed_launch(seat)
         self.assertEqual(seat["managed"].read_text(), before)
 
+    def test_parent_trap_preserves_concurrent_identity_inodes(self) -> None:
+        seat = self.arrange(False)
+        tmux = self.base / "bin/tmux"
+        code = tmux.read_text()
+        original = "    if os.environ.get('FIXTURE_EARLY_FAILURE') == '1':\n        sys.exit(17)"
+        replacement = """    if os.environ.get('FIXTURE_EARLY_FAILURE') == '1':
+        runtime = pathlib.Path(os.environ['AGENTSTACK_RUNTIME_DIR'])
+        paths = [runtime / 'agent_token_RestartFixture',
+                 runtime / 'child-agents/RestartFixture.json']
+        for path in paths:
+            path.rename(path.with_name(path.name + '.old-inode'))
+            path.write_text('concurrent-fixture-owner')
+        sys.exit(17)"""
+        self.assertIn(original, code)
+        tmux.write_text(code.replace(original, replacement))
+        self.failed_launch(seat, early=True)
+        for key in ("token", "state"):
+            self.assertTrue(seat[key].is_file(), key)
+            self.assertEqual(seat[key].read_text(), "concurrent-fixture-owner")
+
+    def test_early_failure_removes_original_new_identity(self) -> None:
+        seat = self.arrange(False)
+        self.failed_launch(seat, early=True)
+        for key in ("token", "state", "config", "home"):
+            self.assertFalse(seat[key].exists(), key)
+        self.assertEqual(seat["managed"].read_text(), "OtherSeat\n")
+
+    def test_state_fallback_failure_removes_only_restored_token(self) -> None:
+        seat = self.arrange(True)
+        seat["token"].unlink()
+        seat["state"].chmod(0o600)
+        before = seat["state"].read_bytes()
+        seat["handoff"] = None
+        self.failed_launch(seat, early=True)
+        self.assertFalse(seat["token"].exists())
+        self.assertEqual(seat["state"].read_bytes(), before)
+        self.assertTrue((seat["home"] / "sentinel").is_file())
+
+    def test_state_fallback_does_not_replace_an_existing_empty_token(self) -> None:
+        seat = self.arrange(True)
+        seat["token"].write_bytes(b"")
+        seat["state"].chmod(0o600)
+        before = seat["state"].read_bytes()
+        seat["handoff"] = None
+        self.failed_launch(seat, require_tmux=False)
+        self.assertEqual(seat["token"].read_bytes(), b"")
+        self.assertEqual(seat["state"].read_bytes(), before)
+
+    def test_automatic_cleanup_preserves_concurrent_identity_inodes(self) -> None:
+        seat = self.arrange(True)
+        observed = [(str(seat[key]), seat[key].stat().st_dev,
+                     seat[key].stat().st_ino) for key in ("token", "state")]
+        for key in ("token", "state"):
+            path = seat[key]
+            path.rename(path.with_name(path.name + ".old-inode"))
+            path.write_text("concurrent-fixture-owner")
+        env = dict(seat["env"], AGENT_NAME=NAME,
+                   AGENTSTACK_LAUNCH_AUTH_OWNERSHIP=json.dumps({"observed": observed}))
+        subprocess.run(["/bin/bash", str(CLEANUP)], env=env, check=True, timeout=10)
+        for key in ("token", "state"):
+            self.assertEqual(seat[key].read_text(), "concurrent-fixture-owner")
+        self.assertEqual(seat["managed"].read_text(), f"{NAME}\nOtherSeat\n")
+
     def test_fresh_child_failure_removes_new_identity(self) -> None:
         seat = self.arrange(False)
         self.failed_launch(seat)
@@ -220,7 +287,10 @@ sys.exit(0)
 
     def test_explicit_admin_cleanup_remains_available(self) -> None:
         seat = self.arrange(True)
-        env = dict(seat["env"], AGENT_NAME=NAME, AGENTSTACK_PRESERVE_SEAT_IDENTITY="1")
+        env = dict(seat["env"], AGENT_NAME=NAME, AGENTSTACK_PRESERVE_SEAT_IDENTITY="1",
+                   AGENTSTACK_LAUNCH_AUTH_OWNERSHIP=json.dumps({
+                       "observed": [(str(seat["token"]), -1, -1)],
+                   }))
         subprocess.run(["/bin/bash", str(CLEANUP), NAME], env=env, check=True, timeout=10)
         for key in ("token", "state", "config", "home"):
             self.assertFalse(seat[key].exists(), key)

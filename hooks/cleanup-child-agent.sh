@@ -17,6 +17,27 @@ if [[ "${AGENTSTACK_PRESERVE_SEAT_IDENTITY:-0}" == "1" && -z "${1:-}" ]]; then
     exit 0
 fi
 
+# A fresh launch can also lose ownership while its process is running. Do not
+# release/retire or delete another writer's identity from an automatic hook.
+if [[ -z "${1:-}" && -n "${AGENTSTACK_LAUNCH_AUTH_OWNERSHIP:-}" ]]; then
+    if ! python3 - "$AGENTSTACK_LAUNCH_AUTH_OWNERSHIP" <<'PY'
+import json
+import pathlib
+import sys
+
+for name, device, inode in json.loads(sys.argv[1])["observed"]:
+    try:
+        current = pathlib.Path(name).lstat()
+    except FileNotFoundError:
+        continue
+    if (current.st_dev, current.st_ino) != (device, inode):
+        raise SystemExit(1)
+PY
+    then
+        exit 0
+    fi
+fi
+
 HOOKS_DIR="${AGENTSTACK_HOOKS_DIR:-$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)}"
 RUNTIME_DIR="${AGENTSTACK_RUNTIME_DIR:-$HOME/.agentstack/runtime}"
 PROJECT_CONTEXT_LIB="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/project-context.sh"

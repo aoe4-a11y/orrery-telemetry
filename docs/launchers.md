@@ -103,6 +103,8 @@ pre-registered child へ親 token は渡しません。dashboard spawn は child
 
 handoff の token が既存 token/state と異なる場合は起動前に拒否し、既存 file と handoff を残します。同じ token でも既存 token/state の byte は書き換えません。managed list の名前行だけが既存の場合も自動 cleanup から保護します。
 
+新規 token/state の作成時に得た device/inode は親の失敗 trap と自動 cleanup に渡します。起動の途中で別 inode に置き換わっていれば、その席の artifact と登録を残します。state から token を復元した場合も、今回作った token だけが失敗時の削除対象です。
+
 `/delegate` の既定経路は `--pre-registered --embed-task --task-file <path>` です。親が mode `0600` の一時ファイルへタスク全文を書き、launcher が child 名、親名、spawn 時刻、project key、完了時の `send_message` 指示とともに Claude / Codex の最初の prompt へ埋め込みます。登録・再登録・`fetch_inbox` の起動儀式は不要です。この prompt が唯一の正本なので、同じ child へ task mail を別送してはいけません。`--task-file` は位置引数の task より優先し、backtick や `$()` を shell に解釈させず渡すための境界でもあります。
 
 `CHILD_REGISTRATION_TOKEN` は歴史的な変数名ですが、top-level identity の再認証でも使われます。
