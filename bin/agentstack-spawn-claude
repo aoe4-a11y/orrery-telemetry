@@ -1,0 +1,23 @@
+#!/usr/bin/env bash
+# One-shot: pre-register + spawn a Claude tmux child with an embedded task file (2026-10-08, R-079).
+# Usage: agentstack-spawn-claude <model: fable|opus|sonnet|haiku> <task-file> [workdir] [task-description]
+# Env: PARENT_AGENT (default ProudTuring), AGENTSTACK_PROJECT_KEY (default /Users/huyuhutaru/tools/examforge)
+set -euo pipefail
+[ -f "$HOME/.agentstack/env.sh" ] && source "$HOME/.agentstack/env.sh"
+MODEL="${1:?model (fable|opus|sonnet|haiku)}"; TASK="${2:?task file}"; WORKDIR="${3:-$PWD}"
+DESC="${4:-$(head -1 "$TASK" | sed 's/^# *//' | python3 -c 'import sys; print(sys.stdin.read().strip()[:60])')}"
+case "$MODEL" in
+  fable) MODEL_ID=claude-fable-5-1 ;; opus) MODEL_ID=claude-opus-5-5 ;; sonnet) MODEL_ID=claude-sonnet-5-5 ;;
+  haiku) MODEL_ID=claude-haiku-4-5-20251001 ;; *) MODEL_ID="$MODEL" ;;
+esac
+export PARENT_AGENT="${PARENT_AGENT:-ProudTuring}"
+export AGENTSTACK_PROJECT_KEY="${AGENTSTACK_PROJECT_KEY:-/Users/huyuhutaru/tools/examforge}"
+TOKDIR="$HOME/.agentstack/runtime"
+TMP="$(mktemp -d "${TMPDIR:-/tmp}/agentstack-spawn.XXXXXX")/child.token"
+OUT="$("$HOME/.agentstack/bin/agentstack-preregister-child" --project-key "$AGENTSTACK_PROJECT_KEY" --program claude-code --model "$MODEL_ID" --task-description "$DESC" --token-file-out "$TMP" 2>&1)"
+NAME="$(printf '%s\n' "$OUT" | tail -1 | tr -d '[:space:]')"
+[[ "$NAME" =~ ^[A-Z][a-z]+[A-Z][a-z]+$ ]] || { echo "preregister failed:"; echo "$OUT"; exit 1; }
+cp "$TMP" "$TOKDIR/agent_token_$NAME"
+cd "$WORKDIR"
+"$HOME/.agentstack/hooks/spawn_child.sh" --model "$MODEL" --pre-registered "$NAME" --child-token-file "$TOKDIR/agent_token_$NAME" --embed-task --task-file "$TASK" "$WORKDIR"
+echo "spawned: $NAME (tmux session $NAME, model $MODEL_ID, parent $PARENT_AGENT, workdir $WORKDIR)"
