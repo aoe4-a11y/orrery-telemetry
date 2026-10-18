@@ -19,6 +19,7 @@ from unittest.mock import patch
 
 
 ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT / "hooks"))
 SPAWN = ROOT / "hooks/spawn_child.sh"
 CLEANUP = ROOT / "hooks/cleanup-child-agent.sh"
 NAME = "RestartFixture"
@@ -85,8 +86,9 @@ if verb == 'new-session':
             key, value = args[i + 1].split('=', 1)
             child_env[key] = value
     assert 'cleanup-child-agent.sh' in args[-1]
-    subprocess.run(['/bin/bash', os.environ['FIXTURE_CLEANUP']],
-                   env=child_env, check=True)
+    # A real tmux child exits asynchronously after new-session returns. Store
+    # its environment; failure tests below exercise the parent rollback.
+    pathlib.Path(os.environ['FIXTURE_TMUX_LOG'] + '.env').write_text(__import__('json').dumps(child_env))
     sys.exit(0)
 if verb == 'has-session':
     sys.exit(1)
@@ -94,11 +96,18 @@ if verb == 'display-message':
     print('FixtureParent')
 sys.exit(0)
 ''')
+        user_home = self.base / "user-home"
+        user_home.mkdir(exist_ok=True)
+        for child in (".codex", ".claude", ".config"):
+            (user_home / child).mkdir(exist_ok=True)
         # Only fixture-specific identity/transport values enter the subprocess.
         env = {
-            # Inherit the actual home unchanged; all runtime/config paths below
-            # are redirected, and no proxy or credential discovery is enabled.
-            "HOME": os.environ["HOME"],
+            # All user configuration stays inside this fixture, including
+            # when run directly via unittest rather than pytest/conftest.
+            "HOME": str(user_home),
+            "CODEX_HOME": str(user_home / ".codex"),
+            "CLAUDE_CONFIG_DIR": str(user_home / ".claude"),
+            "XDG_CONFIG_HOME": str(user_home / ".config"),
             "PATH": str(bindir) + os.pathsep + os.environ["PATH"],
             "PARENT_AGENT": "FixtureParent", "PROJECT_KEY": "/fixture/project",
             "AGENTSTACK_PROJECT_KEY": "/fixture/project",
@@ -310,7 +319,7 @@ sys.exit(0)
         self.assertTrue((seat["home"] / "other-owner-session").is_file())
         self.assertEqual(seat["config"].read_text(), "concurrent fixture config")
 
-    def test_mcp_writer_reports_created_file_for_automatic_cleanup(self) -> None:
+    def test_mcp_writer_report_without_generation_cannot_authorize_cleanup(self) -> None:
         seat = self.arrange(True)
         self.enable_proxy(seat)
         seat["config"].unlink()
@@ -321,7 +330,7 @@ sys.exit(0)
                    AGENTSTACK_LAUNCH_AUTH_OWNERSHIP=json.dumps({"observed": []}),
                    AGENTSTACK_LAUNCH_ARTIFACT_OWNERSHIP=json.dumps(ownership))
         subprocess.run(["/bin/bash", str(CLEANUP)], env=env, check=True, timeout=10)
-        self.assertFalse(seat["config"].exists())
+        self.assertTrue(seat["config"].exists())
         self.assertTrue((seat["home"] / "sentinel").is_file())
 
     def test_mcp_writer_does_not_claim_or_rewrite_existing_file(self) -> None:
@@ -416,15 +425,14 @@ sys.exit(0)
         subprocess.run(["/bin/bash", str(CLEANUP)], env=env, check=True, timeout=10)
         self.assert_existing(seat)
 
-    def test_explicit_admin_cleanup_remains_available(self) -> None:
+    def test_explicit_name_without_generation_preserves_identity(self) -> None:
         seat = self.arrange(True)
         env = dict(seat["env"], AGENT_NAME=NAME, AGENTSTACK_PRESERVE_SEAT_IDENTITY="1",
                    AGENTSTACK_LAUNCH_AUTH_OWNERSHIP=json.dumps({
                        "observed": [(str(seat["token"]), -1, -1)],
                    }))
         subprocess.run(["/bin/bash", str(CLEANUP), NAME], env=env, check=True, timeout=10)
-        for key in ("token", "state", "config", "home"):
-            self.assertFalse(seat[key].exists(), key)
+        self.assert_existing(seat)
 
     def adoption_failure(self, existing: bool) -> None:
         text = SPAWN.read_text()
@@ -436,6 +444,7 @@ sys.exit(0)
         if existing:
             token.write_text(TOKEN)
             state.write_text(json.dumps({"registration_token": TOKEN,
+                                         "agent_name": NAME, "project_key": "/fixture/project",
                                          "fixture_metadata": "retained"}))
         before = {p: p.read_bytes() for p in (token, state) if p.exists()}
         original_unlink = Path.unlink

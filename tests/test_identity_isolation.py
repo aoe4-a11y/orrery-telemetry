@@ -254,7 +254,11 @@ def test_reserved_child_marker_and_rename_failure_are_explicit():
     spawn = _read("hooks/spawn_child.sh")
     bootstrap = _read("bin/agentstack-codex-bootstrap")
     launcher = _read("bin/agent-start-codex")
-    assert spawn.count('-e "AGENTSTACK_RESERVED_IDENTITY=1"') >= 2
+    # Direct and pre-registered entry points now share one launch path. The
+    # whole-launcher tests separately assert the marker reaches both children.
+    assert '-e "AGENTSTACK_RESERVED_IDENTITY=1"' in spawn
+    assert 'COMMON_ARGS=(--pre-registered "$CHILD_NAME"' in spawn
+    assert '/bin/bash "$0" "${COMMON_ARGS[@]}"' in spawn
     assert 'rename-session "$AGENT_NAME" 2>/dev/null || true' not in bootstrap
     assert 'rename-session "$AGENT_NAME" 2>/dev/null || true' not in _read("bin/agent-start")
     assert "refusing an identity split" in _read("bin/agent-start")

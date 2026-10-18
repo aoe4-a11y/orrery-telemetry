@@ -12,6 +12,8 @@ import tempfile
 
 
 ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT / "hooks"))
+from seat_lifecycle import Seat, atomic_json
 HOOK = ROOT / "hooks" / "cleanup-child-agent.sh"
 
 
@@ -23,6 +25,11 @@ def _arrange_child_state(tmp_path: Path) -> tuple[str, dict[str, str], list[Path
     state_dir.mkdir(parents=True)
 
     agent_name = "Other-Agent"
+    managed_file = runtime / "managed_agents.txt"
+    lifecycle = Seat(runtime, agent_name)
+    with lifecycle.locked():
+        journal = lifecycle.begin("/test/project", managed_file)
+    (hooks / "seat_lifecycle.py").write_text((ROOT / "hooks/seat_lifecycle.py").read_text())
     (hooks / "resolve-agent-name.sh").write_text(
         f'RESOLVED_AGENT="{agent_name}"\n', encoding="utf-8"
     )
@@ -65,6 +72,15 @@ def _arrange_child_state(tmp_path: Path) -> tuple[str, dict[str, str], list[Path
             "AGENTSTACK_MCP_URL": "http://127.0.0.1:1/mcp",
         }
     )
+    auth = [[str(path), path.stat().st_dev, path.stat().st_ino] for path in (token_file, state_file)]
+    owned = [[str(path), path.stat().st_dev, path.stat().st_ino, kind]
+             for path, kind in ((mcp_config, "file"), (codex_home, "directory"))]
+    with lifecycle.locked():
+        journal = lifecycle.update(journal["journal"], auth={"owned": auth, "observed": auth},
+                                   artifacts={"owned": owned}, session_started=True)
+        journal["managed_added"] = True
+        atomic_json(Path(journal["journal"]), journal)
+    env.update(AGENTSTACK_LIFECYCLE_NAME=agent_name, AGENTSTACK_LAUNCH_JOURNAL=journal["journal"])
     artifacts = [state_file, token_file, mcp_config, codex_home]
     return agent_name, env, artifacts
 

@@ -4,6 +4,7 @@
 # 既存席を「同じ名前・同じ身元」で建て直す。名前が変わらないので mail の履歴も切れない。
 # 使ってよい場面: 席の cwd が消えた / TUI が壊れた / 応答不能で復帰しない。
 set -euo pipefail
+ORIGINAL_ARGV=("$@")
 [ -f "$HOME/.agentstack/env.sh" ] && source "$HOME/.agentstack/env.sh"
 
 NAME="${1:?seat name (e.g. WarmArchimedes)}"
@@ -12,7 +13,14 @@ MODEL="${3:-gpt-5.6-terra}"
 EFFORT="${4:-medium}"
 WORKDIR="${5:-$HOME/tools/osce-trainer-main}"
 
-TOKEN="$HOME/.agentstack/runtime/agent_token_$NAME"
+STACK_HOME="${AGENTSTACK_HOME:-$HOME/.agentstack}"
+HOOKS_DIR="${AGENTSTACK_HOOKS_DIR:-$STACK_HOME/hooks}"
+RUNTIME_DIR="${AGENTSTACK_RUNTIME_DIR:-$STACK_HOME/runtime}"
+LIFECYCLE="$HOOKS_DIR/seat_lifecycle.py"
+if ! python3 "$LIFECYCLE" held --runtime "$RUNTIME_DIR" --name "$NAME"; then
+  exec python3 "$LIFECYCLE" lock-exec --runtime "$RUNTIME_DIR" --name "$NAME" -- /bin/bash "$0" "${ORIGINAL_ARGV[@]}"
+fi
+TOKEN="$RUNTIME_DIR/agent_token_$NAME"
 [ -s "$TOKEN" ] || { echo "ERROR: token not found for $NAME ($TOKEN). 新規席なら agentstack-spawn-codex を使え" >&2; exit 1; }
 [ -r "$TASK" ]  || { echo "ERROR: task file not readable: $TASK" >&2; exit 1; }
 
@@ -27,16 +35,22 @@ esac
 [ -d "$WORKDIR" ] || { echo "ERROR: workdir が存在しません: $WORKDIR" >&2; exit 2; }
 
 export PARENT_AGENT="${PARENT_AGENT:-ProudTuring}"
-export AGENTSTACK_PROJECT_KEY="${AGENTSTACK_PROJECT_KEY:-/Users/huyuhutaru/tools/examforge}"
+STATE_PROJECT="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["project_key"])' "$RUNTIME_DIR/child-agents/$NAME.json")"
+[[ -n "$STATE_PROJECT" ]] || { echo "ERROR: missing state project; preserving seat" >&2; exit 1; }
+[[ -z "${AGENTSTACK_PROJECT_KEY:-}" || "$AGENTSTACK_PROJECT_KEY" == "$STATE_PROJECT" ]] || { echo "ERROR: project mismatch; preserving seat" >&2; exit 1; }
+export AGENTSTACK_PROJECT_KEY="$STATE_PROJECT"
+export PROJECT_KEY="$STATE_PROJECT"
+# Invalidate delayed cleanup from the previous launch before stopping it.
+python3 "$LIFECYCLE" invalidate --runtime "$RUNTIME_DIR" --name "$NAME"
 
-if tmux has-session -t "$NAME" 2>/dev/null; then
+if tmux has-session -t "=$NAME" 2>/dev/null; then
   echo "[restart] killing tmux session: $NAME （この席だけ。server は触らない・M-018）"
-  tmux kill-session -t "$NAME"
+  tmux kill-session -t "=$NAME"
   sleep 1
 fi
 
 cd "$WORKDIR"
-"$HOME/.agentstack/hooks/spawn_child.sh" --codex --model "$MODEL" --effort "$EFFORT" \
+"$HOOKS_DIR/spawn_child.sh" --codex --model "$MODEL" --effort "$EFFORT" \
   --pre-registered "$NAME" --child-token-file "$TOKEN" \
   --embed-task --task-file "$TASK" "$WORKDIR"
 

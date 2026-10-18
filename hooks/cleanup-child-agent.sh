@@ -10,37 +10,6 @@ if [[ -z "${1:-}" && -z "$AGENT_NAME_ENV_AT_ENTRY" ]]; then
     exit 0
 fi
 
-# A restart owns the launched process, not the pre-existing seat identity.
-# Automatic SessionEnd/inline cleanup preserves its auth, home and reservations.
-# Explicit named administrative cleanup retains its existing semantics.
-if [[ "${AGENTSTACK_PRESERVE_SEAT_IDENTITY:-0}" == "1" && -z "${1:-}" ]]; then
-    exit 0
-fi
-
-# A fresh launch can also lose ownership while its process is running. Do not
-# release/retire or delete another writer's identity from an automatic hook.
-if [[ -z "${1:-}" && -n "${AGENTSTACK_LAUNCH_AUTH_OWNERSHIP:-}" ]]; then
-    if ! python3 - "$AGENTSTACK_LAUNCH_AUTH_OWNERSHIP" "${AGENTSTACK_LAUNCH_ARTIFACT_OWNERSHIP:-}" <<'PY'
-import json
-import pathlib
-import sys
-
-observed = json.loads(sys.argv[1])["observed"]
-if sys.argv[2]:
-    observed += [entry[:3] for entry in json.loads(sys.argv[2])["owned"]]
-for name, device, inode in observed:
-    try:
-        current = pathlib.Path(name).lstat()
-    except FileNotFoundError:
-        continue
-    if (current.st_dev, current.st_ino) != (device, inode):
-        raise SystemExit(1)
-PY
-    then
-        exit 0
-    fi
-fi
-
 HOOKS_DIR="${AGENTSTACK_HOOKS_DIR:-$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)}"
 RUNTIME_DIR="${AGENTSTACK_RUNTIME_DIR:-$HOME/.agentstack/runtime}"
 PROJECT_CONTEXT_LIB="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/project-context.sh"
@@ -118,6 +87,17 @@ if [[ ! "$AGENT_NAME" =~ ^[A-Za-z0-9_.-]+$ ]]; then
     exit 0
 fi
 
+LIFECYCLE_HELPER="$HOOKS_DIR/seat_lifecycle.py"
+# Legacy/env-less cleanup has no evidence of launch ownership. A name alone is
+# never authority to retire a registration or delete canonical local state.
+[[ -n "${AGENTSTACK_LAUNCH_JOURNAL:-}" && "${AGENTSTACK_LIFECYCLE_NAME:-}" == "$AGENT_NAME" ]] || exit 0
+if ! python3 "$LIFECYCLE_HELPER" held --runtime "$RUNTIME_DIR" --name "$AGENT_NAME"; then
+    exec python3 "$LIFECYCLE_HELPER" lock-exec --runtime "$RUNTIME_DIR" --name "$AGENT_NAME" -- /bin/bash "$0" "$@"
+fi
+lifecycle() { python3 "$LIFECYCLE_HELPER" "$1" --runtime "$RUNTIME_DIR" --name "$AGENT_NAME" --journal "$AGENTSTACK_LAUNCH_JOURNAL" --automatic; }
+lifecycle check || exit 0
+PROJECT_KEY="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["project"])' "$AGENTSTACK_LAUNCH_JOURNAL")"
+
 STATE_FILE="$STATE_DIR/${AGENT_NAME}.json"
 TOKEN_KEY="$(printf '%s' "$AGENT_NAME" | LC_ALL=C tr -c 'A-Za-z0-9_.-' '_')"
 TOKEN_FILE="$RUNTIME_DIR/agent_token_$TOKEN_KEY"
@@ -136,10 +116,9 @@ PYEOF
         echo "[cleanup-child-agent] could not read child state for '$AGENT_NAME'; refusing partial cleanup" >&2
         exit 1
     fi
-    if [[ -n "$STATE_PROJECT_KEY" ]]; then
-        PROJECT_KEY="$STATE_PROJECT_KEY"
-    else
-        echo "[cleanup-child-agent] child state for '$AGENT_NAME' has no project key; using the configured project key if available" >&2
+    if [[ "$STATE_PROJECT_KEY" != "$PROJECT_KEY" ]]; then
+        echo "[cleanup-child-agent] state project differs from the launch journal; preserving identity" >&2
+        exit 1
     fi
 fi
 
@@ -204,6 +183,8 @@ conn.close()
 ' "$method" "$MCP_URL"
 }
 
+retire_args="$(lifecycle retire-args)" || exit 0
+
 release_args=$(python3 -c "
 import json, sys
 print(json.dumps({
@@ -211,72 +192,14 @@ print(json.dumps({
     'agent_name': sys.argv[2],
 }))
 " "$PROJECT_KEY" "$AGENT_NAME")
+lifecycle check || exit 0
 call_mcp "release_file_reservations" "$release_args" > /dev/null 2>&1 || true
 
-retire_args=$(python3 -c '
-import json
-import os
-import pathlib
-import sys
-
-project_key, agent_name, token_file, state_file = sys.argv[1:5]
-token = ""
-if pathlib.Path(token_file).is_file():
-    token = pathlib.Path(token_file).read_text(encoding="utf-8").strip()
-elif pathlib.Path(state_file).is_file():
-    token = json.loads(
-        pathlib.Path(state_file).read_text(encoding="utf-8")
-    ).get("registration_token", "")
-else:
-    token = os.environ.get("CHILD_REGISTRATION_TOKEN", "")
-if not token:
-    raise SystemExit(1)
-print(json.dumps({
-    "project_key": project_key,
-    "agent_name": agent_name,
-    "registration_token": token,
-}))
-' "$PROJECT_KEY" "$AGENT_NAME" "$TOKEN_FILE" "$STATE_FILE") || retire_args=""
+# The lock stays held across HTTP, but a non-cooperating writer may replace
+# files. Recheck before retirement and again before every local deletion.
+lifecycle check || exit 0
 if [[ -n "$retire_args" ]]; then
     call_mcp "retire_agent" "$retire_args" > /dev/null 2>&1 || true
 fi
-
-python3 - "$MANAGED_FILE" "$AGENT_NAME" <<'PYEOF' 2>/dev/null || true
-import pathlib
-import sys
-
-path = pathlib.Path(sys.argv[1])
-name = sys.argv[2]
-try:
-    lines = path.read_text(encoding="utf-8").splitlines()
-except OSError:
-    raise SystemExit(0)
-path.write_text("\n".join(line for line in lines if line != name) + "\n", encoding="utf-8")
-PYEOF
-rm -f -- "${STATE_FILE:?}" "${TOKEN_FILE:?}"
-if [[ -z "${1:-}" && -n "${AGENTSTACK_LAUNCH_ARTIFACT_OWNERSHIP:-}" ]]; then
-    python3 - "$AGENTSTACK_LAUNCH_ARTIFACT_OWNERSHIP" <<'PY'
-import json
-import pathlib
-import shutil
-import sys
-
-for name, device, inode, kind in json.loads(sys.argv[1])["owned"]:
-    path = pathlib.Path(name)
-    try:
-        current = path.lstat()
-    except FileNotFoundError:
-        continue
-    if (current.st_dev, current.st_ino) != (device, inode):
-        continue
-    if kind == "directory":
-        shutil.rmtree(path)
-    elif kind == "file":
-        path.unlink()
-PY
-else
-    rm -f -- "${MCP_CONFIG_FILE:?}"
-    rm -rf -- "${CODEX_HOME_DIR:?}"
-fi
-
+lifecycle delete || true
 exit 0

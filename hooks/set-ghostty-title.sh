@@ -83,7 +83,5 @@ if [[ -n "$TMUX_PANE" ]]; then
     echo -n "$AGENT_NAME" > "$RUNTIME_DIR/agent_name_${PANE_KEY}"
 fi
 
-if ! grep -qxF "$AGENT_NAME" "$MANAGED_FILE" 2>/dev/null; then
-    mkdir -p "$(dirname "$MANAGED_FILE")"
-    echo "$AGENT_NAME" >> "$MANAGED_FILE"
-fi
+python3 "$(dirname "${BASH_SOURCE[0]}")/seat_lifecycle.py" managed-ensure \
+    --runtime "$RUNTIME_DIR" --name "$AGENT_NAME" --managed "$MANAGED_FILE"

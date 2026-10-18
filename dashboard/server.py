@@ -4432,36 +4432,45 @@ def do_spawn(payload: dict) -> dict:
     # 4) spawn_child.sh --pre-registered を background で起動
     token_file = ""
     token_created = False
+    token_identity = None
+    launch_attempt = secrets.token_hex(16)
     log_fh = None
 
     def remove_spawn_credentials() -> None:
-        """Remove both the one-shot handoff and any launcher-persisted copies."""
+        """Only the handoff created by this request is ours to remove."""
         nonlocal token_created
-        paths = []
-        if token_created and token_file:
-            paths.append(token_file)
-        token_key = re.sub(r"[^A-Za-z0-9_.-]", "_", child_name)
-        paths.extend([
-            os.path.join(RUNTIME_DIR, f"agent_token_{token_key}"),
-            os.path.join(RUNTIME_DIR, "child-agents", f"{child_name}.json"),
-        ])
-        for path in paths:
+        if token_created and token_file and token_identity is not None:
             try:
-                os.unlink(path)
+                current = os.lstat(token_file)
+                if (current.st_dev, current.st_ino) == token_identity:
+                    os.unlink(token_file)
             except FileNotFoundError:
                 pass
-            except OSError as e:
-                logging.warning(
-                    "failed to remove failed-spawn credential %s: %s", path, e)
+            except OSError as error:
+                logging.warning("failed to remove owned handoff: %s", error)
         token_created = False
 
     def kill_spawn_session() -> None:
+        # A delayed dashboard callback cannot kill a successor by name. The
+        # launcher journal must match this request and still own every object.
+        import importlib.util
+        helper = os.path.join(os.path.dirname(SPAWN_SCRIPT), "seat_lifecycle.py")
         try:
-            subprocess.run(
-                ["tmux", "kill-session", "-t", f"={child_name}"],
-                capture_output=True, text=True)
-        except OSError:
-            pass
+            spec = importlib.util.spec_from_file_location("dashboard_seat_lifecycle", helper)
+            lifecycle = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(lifecycle)
+            seat = lifecycle.Seat(RUNTIME_DIR, child_name)
+            with seat.locked(blocking=False):
+                lease = json.loads(seat.lease_path.read_text())
+                value = seat.validate(lease.get("journal", ""))
+                if (value is None or value.get("attempt") != launch_attempt
+                        or not value.get("session_started")):
+                    return
+                subprocess.run(["tmux", "kill-session", "-t", f"={child_name}"],
+                               capture_output=True, text=True)
+                seat.delete(value["journal"])
+        except (OSError, ValueError, KeyError, TypeError, ImportError, AttributeError):
+            logging.warning("no matching launch ownership; preserving seat %s", child_name)
 
     token_dir = os.path.join(RUNTIME_DIR, "spawn-tokens")
     try:
@@ -4474,6 +4483,8 @@ def do_spawn(payload: dict) -> dict:
             open_flags |= os.O_NOFOLLOW
         fd = os.open(token_file, open_flags, 0o600)
         token_created = True
+        opened = os.fstat(fd)
+        token_identity = (opened.st_dev, opened.st_ino)
         with os.fdopen(fd, "w") as f:
             f.write(effective_child_token)
             f.flush()
@@ -4502,6 +4513,7 @@ def do_spawn(payload: dict) -> dict:
     else:
         env["PARENT_AGENT"] = parent
     env["PROJECT_KEY"] = project_key
+    env["AGENTSTACK_LAUNCH_ATTEMPT_ID"] = launch_attempt
     # launchd の最小 PATH には ~/.local/bin が無く、spawn_child.sh が tmux 内で
     # 起動する `zsh -lc` は非対話シェルのため ~/.zshrc を source せず claude が
     # PATH に乗らない (cold start で claude 即落ち → tmux session が cleanup-

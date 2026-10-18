@@ -132,15 +132,19 @@ def test_approval_flags_follow_the_installed_cli():
 def _flags_with_env(help_text: str | None, env: dict[str, str]) -> str:
     with tempfile.TemporaryDirectory() as tmp:
         tmpdir = pathlib.Path(tmp)
-        run_env = {"HOME": tmp, **env}
+        run_env = {"HOME": tmp, "AGENTSTACK_CODEX_BIN": "", **env}
         if help_text is None:
             # No codex anywhere: an empty PATH plus an empty ~/.local/bin.
             run_env["PATH"] = "/usr/bin:/bin"
         else:
             _codex_stub(tmpdir, help_text)
             run_env["PATH"] = f"{tmpdir}:/usr/bin:/bin"
-        script = _codex_lookup() + _extract("codex_approval_flags") + "\ncodex_approval_flags\n"
-        return _run_bash(script, run_env).stdout.strip()
+        script = _codex_lookup() + _extract("codex_approval_flags")
+        if help_text is None:
+            # Discovery also searches system-wide prefixes. Model an actually
+            # absent CLI without accidentally executing the host's real one.
+            script += '\ncodex_search_path() { printf "%s\\n" "$PATH"; }\n'
+        return _run_bash(script + "\ncodex_approval_flags\n", run_env).stdout.strip()
 
 
 _MODERN_HELP = "  -s, --sandbox <MODE>\n      --ask-for-approval <POLICY>"
@@ -220,35 +224,35 @@ def test_launcher_owns_the_codex_flags_and_never_hands_off_to_a_user_launcher():
     assert "launch_codex_workspace.sh" not in text.replace(
         "a user-side launcher (~/.codex/bin/...)", ""
     ), "spawn_child.sh still defers to the user's ~/.codex/bin launcher"
-    # Both launch paths apply network flags and the resolved writable roots.
+    # The shared launch path applies network flags and the resolved writable roots.
     # (Written in the zsh/bash-shared subset: see test_child_shell_portability.)
-    assert text.count('$(printf "%s" "$AGENTSTACK_CODEX_APPROVAL") $(printf "%s" "$AGENTSTACK_CODEX_NETWORK_FLAGS")') == 2
-    assert text.count('for d in $(printf "%s" "$AGENTSTACK_CODEX_ADD_DIRS_RESOLVED"); do') == 2
-    assert text.count('-e "AGENTSTACK_CODEX_ADD_DIRS_RESOLVED=$(codex_child_add_dirs "$CHILD_CODEX_HOME")"') == 2
-    assert text.count('CHILD_CODEX_BIN="$(resolve_codex_bin)"') == 2
-    assert text.count('-e "AGENTSTACK_CODEX_BIN=$CHILD_CODEX_BIN"') == 2
-    assert text.count('env -u OPENAI_API_KEY "$AGENTSTACK_CODEX_BIN" -C "$PWD"') == 2
+    assert text.count('$(printf "%s" "$AGENTSTACK_CODEX_APPROVAL") $(printf "%s" "$AGENTSTACK_CODEX_NETWORK_FLAGS")') == 1
+    assert text.count('for d in $(printf "%s" "$AGENTSTACK_CODEX_ADD_DIRS_RESOLVED"); do') == 1
+    assert text.count('-e "AGENTSTACK_CODEX_ADD_DIRS_RESOLVED=$(codex_child_add_dirs "$CHILD_CODEX_HOME")"') == 1
+    assert text.count('CHILD_CODEX_BIN="$(resolve_codex_bin)"') == 1
+    assert text.count('-e "AGENTSTACK_CODEX_BIN=$CHILD_CODEX_BIN"') == 1
+    assert text.count('env -u OPENAI_API_KEY "$AGENTSTACK_CODEX_BIN" -C "$PWD"') == 1
     assert 'env -u OPENAI_API_KEY codex -C "$PWD"' not in text
 
 
-def _model_call(function: str, *args: str) -> subprocess.CompletedProcess[str]:
+def _model_call(function: str, *args: str, environment=None) -> subprocess.CompletedProcess[str]:
     functions = ["normalize_claude_model", "normalize_codex_model",
                  "validate_codex_effort"]
     script = _model_catalog() + "\n" + "\n".join(
         _extract(name) for name in functions
     )
     command = " ".join([function, *(shlex.quote(arg) for arg in args)])
-    return _run_bash(script + "\n" + command + "\n")
+    return _run_bash(script + "\n" + command + "\n", environment)
 
 
 def test_model_catalog_tracks_current_generations_without_dropping_old_ids():
     expected = {
-        ("normalize_claude_model", ""): "claude-opus-5",
-        ("normalize_claude_model", "opus"): "claude-opus-5",
+        ("normalize_claude_model", ""): "claude-opus-5-5",
+        ("normalize_claude_model", "opus"): "claude-opus-5-5",
         ("normalize_claude_model", "opus[1m]"): "claude-opus-4-8[1m]",
         ("normalize_claude_model", "claude-opus-4-8"): "claude-opus-4-8",
         ("normalize_claude_model", "opus-5[1m]"): "claude-opus-5[1m]",
-        ("normalize_claude_model", "sonnet"): "claude-sonnet-5",
+        ("normalize_claude_model", "sonnet"): "claude-sonnet-5-5",
         ("normalize_claude_model", "sonnet-4-6"): "claude-sonnet-4-6",
         ("normalize_claude_model", "fable"): "claude-fable-5-1",
         ("normalize_claude_model", "claude-fable-5"): "claude-fable-5-1",
@@ -267,15 +271,15 @@ def test_model_catalog_tracks_current_generations_without_dropping_old_ids():
 
 
 def test_model_specific_effort_constraints_are_enforced():
-    accepted = _model_call("validate_codex_effort", "gpt-5.6-sol", "ultra")
+    accepted = _model_call("validate_codex_effort", "gpt-5.6-sol", "ultra", environment={"AGENTSTACK_ALLOW_XHIGH":"1"})
     assert accepted.returncode == 0
     assert accepted.stdout.strip() == "ultra"
 
-    luna = _model_call("validate_codex_effort", "gpt-5.6-luna", "ultra")
+    luna = _model_call("validate_codex_effort", "gpt-5.6-luna", "ultra", environment={"AGENTSTACK_ALLOW_XHIGH":"1"})
     assert luna.returncode != 0
     assert "does not support ultra" in luna.stderr
 
-    legacy = _model_call("validate_codex_effort", "gpt-5.5", "max")
+    legacy = _model_call("validate_codex_effort", "gpt-5.5", "max", environment={"AGENTSTACK_ALLOW_XHIGH":"1"})
     assert legacy.returncode != 0
     assert "only through xhigh" in legacy.stderr
 
@@ -298,16 +302,16 @@ def test_launcher_no_longer_hardcodes_full_auto():
     text = _SPAWN.read_text(encoding="utf-8")
     assert "--full-auto \\" not in text, "hardcoded --full-auto still in a launch line"
     # Both launch paths take the probed flags from the child environment.
-    assert text.count('--sandbox workspace-write $(printf "%s" "$AGENTSTACK_CODEX_APPROVAL")') == 2
-    assert text.count('-e "AGENTSTACK_CODEX_APPROVAL=$(codex_approval_flags)"') == 2
+    assert text.count('--sandbox "${AGENTSTACK_CODEX_SANDBOX:-workspace-write}" $(printf "%s" "$AGENTSTACK_CODEX_APPROVAL")') == 1
+    assert text.count('-e "AGENTSTACK_CODEX_APPROVAL=$(codex_approval_flags)"') == 1
 
 
 def test_dead_child_fails_fast_instead_of_waiting_out_the_timeout():
     text = _SPAWN.read_text(encoding="utf-8")
-    # Both readiness loops check liveness and abort.
-    assert text.count("codex_session_alive") == 3, "expected 1 definition + 2 call sites"
-    assert text.count("DIED=true") == 2
-    assert text.count("exited before becoming ready") == 2
+    # The shared Codex readiness loop checks liveness and aborts.
+    assert text.count("codex_session_alive") == 2, "expected definition + one shared call site"
+    assert text.count("DIED=true") == 1
+    assert text.count("exited before becoming ready") == 1
 
 
 def test_trust_dialog_uses_carriage_return_and_has_a_hard_attempt_limit():
@@ -334,10 +338,10 @@ tmux() {
     assert "persisted after 10 attempts" in exhausted.stderr
 
     text = _SPAWN.read_text(encoding="utf-8")
-    assert text.count('TRUST_MAX=10') == 2
-    # Two Codex paths plus the corresponding Claude trust-gate paths.
-    assert text.count('TRUST_FAILED=true') == 4
-    assert text.count('codex_accept_trust_dialog \\') == 2
+    assert text.count('TRUST_MAX=10') == 1
+    # Shared Codex trust + hooks-review gates, and the Claude trust gate.
+    assert text.count('TRUST_FAILED=true') == 3
+    assert text.count('codex_accept_trust_dialog \\') == 1
 
 
 def test_claude_fresh_directory_trust_gate_is_not_mistaken_for_readiness():
@@ -368,16 +372,16 @@ def test_claude_fresh_directory_trust_gate_is_not_mistaken_for_readiness():
 def test_readiness_timeouts_fail_instead_of_injecting_into_unknown_ui():
     text = _SPAWN.read_text(encoding="utf-8")
     assert "injecting prompt anyway" not in text
-    assert text.count("refusing to inject the task into an unknown screen state") == 4
-    assert text.count("claude_accept_trust_dialog") == 3  # definition + 2 paths
+    assert text.count("refusing to inject the task into an unknown screen state") == 2
+    assert text.count("claude_accept_trust_dialog") == 2  # definition + shared Claude path
 
 
 def test_prompt_injection_is_verified_in_every_launch_path():
     text = _SPAWN.read_text(encoding="utf-8")
     verifier = _extract("verify_injection")
 
-    assert text.count('verify_injection "$CHILD_NAME"') == 4
-    assert text.count('flush_queued_prompt "$CHILD_NAME"') == 2
+    assert text.count('verify_injection "$CHILD_NAME"') == 2
+    assert text.count('flush_queued_prompt "$CHILD_NAME"') == 1
     assert "capture-pane" in verifier and "-S -1000" in verifier
     assert "kill-session" not in verifier
 
@@ -516,7 +520,8 @@ def test_codex_binary_is_found_under_per_user_node_prefixes():
         assert stale.stdout.strip() == str(fake)
 
         # Nothing anywhere: the launcher still says so instead of guessing.
-        missing = _run_bash(script, {"HOME": str(home / "empty"), "PATH": "/usr/bin:/bin",
+        missing_script = script.rsplit("resolve_codex_bin\n", 1)[0] + '\ncodex_search_path() { printf "%s\\n" "$PATH"; }\nresolve_codex_bin\n'
+        missing = _run_bash(missing_script, {"HOME": str(home / "empty"), "PATH": "/usr/bin:/bin",
                                      "AGENTSTACK_CODEX_BIN": ""})
         assert missing.returncode == 1
         assert "Codex CLI not found" in missing.stderr
@@ -800,7 +805,7 @@ def test_codex_polls_capture_the_visible_screen_only():
     # so the launcher pressed Enter on every poll and never reached readiness.
     text = _SPAWN.read_text(encoding="utf-8")
     assert 'capture-pane -t "$CHILD_NAME" -p -S -30' not in text
-    assert text.count('PANE_TEXT=$(tmux capture-pane -t "$CHILD_NAME" -p 2>/dev/null || true)') == 4
+    assert text.count('PANE_TEXT=$(tmux capture-pane -t "$CHILD_NAME" -p 2>/dev/null || true)') == 2
 
 
 def test_child_shell_never_sources_a_user_bootstrap():
@@ -820,3 +825,15 @@ def test_child_proxy_configs_carry_the_bearer_mode():
     assert 'lines.append("AGENTSTACK_PYTHON = " + toml_string(python_bin))' in text
     assert "read -r MCP_AGENT_MAIL_TOKEN" not in run_mcp
     assert "  AGENTSTACK_PYTHON\n" in run_mcp
+
+
+def test_effort_gate_requires_explicit_head_override():
+    for effort in ("xhigh", "max", "ultra"):
+        denied = _model_call("validate_codex_effort", "gpt-5.6-sol", effort,
+                             environment={"AGENTSTACK_ALLOW_XHIGH":"0"})
+        assert denied.returncode != 0
+        assert "disabled by R-062" in denied.stderr
+        allowed = _model_call("validate_codex_effort", "gpt-5.6-sol", effort,
+                              environment={"AGENTSTACK_ALLOW_XHIGH":"1"})
+        assert allowed.returncode == 0, allowed.stderr
+        assert allowed.stdout.strip() == effort

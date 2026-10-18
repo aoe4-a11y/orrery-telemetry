@@ -54,7 +54,7 @@ ags_mcp_call() {
 ags_mcp_has_error() { return 1; }
 ags_extract_agent_name() { python3 -c 'import json,sys; print(json.load(sys.stdin).get("name",""))'; }
 ags_extract_registration_token() { printf '\n'; }
-ags_store_registration_token() { :; }
+ags_store_registration_token() { echo CANONICAL_STORE_CALLED >&2; }
 ags_apply_contact_policy() { :; }
 ags_record_name_substitution() { :; }
 """
@@ -150,3 +150,10 @@ def _main() -> int:
 
 if __name__ == "__main__":
     sys.exit(_main())
+
+
+def test_preregister_only_creates_the_one_shot_not_canonical_identity():
+    for program in ("codex", "claude-code"):
+        result = _run(["--name", "Fresh-Curie", "--program", program, "--model", "m"])
+        assert result.returncode == 0, result.stderr
+        assert "CANONICAL_STORE_CALLED" not in result.stderr
