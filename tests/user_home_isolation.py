@@ -13,7 +13,7 @@ _socket_root = None
 def private_tmux_directory():
     global _socket_root
     if _socket_root is None:
-        _socket_root = Path(tempfile.mkdtemp(prefix='orrery-test-tmux-', dir='/tmp'))
+        _socket_root = Path(tempfile.mkdtemp(prefix='orrery-test-tmux-', dir='/tmp' if os.name != 'nt' else None))
         def remove_empty_socket_directory():
             # Never unlink a socket or stop a process implicitly.
             for entry in _socket_root.iterdir():
@@ -60,6 +60,8 @@ def isolated_user_environment(
     # tmux ignores TMPDIR; its default server socket must be private too.
     # A short socket directory avoids AF_UNIX's path length limit on macOS.
     env['TMUX_TMPDIR'] = private_tmux_directory()
+    if os.name == 'nt':
+        env.update(USERPROFILE=str(home), HOMEDRIVE=home.drive, HOMEPATH=str(home)[len(home.drive):])
     env['AGENTSTACK_MAIL_HTTP_BEARER_MODE'] = 'disabled'
     guards = home / '.test-bin'
     guards.mkdir(exist_ok=True)

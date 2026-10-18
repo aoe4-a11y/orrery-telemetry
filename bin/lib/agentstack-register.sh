@@ -253,13 +253,50 @@ ags_load_registration_token() {
 }
 
 ags_store_registration_token() {
-  local agent_name="$1" registration_token="$2" runtime_dir token_file
+  local agent_name="$1" registration_token="$2" runtime_dir token_file lifecycle_hooks
   [[ -n "$agent_name" && -n "$registration_token" ]] || return 0
   runtime_dir="$(ags_registration_runtime_dir)"
   token_file="$(ags_registration_token_file "$agent_name")" || return 1
-  mkdir -p "$runtime_dir" || return 1
-  ( umask 077 && printf '%s' "$registration_token" > "$token_file" ) || return 1
-  chmod 600 "$token_file" 2>/dev/null || true
+  lifecycle_hooks="${AGENTSTACK_LIFECYCLE_HOOKS_DIR:-${AGENTSTACK_HOOKS_DIR:-$(dirname "${BASH_SOURCE[0]}")/../../hooks}}"
+  printf '%s' "$registration_token" | python3 -c '
+import os, pathlib, stat, sys, tempfile
+sys.path.insert(0, str(pathlib.Path(sys.argv[3]).resolve()))
+from seat_lifecycle import Seat
+seat = Seat(sys.argv[1], sys.argv[2])
+payload = sys.stdin.buffer.read(4097)
+if not payload or len(payload) > 4096:
+    raise ValueError("invalid registration token size")
+with seat.locked():
+    path = seat.paths()["token"]
+    try:
+        existing = os.open(path, os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0))
+    except FileNotFoundError:
+        identity = None
+    else:
+        with os.fdopen(existing, "rb") as stream:
+            identity = os.fstat(stream.fileno())
+            if not stat.S_ISREG(identity.st_mode) or identity.st_uid != os.getuid():
+                raise ValueError("canonical token is not an owned regular file")
+            if stream.read(4097) == payload:
+                os.fchmod(stream.fileno(), 0o600)
+                raise SystemExit(0)
+    fd, temporary = tempfile.mkstemp(prefix=".registration-token-", dir=seat.root)
+    try:
+        with os.fdopen(fd, "wb") as stream:
+            os.fchmod(stream.fileno(), 0o600)
+            stream.write(payload); stream.flush(); os.fsync(stream.fileno())
+        if identity is not None:
+            now = path.lstat()
+            if (now.st_dev, now.st_ino) != (identity.st_dev, identity.st_ino):
+                raise ValueError("canonical token changed during registration")
+            seat.invalidate()
+            os.replace(temporary, path)
+        else:
+            # Atomic publication cannot overwrite a late creator.
+            os.link(temporary, path)
+    finally:
+        pathlib.Path(temporary).unlink(missing_ok=True)
+' "$runtime_dir" "$agent_name" "$lifecycle_hooks"
 }
 
 # Record that ORRERY Mail granted a different identity than the one requested.

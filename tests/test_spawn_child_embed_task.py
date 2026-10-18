@@ -136,10 +136,14 @@ def test_task_file_is_embedded_literally_for_both_launch_paths(
         "Second task line stays literal."
     )
     task_file.write_text(task, encoding="utf-8")
-    handoff = tmp_path / "child-token"
+    child_name = "EmbedCodex" if codex else "EmbedClaude"
+    handoff = pathlib.Path(env["AGENTSTACK_RUNTIME_DIR"]) / "spawn-tokens" / (__import__('uuid').uuid4().hex + ".token")
+    handoff.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
     handoff.write_text("child-owner-token", encoding="utf-8")
     handoff.chmod(0o600)
-    child_name = "EmbedCodex" if codex else "EmbedClaude"
+    __import__('sys').path.insert(0, str(ROOT / 'hooks'))
+    from seat_lifecycle import bind_handoff
+    bind_handoff(pathlib.Path(env['AGENTSTACK_RUNTIME_DIR']), handoff, child_name, env['PROJECT_KEY'])
 
     args = [
         "/bin/bash", str(SPAWN),

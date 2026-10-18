@@ -443,7 +443,8 @@ def bind_handoff(runtime: Path, path: Path, name: str, project: str):
     with os.fdopen(fd, 'rb') as stream:
         info = os.fstat(stream.fileno())
         if (not stat.S_ISREG(info.st_mode) or info.st_uid != os.getuid()
-                or stat.S_IMODE(info.st_mode) != 0o600 or not 0 < info.st_size <= 4096):
+                or stat.S_IMODE(info.st_mode) != 0o600 or not 0 < info.st_size <= 4096
+                or info.st_nlink != 1):
             raise ValueError("handoff must be an owned regular 0600 bounded file")
         data = stream.read(4097)
     ticket = path.with_name(path.name + ".handoff.json")
@@ -456,6 +457,8 @@ def bind_handoff(runtime: Path, path: Path, name: str, project: str):
 
 def check_handoff(runtime: Path, path: Path, name: str, project: str, info, data: bytes):
     path = handoff_location(runtime, path)
+    if info.st_nlink != 1:
+        raise ValueError("handoff is hardlinked")
     ticket = path.with_name(path.name + ".handoff.json")
     fd = os.open(ticket, os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0))
     with os.fdopen(fd) as stream:

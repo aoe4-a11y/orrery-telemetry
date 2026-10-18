@@ -32,7 +32,8 @@ class Restart3Tests(unittest.TestCase):
             import json, os, pathlib, sys, time
             try: os.fstat(9); inherited = True
             except OSError: inherited = False
-            pathlib.Path(sys.argv[1]).write_text(json.dumps({'fd9': inherited, 'env': os.environ.get('AGENTSTACK_SEAT_LOCK_FD')}))
+            authority = [key for key in ('AGENTSTACK_LAUNCH_JOURNAL', 'AGENTSTACK_LIFECYCLE_NAME', 'AGENTSTACK_DIRECT_CANDIDATE') if key in os.environ]
+            pathlib.Path(sys.argv[1]).write_text(json.dumps({'fd9': inherited, 'env': os.environ.get('AGENTSTACK_SEAT_LOCK_FD'), 'authority': authority}))
             for _ in range(500):
                 if pathlib.Path(sys.argv[2]).exists(): break
                 time.sleep(.02)
@@ -41,6 +42,7 @@ class Restart3Tests(unittest.TestCase):
         script.write_text(opener + '\n_open_child_terminal() { python3 "$FIXTURE_OPENER" "$FIXTURE_MARKER" "$FIXTURE_RELEASE"; }\nopen_child_terminal FixtureSeat\n')
         seat = Seat(base/'runtime', 'FixtureSeat')
         env = dict(self.lane.fixture.fixture_env, FIXTURE_OPENER=str(stub), FIXTURE_MARKER=str(marker), FIXTURE_RELEASE=str(release)) if hasattr(self.lane.fixture, 'fixture_env') else dict(os.environ, FIXTURE_OPENER=str(stub), FIXTURE_MARKER=str(marker), FIXTURE_RELEASE=str(release))
+        env.update(AGENTSTACK_LAUNCH_JOURNAL='fixture', AGENTSTACK_LIFECYCLE_NAME='FixtureSeat', AGENTSTACK_DIRECT_CANDIDATE='FixtureSeat')
         # The fixture's parent HOME is already isolated by setUp.
         subprocess.run([sys.executable, str(ROOT/'hooks/seat_lifecycle.py'), 'lock-exec', '--runtime', str(seat.root), '--name', seat.name, '--', '/bin/bash', str(script)], env=env, check=True, timeout=10)
         import time
@@ -55,7 +57,7 @@ class Restart3Tests(unittest.TestCase):
                 except BlockingIOError: available = False
             finally: os.close(fd)
             self.assertTrue(available, 'background opener retains the seat lock')
-            self.assertEqual(json.loads(marker.read_text()), {'fd9': False, 'env': None})
+            self.assertEqual(json.loads(marker.read_text()), {'fd9': False, 'env': None, 'authority': []})
         finally: release.touch()
 
     def test_arbitrary_private_text_is_not_consumable_handoff(self):
@@ -98,6 +100,7 @@ class Restart3Tests(unittest.TestCase):
         with owner.locked():
             value = owner.validate(child['AGENTSTACK_LAUNCH_JOURNAL'])
             self.assertIsNotNone(value)
+            value['auth']['owned'].sort(key=lambda entry: entry[0] != str(seat['token']))
             seat['token'].rename(seat['token'].with_suffix('.old'))
             seat['token'].write_text('replacement after last validation')
             # Isolate the per-entry guard from the earlier validate() gate.
@@ -278,6 +281,19 @@ module.pytest_unconfigure(None)
 '''
         result = subprocess.run([sys.executable, '-c', code, str(ROOT)], env=seat['env'], cwd=ROOT, capture_output=True, text=True, timeout=10)
         self.assertEqual(result.returncode, 0, result.stderr)
+
+    def test_registration_writer_uses_a_new_inode_only_for_a_rotated_token(self):
+        seat = self.lane.arrange(True)
+        original = seat['token'].stat().st_ino
+        script = '. "$1"; ags_store_registration_token "$2" "$3"'
+        args = ['/bin/bash', '-c', script, 'fixture', str(ROOT/'bin/lib/agentstack-register.sh'), fixtures.NAME, 'rotated-fixture-token']
+        first = subprocess.run(args, env=seat['env'], capture_output=True, text=True, timeout=10)
+        self.assertEqual(first.returncode, 0, first.stderr)
+        rotated = seat['token'].stat().st_ino
+        self.assertNotEqual(original, rotated, 'in-place token rotation bypasses inode ownership')
+        second = subprocess.run(args, env=seat['env'], capture_output=True, text=True, timeout=10)
+        self.assertEqual(second.returncode, 0, second.stderr)
+        self.assertEqual(seat['token'].stat().st_ino, rotated)
 
 
 def test_dashboard_reused_attempt_cannot_kill_started_same_inode_successor(monkeypatch, tmp_path):

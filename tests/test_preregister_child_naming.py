@@ -166,6 +166,11 @@ def _output_handoff_case(kind):
                   else runtime / "child-agents/FreshCurie.json" if kind == "state"
                   else runtime / "spawn-tokens/00000000000000000000000000000002.token")
         output.parent.mkdir(parents=True, exist_ok=True)
+        if kind == "hardlink":
+            foreign = runtime / "seat-locks/fixture.lock"
+            foreign.parent.mkdir()
+            foreign.write_text(""); foreign.chmod(0o600)
+            output.hardlink_to(foreign)
         if kind in ("empty", "nonempty"):
             output.write_text("" if kind == "empty" else "existing fixture data")
             output.chmod(0o600)
@@ -176,6 +181,12 @@ def _output_handoff_case(kind):
             [str(_HELPER), "--name", "Fresh-Curie", "--program", "codex", "--model", "m",
              "--token-file-out", str(output)], env=env, capture_output=True, text=True, timeout=10)
         return result, output.read_text() if output.exists() else None
+
+
+def test_preregister_rejects_hardlinked_empty_record():
+    result, payload = _output_handoff_case("hardlink")
+    assert result.returncode != 0
+    assert payload == ""
 
 
 def test_secure_empty_mktemp_handoff_remains_supported():
@@ -198,4 +209,8 @@ def test_preregister_does_not_overwrite_nonempty_output():
 
 
 if __name__ == "__main__":
-    sys.exit(_main())
+    from user_home_isolation import isolated_user_environment
+    with tempfile.TemporaryDirectory() as fixture_home:
+        environment = isolated_user_environment(pathlib.Path(fixture_home))
+        os.environ.clear(); os.environ.update(environment)
+        sys.exit(_main())

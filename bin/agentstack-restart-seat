@@ -36,7 +36,10 @@ esac
 [ -d "$WORKDIR" ] || { echo "ERROR: workdir が存在しません: $WORKDIR" >&2; exit 2; }
 
 export PARENT_AGENT="${PARENT_AGENT:-ProudTuring}"
-STATE_PROJECT="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["project_key"])' "$RUNTIME_DIR/child-agents/$NAME.json")"
+if ! STATE_PROJECT="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["project_key"])' "$RUNTIME_DIR/child-agents/$NAME.json" 2>/dev/null)"; then
+  echo "ERROR: authoritative state project is unavailable; preserving seat $NAME" >&2
+  exit 1
+fi
 [[ -n "$STATE_PROJECT" ]] || { echo "ERROR: missing state project; preserving seat" >&2; exit 1; }
 [[ -z "$CALLER_PROJECT" || "$CALLER_PROJECT" == "$STATE_PROJECT" ]] || { echo "ERROR: project mismatch; preserving seat" >&2; exit 1; }
 export AGENTSTACK_PROJECT_KEY="$STATE_PROJECT"

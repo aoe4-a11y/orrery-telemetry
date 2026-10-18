@@ -382,6 +382,10 @@ def test_install_help_keeps_assume_yes_inside_approval_boundary():
 
 
 def test_noninteractive_assume_yes_is_explicit_audited_approval(tmp_path):
+    _exercise_noninteractive_installer(tmp_path)
+
+
+def _exercise_noninteractive_installer(tmp_path, *, uninstall=True):
     home = tmp_path / "home"
     env = _clean_env(home)
     fake_bin = tmp_path / "fake-bin"
@@ -533,6 +537,9 @@ def test_noninteractive_assume_yes_is_explicit_audited_approval(tmp_path):
         ).read_text(encoding="utf-8")
     finally:
         _stop_fake_dashboard(env)
+
+    if not uninstall:
+        return
 
     uninstalled = subprocess.run(
         [

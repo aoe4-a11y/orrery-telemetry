@@ -591,7 +591,8 @@ flush_queued_prompt Child
 def test_optional_terminal_open_is_detached_from_spawn_completion():
     text = _SPAWN.read_text(encoding="utf-8")
     helper = _extract("open_child_terminal")
-    assert '(_open_child_terminal "$1") </dev/null >/dev/null 2>&1 &' in helper
+    assert '_open_child_terminal "$1") 9>&- </dev/null >/dev/null 2>&1 &' in helper
+    assert "unset AGENTSTACK_SEAT_LOCK_FD" in helper
     assert "optional observer side effect" in text
 
 

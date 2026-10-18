@@ -104,8 +104,10 @@ from seat_lifecycle import handoff_location
 output = Path(sys.argv[1]).expanduser().absolute()
 runtime = Path(sys.argv[2]).expanduser().resolve()
 handoff_location(runtime, output)
-if output.exists() and output.stat().st_size:
-    raise SystemExit("pending handoff cannot be overwritten")
+if output.exists():
+    info = output.stat()
+    if info.st_size or info.st_nlink != 1:
+        raise SystemExit("pending handoff cannot be overwritten or hardlinked")
 PY
 then die "refusing unowned handoff output path"; fi
 
@@ -194,7 +196,8 @@ with os.fdopen(fd, "r+b") as stream:
     fcntl.flock(stream.fileno(), fcntl.LOCK_EX)
     identity = os.fstat(stream.fileno())
     if (not stat.S_ISREG(identity.st_mode) or identity.st_uid != os.getuid()
-            or stat.S_IMODE(identity.st_mode) & 0o077 or identity.st_size != 0):
+            or stat.S_IMODE(identity.st_mode) & 0o077 or identity.st_size != 0
+            or identity.st_nlink != 1):
         raise ValueError("one-shot output must be an owned empty regular 0600 file")
     stream.write(sys.stdin.buffer.read())
     stream.flush()
