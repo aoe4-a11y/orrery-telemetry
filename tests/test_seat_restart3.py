@@ -292,6 +292,33 @@ class Restart3Tests(unittest.TestCase):
                 finally:
                     subprocess.run([*base, 'kill-server'], env=environment, capture_output=True, timeout=10)
 
+    def test_allowlist_preserves_the_selected_tmux_socket(self):
+        import shutil
+        import tempfile
+        real_tmux=shutil.which('tmux')
+        if not real_tmux:self.skipTest('tmux unavailable')
+        source=fixtures.SPAWN.read_text()
+        start=source.index('    TMUX_CLIENT_ENV=(env -i)')
+        end=source.index('    done',start)+len('    done')
+        prefix=source[start:end]
+        with tempfile.TemporaryDirectory(prefix='r4-route-',dir='/private/tmp') as directory:
+            base=Path(directory);custom=base/'custom.sock'
+            default=base/('tmux-'+str(os.getuid()))/'default'
+            environment={k:v for k,v in os.environ.items() if k in ('PATH','LANG','USER','LOGNAME')}
+            environment.update(HOME=str(base),TMUX_TMPDIR=str(base))
+            try:
+                subprocess.run([real_tmux,'-S',str(custom),'new-session','-d','-s','Seed','/bin/sleep 15'],env=environment,check=True,timeout=10)
+                environment['TMUX']=subprocess.check_output([real_tmux,'-S',str(custom),'display-message','-p','-t','Seed','#{socket_path},#{pid},0'],env=environment,text=True).strip()
+                command=prefix+'\n"${TMUX_CLIENT_ENV[@]}" tmux new-session 9>&- -d -s Requested "/bin/sleep 15"'
+                result=subprocess.run(['/bin/bash','-c',command],env=environment,capture_output=True,text=True,timeout=10)
+                self.assertEqual(result.returncode,0,result.stderr)
+                result=subprocess.run([real_tmux,'-S',str(custom),'has-session','-t','=Requested'],env=environment,capture_output=True,timeout=10)
+                self.assertEqual(result.returncode,0,'selected tmux transport was lost')
+                self.assertFalse(default.exists(),'launcher unexpectedly started another server')
+            finally:
+                for socket in (custom,default):
+                    subprocess.run([real_tmux,'-S',str(socket),'kill-server'],env=environment,capture_output=True,timeout=10)
+
     def test_collection_isolation_precedes_dashboard_import_and_blocks_keychain(self):
         seat = self.lane.arrange()
         code = '''import importlib.util, os, pathlib, subprocess, sys

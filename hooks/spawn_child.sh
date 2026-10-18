@@ -1843,7 +1843,7 @@ if [[ -n "$PRE_REGISTERED" ]]; then
     # tmux may start the shared server here. Give that server only OS/session
     # transport settings; child authority is passed explicitly with -e below.
     TMUX_CLIENT_ENV=(env -i)
-    for os_key in HOME PATH USER LOGNAME SHELL TERM LANG LC_ALL LC_CTYPE TMPDIR TMUX_TMPDIR SSH_AUTH_SOCK DISPLAY XAUTHORITY TERMINFO TERMINFO_DIRS __CF_USER_TEXT_ENCODING; do
+    for os_key in HOME PATH USER LOGNAME SHELL TERM LANG LC_ALL LC_CTYPE TMPDIR TMUX TMUX_TMPDIR SSH_AUTH_SOCK DISPLAY XAUTHORITY TERMINFO TERMINFO_DIRS __CF_USER_TEXT_ENCODING; do
         if [[ -n "${!os_key+x}" ]]; then
             TMUX_CLIENT_ENV+=("$os_key=${!os_key}")
         fi
