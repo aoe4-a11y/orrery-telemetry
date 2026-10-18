@@ -26,6 +26,26 @@ import time
 
 import pytest
 
+from user_home_isolation import isolated_user_environment
+
+
+@pytest.fixture(autouse=True)
+def _isolated_user_directories(tmp_path, monkeypatch):
+    """An installer fixture may inherit config roots independently of HOME.
+
+    In particular, a delegated Codex home can contain an AGENTS.md symlink to
+    the live global file. Redirect every user/config root before the test body
+    constructs subprocess environments; explicit per-test overrides remain free
+    to select their own temporary roots.
+    """
+    ambient = dict(os.environ)
+    isolated = isolated_user_environment(tmp_path / "user-home", ambient)
+    for key in ambient.keys() - isolated.keys():
+        monkeypatch.delenv(key, raising=False)
+    for key, value in isolated.items():
+        if ambient.get(key) != value:
+            monkeypatch.setenv(key, value)
+
 # Labels this machine's own services use. The mail service is the one the
 # suite has actually stopped; the autostart wrapper is named per install, so
 # it is read from the environment rather than written down here -- an operator

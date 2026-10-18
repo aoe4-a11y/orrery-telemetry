@@ -16,6 +16,14 @@ PYTHONPATH=. .venv/bin/python -m pytest -q
 `~/.agentstack/` — those are production artifacts whose contents are pinned
 by cutover receipts.
 
+The root `tests/` suite gives each test temporary user/config directories via
+`user_home_isolation.py`. Changing `HOME` alone is insufficient: an inherited
+`CODEX_HOME` can contain an `AGENTS.md` symlink to the real global instructions.
+Subprocess fixtures must retain the isolated config roots or explicitly choose
+other temporary roots; never pass a developer's identity/runtime environment
+to an installer test. Standalone fixture runners can use
+`isolated_user_environment()` as well.
+
 Two caveats learned by measurement:
 
 - Do not pipe pytest through `tail` without `pipefail`: the pipeline exits
