@@ -99,6 +99,9 @@ class LifecycleTests(unittest.TestCase):
         old_env = self.launch(seat)
         old_inode = seat['token'].stat().st_ino
         seat['handoff'] = seat['token']
+        owner = Seat(seat['token'].parent, fixtures.NAME)
+        with owner.locked():
+            owner.invalidate()
         new_env = self.launch(seat)
         self.assertEqual(old_inode, seat['token'].stat().st_ino)
         self.assertNotEqual(old_env['AGENTSTACK_LAUNCH_JOURNAL'], new_env['AGENTSTACK_LAUNCH_JOURNAL'])
@@ -186,7 +189,6 @@ class LifecycleTests(unittest.TestCase):
         self.fixture.assert_existing(seat)
 
 
-if __name__ == '__main__': unittest.main()
 
 
 def test_preregister_wrappers_do_not_seed_canonical_identity(tmp_path):
@@ -276,6 +278,7 @@ def test_dashboard_failure_cleans_only_matching_launch_generation(monkeypatch, t
                 journal = seat.begin('/fixture/project', runtime / 'managed_agents.txt')
             paths = seat.paths(); paths['state'].parent.mkdir(exist_ok=True)
             for key in ('token','state'): paths[key].write_text('owned fixture identity')
+            paths['state'].write_text(json.dumps({'agent_name':'FreshCurie','project_key':'/fixture/project'}))
             auth = [[str(paths[key]), paths[key].stat().st_dev, paths[key].stat().st_ino] for key in ('token','state')]
             seat.update(journal['journal'], auth={'owned':auth,'observed':auth}, session_started=True)
     runtime, calls = _dashboard_fixture(monkeypatch, tmp_path, launch)
@@ -287,14 +290,19 @@ def test_dashboard_delayed_failure_preserves_same_inode_successor(monkeypatch, t
     def launch(runtime, args, env):
         seat = Seat(runtime, 'FreshCurie')
         with seat.locked():
-            journal = seat.begin('/fixture/project', runtime / 'managed_agents.txt')
-            journal['attempt'] = env['AGENTSTACK_LAUNCH_ATTEMPT_ID']; atomic_json(Path(journal['journal']), journal)
+            with __import__('unittest').mock.patch.dict(os.environ, {'AGENTSTACK_LAUNCH_ATTEMPT_ID':env['AGENTSTACK_LAUNCH_ATTEMPT_ID']}):
+                journal = seat.begin('/fixture/project', runtime / 'managed_agents.txt')
             paths = seat.paths(); paths['state'].parent.mkdir(exist_ok=True)
             for key in ('token','state'): paths[key].write_text('successor fixture identity')
+            paths['state'].write_text(json.dumps({'agent_name':'FreshCurie','project_key':'/fixture/project'}))
             auth = [[str(paths[key]), paths[key].stat().st_dev, paths[key].stat().st_ino] for key in ('token','state')]
             seat.update(journal['journal'], auth={'owned':auth,'observed':auth}, session_started=True)
             # Same auth inodes adopted by the next launch, with a new lease.
-            seat.begin('/fixture/project', runtime / 'managed_agents.txt')
+            seat.invalidate()
+            with __import__('unittest').mock.patch.dict(os.environ, {'AGENTSTACK_LAUNCH_ATTEMPT_ID':'different-successor-attempt'}):
+                successor = seat.begin('/fixture/project', runtime / 'managed_agents.txt')
+            seat.update(successor['journal'], auth={'observed':auth}, session_started=True)
+            assert seat.validate(successor['journal']) is not None
     runtime, calls = _dashboard_fixture(monkeypatch, tmp_path, launch)
     assert (runtime / 'agent_token_FreshCurie').read_text() == 'successor fixture identity'
     assert not any('kill-session' in call for call in calls)
@@ -535,3 +543,8 @@ echo added
     assert child.returncode == 0, err
     assert out.strip() == b"added"
     assert managed.read_text().splitlines() == ["OtherSeat", "AddedSeat"]
+
+
+if __name__ == "__main__":
+    import pytest
+    raise SystemExit(pytest.main([__file__, "-q"]))

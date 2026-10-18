@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import os
+import subprocess
 from pathlib import Path
 import subprocess
 import tempfile
@@ -75,7 +76,8 @@ class UserHomeIsolationTests(unittest.TestCase):
                 "AGENTSTACK_RUNTIME_DIR": "/external/runtime",
                 "CHILD_REGISTRATION_TOKEN": "fixture-only-token",
             })
-            self.assertEqual(env["PATH"], "/fixture/bin")
+            self.assertTrue(env["PATH"].endswith(os.pathsep + "/fixture/bin"))
+            self.assertEqual(subprocess.run(["security"], env=env, capture_output=True).returncode, 77)
             for key in ("AGENT_NAME", "AGENTSTACK_RUNTIME_DIR", "CHILD_REGISTRATION_TOKEN"):
                 self.assertNotIn(key, env)
 

@@ -5,6 +5,7 @@
 # 使ってよい場面: 席の cwd が消えた / TUI が壊れた / 応答不能で復帰しない。
 set -euo pipefail
 ORIGINAL_ARGV=("$@")
+CALLER_PROJECT="${AGENTSTACK_PROJECT_KEY:-${PROJECT_KEY:-}}"
 [ -f "$HOME/.agentstack/env.sh" ] && source "$HOME/.agentstack/env.sh"
 
 NAME="${1:?seat name (e.g. WarmArchimedes)}"
@@ -37,9 +38,10 @@ esac
 export PARENT_AGENT="${PARENT_AGENT:-ProudTuring}"
 STATE_PROJECT="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["project_key"])' "$RUNTIME_DIR/child-agents/$NAME.json")"
 [[ -n "$STATE_PROJECT" ]] || { echo "ERROR: missing state project; preserving seat" >&2; exit 1; }
-[[ -z "${AGENTSTACK_PROJECT_KEY:-}" || "$AGENTSTACK_PROJECT_KEY" == "$STATE_PROJECT" ]] || { echo "ERROR: project mismatch; preserving seat" >&2; exit 1; }
+[[ -z "$CALLER_PROJECT" || "$CALLER_PROJECT" == "$STATE_PROJECT" ]] || { echo "ERROR: project mismatch; preserving seat" >&2; exit 1; }
 export AGENTSTACK_PROJECT_KEY="$STATE_PROJECT"
 export PROJECT_KEY="$STATE_PROJECT"
+export AGENTSTACK_REFRESH_CHILD_CONFIG=1
 # Invalidate delayed cleanup from the previous launch before stopping it.
 python3 "$LIFECYCLE" invalidate --runtime "$RUNTIME_DIR" --name "$NAME"
 

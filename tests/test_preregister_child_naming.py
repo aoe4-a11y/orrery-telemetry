@@ -78,7 +78,7 @@ def _run(args: list[str], env: dict[str, str] | None = None
         if env:
             run_env.update(env)
         return subprocess.run(
-            [str(_HELPER), "--token-file-out", str(tmpdir / "tok"), *args],
+            [str(_HELPER), "--token-file-out", str(tmpdir / "runtime/spawn-tokens/00000000000000000000000000000001.token"), *args],
             cwd=_ROOT, env=run_env, text=True,
             stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=False,
         )
@@ -148,8 +148,6 @@ def _main() -> int:
     return 1 if failures else 0
 
 
-if __name__ == "__main__":
-    sys.exit(_main())
 
 
 def test_preregister_only_creates_the_one_shot_not_canonical_identity():
@@ -166,7 +164,7 @@ def _output_handoff_case(kind):
         runtime = root / "runtime"
         output = (runtime / "agent_token_FreshCurie" if kind == "canonical"
                   else runtime / "child-agents/FreshCurie.json" if kind == "state"
-                  else root / "handoff")
+                  else runtime / "spawn-tokens/00000000000000000000000000000002.token")
         output.parent.mkdir(parents=True, exist_ok=True)
         if kind in ("empty", "nonempty"):
             output.write_text("" if kind == "empty" else "existing fixture data")
@@ -197,3 +195,7 @@ def test_preregister_does_not_overwrite_nonempty_output():
     result, payload = _output_handoff_case("nonempty")
     assert result.returncode != 0
     assert payload == "existing fixture data"
+
+
+if __name__ == "__main__":
+    sys.exit(_main())

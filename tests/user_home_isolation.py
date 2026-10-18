@@ -4,6 +4,26 @@ from __future__ import annotations
 import os
 from pathlib import Path
 from collections.abc import Mapping
+import atexit
+import tempfile
+
+_socket_root = None
+
+
+def private_tmux_directory():
+    global _socket_root
+    if _socket_root is None:
+        _socket_root = Path(tempfile.mkdtemp(prefix='orrery-test-tmux-', dir='/tmp'))
+        def remove_empty_socket_directory():
+            # Never unlink a socket or stop a process implicitly.
+            for entry in _socket_root.iterdir():
+                if entry.is_dir():
+                    try: entry.rmdir()
+                    except OSError: pass
+            try: _socket_root.rmdir()
+            except OSError: pass
+        atexit.register(remove_empty_socket_directory)
+    return str(_socket_root)
 
 
 def isolated_user_environment(
@@ -37,4 +57,14 @@ def isolated_user_environment(
         if not path.resolve(strict=False).is_relative_to(home):
             raise ValueError(f"fixture user directory escaped its home: {key}")
         env[key] = str(path)
+    # tmux ignores TMPDIR; its default server socket must be private too.
+    # A short socket directory avoids AF_UNIX's path length limit on macOS.
+    env['TMUX_TMPDIR'] = private_tmux_directory()
+    env['AGENTSTACK_MAIL_HTTP_BEARER_MODE'] = 'disabled'
+    guards = home / '.test-bin'
+    guards.mkdir(exist_ok=True)
+    security = guards / 'security'
+    security.write_text('#!/bin/sh\necho "test blocked login keychain access" >&2\nexit 77\n')
+    security.chmod(0o700)
+    env['PATH'] = str(guards) + os.pathsep + env.get('PATH', os.defpath)
     return env

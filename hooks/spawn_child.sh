@@ -63,7 +63,7 @@ ORIGINAL_ARGV=("$@")
 HOOKS_DIR="${AGENTSTACK_HOOKS_DIR:-$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)}"
 LIFECYCLE_HELPER="$HOOKS_DIR/seat_lifecycle.py"
 export AGENTSTACK_HOOKS_DIR="$HOOKS_DIR"
-RUNTIME_DIR="${AGENTSTACK_RUNTIME_DIR:-$HOME/.agentstack/runtime}"
+RUNTIME_DIR="${AGENTSTACK_RUNTIME_DIR:-${AGENTSTACK_HOME:-$HOME/.agentstack}/runtime}"
 export AGENTSTACK_RUNTIME_DIR="$RUNTIME_DIR"
 MANAGED_FILE="${AGENTSTACK_MANAGED_AGENTS_FILE:-$RUNTIME_DIR/managed_agents.txt}"
 MAIL_ENV="${AGENTSTACK_MAIL_ENV:-$HOME/.agentstack/mail/.env}"
@@ -206,7 +206,7 @@ _open_child_terminal() {
 # after the tmux child was already alive. Detach it from the launcher's critical
 # path; failures remain best-effort diagnostics from the worker above.
 open_child_terminal() {
-    (_open_child_terminal "$1") </dev/null >/dev/null 2>&1 &
+    (unset AGENTSTACK_SEAT_LOCK_FD; _open_child_terminal "$1") 9>&- </dev/null >/dev/null 2>&1 &
     return 0
 }
 
@@ -341,7 +341,7 @@ import pathlib
 import stat
 import sys
 sys.path.insert(0, os.environ.get("AGENTSTACK_HOOKS_DIR", ""))
-from seat_lifecycle import record_intent
+from seat_lifecycle import record_intent, check_handoff
 
 agent_name, project_key, source, token_file, state_file, consume = sys.argv[1:7]
 report_ownership = len(sys.argv) > 7 and sys.argv[7] == "true"
@@ -371,11 +371,14 @@ try:
         raise ValueError("token handoff is not a regular file")
     if stat.S_IMODE(info.st_mode) & 0o077:
         raise PermissionError("token handoff permissions must be 0600")
-    registration_token = os.read(fd, 4097).decode("utf-8").strip()
+    raw_token = os.read(fd, 4097)
+    registration_token = raw_token.decode("utf-8").strip()
 finally:
     os.close(fd)
-if not registration_token or len(registration_token) > 4096:
+if not registration_token or len(raw_token) > 4096:
     raise ValueError("token handoff is empty or too large")
+if not (token_preexisted and os.path.samefile(source_path, token_path)):
+    check_handoff(token_path.parent, source_path, agent_name, project_key, info, raw_token)
 
 # An existing durable identity is authoritative. A handoff may authenticate it,
 # but cannot rotate its token or replace its metadata as a launch side effect.
@@ -1123,7 +1126,7 @@ import os
 import pathlib
 import sys
 sys.path.insert(0, os.environ.get("AGENTSTACK_HOOKS_DIR", ""))
-from seat_lifecycle import record_intent
+from seat_lifecycle import record_intent, refresh_generated_file
 
 path, runner, child, project_key, token_file, mcp_url, mail_env, runtime_dir, claude_json, bearer_mode, python_bin = sys.argv[1:12]
 server_env = dict(
@@ -1186,7 +1189,16 @@ try:
     handle = open(path, "x", encoding="utf-8")
 except FileExistsError:
     if report_ownership:
-        # This launch did not create it; leave its bytes and ownership intact.
+        if os.environ.get('AGENTSTACK_REFRESH_CHILD_CONFIG') == '1':
+            old = pathlib.Path(path)
+            if old.is_symlink():
+                raise ValueError('existing MCP config is a symlink')
+            prior = json.loads(old.read_text())
+            servers = prior.get('mcpServers', {}).values()
+            if not any(s.get('env', {}).get('AGENTSTACK_PROXY_AGENT_NAME') == child
+                       and s.get('env', {}).get('AGENTSTACK_PROJECT_KEY') == project_key for s in servers):
+                raise ValueError('existing MCP config belongs to another owner')
+            refresh_generated_file(old, json.dumps(config, indent=2))
         ready = True
         raise SystemExit(0)
     handle = open(path, "w", encoding="utf-8")
@@ -1274,7 +1286,7 @@ import pathlib
 import re
 import sys
 sys.path.insert(0, os.environ.get("AGENTSTACK_HOOKS_DIR", ""))
-from seat_lifecycle import record_intent
+from seat_lifecycle import record_intent, record_home_entry, refresh_generated_file
 
 home, source, runner, child, project_key, token_file, mcp_url, mail_env, runtime_dir, bearer_mode, python_bin = sys.argv[1:12]
 home_path = pathlib.Path(home)
@@ -1287,7 +1299,9 @@ if report_ownership:
 try:
     home_path.mkdir(mode=0o700, parents=True, exist_ok=False)
 except FileExistsError:
-    if report_ownership:
+    if home_path.is_symlink() or not home_path.is_dir():
+        raise ValueError("existing child home must be a real directory")
+    if report_ownership and os.environ.get('AGENTSTACK_REFRESH_CHILD_CONFIG') != '1':
         ready = True
         raise SystemExit(0)
 else:
@@ -1306,11 +1320,10 @@ for entry in source_path.iterdir():
         continue
     link = home_path / entry.name
     if link.is_symlink() or link.exists():
-        if link.is_symlink():
-            link.unlink()
-        else:
-            continue
+        # Existing child content is outside this writer's creation set.
+        continue
     os.symlink(entry, link)
+    record_home_entry(link)
 
 def looks_like_agent_mail(name):
     normalized = name.replace("-", "").replace("_", "").replace('"', "").lower()
@@ -1431,7 +1444,16 @@ for name in claimed:
         lines.append("approval_mode = \"approve\"")
 
 target = home_path / "config.toml"
-target.write_text("\n".join(lines) + "\n", encoding="utf-8")
+payload = "\n".join(lines) + "\n"
+if target.exists() or target.is_symlink():
+    if target.is_symlink() or '# Written by spawn_child.sh:' not in target.read_text():
+        raise ValueError('existing config is not a generated child config')
+    refresh_generated_file(target, payload)
+else:
+    with target.open("x", encoding="utf-8") as handle:
+        record_home_entry(target)
+        handle.write(payload)
+    record_home_entry(target)
 os.chmod(target, 0o600)
 ready = True
 PY
@@ -1594,6 +1616,55 @@ if [[ -z "$PROJECT_KEY" ]]; then
     exit 1
 fi
 
+call_mcp() {
+    local method="$1"
+    local args_json="$2"
+    local transport_token="${TOKEN:-}"
+    if [[ -z "$transport_token" ]] && legacy_http_bearer_enabled; then
+        transport_token="$(get_agentstack_token 2>/dev/null || true)"
+    fi
+    # Both the owner token embedded in args_json and the HTTP bearer travel over
+    # stdin.  Neither secret is visible in ps(1) argv or a child environment.
+    printf '%s\0%s' "$args_json" "$transport_token" | python3 -c '
+import sys, json, http.client
+from urllib.parse import urlparse
+
+method = sys.argv[1]
+url = sys.argv[2]
+args_raw, token = sys.stdin.buffer.read().split(b"\0", 1)
+args = json.loads(args_raw)
+token = token.decode("utf-8")
+
+parsed = urlparse(url)
+payload = json.dumps({
+    "jsonrpc": "2.0",
+    "id": 1,
+    "method": "tools/call",
+    "params": {"name": method, "arguments": args}
+}).encode()
+
+conn = http.client.HTTPConnection(parsed.hostname, parsed.port, timeout=30)
+headers = {
+    "Content-Type": "application/json",
+    "Accept": "application/json",
+    "Connection": "close"
+}
+if token:
+    headers["Authorization"] = f"Bearer {token}"
+conn.request("POST", parsed.path, body=payload, headers=headers)
+resp = conn.getresponse()
+body = resp.read().decode()
+print(body)
+conn.close()
+try:
+    decoded = json.loads(body)
+except ValueError:
+    sys.exit(1)
+if resp.status >= 400 or decoded.get("error") or decoded.get("result", {}).get("isError"):
+    sys.exit(1)
+' "$method" "$MCP_URL"
+}
+
 # --- Pre-registered mode ---
 # 親エージェントが MCP 経由で事前に register_agent / file_reservation_paths を
 # 済ませてから呼ぶモード。通常は task mail を正本にし、--embed-task 使用時は
@@ -1684,6 +1755,18 @@ if [[ -n "$PRE_REGISTERED" ]]; then
             if [[ "$PRE_REGISTERED_SESSION_STARTED" == true ]]; then
                 tmux kill-session -t "=$CHILD_NAME" >/dev/null 2>&1 || true
             fi
+            # Restore the direct path's remote rollback before deleting its token.
+            if [[ "${AGENTSTACK_DIRECT_REGISTRATION_NAME:-}" == "$CHILD_NAME" ]]; then
+                local failure_args
+                if failure_args="$(lifecycle failure-retire-args)"; then
+                    lifecycle check || return
+                    call_mcp "release_file_reservations" "$failure_args" >/dev/null || return
+                    lifecycle check || return
+                    call_mcp "retire_agent" "$failure_args" >/dev/null || return
+                else
+                    return
+                fi
+            fi
             lifecycle delete || true
         else
             echo "[spawn_child] ownership changed or is unavailable; preserving seat artifacts" >&2
@@ -1754,7 +1837,7 @@ if [[ -n "$PRE_REGISTERED" ]]; then
     # tmux server. Requires tmux >= 3.0.
     TMUX_ENV_ARGS=(-e "CLAUDECODE=1" -e "AGENTSTACK_RESERVED_IDENTITY=1" -e "AGENT_NAME=$CHILD_NAME" -e "PROJECT_KEY=$PROJECT_KEY" -e "AGENTSTACK_PROJECT_KEY=$PROJECT_KEY" -e "AGENTSTACK_HOOKS_DIR=$HOOKS_DIR" -e "AGENTSTACK_RUNTIME_DIR=$RUNTIME_DIR" -e "AGENTSTACK_MCP_URL=$MCP_URL" -e "AGENTSTACK_MAIL_ENV=$MAIL_ENV" -e "AGENTSTACK_MAIL_HTTP_BEARER_MODE=$HTTP_BEARER_MODE" -e "AGENTSTACK_TERMINAL=$TERMINAL_SETTING" -e "AGENTSTACK_CODEX_SANDBOX=${AGENTSTACK_CODEX_SANDBOX:-workspace-write}" -e "AGENTSTACK_CODEX_APPROVAL=$(codex_approval_flags)" -e "AGENTSTACK_CODEX_NETWORK_FLAGS=$(codex_network_flags)")
     TMUX_ENV_ARGS+=(-e "AGENTSTACK_LAUNCH_JOURNAL=$AGENTSTACK_LAUNCH_JOURNAL" -e "AGENTSTACK_LIFECYCLE_NAME=$CHILD_NAME")
-    TMUX_ENV_ARGS+=(-e "AGENTSTACK_PRESERVE_SEAT_IDENTITY=$PREREG_PRESERVE_IDENTITY")
+    TMUX_ENV_ARGS+=(-e "AGENTSTACK_PRESERVE_SEAT_IDENTITY=$PREREG_PRESERVE_IDENTITY" -e "CHILD_RESOURCES=${CHILD_RESOURCES:-}")
     TMUX_ENV_ARGS+=(-e "AGENTSTACK_LAUNCH_AUTH_OWNERSHIP=$PREREG_AUTH_OWNERSHIP")
     if [[ "$STANDALONE" != true ]]; then
         TMUX_ENV_ARGS+=(-e "PARENT_AGENT=$PARENT_NAME")
@@ -1792,7 +1875,7 @@ ${TASK}"
         else
             CODEX_PROMPT="You are ${CHILD_NAME}. The parent agent is ${PARENT_NAME}. The child name ${CHILD_NAME} is already reserved, so do not register under another name. The canonical task is in your ORRERY Mail inbox. First, if ${REREGISTER_HELPER:-agentstack-reregister} exists, run PROJECT_KEY=${PROJECT_KEY} ${REREGISTER_HELPER:-agentstack-reregister} ${CHILD_NAME}; when that succeeds, skip register_agent and fetch_inbox for ${CHILD_NAME}. The helper reads the child-owned 0600 token file; never request or print its token. Do not infer the task from this prompt; treat the inbox request as authoritative."
         fi
-        tmux new-session 9>&- -d -s "$CHILD_NAME" \
+        env -u AGENTSTACK_REFRESH_CHILD_CONFIG -u AGENTSTACK_DIRECT_REGISTRATION_NAME -u AGENTSTACK_SEAT_LOCK_FD -u AGENTSTACK_DIRECT_CANDIDATE -u AGENTSTACK_LIFECYCLE_NAME -u AGENTSTACK_LAUNCH_JOURNAL -u AGENTSTACK_LAUNCH_ATTEMPT_ID -u AGENTSTACK_MATERIALS_APPENDED -u AGENTSTACK_LAUNCH_AUTH_OWNERSHIP -u AGENTSTACK_LAUNCH_ARTIFACT_OWNERSHIP tmux new-session 9>&- -d -s "$CHILD_NAME" \
             -c "$WORK_DIR" \
             "${TMUX_ENV_ARGS[@]}" \
             "$CHILD_SHELL"' -lc '"'"'
@@ -1958,7 +2041,7 @@ ${TASK}"
             else
                 echo "[spawn_child/pre-reg] No MCP proxy available; child uses the shared ORRERY Mail endpoint" >&2
             fi
-            tmux new-session 9>&- -d -s "$CHILD_NAME" \
+            env -u AGENTSTACK_REFRESH_CHILD_CONFIG -u AGENTSTACK_DIRECT_REGISTRATION_NAME -u AGENTSTACK_SEAT_LOCK_FD -u AGENTSTACK_DIRECT_CANDIDATE -u AGENTSTACK_LIFECYCLE_NAME -u AGENTSTACK_LAUNCH_JOURNAL -u AGENTSTACK_LAUNCH_ATTEMPT_ID -u AGENTSTACK_MATERIALS_APPENDED -u AGENTSTACK_LAUNCH_AUTH_OWNERSHIP -u AGENTSTACK_LAUNCH_ARTIFACT_OWNERSHIP tmux new-session 9>&- -d -s "$CHILD_NAME" \
                 -c "$WORK_DIR" \
                 "${TMUX_ENV_ARGS[@]}" \
                 -e "CLAUDE_CHILD_MODEL=$CHILD_MODEL" \
@@ -2104,44 +2187,6 @@ if [[ "$bearer_status" == "0" && -z "$TOKEN" ]]; then
 fi
 
 # JSON-RPC呼び出しヘルパー（http.clientベース — urllib はSSEストリームでハングするため）
-call_mcp() {
-    local method="$1"
-    local args_json="$2"
-    # Both the owner token embedded in args_json and the HTTP bearer travel over
-    # stdin.  Neither secret is visible in ps(1) argv or a child environment.
-    printf '%s\0%s' "$args_json" "$TOKEN" | python3 -c '
-import sys, json, http.client
-from urllib.parse import urlparse
-
-method = sys.argv[1]
-url = sys.argv[2]
-args_raw, token = sys.stdin.buffer.read().split(b"\0", 1)
-args = json.loads(args_raw)
-token = token.decode("utf-8")
-
-parsed = urlparse(url)
-payload = json.dumps({
-    "jsonrpc": "2.0",
-    "id": 1,
-    "method": "tools/call",
-    "params": {"name": method, "arguments": args}
-}).encode()
-
-conn = http.client.HTTPConnection(parsed.hostname, parsed.port, timeout=30)
-headers = {
-    "Content-Type": "application/json",
-    "Accept": "application/json",
-    "Connection": "close"
-}
-if token:
-    headers["Authorization"] = f"Bearer {token}"
-conn.request("POST", parsed.path, body=payload, headers=headers)
-resp = conn.getresponse()
-print(resp.read().decode())
-conn.close()
-' "$method" "$MCP_URL"
-}
-
 load_agent_name_helpers() {
     if declare -F ags_pick_adjective_scientist_name >/dev/null 2>&1; then
         return 0
@@ -2323,6 +2368,7 @@ print(json.dumps({
         encoding="utf-8").strip(),
 }))
 ' "$PROJECT_KEY" "$agent_name" "$token_file")
+    call_mcp "release_file_reservations" "$retire_args" >/dev/null || return
     call_mcp "retire_agent" "$retire_args"
 }
 
@@ -2367,7 +2413,7 @@ fi
 python3 "$LIFECYCLE_HELPER" available --runtime "$RUNTIME_DIR" --name "$CHILD_NAME_CANDIDATE" || { echo "Error: local name is occupied" >&2; exit 1; }
 
 TOKEN_HANDOFF_DIR="$RUNTIME_DIR/spawn-tokens"
-TOKEN_NONCE="$(python3 -c 'import secrets; print(secrets.token_hex(8))')"
+TOKEN_NONCE="$(python3 -c 'import secrets; print(secrets.token_hex(16))')"
 DIRECT_ONE_SHOT_TOKEN_FILE="$TOKEN_HANDOFF_DIR/direct.$$.${TOKEN_NONCE}.token"
 DIRECT_ONE_SHOT_IDENTITY="$(generate_child_token_file "$DIRECT_ONE_SHOT_TOKEN_FILE")"
 REGISTER_ARGS=$(python3 -c '
@@ -2437,6 +2483,15 @@ fi
 # 一瞬 tmux session が作られていても child credentials と予約を回収する。
 SPAWN_COMPLETED=false
 CHILD_SESSION_STARTED=false
+export AGENTSTACK_DIRECT_REGISTRATION_NAME="$CHILD_NAME"
+python3 - "$RUNTIME_DIR" "$CHILD_TOKEN_FILE" "$CHILD_NAME" "$PROJECT_KEY" <<'PYTICKET'
+import sys
+from pathlib import Path
+sys.path.insert(0, __import__('os').environ['AGENTSTACK_HOOKS_DIR'])
+from seat_lifecycle import bind_handoff
+bind_handoff(Path(sys.argv[1]), Path(sys.argv[2]), sys.argv[3], sys.argv[4])
+PYTICKET
+
 cleanup_on_failure() {
     if [[ "$SPAWN_COMPLETED" == true ]]; then
         return
@@ -2584,7 +2639,15 @@ if [[ "$USE_CODEX" == true ]]; then COMMON_ARGS+=(--codex --effort "$CODEX_EFFOR
 if [[ -n "$RESOURCES" ]]; then export CHILD_RESOURCES="$RESOURCES"; fi
 # The parent owns worktree rollback until the common launch succeeds. Do not
 # create a second worktree or discard its dirty contents during child cleanup.
-if /bin/bash "$0" "${COMMON_ARGS[@]}" "$TASK" "$WORK_DIR"; then
+TASK_RECORD="$RUNTIME_DIR/seat-launches/direct.${TOKEN_NONCE}.task.md"
+printf '%s' "$TASK" | python3 -c '
+import os, pathlib, sys
+path = pathlib.Path(sys.argv[1]); path.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+with os.fdopen(fd, "wb") as stream:
+    stream.write(sys.stdin.buffer.read()); stream.flush(); os.fsync(stream.fileno())
+' "$TASK_RECORD"
+if /bin/bash "$0" "${COMMON_ARGS[@]}" --task-file "$TASK_RECORD" "$WORK_DIR"; then
     SPAWN_COMPLETED=true
 else
     exit $?

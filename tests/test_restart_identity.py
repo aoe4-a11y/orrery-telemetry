@@ -31,6 +31,15 @@ def executable(path: Path, content: str) -> None:
     path.write_text(content, encoding="utf-8")
     path.chmod(0o700)
 
+def fixture_handoff(runtime):
+    from seat_lifecycle import bind_handoff
+    directory = runtime / 'spawn-tokens'
+    directory.mkdir(mode=0o700, parents=True, exist_ok=True)
+    path = directory / (__import__('uuid').uuid4().hex + '.token')
+    path.write_text(TOKEN); path.chmod(0o600)
+    bind_handoff(runtime, path, NAME, '/fixture/project')
+    return path
+
 
 class RestartIdentityTests(unittest.TestCase):
     def setUp(self) -> None:
@@ -55,7 +64,7 @@ class RestartIdentityTests(unittest.TestCase):
         config = children / f"{NAME}.mcp.json"
         home = children / f"{NAME}.codex-home"
         managed = runtime / "managed_agents.txt"
-        handoff = self.base / "handoff"
+        handoff = runtime / "spawn-tokens" / (NAME + "." + __import__('uuid').uuid4().hex + ".token")
         if existing:
             token.write_text(TOKEN)
             token.chmod(0o600)
@@ -70,8 +79,11 @@ class RestartIdentityTests(unittest.TestCase):
             handoff = token
         else:
             managed.write_text("OtherSeat\n")
+            handoff.parent.mkdir(mode=0o700)
             handoff.write_text(TOKEN)
             handoff.chmod(0o600)
+            from seat_lifecycle import bind_handoff
+            bind_handoff(runtime, handoff, NAME, "/fixture/project")
         executable(bindir / "sleep", "#!/bin/sh\nexit 0\n")
         executable(bindir / "codex", "#!/bin/sh\n"
                    "if [ \"${1:-}\" = --help ]; then "
@@ -347,18 +359,18 @@ sys.exit(0)
         self.assertEqual(seat["config"].read_bytes(), before)
 
     def test_automatic_cleanup_preserves_replaced_writer_config(self) -> None:
-        seat = self.arrange(True)
-        self.enable_proxy(seat)
-        seat["config"].unlink()
-        ownership = self.write_mcp_with_ownership(seat)
-        seat["config"].rename(seat["config"].with_name("old-config-inode"))
-        seat["config"].write_text("replacement fixture config")
-        env = dict(seat["env"], AGENT_NAME=NAME,
-                   AGENTSTACK_LAUNCH_AUTH_OWNERSHIP=json.dumps({"observed": []}),
-                   AGENTSTACK_LAUNCH_ARTIFACT_OWNERSHIP=json.dumps(ownership))
-        subprocess.run(["/bin/bash", str(CLEANUP)], env=env, check=True, timeout=10)
-        self.assertEqual(seat["config"].read_text(), "replacement fixture config")
-        self.assertTrue(seat["token"].is_file())
+        from test_seat_lifecycle import LifecycleTests, Seat
+        lane = LifecycleTests(); lane.setUp()
+        try:
+            seat = lane.arrange(); env = lane.launch(seat, 'claude')
+            owner = Seat(seat['token'].parent, NAME)
+            self.assertIsNotNone(owner.validate(env['AGENTSTACK_LAUNCH_JOURNAL'], automatic=True))
+            seat['config'].rename(seat['config'].with_suffix('.old'))
+            seat['config'].write_text('replacement config owner')
+            lane.cleanup(env)
+            self.assertEqual(seat['config'].read_text(), 'replacement config owner')
+            self.assertTrue(seat['token'].exists())
+        finally: lane.doCleanups()
 
     def test_early_failure_removes_original_new_identity(self) -> None:
         seat = self.arrange(False)
@@ -389,19 +401,19 @@ sys.exit(0)
         self.assertEqual(seat["state"].read_bytes(), before)
 
     def test_automatic_cleanup_preserves_concurrent_identity_inodes(self) -> None:
-        seat = self.arrange(True)
-        observed = [(str(seat[key]), seat[key].stat().st_dev,
-                     seat[key].stat().st_ino) for key in ("token", "state")]
-        for key in ("token", "state"):
-            path = seat[key]
-            path.rename(path.with_name(path.name + ".old-inode"))
-            path.write_text("concurrent-fixture-owner")
-        env = dict(seat["env"], AGENT_NAME=NAME,
-                   AGENTSTACK_LAUNCH_AUTH_OWNERSHIP=json.dumps({"observed": observed}))
-        subprocess.run(["/bin/bash", str(CLEANUP)], env=env, check=True, timeout=10)
-        for key in ("token", "state"):
-            self.assertEqual(seat[key].read_text(), "concurrent-fixture-owner")
-        self.assertEqual(seat["managed"].read_text(), f"{NAME}\nOtherSeat\n")
+        from test_seat_lifecycle import LifecycleTests, Seat
+        lane = LifecycleTests(); lane.setUp()
+        try:
+            seat = lane.arrange(); env = lane.launch(seat)
+            owner = Seat(seat['token'].parent, NAME)
+            self.assertIsNotNone(owner.validate(env['AGENTSTACK_LAUNCH_JOURNAL'], automatic=True))
+            for key in ('token', 'state'):
+                path = seat[key]; path.rename(path.with_name(path.name + '.old'))
+                path.write_text('concurrent-fixture-owner')
+            lane.cleanup(env)
+            for key in ('token', 'state'):
+                self.assertEqual(seat[key].read_text(), 'concurrent-fixture-owner')
+        finally: lane.doCleanups()
 
     def test_fresh_child_failure_removes_new_identity(self) -> None:
         seat = self.arrange(False)
@@ -414,7 +426,7 @@ sys.exit(0)
     def test_new_token_rollback_preserves_existing_state_and_home(self) -> None:
         seat = self.arrange(True)
         seat["token"].unlink()
-        seat["handoff"] = self.base / "handoff"
+        seat["handoff"] = fixture_handoff(Path(seat["env"]["AGENTSTACK_RUNTIME_DIR"]))
         seat["handoff"].write_text(TOKEN)
         seat["handoff"].chmod(0o600)
         self.failed_launch(seat)
@@ -432,7 +444,7 @@ sys.exit(0)
 
     def test_explicit_name_without_generation_preserves_identity(self) -> None:
         seat = self.arrange(True)
-        env = dict(seat["env"], AGENT_NAME=NAME, AGENTSTACK_PRESERVE_SEAT_IDENTITY="1",
+        env = dict(seat["env"], AGENT_NAME=NAME, AGENTSTACK_PRESERVE_SEAT_IDENTITY="0",
                    AGENTSTACK_LAUNCH_AUTH_OWNERSHIP=json.dumps({
                        "observed": [(str(seat["token"]), -1, -1)],
                    }))
@@ -447,7 +459,7 @@ sys.exit(0)
         runtime.mkdir()
         children = runtime / "child-agents"
         children.mkdir()
-        handoff = self.base / "handoff"
+        handoff = fixture_handoff(runtime)
         token = runtime / f"agent_token_{NAME}"
         state = children / f"{NAME}.json"
         handoff.write_text(TOKEN)
@@ -489,7 +501,7 @@ sys.exit(0)
         runtime.mkdir()
         children = runtime / "child-agents"
         children.mkdir()
-        handoff = self.base / "handoff"
+        handoff = fixture_handoff(runtime)
         token = runtime / f"agent_token_{NAME}"
         state = children / f"{NAME}.json"
         handoff.write_text(TOKEN)

@@ -124,6 +124,19 @@ class Seat:
         children = self.root / "child-agents"
         if children.is_symlink() or (children.exists() and not children.is_dir()):
             raise ValueError("child state directory is not a real directory")
+        state = self.paths()['state']
+        if state.exists() or state.is_symlink():
+            fd = os.open(state, os.O_RDONLY | getattr(os, 'O_NOFOLLOW', 0))
+            with os.fdopen(fd) as stream:
+                prior_state = json.load(stream)
+            if prior_state.get('project_key') != project or prior_state.get('agent_name') != self.name:
+                raise ValueError('existing state project/name mismatch')
+        if self.lease_path.exists() and any(self.paths()[k].exists() for k in ('token', 'state')):
+            prior_lease = json.loads(self.lease_path.read_text())
+            if prior_lease.get('journal'):
+                prior = self.load(prior_lease['journal'])
+                if self.current(prior) and prior.get('session_started'):
+                    raise ValueError('active generation requires authenticated restart invalidation')
         generation = uuid.uuid4().hex
         journal = self.journals / (self.key + "." + generation + ".json")
         managed_exists = managed.is_file() and self.name in managed.read_text().splitlines()
@@ -134,8 +147,33 @@ class Seat:
                      managed_added=False, auth={"owned": [], "observed": []},
                      artifacts={"owned": []}, session_started=False)
         atomic_json(journal, value)
+        if value['attempt']:
+            # A dashboard request binds once. Inheriting/reusing its nonce must
+            # never transfer its delayed callback to a successor generation.
+            binding = self.attempt_path(value['attempt'])
+            try:
+                fd = os.open(binding, os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, 'O_NOFOLLOW', 0), 0o600)
+            except FileExistsError:
+                pass
+            else:
+                with os.fdopen(fd, 'w') as stream:
+                    json.dump({'journal': str(journal), 'generation': generation}, stream)
+                    stream.flush(); os.fsync(stream.fileno())
         atomic_json(self.lease_path, {k: value[k] for k in ("name", "project", "generation", "journal", "attempt")})
         return value
+
+    def attempt_path(self, attempt):
+        return self.journals / (self.key + '.attempt-' + hashlib.sha256(attempt.encode()).hexdigest() + '.json')
+
+    def attempt_journal(self, attempt):
+        path = self.attempt_path(attempt)
+        fd = os.open(path, os.O_RDONLY | getattr(os, 'O_NOFOLLOW', 0))
+        with os.fdopen(fd) as stream:
+            value = json.load(stream)
+        journal = self.load(value['journal'])
+        if journal['generation'] != value['generation'] or journal['attempt'] != attempt:
+            raise ValueError('attempt generation mismatch')
+        return journal['journal']
 
     def invalidate(self):
         if not self.inherited_lock():
@@ -180,6 +218,9 @@ class Seat:
                 value["preserve"] = True
         if artifacts is not None:
             value["artifacts"]["owned"] = list({tuple(e) for e in value["artifacts"]["owned"] + artifacts.get("owned", [])})
+            contents = {e[0]: e for e in value["artifacts"].get("home_contents", [])}
+            contents.update({e[0]: e for e in artifacts.get("home_contents", [])})
+            value["artifacts"]["home_contents"] = list(contents.values())
         if session_started is not None:
             value["session_started"] = session_started
         atomic_json(Path(journal), value)
@@ -251,7 +292,30 @@ class Seat:
             if not os.path.lexists(path):
                 continue
             if kind == "directory":
-                shutil.rmtree(path)
+                # The directory inode does not confer ownership of its contents.
+                # Unknown files (including permanent child receipts) veto removal.
+                contents = value["artifacts"].get("home_contents", [])
+                expected = {entry[0] for entry in contents}
+                if {entry.name for entry in path.iterdir()} != expected:
+                    continue
+                for name, child_device, child_inode, child_kind, digest in contents:
+                    if Path(name).name != name or name in (".", ".."):
+                        return False
+                    child = path / name
+                    if not self.current(value) or not home_entry_matches(child, child_device, child_inode, child_kind, digest):
+                        return False
+                for name, child_device, child_inode, child_kind, digest in contents:
+                    child = path / name
+                    if (not self.current(value) or not self.matches(path, device, inode, kind)
+                            or not home_entry_matches(child, child_device, child_inode, child_kind, digest)):
+                        return False
+                    # No recursive removal and no following symlinks.
+                    child.unlink()
+                try:
+                    path.rmdir()
+                except OSError:
+                    # A concurrent new entry belongs to its writer.
+                    continue
             else:
                 path.unlink()
         if value["managed_added"]:
@@ -297,9 +361,118 @@ def record_intent(*, auth=None, artifacts=None):
         Seat(runtime, name).update(journal, auth=auth, artifacts=artifacts)
 
 
+def home_entry_identity(path: Path):
+    info = path.lstat()
+    if stat.S_ISLNK(info.st_mode):
+        kind, data = "symlink", os.readlink(path).encode()
+    elif stat.S_ISREG(info.st_mode):
+        fd = os.open(path, os.O_RDONLY | getattr(os, 'O_NOFOLLOW', 0))
+        with os.fdopen(fd, 'rb') as stream:
+            opened = os.fstat(stream.fileno())
+            if (opened.st_dev, opened.st_ino) != (info.st_dev, info.st_ino):
+                raise ValueError('home entry changed while opening')
+            kind, data = "file", stream.read()
+    else:
+        raise ValueError("unowned child home entry kind")
+    current = path.lstat()
+    if (current.st_dev, current.st_ino) != (info.st_dev, info.st_ino):
+        raise ValueError('home entry changed while reading')
+    return [path.name, info.st_dev, info.st_ino, kind, hashlib.sha256(data).hexdigest()]
+
+
+def home_entry_matches(path, device, inode, kind, digest):
+    try:
+        return home_entry_identity(path)[1:] == [device, inode, kind, digest]
+    except (OSError, ValueError):
+        return False
+
+
+def record_home_entry(path: Path):
+    record_intent(artifacts={"home_contents": [home_entry_identity(path)]})
+
+
+def refresh_generated_file(path: Path, payload: str):
+    """Authenticated restart only: retain old bytes before atomic config refresh."""
+    fd = os.open(path, os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0))
+    with os.fdopen(fd, "rb") as stream:
+        identity = os.fstat(stream.fileno())
+        if not stat.S_ISREG(identity.st_mode) or identity.st_uid != os.getuid():
+            raise ValueError("existing config is not an owned regular file")
+        old = stream.read()
+    root = Path(os.environ['AGENTSTACK_RUNTIME_DIR']) / 'seat-launches' / 'config-backups'
+    if root.is_symlink():
+        raise ValueError('config backup directory is a symlink')
+    root.mkdir(mode=0o700, parents=True, exist_ok=True)
+    digest = hashlib.sha256(old).hexdigest()
+    backup = root / (path.name + '.' + digest + '.before')
+    try:
+        backup_fd = os.open(backup, os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, 'O_NOFOLLOW', 0), 0o600)
+    except FileExistsError:
+        if backup.is_symlink() or backup.read_bytes() != old:
+            raise ValueError('config backup collision')
+    else:
+        with os.fdopen(backup_fd, 'wb') as stream:
+            stream.write(old); stream.flush(); os.fsync(stream.fileno())
+    fd, temporary = tempfile.mkstemp(prefix='.refresh-', dir=path.parent)
+    try:
+        with os.fdopen(fd, 'w') as stream:
+            os.fchmod(stream.fileno(), 0o600)
+            stream.write(payload); stream.flush(); os.fsync(stream.fileno())
+        now = path.lstat()
+        if ((now.st_dev, now.st_ino) != (identity.st_dev, identity.st_ino)
+                or path.is_symlink() or path.read_bytes() != old):
+            raise ValueError('config changed during refresh')
+        os.replace(temporary, path)
+    finally:
+        Path(temporary).unlink(missing_ok=True)
+
+
+def handoff_location(runtime: Path, path: Path) -> Path:
+    """Only the dedicated one-shot namespace can publish consumable credentials."""
+    directory = runtime.resolve() / "spawn-tokens"
+    if directory.is_symlink() or path.is_symlink() or path.parent.resolve() != directory:
+        raise ValueError("handoff must be in runtime/spawn-tokens")
+    if not re.fullmatch(r"(?:[A-Za-z0-9_-]+\.)*[0-9a-f]{32}\.token", path.name):
+        raise ValueError("handoff needs a unique 32-hex token filename")
+    return directory / path.name
+
+
+def bind_handoff(runtime: Path, path: Path, name: str, project: str):
+    path = handoff_location(runtime, path)
+    fd = os.open(path, os.O_RDONLY | getattr(os, 'O_NOFOLLOW', 0))
+    with os.fdopen(fd, 'rb') as stream:
+        info = os.fstat(stream.fileno())
+        if (not stat.S_ISREG(info.st_mode) or info.st_uid != os.getuid()
+                or stat.S_IMODE(info.st_mode) != 0o600 or not 0 < info.st_size <= 4096):
+            raise ValueError("handoff must be an owned regular 0600 bounded file")
+        data = stream.read(4097)
+    ticket = path.with_name(path.name + ".handoff.json")
+    value = dict(version=1, name=name, project=project, device=info.st_dev, inode=info.st_ino,
+                 sha256=hashlib.sha256(data).hexdigest())
+    fd = os.open(ticket, os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0), 0o600)
+    with os.fdopen(fd, "w") as stream:
+        json.dump(value, stream); stream.flush(); os.fsync(stream.fileno())
+
+
+def check_handoff(runtime: Path, path: Path, name: str, project: str, info, data: bytes):
+    path = handoff_location(runtime, path)
+    ticket = path.with_name(path.name + ".handoff.json")
+    fd = os.open(ticket, os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0))
+    with os.fdopen(fd) as stream:
+        entry = os.fstat(stream.fileno())
+        if (not stat.S_ISREG(entry.st_mode) or entry.st_uid != os.getuid()
+                or stat.S_IMODE(entry.st_mode) != 0o600 or entry.st_size > 4096):
+            raise ValueError("invalid handoff ticket")
+        value = json.load(stream)
+    expected = dict(version=1, name=name, project=project, device=info.st_dev, inode=info.st_ino,
+                    sha256=hashlib.sha256(data).hexdigest())
+    if value != expected:
+        raise ValueError("handoff belongs to another launch, name or project")
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("command", choices=("held", "lock-exec", "begin", "invalidate", "check", "delete", "record", "managed-add", "managed-ensure", "retire-args", "available"))
+    parser.add_argument("command", choices=("held", "lock-exec", "begin", "invalidate", "check", "delete", "record", "managed-add", "managed-ensure", "retire-args", "failure-retire-args", "available"))
     parser.add_argument("--runtime", required=True)
     parser.add_argument("--name", required=True)
     parser.add_argument("--project", default="")
@@ -339,9 +512,13 @@ def main():
         seat.invalidate()
     elif args.command == "check":
         return 0 if seat.validate(args.journal, automatic=args.automatic) is not None else 1
-    elif args.command == "retire-args":
-        value = seat.validate(args.journal, automatic=True)
+    elif args.command in ("retire-args", "failure-retire-args"):
+        automatic = args.command == "retire-args"
+        value = seat.validate(args.journal, automatic=automatic)
         if value is None:
+            return 1
+        expected = {str(seat.paths()[k]) for k in ('token', 'state')}
+        if value['preserve'] or {p for p, _, _ in value['auth']['owned']} != expected or {p for p, _, _ in value['auth']['observed']} != expected:
             return 1
         token_path = seat.paths()["token"]
         entry = next(e for e in value["auth"]["owned"] if e[0] == str(token_path))
@@ -351,7 +528,7 @@ def main():
             if (identity.st_dev, identity.st_ino) != tuple(entry[1:]):
                 return 1
             token = stream.read(4097).strip()
-        if not token or len(token) > 4096 or seat.validate(args.journal, automatic=True) is None:
+        if not token or len(token) > 4096 or seat.validate(args.journal, automatic=automatic) is None:
             return 1
         print(json.dumps(dict(project_key=value["project"], agent_name=seat.name, registration_token=token)))
     elif args.command == "delete":

@@ -4461,8 +4461,7 @@ def do_spawn(payload: dict) -> dict:
             spec.loader.exec_module(lifecycle)
             seat = lifecycle.Seat(RUNTIME_DIR, child_name)
             with seat.locked(blocking=False):
-                lease = json.loads(seat.lease_path.read_text())
-                value = seat.validate(lease.get("journal", ""))
+                value = seat.validate(seat.attempt_journal(launch_attempt))
                 if (value is None or value.get("attempt") != launch_attempt
                         or not value.get("session_started")):
                     return
@@ -4477,7 +4476,7 @@ def do_spawn(payload: dict) -> dict:
         os.makedirs(token_dir, mode=0o700, exist_ok=True)
         os.chmod(token_dir, 0o700)
         token_file = os.path.join(
-            token_dir, f"{child_name}.{secrets.token_hex(8)}.token")
+            token_dir, f"{child_name}.{secrets.token_hex(16)}.token")
         open_flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL
         if hasattr(os, "O_NOFOLLOW"):
             open_flags |= os.O_NOFOLLOW
@@ -4490,6 +4489,10 @@ def do_spawn(payload: dict) -> dict:
             f.flush()
             os.fsync(f.fileno())
         os.chmod(token_file, 0o600)
+        from pathlib import Path
+        sys.path.insert(0, os.path.dirname(SPAWN_SCRIPT))
+        from seat_lifecycle import bind_handoff
+        bind_handoff(Path(RUNTIME_DIR), Path(token_file), child_name, project_key)
     except Exception as e:  # noqa: BLE001
         remove_spawn_credentials()
         return retained_registration_error(f"spawn token write failed: {e}")

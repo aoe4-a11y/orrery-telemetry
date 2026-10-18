@@ -13,7 +13,10 @@ esac
 export PARENT_AGENT="${PARENT_AGENT:-ProudTuring}"
 export AGENTSTACK_PROJECT_KEY="${AGENTSTACK_PROJECT_KEY:-/Users/huyuhutaru/tools/examforge}"
 TOKDIR="$HOME/.agentstack/runtime"
-TMP="$(mktemp -d "${TMPDIR:-/tmp}/agentstack-spawn.XXXXXX")/child.token"
+HANDOFF_DIR="${AGENTSTACK_RUNTIME_DIR:-${AGENTSTACK_HOME:-$HOME/.agentstack}/runtime}/spawn-tokens"
+mkdir -p "$HANDOFF_DIR"
+chmod 700 "$HANDOFF_DIR"
+TMP="$HANDOFF_DIR/$(python3 -c 'import uuid; print(uuid.uuid4().hex)').token"
 OUT="$("$HOME/.agentstack/bin/agentstack-preregister-child" --project-key "$AGENTSTACK_PROJECT_KEY" --program claude-code --model "$MODEL_ID" --task-description "$DESC" --token-file-out "$TMP" 2>&1)"
 NAME="$(printf '%s\n' "$OUT" | tail -1 | tr -d '[:space:]')"
 [[ "$NAME" =~ ^[A-Z][a-z]+[A-Z][a-z]+$ ]] || { echo "preregister failed:"; echo "$OUT"; exit 1; }
