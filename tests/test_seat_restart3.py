@@ -32,7 +32,7 @@ class Restart3Tests(unittest.TestCase):
             import json, os, pathlib, sys, time
             try: os.fstat(9); inherited = True
             except OSError: inherited = False
-            authority = [key for key in ('AGENTSTACK_LAUNCH_JOURNAL', 'AGENTSTACK_LIFECYCLE_NAME', 'AGENTSTACK_DIRECT_CANDIDATE') if key in os.environ]
+            authority = [key for key in ('AGENTSTACK_LAUNCH_JOURNAL', 'AGENTSTACK_LIFECYCLE_NAME', 'AGENTSTACK_DIRECT_CANDIDATE', 'AGENTSTACK_LIFECYCLE_HOOKS_DIR', 'AGENTSTACK_PRESERVE_SEAT_IDENTITY') if key in os.environ]
             pathlib.Path(sys.argv[1]).write_text(json.dumps({'fd9': inherited, 'env': os.environ.get('AGENTSTACK_SEAT_LOCK_FD'), 'authority': authority}))
             for _ in range(500):
                 if pathlib.Path(sys.argv[2]).exists(): break
@@ -42,7 +42,7 @@ class Restart3Tests(unittest.TestCase):
         script.write_text(opener + '\n_open_child_terminal() { python3 "$FIXTURE_OPENER" "$FIXTURE_MARKER" "$FIXTURE_RELEASE"; }\nopen_child_terminal FixtureSeat\n')
         seat = Seat(base/'runtime', 'FixtureSeat')
         env = dict(self.lane.fixture.fixture_env, FIXTURE_OPENER=str(stub), FIXTURE_MARKER=str(marker), FIXTURE_RELEASE=str(release)) if hasattr(self.lane.fixture, 'fixture_env') else dict(os.environ, FIXTURE_OPENER=str(stub), FIXTURE_MARKER=str(marker), FIXTURE_RELEASE=str(release))
-        env.update(AGENTSTACK_LAUNCH_JOURNAL='fixture', AGENTSTACK_LIFECYCLE_NAME='FixtureSeat', AGENTSTACK_DIRECT_CANDIDATE='FixtureSeat')
+        env.update(AGENTSTACK_LAUNCH_JOURNAL='fixture', AGENTSTACK_LIFECYCLE_NAME='FixtureSeat', AGENTSTACK_DIRECT_CANDIDATE='FixtureSeat', AGENTSTACK_LIFECYCLE_HOOKS_DIR='fixture-release', AGENTSTACK_PRESERVE_SEAT_IDENTITY='1')
         # The fixture's parent HOME is already isolated by setUp.
         subprocess.run([sys.executable, str(ROOT/'hooks/seat_lifecycle.py'), 'lock-exec', '--runtime', str(seat.root), '--name', seat.name, '--', '/bin/bash', str(script)], env=env, check=True, timeout=10)
         import time
