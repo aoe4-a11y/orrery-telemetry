@@ -100,6 +100,7 @@ def _run_helper(tmpdir: pathlib.Path, *, runner_executable: bool = True,
         + '\nwrite_child_mcp_config "Red-Euler" "$1"\n'
     )
     env = os.environ.copy()
+    env["AGENTSTACK_HOOKS_DIR"] = str(_ROOT / "hooks")
     env["AGENTSTACK_MCP_PROXY"] = str(runner)
     proc = subprocess.run(
         ["bash", "-c", script, "bash", str(tmpdir / "runtime"),
@@ -171,6 +172,7 @@ def _run_codex_home(tmpdir: pathlib.Path, *, config_text: str | None = None,
         + '\nwrite_child_codex_home "Red-Euler" "$1"\n'
     )
     env = os.environ.copy()
+    env["AGENTSTACK_HOOKS_DIR"] = str(_ROOT / "hooks")
     env["AGENTSTACK_MCP_PROXY"] = str(runner)
     env["CODEX_HOME"] = str(source_home)
     proc = subprocess.run(
@@ -270,11 +272,11 @@ def test_codex_child_home_falls_back_when_proxy_or_token_is_missing():
 
 def test_both_codex_launch_paths_use_the_child_home():
     text = _SPAWN.read_text(encoding="utf-8")
-    assert text.count('CHILD_CODEX_HOME="$(write_child_codex_home') == 2
-    assert text.count('-e "CODEX_HOME=$CHILD_CODEX_HOME"') == 2
+    assert text.count('CHILD_CODEX_HOME="$(write_child_codex_home') == 1
+    assert text.count('-e "CODEX_HOME=$CHILD_CODEX_HOME"') == 1
     # The user's optional workspace launcher intentionally reads this override;
     # without it, that wrapper replaces the child home with ~/.codex again.
-    assert text.count('-e "CODEX_SHARED_CODEX_DIR=$CHILD_CODEX_HOME"') == 2
+    assert text.count('-e "CODEX_SHARED_CODEX_DIR=$CHILD_CODEX_HOME"') == 1
 
 
 def test_launcher_passes_the_config_to_claude_only_when_present():
@@ -290,7 +292,7 @@ def test_launcher_passes_the_config_to_claude_only_when_present():
     # --strict-mcp-config keeps the child on its own proxy. Without it the child
     # also inherits the user's top-level mcpServers, ends up talking to a second
     # copy of ORRERY Mail, and carries a standing authentication notice.
-    assert text.count("--strict-mcp-config") == 2
+    assert text.count("--strict-mcp-config") == 1
 
 
 def _extract_install_fn(func: str) -> str:
@@ -379,6 +381,7 @@ def test_machine_wide_env_file_cannot_override_the_child_identity():
         stub.chmod(stub.stat().st_mode | stat.S_IEXEC)
 
         env = os.environ.copy()
+        env["AGENTSTACK_HOOKS_DIR"] = str(_ROOT / "hooks")
         env.update({
             "AGENTSTACK_CODEX_APP_INSTALL_DIR": str(install_dir),
             "AGENTSTACK_PYTHON": str(stub),
@@ -411,6 +414,7 @@ def test_env_file_still_supplies_values_the_caller_omitted():
         stub.chmod(stub.stat().st_mode | stat.S_IEXEC)
 
         env = os.environ.copy()
+        env["AGENTSTACK_HOOKS_DIR"] = str(_ROOT / "hooks")
         env.update({
             "AGENTSTACK_CODEX_APP_INSTALL_DIR": str(install_dir),
             "AGENTSTACK_PYTHON": str(stub),
@@ -450,6 +454,7 @@ def _claude_child_config(tmpdir, claude_json: str | None) -> dict:
         + '\nwrite_child_mcp_config "Dark-Feynman" "$1"\n'
     )
     env = os.environ.copy()
+    env["AGENTSTACK_HOOKS_DIR"] = str(_ROOT / "hooks")
     env["AGENTSTACK_MCP_PROXY"] = str(runner)
     env["AGENTSTACK_CLAUDE_JSON"] = str(settings)
     proc = subprocess.run(
@@ -513,6 +518,7 @@ def test_claude_child_keeps_default_name_on_new_endpoint():
             + '\nwrite_child_mcp_config "Dark-Feynman" "$1"\n'
         )
         env = os.environ.copy()
+        env["AGENTSTACK_HOOKS_DIR"] = str(_ROOT / "hooks")
         env["AGENTSTACK_MCP_PROXY"] = str(runner)
         env["AGENTSTACK_CLAUDE_JSON"] = str(tmpdir / "missing.json")
         proc = subprocess.run(
@@ -597,6 +603,7 @@ def test_codex_child_keeps_default_name_on_new_endpoint():
             + '\nwrite_child_codex_home "Red-Euler" "$1"\n'
         )
         env = os.environ.copy()
+        env["AGENTSTACK_HOOKS_DIR"] = str(_ROOT / "hooks")
         env.update({"AGENTSTACK_MCP_PROXY": str(runner), "CODEX_HOME": str(source_home)})
         proc = subprocess.run(
             ["bash", "-c", script, "bash", str(tmpdir / "runtime"), "/p",

@@ -453,3 +453,85 @@ printf 'locked fixture launch\\n'
         assert (fixture.base / 'tmux-verbs').read_text().splitlines().count('kill-session') == 1
         fixture.fixture.assert_existing(seat)
     finally: fixture.doCleanups()
+
+
+def test_handoff_cannot_consume_another_seats_canonical_credential():
+    for kind in ('token', 'state'):
+        fixture = LifecycleTests(); fixture.setUp()
+        try:
+            seat = fixture.arrange()
+            runtime = seat['token'].parent
+            protected = (runtime / 'agent_token_AnotherFixtureSeat' if kind == 'token'
+                         else runtime / 'child-agents/AnotherFixtureSeat.json')
+            protected.write_text('synthetic protected credential'); protected.chmod(0o600)
+            before = protected.read_bytes()
+            seat['handoff'] = protected
+            fixture.launch(seat, expect=1)
+            assert protected.read_bytes() == before
+            assert not seat['token'].exists()
+            assert not seat['state'].exists()
+        finally: fixture.doCleanups()
+
+
+def test_explicit_preservation_veto_keeps_a_fresh_owned_launch():
+    fixture = LifecycleTests(); fixture.setUp()
+    try:
+        seat = fixture.arrange()
+        child_env = fixture.launch(seat)
+        fixture.cleanup(dict(child_env, AGENTSTACK_PRESERVE_SEAT_IDENTITY='1'))
+        assert seat['token'].read_text() == fixtures.TOKEN
+        fixture.cleanup(dict(child_env, AGENTSTACK_PRESERVE_SEAT_IDENTITY='0'))
+        assert not seat['token'].exists()
+    finally: fixture.doCleanups()
+
+
+def test_state_project_is_checked_without_an_explicit_handoff():
+    for token_present in (False, True):
+        fixture = LifecycleTests(); fixture.setUp()
+        try:
+            seat = fixture.arrange(True)
+            if not token_present:
+                seat['token'].unlink()
+                seat['state'].chmod(0o600)
+            before = seat['state'].read_bytes()
+            env = dict(seat['env'], PROJECT_KEY='/another/project')
+            completed = subprocess.run(
+                ['/bin/bash', str(fixtures.SPAWN), '--codex', '--model', 'gpt-5.5',
+                 '--pre-registered', fixtures.NAME, '--embed-task', 'fixture project boundary', str(seat['work'])],
+                env=env, capture_output=True, text=True, timeout=20)
+            assert completed.returncode != 0
+            assert seat['state'].read_bytes() == before
+            assert seat['token'].exists() is token_present
+        finally: fixture.doCleanups()
+
+
+def test_top_level_managed_writer_obeys_the_shared_list_lock(tmp_path):
+    import fcntl
+    import select
+    managed = tmp_path / "managed.txt"
+    managed.write_text("OtherSeat" + chr(10))
+    lock = os.open(str(managed) + ".lock", os.O_RDWR | os.O_CREAT, 0o600)
+    child = None
+    try:
+        fcntl.flock(lock, fcntl.LOCK_EX)
+        script = """
+source "$1"
+echo ready
+ags_record_managed_agent "$2" AddedSeat
+echo added
+"""
+        child = subprocess.Popen(["/bin/bash", "-c", script, "fixture",
+                                  str(ROOT / "bin/lib/agentstack-register.sh"), str(managed)],
+                                 stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        assert select.select([child.stdout], [], [], 5)[0]
+        assert os.read(child.stdout.fileno(), 64) == b"ready" + bytes([10])
+        assert select.select([child.stdout], [], [], 0.2)[0] == []
+    finally:
+        os.close(lock)
+        if sys.exc_info()[0] is not None and child is not None:
+            child.terminate()
+            child.communicate(timeout=5)
+    out, err = child.communicate(timeout=10)
+    assert child.returncode == 0, err
+    assert out.strip() == b"added"
+    assert managed.read_text().splitlines() == ["OtherSeat", "AddedSeat"]

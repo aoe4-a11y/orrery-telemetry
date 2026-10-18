@@ -348,6 +348,16 @@ report_ownership = len(sys.argv) > 7 and sys.argv[7] == "true"
 source_path = pathlib.Path(source)
 token_path = pathlib.Path(token_file)
 state_path = pathlib.Path(state_file)
+# A one-shot may alias this child's own canonical token, but another seat's
+# credential or child state is never consumable launch material.
+resolved_source = source_path.resolve(strict=True)
+token_namespace = token_path.parent.resolve()
+state_namespace = state_path.parent.resolve()
+if ((resolved_source.parent == token_namespace
+     and resolved_source.name.startswith("agent_token_")
+     and resolved_source != token_path.resolve(strict=False))
+        or resolved_source.is_relative_to(state_namespace)):
+    raise ValueError("handoff refers to protected canonical seat state")
 token_preexisted = token_path.exists() or token_path.is_symlink()
 state_preexisted = state_path.exists() or state_path.is_symlink()
 observed = []
@@ -461,7 +471,7 @@ restore_child_token_file_from_state() {
     state_file="$CHILD_STATE_DIR/$agent_name.json"
     token_file="$(child_token_file_path "$agent_name")" || return 1
     [[ -f "$state_file" ]] || return 1
-    python3 - "$state_file" "$token_file" "$report_ownership" <<'PY'
+    python3 - "$state_file" "$token_file" "$report_ownership" "$PROJECT_KEY" "$agent_name" <<'PY'
 import json
 import os
 import pathlib
@@ -478,6 +488,8 @@ with os.fdopen(fd, "r", encoding="utf-8") as handle:
     if not stat.S_ISREG(state_identity.st_mode) or stat.S_IMODE(state_identity.st_mode) & 0o077:
         raise PermissionError("child state must be a regular 0600 file")
     data = json.load(handle)
+if data.get("project_key") != sys.argv[4] or data.get("agent_name") != sys.argv[5]:
+    raise ValueError("existing state belongs to another project or name")
 token = data.get("registration_token")
 if not isinstance(token, str) or not token:
     raise ValueError("child state has no registration token")
@@ -1706,6 +1718,15 @@ if [[ -n "$PRE_REGISTERED" ]]; then
                 exit 1
             fi
             CHILD_TOKEN_FILE="$PREREG_CANONICAL_TOKEN"
+        else
+            # A canonical-token fallback authenticates the same project/name
+            # contract as an explicit handoff; it is not a bypass for it.
+            if ! PREREG_AUTH_OWNERSHIP="$(
+                adopt_child_token_file "$CHILD_NAME" "$PROJECT_KEY" "$CHILD_TOKEN_FILE" false true
+            )"; then
+                echo "Error: canonical child identity does not match the requested project or token" >&2
+                exit 1
+            fi
         fi
     fi
 

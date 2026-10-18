@@ -16,6 +16,7 @@ import sys
 import tempfile
 import unittest
 from unittest.mock import patch
+from user_home_isolation import isolated_user_environment
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -36,6 +37,10 @@ class RestartIdentityTests(unittest.TestCase):
         self.temp = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)
         self.base = Path(self.temp.name)
+        # Extracted Python probes run in this interpreter, including unittest.
+        environment = patch.dict(os.environ, isolated_user_environment(self.base / "user-home"), clear=True)
+        environment.start()
+        self.addCleanup(environment.stop)
 
     def arrange(self, existing: bool) -> dict:
         runtime = self.base / "runtime"
@@ -438,7 +443,13 @@ sys.exit(0)
         text = SPAWN.read_text()
         match = re.search(r"adopt_child_token_file\(\) \{.*?<<'PY'\n(.*?)\nPY\n", text, re.S)
         self.assertIsNotNone(match)
-        handoff, token, state = (self.base / name for name in ("handoff", "token", "state"))
+        runtime = self.base / "runtime"
+        runtime.mkdir()
+        children = runtime / "child-agents"
+        children.mkdir()
+        handoff = self.base / "handoff"
+        token = runtime / f"agent_token_{NAME}"
+        state = children / f"{NAME}.json"
         handoff.write_text(TOKEN)
         handoff.chmod(0o600)
         if existing:
@@ -474,7 +485,13 @@ sys.exit(0)
         match = re.search(r"adopt_child_token_file\(\) \{.*?<<'PY'\n(.*?)\nPY\n",
                           SPAWN.read_text(), re.S)
         self.assertIsNotNone(match)
-        handoff, token, state = (self.base / name for name in ("handoff", "token", "state"))
+        runtime = self.base / "runtime"
+        runtime.mkdir()
+        children = runtime / "child-agents"
+        children.mkdir()
+        handoff = self.base / "handoff"
+        token = runtime / f"agent_token_{NAME}"
+        state = children / f"{NAME}.json"
         handoff.write_text(TOKEN)
         handoff.chmod(0o600)
         original_link = os.link
@@ -496,7 +513,7 @@ sys.exit(0)
         self.assertEqual(token.exists(), replace_token)
         if replace_token:
             self.assertEqual(token.read_text(), "another-fixture-owner")
-        self.assertEqual(list(self.base.glob("*.tmp.*")), [])
+        self.assertEqual(list(self.base.rglob("*.tmp.*")), [])
 
     def test_state_publication_failure_rolls_back_new_token(self) -> None:
         self.publication_failure(False)

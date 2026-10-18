@@ -157,3 +157,43 @@ def test_preregister_only_creates_the_one_shot_not_canonical_identity():
         result = _run(["--name", "Fresh-Curie", "--program", program, "--model", "m"])
         assert result.returncode == 0, result.stderr
         assert "CANONICAL_STORE_CALLED" not in result.stderr
+
+
+def _output_handoff_case(kind):
+    with tempfile.TemporaryDirectory() as temporary:
+        root = pathlib.Path(temporary)
+        lib = root / "fake-register.sh"; lib.write_text(_FAKE_LIB)
+        runtime = root / "runtime"
+        output = (runtime / "agent_token_FreshCurie" if kind == "canonical"
+                  else runtime / "child-agents/FreshCurie.json" if kind == "state"
+                  else root / "handoff")
+        output.parent.mkdir(parents=True, exist_ok=True)
+        if kind in ("empty", "nonempty"):
+            output.write_text("" if kind == "empty" else "existing fixture data")
+            output.chmod(0o600)
+        env = dict(os.environ, AGENTSTACK_REGISTER_LIB=str(lib), AGENTSTACK_ENV_FILE="",
+                   AGENTSTACK_HOME=str(root), AGENTSTACK_RUNTIME_DIR=str(runtime),
+                   AGENTSTACK_PROJECT_KEY="/fixture/project", AGENTSTACK_STRICT_AGENT_NAMES="")
+        result = subprocess.run(
+            [str(_HELPER), "--name", "Fresh-Curie", "--program", "codex", "--model", "m",
+             "--token-file-out", str(output)], env=env, capture_output=True, text=True, timeout=10)
+        return result, output.read_text() if output.exists() else None
+
+
+def test_secure_empty_mktemp_handoff_remains_supported():
+    result, payload = _output_handoff_case("empty")
+    assert result.returncode == 0, result.stderr
+    assert payload == "test-token"
+
+
+def test_preregister_rejects_canonical_output_namespace():
+    for kind in ("canonical", "state"):
+        result, payload = _output_handoff_case(kind)
+        assert result.returncode != 0
+        assert payload is None
+
+
+def test_preregister_does_not_overwrite_nonempty_output():
+    result, payload = _output_handoff_case("nonempty")
+    assert result.returncode != 0
+    assert payload == "existing fixture data"

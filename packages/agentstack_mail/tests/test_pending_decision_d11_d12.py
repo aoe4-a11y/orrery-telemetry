@@ -1194,13 +1194,17 @@ _WATCHER_FUNCTIONS = (
     "state_mark_result",
     "acquire_delivery_lease",
     "release_delivery_lease",
+    "notification_is_in_input",
+    "inject_notification",
     "deliver_worker",
 )
 
 
 def _extract_shell_function(source: str, name: str) -> str:
+    subshell = re.search(rf"^{re.escape(name)}\(\) \(\n", source, re.MULTILINE) is not None
+    opening, closing = ("(", ")") if subshell else ("{", "}")
     match = re.search(
-        rf"^{re.escape(name)}\(\) \{{\n(?:.*\n)*?^\}}\n",
+        rf"^{re.escape(name)}\(\) {re.escape(opening)}\n(?:.*\n)*?^{re.escape(closing)}\n",
         source,
         re.MULTILINE,
     )
@@ -1410,7 +1414,7 @@ def test_d12_selected_parity_watcher_crash_windows_are_durable_and_hermetic(
             .read_text(encoding="utf-8")
             .splitlines()
         )
-        assert commands[-1].endswith("send-keys -t BlueLake C-m")
+        assert commands[-1].endswith("capture-pane -t BlueLake -p")
         _assert_injection_commands(commands, expected_count=1)
 
         if crash_point == "after_external_injection":
@@ -1525,10 +1529,15 @@ def test_d12_selected_parity_source_order_exposes_external_application_seam() ->
     worker = handler.index('deliver_worker "$signal_file" "$agent_name" "$msg_key"')
     assert should_attempt < acquire < worker
     delivery = _extract_shell_function(source, "deliver_worker")
-    submit = delivery.index('tmux send-keys -t "$session_name" C-m')
+    injector = _extract_shell_function(source, "inject_notification")
+    submit = injector.index('tmux send-keys -t "$session_name" C-m')
+    captured = injector.rindex('tmux capture-pane -t "$session_name" -p')
+    finished = injector.rindex('return 0')
+    assert submit < captured < finished
+    injected = delivery.index('inject_notification "$session_name"')
     success = delivery.index(
         'state_mark_result "$agent_name" "$msg_key" "success" "watcher"'
     )
     release = delivery.index('release_delivery_lease "$agent_name" "$msg_key"', success)
     unlink = delivery.index('rm -f "$signal_file"', release)
-    assert submit < success < release < unlink
+    assert injected < success < release < unlink

@@ -255,6 +255,7 @@ def _agent_start_env(root: pathlib.Path, bindir: pathlib.Path, workdir: pathlib.
         "AGENTSTACK_MAIL_ENV": str(mail_env),
         "AGENTSTACK_PROJECT_KEY": str(workdir),
         "AGENTSTACK_CLAUDE_BIN": str(bindir / "claude"),
+        "AGENTSTACK_TERMINAL": "none",
         "AGENTSTACK_HOOKS_DIR": "",           # no mail-watcher tmux session
         "AGENTSTACK_MANAGED_AGENTS_FILE": str(root / "managed.txt"),
         "CURL_STUB_LOG": str(log),
@@ -330,13 +331,18 @@ def test_agent_start_actually_execs_claude_inside_tmux():
             f"#!/bin/bash\nprintf 'started\\n' > {marker}\nsleep 5\n",
         )
         env = _agent_start_env(root, bindir, workdir, log)
-        env["TMUX_TMPDIR"] = str(root)
+        # AF_UNIX socket paths cannot fit a long managed artifact root.
+        # Only this ephemeral private socket uses a short system-temp path;
+        # homes, credentials and records remain inside the isolated fixture.
+        socket_temp = tempfile.TemporaryDirectory(prefix="ast-tokenless-", dir="/tmp")
+        env["TMUX_TMPDIR"] = socket_temp.name
         try:
-            subprocess.run(
+            created = subprocess.run(
                 [tmux, "-L", socket, "new-session", "-d", "-s", "probe",
                  f"{_BASH} {_AGENT_START} {workdir}"],
                 capture_output=True, text=True, env=env, timeout=60,
             )
+            assert created.returncode == 0, created.stderr
             deadline = time.time() + 30
             while time.time() < deadline and not marker.exists():
                 time.sleep(0.5)
@@ -348,6 +354,7 @@ def test_agent_start_actually_execs_claude_inside_tmux():
         finally:
             subprocess.run([tmux, "-L", socket, "kill-server"],
                            capture_output=True, text=True, env=env, timeout=30)
+            socket_temp.cleanup()
     assert started, (
         "agent-start never exec'd the Claude binary inside tmux on a tokenless "
         f"transport.\ntmux sessions: {pane}"

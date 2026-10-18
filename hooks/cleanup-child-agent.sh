@@ -10,6 +10,10 @@ if [[ -z "${1:-}" && -z "$AGENT_NAME_ENV_AT_ENTRY" ]]; then
     exit 0
 fi
 
+# An explicit preservation request is an additional veto. Clearing it
+# cannot bypass the authoritative journal's own preservation decision.
+[[ "${AGENTSTACK_PRESERVE_SEAT_IDENTITY:-0}" == 1 ]] && exit 0
+
 HOOKS_DIR="${AGENTSTACK_HOOKS_DIR:-$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)}"
 RUNTIME_DIR="${AGENTSTACK_RUNTIME_DIR:-$HOME/.agentstack/runtime}"
 PROJECT_CONTEXT_LIB="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/project-context.sh"

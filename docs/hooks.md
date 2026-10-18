@@ -4,11 +4,11 @@
 
 [前: 委任と child agent](delegation.md) · [README に戻る](../README.md) · [次: Codex App 統合](codex-app.md)
 
-`hooks/` には、Claude Code の lifecycle event から自動実行される hook と、launcher・dashboard・skill が明示的に呼ぶ運用 helper、event hook が source / 起動する内部 library・worker が同居しています。Claude Code event hook は8件です。
+`hooks/` には、Claude Code の lifecycle event から自動実行される hook と、launcher・dashboard・skill が明示的に呼ぶ運用 helper、event hook が source / 起動する内部 library・worker が同居しています。Claude Code event hook は10件です。
 
 [`hooks/settings.template.json`](../hooks/settings.template.json) は event と command の対応を定義し、[`hooks/README.md`](../hooks/README.md) は settings merge の安全方針を定義します。この文書は、実際にいつ起動し、何を保証するかを説明する利用者向け reference です。
 
-## Claude Code event hook（8件）
+## Claude Code event hook（10件）
 
 installer が `settings.template.json` を `~/.claude/settings.json` へ merge すると、次の event で自動実行されます。
 
@@ -21,6 +21,8 @@ installer が `settings.template.json` を `~/.claude/settings.json` へ merge �
 | `PreToolUse` / reservation tools | [`invalidate-release-debounce.sh`](../hooks/invalidate-release-debounce.sh) | file reservation の取得・renew 直前 | 同じ agent/path に対する古い release worker の token を無効化し、新しい reservation が直後に消される競合を防止 |
 | `PostToolUse` / `Edit|Write` | [`release-file-reservation.sh`](../hooks/release-file-reservation.sh) | 成功した file edit の直後 | 既定90秒の grace 後に、guard と同じ project・identity・相対/絶対 path で reservation を release |
 | `PostToolUse` / `register_agent` | [`mark-agent-registered.sh`](../hooks/mark-agent-registered.sh) | `mcp__orrery-mail__register_agent` または互換 tool の応答直後 | 応答を検証し、明示した要求名との完全一致後だけ session flag、session index、pane / tmux metadata を更新 |
+| PreToolUse / send_message | [head-send-lint.py](../hooks/head-send-lint.py) | head の便送信の前 | 件名・台帳引用・証拠の条件を検査し、設定した期間後は違反を block |
+| PostToolUse / Workflow | [usage-throttle-warn.py](../hooks/usage-throttle-warn.py) | head の Workflow 実行後 | usage が設定した週のしきい値に達した時、振り返り処理の減速を警告 |
 | `SessionEnd` | [`release-all-reservations.sh`](../hooks/release-all-reservations.sh) | Claude session 終了時 | 現在 identity の全 file reservation を release。identity 自体は retire しない |
 
 `Edit` / `Write` では2つの PreToolUse hook がともに走ります。登録済みでも reservation がなければ書けず、reservation があっても未登録 session なら書けません。成功後だけ PostToolUse release が arm され、失敗・block・protected root 外では何もしません。
@@ -141,7 +143,7 @@ source 専用 helper で、`RESOLVED_AGENT` と解決 source を caller へ返�
 
 child の Claude / Codex command の後段へ連結され、REPL が戻った時だけ実行されます。全 reservation を release し、child owner token で identity を retire して、child の state、token、MCP config、分離した Codex home を削除します。remote release / retire と managed-list 更新は best-effort で試し、その後に local child state を片付けます。
 
-既存席の建て直しで launcher が `AGENTSTACK_PRESERVE_SEAT_IDENTITY=1` を渡した場合、自動 cleanup は何も変更せず終了します。起動失敗時も、launcher は起動前からあった identity の材料と managed list 登録を保持します。名前を引数で指定する管理者の明示的 cleanup はこの保全フラグの対象外です。
+既存席の建て直しで launcher が `AGENTSTACK_PRESERVE_SEAT_IDENTITY=1` を渡した場合、自動 cleanup は何も変更せず終了します。起動失敗時も、launcher は起動前からあった identity の材料と managed list 登録を保持します。名前を引数で指定しても、所有 journal と起動世代・inode が一致しなければ削除しません。明示的な保全フラグも cleanup を止めます。
 
 これは Claude Code `SessionEnd` hook ではありません。`SessionEnd` は crash や resume でも発生しうるため、remote identity の retire をその event へ結びつけていません。
 

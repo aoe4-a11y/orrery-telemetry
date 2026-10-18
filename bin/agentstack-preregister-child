@@ -94,6 +94,19 @@ done
 [[ -n "$model" ]] || die "--model is required"
 [[ -n "$token_file_out" ]] || die "--token-file-out is required"
 
+# Output is a one-shot, never a name-keyed credential or child state.
+# Check before registration so a rejected destination creates no remote seat.
+if ! python3 - "$token_file_out" "${AGENTSTACK_RUNTIME_DIR:-${AGENTSTACK_HOME:-$HOME/.agentstack}/runtime}" <<'PY'
+from pathlib import Path
+import sys
+output = Path(sys.argv[1]).expanduser().resolve()
+runtime = Path(sys.argv[2]).expanduser().resolve()
+if ((output.parent == runtime and output.name.startswith("agent_token_"))
+        or output.is_relative_to(runtime / "child-agents")):
+    raise SystemExit("canonical seat state cannot be a one-shot output")
+PY
+then die "refusing canonical output path"; fi
+
 ags_mail_load_token
 
 # --name is optional. Top-level registration has always drawn names from the
@@ -164,21 +177,26 @@ effective_token="$(ags_extract_registration_token <<<"$register_result")"
 
 token_dir="$(dirname "$token_file_out")"
 mkdir -p "$token_dir" || die "could not create token file directory: $token_dir"
-# Refuse an existing output instead of overwriting a caller's canonical token
-# (including aliases). Wrappers allocate an empty private directory for it.
+# The documented delegate flow passes an empty 0600 mktemp file. Accept
+# that caller-owned placeholder, but never overwrite any nonempty handoff.
 printf '%s' "$effective_token" | python3 -c '
-import os, sys
+import fcntl, os, stat, sys
 path = sys.argv[1]
-fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0), 0o600)
+flags = os.O_RDWR | getattr(os, "O_NOFOLLOW", 0)
 try:
-    with os.fdopen(fd, "wb") as stream:
-        stream.write(sys.stdin.buffer.read())
-        stream.flush()
-        os.fsync(stream.fileno())
-except BaseException:
-    # Only the inode we opened belongs to this failed write.
-    raise
-' "$token_file_out" || die "could not create new one-shot token file"
+    fd = os.open(path, flags | os.O_CREAT | os.O_EXCL, 0o600)
+except FileExistsError:
+    fd = os.open(path, flags)
+with os.fdopen(fd, "r+b") as stream:
+    fcntl.flock(stream.fileno(), fcntl.LOCK_EX)
+    identity = os.fstat(stream.fileno())
+    if (not stat.S_ISREG(identity.st_mode) or identity.st_uid != os.getuid()
+            or stat.S_IMODE(identity.st_mode) & 0o077 or identity.st_size != 0):
+        raise ValueError("one-shot output must be an owned empty regular 0600 file")
+    stream.write(sys.stdin.buffer.read())
+    stream.flush()
+    os.fsync(stream.fileno())
+' "$token_file_out" || die "registered $registered, but could not write a secure empty one-shot"
 
 # Canonical credentials belong to the launcher under its seat lock.
 ags_apply_contact_policy "$project_key" "$registered" "$effective_token"

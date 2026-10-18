@@ -29,8 +29,8 @@ def _spawn_text() -> str:
 def test_no_hard_coded_zsh_launch():
     text = _spawn_text()
     assert "/bin/zsh" not in text, "child launch must go through resolve_child_shell"
-    assert text.count('"$CHILD_SHELL"\' -lc \'') == 4, (
-        "both Codex and both Claude launch sites use the resolved shell"
+    assert text.count('"$CHILD_SHELL"\' -lc \'') == 2, (
+        "the shared Codex and Claude launch sites use the resolved shell"
     )
 
 

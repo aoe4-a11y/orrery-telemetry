@@ -99,7 +99,7 @@ ${AGENTSTACK_RUNTIME_DIR:-$HOME/.agentstack/runtime}/child-agents/<name>.json
 
 pre-registered child へ親 token は渡しません。dashboard spawn は child 専用 token を生成し、mode `0600` の一時 token file 経由で `spawn_child.sh --pre-registered` へ渡します。token を transcript、command-line argument、dashboard response に表示しないためです。
 
-既存の席を `--pre-registered` で建て直す場合、起動失敗や child 終了時の自動 cleanup は、起動前からあった token・state・MCP config・Codex home・managed list の登録を保持します。失敗した起動が新しく作った物だけを片づけます。既存 identity を引き継ぐ child には `AGENTSTACK_PRESERVE_SEAT_IDENTITY=1` が渡され、自動 cleanup による reservation release / remote retire も行いません。管理者が明示的に `cleanup-child-agent.sh <name>` を呼ぶ場合は従来どおりその席を片づけます。
+既存の席を `--pre-registered` で建て直す場合、起動失敗や child 終了時の自動 cleanup は、起動前からあった token・state・MCP config・Codex home・managed list の登録を保持します。失敗した起動が新しく作った物だけを片づけます。既存 identity を引き継ぐ child には `AGENTSTACK_PRESERVE_SEAT_IDENTITY=1` が渡され、自動 cleanup による reservation release / remote retire も行いません。名前を引数で指定しても、起動の所有証拠なしに削除や remote retire は行いません。
 
 handoff の token が既存 token/state と異なる場合は起動前に拒否し、既存 file と handoff を残します。同じ token でも既存 token/state の byte は書き換えません。managed list の名前行だけが既存の場合も自動 cleanup から保護します。
 
@@ -228,3 +228,13 @@ repository にある11件の hook / helper の発火タイミング、caller、b
 - [Dashboard](dashboard.md)
 - [設定](configuration.md)
 - [トラブルシューティング](troubleshooting.md)
+
+### 起動世代と後片づけの所有境界
+
+spawn_child.sh・agentstack-restart-seat・cleanup-child-agent.sh は、project をまたいで共有される名前別の flock を取ります。restart は lock を取ってから旧世代を無効にし、session を止めます。lock file は unlink せず、lock 用 FD は tmux child へ渡しません。
+
+各起動は runtime の seat-launches/ に token を含まない所有 journal を作り、AGENTSTACK_LAUNCH_JOURNAL と AGENTSTACK_LIFECYCLE_NAME を child に渡します。正常起動後に旧 child の cleanup が遅れて来ても、新世代が同じ inode を引き継いでいれば旧 journal は使えません。journal 不明・世代不一致・inode 置換・既存 identity の保全・明示的な AGENTSTACK_PRESERVE_SEAT_IDENTITY=1 は cleanup を止めます。HTTP 後と個々の削除直前にも所有を再検査します。
+
+preregister helper と wrapper は新しい 0600 one-shot だけを作り、canonical token/state は共通 launcher が lock 内で作ります。handoff は同一 file なら canonical を消費せず、他席の canonical credential と child state は書込み前に拒否します。direct 起動も共通 launcher に入り、dashboard の失敗処理は依頼固有の世代と所有が一致する時だけ session と生成物を片づけます。証拠が無い canonical file を dashboard が名前だけで消すことはありません。
+
+helper は canonical namespace への出力と既存の非空 handoff を拒否します。delegate の既存手順が渡す空の 0600 mktemp file は引き続き使えます。明示 handoff が無い起動でも、canonical token/state の project と名前を同じ条件で検査します。

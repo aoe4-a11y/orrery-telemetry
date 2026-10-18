@@ -642,6 +642,11 @@ def test_isolated_installer_migrates_annotations_and_matches_manifest_sample(tmp
         command.chmod(0o755)
 
     home = pathlib.Path(env["HOME"])
+    codex_stub = home / ".local" / "bin" / "codex"
+    codex_stub.parent.mkdir(parents=True, exist_ok=True)
+    codex_stub.write_text("#!/bin/sh\nexit 0\n")
+    codex_stub.chmod(0o700)
+    env["AGENTSTACK_CODEX_BIN"] = str(codex_stub)
     install_dir = home / ".agentstack"
     user_skill = home / ".claude" / "skills" / "user-owned" / "SKILL.md"
     user_skill.parent.mkdir(parents=True)
