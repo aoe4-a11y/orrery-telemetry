@@ -127,7 +127,10 @@ substitute.
 3. Pre-register the child with a child-owned token and write that token to a temporary 0600 file. Prefer the helper so the parent LLM never sees the token:
 
    ```bash
-   CHILD_TOKEN_FILE="$(mktemp "${TMPDIR:-/tmp}/agentstack-child-token.XXXXXX")"
+   HANDOFF_DIR="${AGENTSTACK_RUNTIME_DIR:-$HOME/.agentstack/runtime}/spawn-tokens"
+   mkdir -p "$HANDOFF_DIR"
+   chmod 700 "$HANDOFF_DIR"
+   CHILD_TOKEN_FILE="$HANDOFF_DIR/$(python3 -c 'import uuid; print(uuid.uuid4().hex)').token"
    chmod 600 "$CHILD_TOKEN_FILE"
    trap 'rm -f "$CHILD_TOKEN_FILE"' EXIT
 

@@ -96,7 +96,7 @@ done
 
 # Output is a one-shot, never a name-keyed credential or child state.
 # Check before registration so a rejected destination creates no remote seat.
-if ! python3 - "$token_file_out" "${AGENTSTACK_RUNTIME_DIR:-${AGENTSTACK_HOME:-$HOME/.agentstack}/runtime}" "${AGENTSTACK_HOOKS_DIR:-$SCRIPT_DIR/../hooks}" <<'PY'
+if ! python3 - "$token_file_out" "${AGENTSTACK_RUNTIME_DIR:-${AGENTSTACK_HOME:-$HOME/.agentstack}/runtime}" "${AGENTSTACK_LIFECYCLE_HOOKS_DIR:-${AGENTSTACK_HOOKS_DIR:-$SCRIPT_DIR/../hooks}}" <<'PY'
 from pathlib import Path
 import sys
 sys.path.insert(0, sys.argv[3])
@@ -179,6 +179,7 @@ effective_token="$(ags_extract_registration_token <<<"$register_result")"
 
 token_dir="$(dirname "$token_file_out")"
 mkdir -p "$token_dir" || die "could not create token file directory: $token_dir"
+chmod 700 "$token_dir"
 # The documented delegate flow passes an empty 0600 mktemp file. Accept
 # that caller-owned placeholder, but never overwrite any nonempty handoff.
 printf '%s' "$effective_token" | python3 -c '
@@ -200,7 +201,7 @@ with os.fdopen(fd, "r+b") as stream:
     os.fsync(stream.fileno())
 ' "$token_file_out" || die "registered $registered, but could not write a secure empty one-shot"
 
-python3 - "$token_file_out" "${AGENTSTACK_RUNTIME_DIR:-${AGENTSTACK_HOME:-$HOME/.agentstack}/runtime}" "$registered" "$project_key" "${AGENTSTACK_HOOKS_DIR:-$SCRIPT_DIR/../hooks}" <<'PY'
+python3 - "$token_file_out" "${AGENTSTACK_RUNTIME_DIR:-${AGENTSTACK_HOME:-$HOME/.agentstack}/runtime}" "$registered" "$project_key" "${AGENTSTACK_LIFECYCLE_HOOKS_DIR:-${AGENTSTACK_HOOKS_DIR:-$SCRIPT_DIR/../hooks}}" <<'PY'
 import sys
 from pathlib import Path
 sys.path.insert(0, sys.argv[5])

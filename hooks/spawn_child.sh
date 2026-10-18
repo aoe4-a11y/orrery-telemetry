@@ -60,7 +60,7 @@
 set -euo pipefail
 ORIGINAL_ARGV=("$@")
 
-HOOKS_DIR="${AGENTSTACK_HOOKS_DIR:-$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)}"
+HOOKS_DIR="${AGENTSTACK_LIFECYCLE_HOOKS_DIR:-${AGENTSTACK_HOOKS_DIR:-$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)}}"
 LIFECYCLE_HELPER="$HOOKS_DIR/seat_lifecycle.py"
 export AGENTSTACK_HOOKS_DIR="$HOOKS_DIR"
 RUNTIME_DIR="${AGENTSTACK_RUNTIME_DIR:-${AGENTSTACK_HOME:-$HOME/.agentstack}/runtime}"

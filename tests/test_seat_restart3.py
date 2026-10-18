@@ -236,6 +236,49 @@ class Restart3Tests(unittest.TestCase):
         finally:
             server.shutdown(); server.server_close(); thread.join()
 
+    def test_private_real_tmux_server_does_not_capture_launch_authority(self):
+        import shlex
+        import shutil
+        import tempfile
+        real_tmux = shutil.which('tmux')
+        if not real_tmux: self.skipTest('tmux unavailable')
+        line = next(line for line in fixtures.SPAWN.read_text().splitlines() if ' tmux new-session 9>&-' in line)
+        sanitization = shlex.split(line.strip().split(' tmux new-session')[0])
+        with tempfile.TemporaryDirectory(prefix='orrery-r3-socket-', dir='/tmp') as socket_dir:
+            socket = str(Path(socket_dir)/'server.sock')
+            base = [real_tmux, '-S', socket]
+            seat = self.lane.arrange()
+            keys = ['AGENTSTACK_SEAT_LOCK_FD','AGENTSTACK_DIRECT_CANDIDATE','AGENTSTACK_LIFECYCLE_NAME','AGENTSTACK_LAUNCH_JOURNAL','AGENTSTACK_LAUNCH_ATTEMPT_ID','AGENTSTACK_MATERIALS_APPENDED']
+            environment = dict(seat['env'], **dict.fromkeys(keys, 'fixture-canary'))
+            try:
+                result = subprocess.run([*sanitization, *base, 'new-session', '-d', '-s', 'FixtureOnly', '-e', 'AGENTSTACK_LAUNCH_JOURNAL=child-fixture-journal', '/bin/sleep 15'], env=environment, capture_output=True, text=True, timeout=10)
+                self.assertEqual(result.returncode, 0, result.stderr)
+                global_env = subprocess.check_output([*base, 'show-environment', '-g'], env=seat['env'], text=True)
+                for key in keys: self.assertNotIn(key+'=', global_env)
+                child_env = subprocess.check_output([*base, 'show-environment', '-t', 'FixtureOnly'], env=seat['env'], text=True)
+                self.assertIn('AGENTSTACK_LAUNCH_JOURNAL=child-fixture-journal', child_env)
+            finally:
+                # This exact new private socket never addresses the fleet server.
+                subprocess.run([*base, 'kill-server'], env=seat['env'], capture_output=True, timeout=10)
+
+    def test_collection_isolation_precedes_dashboard_import_and_blocks_keychain(self):
+        seat = self.lane.arrange()
+        code = '''import importlib.util, os, pathlib, subprocess, sys
+root = pathlib.Path(sys.argv[1])
+spec = importlib.util.spec_from_file_location('fixture_collection', root/'conftest.py')
+module = importlib.util.module_from_spec(spec); spec.loader.exec_module(module)
+from dashboard import server
+home = pathlib.Path.home()
+assert str(server.RUNTIME_DIR).startswith(str(home))
+assert str(server.HOOKS_DIR).startswith(str(home))
+assert os.environ['TMUX_TMPDIR'].startswith('/tmp/orrery-test-tmux-')
+assert os.environ['AGENTSTACK_MAIL_HTTP_BEARER_MODE'] == 'disabled'
+assert subprocess.run(['security'], capture_output=True).returncode == 77
+module.pytest_unconfigure(None)
+'''
+        result = subprocess.run([sys.executable, '-c', code, str(ROOT)], env=seat['env'], cwd=ROOT, capture_output=True, text=True, timeout=10)
+        self.assertEqual(result.returncode, 0, result.stderr)
+
 
 def test_dashboard_reused_attempt_cannot_kill_started_same_inode_successor(monkeypatch, tmp_path):
     from unittest.mock import patch

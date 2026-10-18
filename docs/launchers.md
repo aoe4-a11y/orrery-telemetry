@@ -237,4 +237,9 @@ spawn_child.sh・agentstack-restart-seat・cleanup-child-agent.sh は、project 
 
 preregister helper と wrapper は新しい 0600 one-shot だけを作り、canonical token/state は共通 launcher が lock 内で作ります。handoff は同一 file なら canonical を消費せず、他席の canonical credential と child state は書込み前に拒否します。direct 起動も共通 launcher に入り、dashboard の失敗処理は依頼固有の世代と所有が一致する時だけ session と生成物を片づけます。証拠が無い canonical file を dashboard が名前だけで消すことはありません。
 
-helper は canonical namespace への出力と既存の非空 handoff を拒否します。delegate の既存手順が渡す空の 0600 mktemp file は引き続き使えます。明示 handoff が無い起動でも、canonical token/state の project と名前を同じ条件で検査します。
+helper は canonical namespace への出力と既存の非空 handoff を拒否します。消費可能な新規 handoff は runtime/spawn-tokens/ の32桁hexを含む .token と、helperが作る名前・project・inode・内容SHAを結び付けた .handoff.json の組だけです。空の0600 placeholderもこのnamespace内だけで使えます。他席のpending handoffや任意のprivate fileは拒否します。明示 handoff が無い起動でも、canonical token/state の project と名前を同じ条件で検査します。
+
+
+再起動は同じ名前のlockを取り、旧世代を無効化してから行います。認証済みrestartは生成済みの子configだけを更新し、旧byteをseat-launches/config-backupsにSHA付きで残します。未知のhome内file・既存の実体・別inodeは再帰削除しません。背景terminal openerにはlock fdを渡さず、tmux serverへ渡すclient環境から起動固有のauthorityを除きます。dashboardの遅延callbackは依頼が最初に作った世代だけを参照します。
+
+稼働中の旧席がある更新では、旧cleanupのpathを上書きしません。変更fileだけのversioned overlayとAGENTSTACK_LIFECYCLE_HOOKS_DIRで新規起動を切り替え、旧席は旧hookで終了させます。一般installerによる一括上書きは、この移行とlive差分の照合が完了するまで使いません。

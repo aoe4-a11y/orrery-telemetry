@@ -15,7 +15,7 @@ EFFORT="${4:-medium}"
 WORKDIR="${5:-$HOME/tools/osce-trainer-main}"
 
 STACK_HOME="${AGENTSTACK_HOME:-$HOME/.agentstack}"
-HOOKS_DIR="${AGENTSTACK_HOOKS_DIR:-$STACK_HOME/hooks}"
+HOOKS_DIR="${AGENTSTACK_LIFECYCLE_HOOKS_DIR:-${AGENTSTACK_HOOKS_DIR:-$STACK_HOME/hooks}}"
 RUNTIME_DIR="${AGENTSTACK_RUNTIME_DIR:-$STACK_HOME/runtime}"
 LIFECYCLE="$HOOKS_DIR/seat_lifecycle.py"
 if ! python3 "$LIFECYCLE" held --runtime "$RUNTIME_DIR" --name "$NAME"; then
