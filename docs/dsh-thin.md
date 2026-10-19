@@ -14,6 +14,8 @@ install の opt-in は従来どおり `--enable-dsh`。同じ固定版でも新�
 
 native session 作成イベントから本人の `harness_state_dir/native-session.json` に ID を保存します。subagent の ID で上書きせず、保存失敗で起動は止めません。再開は `resume_session_id` を native `--resume` へ渡し、その子の profile/履歴を再利用します。MRU で本人の ID を推測しません。指示は共有 renderer の出力を読み、skill は共通の元へ link します。
 
+再開時の任意入力 `native_profile_env: {DSH_HOME: 元の dir}` が生成予定と違う場合は、file/link を書く前に `native_resume_profile_changed` で拒否します。入力がない新規起動は従来どおりです。
+
 TUI の状態は本人の `harness_state_dir/tui` に保存し、起動時に選択した provider/model をその中の `model.json` へ設定します。native `/model` が変更するのもこの子の file だけです。他の子と利用者の `~/.dsh-tui` は共有せず、HOME は変更しません。resume は同じ state dir を再利用します。env 未指定の通常の upstream TUI は従来どおり `~/.dsh-tui` を使います。
 
 この最小 patch は固定版の preimage と適用後 hash を別世代の receipt に記録します。旧い `plain` と旧 managed の世代は書き換えずに残し、現在の generator は明示の `plain-datadir` を要求します。upstream に同等の設定が入ったら patch を外します。

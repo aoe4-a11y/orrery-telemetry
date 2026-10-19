@@ -109,6 +109,22 @@ class ThinTests(unittest.TestCase):
             with self.subTest(key=key), self.assertRaisesRegex(ValueError, reason):
                 thin.generate({**self.doc, key: value})
 
+    def test_resume_profile_pin_preserves_same_native_home(self):
+        first = thin.generate(self.doc)
+        self.doc.update(native_profile_env={'DSH_HOME': first['env']['DSH_HOME']},
+                        resume_session_id='own-session')
+        resumed = thin.generate(self.doc)
+        self.assertEqual(resumed['env']['DSH_HOME'], first['env']['DSH_HOME'])
+        self.assertEqual(resumed['argv'][-2:], ['--resume', 'own-session'])
+
+    def test_resume_profile_pin_mismatch_refused_before_writes(self):
+        home = self.root / 'native/dsh/ChildA'
+        for pin in ({'DSH_HOME': str(self.root / 'previous-profile')}, {}, None):
+            with self.subTest(pin=pin), self.assertRaisesRegex(ValueError, 'native_resume_profile_changed'):
+                thin.generate({**self.doc, 'native_profile_env': pin, 'resume_session_id': 'own-session'})
+            self.assertFalse(home.exists())
+            self.assertEqual(list(self.state.iterdir()), [])
+
     def test_old_plain_generation_and_missing_key_plugin_are_not_ready(self):
         plugin = self.integration / 'keychain_credentials.mjs'
         plugin.unlink()

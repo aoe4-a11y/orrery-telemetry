@@ -92,6 +92,97 @@ test('real subprocess hook exit is observed without exposing stderr', async () =
   } finally { f.clean(); }
 });
 
+test('only a successful public systemMessage is visible; other hook output stays private', async t => {
+  const f = fixture();
+  let visible = '';
+  t.mock.method(process.stderr, 'write', text => {visible += text; return true;});
+  try {
+    const file = path.join(f.root, 'public-hook.sh');
+    for (const [stdout, status, expected] of [
+      ['', 0, ''],
+      ['{"systemMessage":"Public reservation warning"}', 0, 'Public reservation warning\n'],
+      ['PRIVATE_STDOUT', 0, ''],
+      ['{"private":"PRIVATE_JSON"}', 0, ''],
+      ['{"systemMessage":""}', 0, ''],
+      ['{"systemMessage":123}', 0, ''],
+      ['[{"systemMessage":"PRIVATE_ARRAY"}]', 0, ''],
+      ['null', 0, ''],
+      ['{"systemMessage":"PRIVATE_FAILED_WARNING"}', 2, ''],
+    ]) {
+      visible = '';
+      fs.writeFileSync(file, '#!/bin/sh\ncat >/dev/null\nprintf "%s" "$FIXTURE_STDOUT"\n' +
+        'echo PRIVATE_STDERR >&2\nexit "$FIXTURE_STATUS"\n', {mode: 0o700});
+      const result = await callHook(file, {tool_name: 'Read', cwd: f.root},
+        {...process.env, FIXTURE_STDOUT: stdout, FIXTURE_STATUS: String(status)});
+      assert.equal(result.ok, status === 0);
+      assert.equal(visible, expected);
+      assert.equal(JSON.stringify(result).includes('PRIVATE_'), false);
+    }
+  } finally {f.clean();}
+});
+
+test('hook subprocess follows native cwd for relative reservation checks and release', async () => {
+  const f = fixture();
+  const originalCwd = process.cwd();
+  try {
+    const root = fs.realpathSync(f.root);
+    const a = path.join(root, 'A'), b = path.join(root, 'B');
+    fs.mkdirSync(a); fs.mkdirSync(b);
+    for (const dir of [a, b]) fs.writeFileSync(path.join(dir, 'work.txt'), 'unchanged');
+    const common = path.resolve('hooks/reservation-common.sh');
+    const grant = path.join(root, 'grant'), seen = path.join(root, 'seen');
+    const env = {HOME: root, PATH: '/usr/bin:/bin', AGENTSTACK_HOME: path.join(root, 'install'),
+      AGENTSTACK_RUNTIME_DIR: path.join(root, 'runtime'), AGENTSTACK_HOOKS_DIR: root,
+      AGENTSTACK_PROJECT_KEY: root, AGENTSTACK_PROTECTED_ROOTS: root, AGENTSTACK_PYTHON: '/usr/bin/python3',
+      FIXTURE_COMMON: common, FIXTURE_GRANT: grant, FIXTURE_SEEN: seen};
+    for (const file of ['deny-llm-key-read.py', 'check-agent-registered.sh'])
+      fs.writeFileSync(path.join(root, file), '#!/bin/sh\ncat >/dev/null\nexit 0\n', {mode: 0o700});
+    // Exercise the actual product path/project resolver, replacing only the
+    // reservation lookup/release transport with a fixture grant and log.
+    const resolver = '#!/bin/bash\n. "$FIXTURE_COMMON"\n' +
+      'input=$(cat)\nreservation_resolve_tool_context "$input" || exit 2\n' +
+      'printf "%s|%s|%s\\n" "$FILE_PATH" "$MATCHED_ROOT" "$PWD" >> "$FIXTURE_SEEN"\n';
+    fs.writeFileSync(path.join(root, 'check-file-reservation.sh'), resolver +
+      '[ "$FILE_PATH" = "$(cat "$FIXTURE_GRANT")" ] || exit 2\n', {mode: 0o700});
+    fs.writeFileSync(path.join(root, 'release-file-reservation.sh'), resolver, {mode: 0o700});
+    const handlers = new Map();
+    let nativeCwd = a;
+    apply({on: (name, fn) => handlers.set(name, fn), workingDirectory: {ensure: async () => nativeCwd}},
+      {hooks_dir: root, cwd: a, state_dir: root, env});
+    process.chdir(a); // Native working_directory changes its service, not this process cwd.
+    nativeCwd = b;
+    const edit = {...exec, arguments: {file_path: 'work.txt', content: 'native write'}};
+    const write = () => {fs.writeFileSync(path.join(nativeCwd, edit.arguments.file_path), edit.arguments.content); return 'written';};
+    fs.writeFileSync(grant, path.join(a, 'work.txt'));
+    assert.equal((await handlers.get('tools/pre-execute')(edit, write)).kind, 'deny');
+    assert.equal(fs.readFileSync(path.join(b, 'work.txt'), 'utf8'), 'unchanged');
+    fs.writeFileSync(grant, path.join(b, 'work.txt'));
+    assert.equal(await handlers.get('tools/pre-execute')(edit, write), 'written');
+    assert.equal(fs.readFileSync(path.join(a, 'work.txt'), 'utf8'), 'unchanged');
+    assert.equal(fs.readFileSync(path.join(b, 'work.txt'), 'utf8'), 'native write');
+    await handlers.get('tools/result')(edit, {isError: false});
+    assert.deepEqual(fs.readFileSync(seen, 'utf8').trim().split('\n'),
+      Array(3).fill([path.join(b, 'work.txt'), root, b].join('|')));
+  } finally {process.chdir(originalCwd); f.clean();}
+});
+
+test('bash workdir becomes the real hook process cwd after native directory changes', async () => {
+  const f = fixture();
+  try {
+    const root = fs.realpathSync(f.root), changed = path.join(root, 'changed'), nested = path.join(changed, 'nested');
+    fs.mkdirSync(nested, {recursive: true});
+    const seen = path.join(root, 'bash-cwd');
+    for (const file of ['deny-llm-key-read.py', 'check-agent-registered.sh'])
+      fs.writeFileSync(path.join(root, file), '#!/bin/sh\ncat >/dev/null\npwd -P >> "$FIXTURE_SEEN"\n', {mode: 0o700});
+    const handlers = new Map();
+    apply({on: (name, fn) => handlers.set(name, fn), workingDirectory: {ensure: async () => changed}},
+      {hooks_dir: root, cwd: root, state_dir: root, env: {FIXTURE_SEEN: seen}});
+    assert.equal(await handlers.get('tools/pre-execute')({...exec, name: 'bash', arguments: {command: 'true', workdir: 'nested'}},
+      () => 'native body'), 'native body');
+    assert.deepEqual(fs.readFileSync(seen, 'utf8').trim().split('\n'), [nested, nested]);
+  } finally {f.clean();}
+});
+
 const nativeRuntime = process.env.ORRERY_DSH_TEST_RUNTIME;
 const nativeNode = process.env.ORRERY_DSH_TEST_NODE;
 const skipNative = !nativeRuntime || !nativeNode ? 'explicit pinned native runtime and Node required' : false;
@@ -113,7 +204,7 @@ test('native CLI tool dispatch invokes common hooks; broken adapter leaves nativ
       fs.mkdirSync(hooks);
       fs.copyFileSync(realGuard, path.join(hooks, 'deny-llm-key-read.py'));
       fs.chmodSync(path.join(hooks, 'deny-llm-key-read.py'), 0o700);
-      save('hooks/check-agent-registered.sh', '#!/bin/sh\ncat >/dev/null\nexit 0\n', 0o700);
+      save('hooks/check-agent-registered.sh', '#!/bin/sh\ncat >/dev/null\nprintf \'%s\\n\' \'{"systemMessage":"ORRERY_PUBLIC_HOOK_WARNING"}\'\nexit 0\n', 0o700);
       save('hooks/release-file-reservation.sh', '#!/bin/sh\ncat >/dev/null\nexit 0\n', 0o700);
       save('hooks/check-file-reservation.sh', '#!/bin/sh\ninput=$(cat)\ncase "$input" in *allowed.txt*) exit 0;; *) exit 2;; esac\n', 0o700);
       const secretHelper = save('security', '#!/bin/sh\necho CALLED >>"' + path.join(root, 'helper-calls') + '"\necho SYNTHETIC\n', 0o700);
@@ -144,6 +235,7 @@ ctx.get('appExit')(0);});}`);
           AGENTSTACK_LLM_KEY_DEFINITIONS: definitions, AGENTSTACK_LLM_KEY_FILES: JSON.stringify([protectedFile])}, encoding: 'utf8', timeout: 45000});
       assert.equal(result.error, undefined, result.stdout + result.stderr);
       assert.equal(result.status, 0, result.stdout + result.stderr);
+      assert.equal((result.stdout + result.stderr).includes('ORRERY_PUBLIC_HOOK_WARNING'), mode === 'loaded');
       const evidence = JSON.parse(fs.readFileSync(path.join(root, 'result.json')));
       assert.equal(evidence.error, undefined, JSON.stringify(evidence) + result.stdout + result.stderr);
       assert.ok(evidence.tools.includes('write'));

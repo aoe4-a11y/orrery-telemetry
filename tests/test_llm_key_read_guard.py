@@ -231,3 +231,60 @@ def test_control_prefix_also_protects_defined_auth_helper_and_broken_definitions
     path.write_text('{broken')
     assert hook('if true; then security find-generic-password -w -s fixture-model-key; fi', e).returncode == 2
     assert hook('if true; then git status; fi', e).returncode == 0
+
+
+@pytest.mark.parametrize('tool', ['bash', 'terminal'])
+def test_native_shell_names_use_shared_key_guard(tmp_path, tool):
+    e = env(tmp_path)
+    definitions(tmp_path, e)
+    assert hook('security find-generic-password -w -s fixture-model-key', e, tool=tool).returncode == 2
+
+
+@pytest.mark.parametrize('tool,args', [
+    ('read', {'path': 'provider.yaml'}),
+    ('read_file', {'file_path': 'provider.yaml'}),
+    ('bash', {'command': 'cat provider.yaml'}),
+    ('terminal', {'command': 'cat < provider.yaml'}),
+])
+def test_provider_file_read_is_blocked_without_opening_file(tmp_path, tool, args):
+    e = env(tmp_path)
+    # File intentionally absent: inspection must compare references only.
+    e['AGENTSTACK_LLM_KEY_FILES'] = json.dumps([str(tmp_path / 'provider.yaml')])
+    payload = {'tool_name': tool, 'tool_input': args, 'cwd': str(tmp_path)}
+    result = subprocess.run([sys.executable, str(ROOT / 'hooks/deny-llm-key-read.py')],
+                            input=json.dumps(payload), env=e, capture_output=True, text=True)
+    assert result.returncode == 2
+    payload['tool_input'] = {'command': 'cat ordinary.txt'} if tool in ('bash', 'terminal') else {'path': 'ordinary.txt'}
+    result = subprocess.run([sys.executable, str(ROOT / 'hooks/deny-llm-key-read.py')],
+                            input=json.dumps(payload), env=e, capture_output=True, text=True)
+    assert result.returncode == 0
+
+
+@pytest.mark.parametrize('operand', [
+    '$HOME/.dsh/.credentials.yaml', '${HOME}/.dsh/.credentials.yaml',
+    '$DSH_HOME/.credentials.yaml', '${DSH_HOME}/.credentials.yaml',
+    '~/.dsh/.credentials.yaml', 'absolute',
+])
+def test_native_file_guard_expands_known_environment_references(tmp_path, operand):
+    e = env(tmp_path)
+    e['DSH_HOME'] = str(Path(e['HOME']) / '.dsh')
+    protected = Path(e['DSH_HOME']) / '.credentials.yaml'
+    # This file does not exist; resolving a reference never reads its contents.
+    e['AGENTSTACK_LLM_KEY_FILES'] = json.dumps([str(protected)])
+    path = str(protected) if operand == 'absolute' else operand
+    assert hook('cat "' + path + '"', e, tool='bash').returncode == 2
+    assert hook('cat "$HOME/ordinary.txt"', e, tool='bash').returncode == 0
+
+
+@pytest.mark.parametrize('command', [
+    'FILE="$HOME/.dsh/.credentials.yaml"; cat "$FILE"',
+    'export FILE="${HOME}/.dsh/.credentials.yaml"; cat "$FILE"',
+    'FILE="$DSH_HOME/.credentials.yaml" cat "$FILE"',
+])
+def test_native_file_guard_checks_simple_assignment_values(tmp_path, command):
+    e = env(tmp_path)
+    e['DSH_HOME'] = str(Path(e['HOME']) / '.dsh')
+    e['AGENTSTACK_LLM_KEY_FILES'] = json.dumps([str(Path(e['DSH_HOME']) / '.credentials.yaml')])
+    assert hook(command, e, tool='bash').returncode == 2
+    assert hook('FILE="$HOME/ordinary.txt"; cat "$FILE"', e, tool='bash').returncode == 0
+    assert hook('FOO=bar echo hello', e, tool='bash').returncode == 0

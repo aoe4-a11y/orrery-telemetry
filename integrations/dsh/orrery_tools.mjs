@@ -18,7 +18,16 @@ export function payloadFor(exec, config) {
 
 export function callHook(file, payload, env = process.env) {
   return new Promise(resolve => {
-    const child = execFile(file, [], {env, maxBuffer: 1024 * 1024}, error => {
+    const child = execFile(file, [], {env, cwd: payload.cwd, maxBuffer: 1024 * 1024}, (error, stdout) => {
+      // A normal warn-open outage must remain visible, without exposing the
+      // hook's private diagnostics. Only its public success schema is shown.
+      if (!error) {
+        let warning;
+        try { warning = JSON.parse(stdout); } catch { /* Non-JSON output is private. */ }
+        if (warning && !Array.isArray(warning) && typeof warning === 'object' &&
+            typeof warning.systemMessage === 'string' && warning.systemMessage)
+          process.stderr.write(warning.systemMessage + '\n');
+      }
       resolve(error ? {ok: false, reason: 'ORRERY hook denied: ' + path.basename(file)} : {ok: true});
     });
     child.stdin.on('error', () => {});
