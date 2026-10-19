@@ -50,6 +50,9 @@ class HelperCatalog(unittest.TestCase):
     def test_single_model_legacy_config(self):
         self.assertEqual(configured_models({'backends': {'strata': {'model': 'qwen'}}}, 'strata'), ['qwen'])
         self.assertEqual(configured_models(self.manifest, 'absent'), [])
+        for invalid in ('guessed-model', [None], [{'id': 'not-a-formal-string'}]):
+            self.assertEqual(configured_models({'backends': {'strata': {
+                'model': 'qwen', 'models': invalid}}}, 'strata'), [])
 
     def test_post_uses_same_choices_and_omitted_means_same(self):
         choices = [{'id': 'same'}, {'id': 'flash'}]
