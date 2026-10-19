@@ -65,7 +65,7 @@ curl -s http://127.0.0.1:8770/api/version
 ```
 
 ```json
-{"name":"orrery-telemetry","version":"2026.09.16.1","api":22}
+{"name":"orrery-telemetry","version":"2026.09.16.1","api":23}
 ```
 
 version の解決順は [インストール](install.md#version)を参照してください。
@@ -110,6 +110,8 @@ dsh opt-inが有効な時だけ `providers` に `provider: "dsh"` を加える�
 [取得・実確認の手順](dsh-stage-a.md)も参照。
 
 ## GET `/api/spawn-names`
+
+API 23 では、明示設定された DeepSeek (`provider=deepseek`) と Local (`provider=strata`, `locality=local`) も標準 spawn の候補です。モデルの `harnesses` にある `available` と `efforts` / `default_effort` / `effort_source` を使います。能力はローカルの検証済み cache 由来で、試運転の effort 設定を既定値へ転用しません。通常の catalog は managed task mode や attempt ID を要求しません。runtime 未準備や opt-in 無効の候補を起動可能とは表示しません。
 
 Claude provider の `model_source` は `override` / `local_cache` / `bundled`、`model_error` は明示設定の診断です。不正な明示指定ではClaudeの `models` は空になり、他providerは残ります。top-levelの `models` / `default_model` は同じClaude候補を返します。探索規則と権限の境界は [Claude model catalog](configuration.md#claude-model-catalog) を参照してください。
 
@@ -586,9 +588,11 @@ request:
 | `task` | yes | task 本文。UI は最大4000文字 |
 | `name` | no | 指定時は hyphen を除去し、`available` 必須 |
 | `dir` | no | 存在する working directory。既定は source repo |
-| `provider` | no | `claude`（既定）または `codex` |
-| `model` | no | provider catalog 内。provider の default あり |
-| `effort` | Codex only | モデル別。`model_efforts` / `model_effort_defaults` を参照。対応情報がなければ省略してCLI既定を使用 |
+| `provider` | no | `claude`（既定）、`codex`、`deepseek`、`strata`。Local の表示グループも送信 ID は `strata` |
+| `harness` | DeepSeek / Local 必須 | `dsh` または `hermes`。Claude は `claude-code`（従来 alias `claudecode`）、Codex は `codex-cli`（従来 alias `codex`）を省略可 |
+| `helper_model` | no | 省略または `same`。別 helper を黙って無視せず拒否する |
+| `model` | DeepSeek / Local 必須 | 正式 ID。DeepSeek / Local は選択した provider と harness の有効な catalog entry と一致必須。Claude / Codex は既存の省略時の既定を維持 |
+| `effort` | no | 明示時だけ送る。Claude / Codex は `model_efforts` / `model_effort_defaults`、DeepSeek / Local は選択した model × harness の能力で検証。未指定は CLI 設定を使用し、能力不明の値は推測しない |
 | `role` | no | 最大40文字 |
 | `group` | no | 最大24文字 |
 | `worktree` | no | isolated worktree |
@@ -597,6 +601,8 @@ request:
 | `claude_chrome_device` | Claude only | 使うブラウザの deviceId（`[A-Za-z0-9._:-]{1,128}`）。指定すると `claude_chrome: true` と同じ。`claude_chrome: false` との併用は拒否 |
 | `base` | Claude / Codex | `"default"`（明示すると installer の道具の既定を適用しない）または `"mail-only"`（ORRERY Mail と `tools` で選んだものだけ）。api 7 から |
 | `tools` | Claude / Codex | object。`browser`（`true` は Claude/Codex、`{"device": "<deviceId>"}` の deviceId は Claude only）、`screen`（`"read"` / `"operate"` または `{"access": ..., "server": "<name>"}`。server を省くと Mac の computer use で Claude only）、`mcp`（server 名の配列。tool は承認しない）、`approve_all`（`mcp` のうち全 tool を承認する server。表に無い版は拒否）。`claude_chrome_device` と deviceId が食い違えば拒否。api 7 から。[子に渡す道具を選ぶ](delegation.md#子に渡す道具を選ぶ--base----tools) |
+
+DeepSeek / Local の通常 catalog は、plain 世代の識別と generator の静的検査を launcher と共用します。旧 managed 世代を自動で利用可能にはしません。effort は選択した model × harness の検証済み cache を使用し、不明は不明のまま返します。生存判定は pane の子プロセスに native CLI があるかを確認し、確認不能を終了済みにはしません。provider は子の明示的な harness_backend から読み、モデル名から推測しません。
 
 API 8 では、`tools: {}` または `base: "default"` を明示すると `--base default` を渡します。dashboard/API はフォームの選択を正とし、installer の `AGENTSTACK_CHILD_DEFAULT_TOOLS` を launcher の env から外して、選択から外した道具を追加しません。明示した道具が使えなければ起動を止めます。CLI で base/tools/MCP profile を省略したときだけ、使えない既定の項目を通知して外す経路を使います。
 
@@ -694,7 +700,7 @@ curl -s 'http://127.0.0.1:8770/api/spawn-status?name=WindyFermi'
 
 `global_runtime_observation=1` と `operator_session=1` を広告します。global の `/api/quotas` と `/portrait` も同じ admission を通り、既存の読取処理を使用します。画像は共有 session の `apiBlob` で取得して object URL とし、Lock で revoke します。
 
-Managed spawn (legacy, opt-in): see [request/status contract](managed-spawn-contract.md). `POST /api/spawn` returns 202 for accepted managed jobs; `GET /api/spawn-status?attempt_id=<UUID>` reads persistent status. API generation 21.
+Managed spawn (legacy, opt-in): see [request/status contract](managed-spawn-contract.md). API 23 では明示した `attempt_id` を含む DeepSeek / Local の要求だけが従来の managed 試験経路へ入り、受理時は 202 を返します。通常の cockpit はこの項目を送らず、標準の応答を使います。`GET /api/spawn-status?attempt_id=<UUID>` と既存 job の停止は移行中も維持します。別の managed POST endpoint は追加しません。
 
 ## Managed の継続対話（API 22）
 

@@ -65,7 +65,7 @@ curl -s http://127.0.0.1:8770/api/version
 ```
 
 ```json
-{"name":"orrery-telemetry","version":"2026.09.16.1","api":22}
+{"name":"orrery-telemetry","version":"2026.09.16.1","api":23}
 ```
 
 See [Installation](install.en.md#version) for version resolution order.
@@ -110,6 +110,8 @@ dsh opt-inが有効な時だけ `providers` に `provider: "dsh"` を加える�
 [取得・実確認の手順](dsh-stage-a.md)も参照。
 
 ## GET `/api/spawn-names`
+
+API 23 includes explicitly configured DeepSeek (`provider=deepseek`) and Local (`provider=strata`, `locality=local`) in standard spawn. Use the model's `harnesses` availability and `efforts` / `default_effort` / `effort_source`. Capabilities come from checked local evidence, never trial effort settings. The normal catalog does not require managed task modes or attempt IDs. Missing runtimes and disabled opt-ins are unavailable.
 
 The Claude provider exposes `model_source` (`override`, `local_cache`, or `bundled`) and `model_error` for explicit-setting diagnostics. Invalid overrides return an empty Claude `models` list without disabling other providers. Top-level `models` / `default_model` mirror the same Claude candidates. See [Claude model catalog](configuration.en.md#claude-model-catalog) for discovery and authorization boundaries.
 
@@ -584,9 +586,11 @@ Request:
 | `task` | yes | Task body. The UI accepts up to 4,000 characters |
 | `name` | no | Remove hyphens when specified; must be `available` |
 | `dir` | no | Existing working directory. Defaults to the source repository |
-| `provider` | no | `claude` (default) or `codex` |
-| `model` | no | From the provider catalog. Each provider has a default |
-| `effort` | Codex only | Model-specific; use `model_efforts` / `model_effort_defaults`. Unknown metadata: omit for CLI default. |
+| `provider` | no | `claude` (default), `codex`, `deepseek`, or `strata`. The Local display group sends `strata` |
+| `harness` | DeepSeek / Local required | `dsh` or `hermes`. Claude optionally accepts `claude-code` (legacy alias `claudecode`), Codex `codex-cli` (legacy alias `codex`) |
+| `helper_model` | no | Omit or use `same`; a separate helper is rejected rather than silently ignored |
+| `model` | DeepSeek / Local required | Formal ID matching an available provider/model/harness catalog entry. Existing Claude/Codex omitted-model defaults are unchanged |
+| `effort` | no | Send only explicit choices. Claude/Codex use model-specific metadata; DeepSeek/Local validate the selected model and harness capability. Omit to use CLI settings; unknown values are never guessed |
 | `role` | no | At most 40 characters |
 | `group` | no | At most 24 characters |
 | `worktree` | no | Isolated worktree |
@@ -595,6 +599,8 @@ Request:
 | `claude_chrome_device` | Claude only | deviceId of the browser to use (`[A-Za-z0-9._:-]{1,128}`). Implies `claude_chrome: true`; combining it with `claude_chrome: false` is rejected |
 | `base` | Claude / Codex | `"default"` (explicitly suppresses installer tool defaults) or `"mail-only"` (ORRERY Mail and only what `tools` selects). Since api 7 |
 | `tools` | Claude / Codex | Object: `browser` (`true` for Claude/Codex, `{"device": "<deviceId>"}` with a Claude-only deviceId), `screen` (`"read"` / `"operate"` or `{"access": ..., "server": "<name>"}`; without a server it is the macOS computer use, Claude only), `mcp` (array of server names; no tool is approved), `approve_all` (servers in `mcp` whose every tool is approved; rejected for a version not in the table). Rejected when its deviceId differs from `claude_chrome_device`. Since api 7. See [Choosing the tools a child gets](delegation.en.md#choosing-the-tools-a-child-gets---base----tools) |
+
+The ordinary DeepSeek / Local catalog shares plain-generation admission and generator static validation with the launcher. Older managed generations are not automatically admitted. Effort uses the checked cache for the selected model and harness; unknown capabilities remain unknown. Liveness checks native CLI descendants of the pane and does not classify an unconfirmed observation as finished. Provider identity comes from the child's explicit harness_backend, rather than the model name.
 
 In API 8, explicit `tools: {}` or `base: "default"` passes `--base default`. Dashboard/API launches honor the form selection and remove installer `AGENTSTACK_CHILD_DEFAULT_TOOLS` from the launcher environment, so removed choices are not appended again. Unavailable explicit tools stop the launch. Only CLI launches omitting base/tools/MCP profile use the path that omits unavailable defaults with a notice.
 
@@ -692,7 +698,7 @@ Each item returns `liveness`, nullable `act_state` / `ctx_used`, `session_count`
 
 Capabilities include `global_runtime_observation=1` and `operator_session=1`. Global `/api/quotas` and `/portrait` use the same admission and existing read helpers. Images use shared-session `apiBlob` object URLs, revoked on Lock.
 
-Managed spawn (legacy, opt-in): see [request/status contract](managed-spawn-contract.md). `POST /api/spawn` returns 202 for accepted managed jobs; `GET /api/spawn-status?attempt_id=<UUID>` reads persistent status. API generation 21.
+Managed spawn (legacy, opt-in): see [request/status contract](managed-spawn-contract.md). In API 23, only DeepSeek/Local requests explicitly carrying `attempt_id` enter the legacy managed test path and return 202 on acceptance. Normal cockpit requests omit this field and use the standard response. Existing `GET /api/spawn-status?attempt_id=<UUID>` and managed job stop remain available during migration. No separate managed POST endpoint is added.
 
 ## Managed interactive sessions (API 22)
 

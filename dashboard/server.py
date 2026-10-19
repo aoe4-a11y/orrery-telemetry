@@ -44,7 +44,7 @@ import urllib.request
 from urllib.parse import urlparse, parse_qs
 
 # Public dashboard compatibility generation (docs/tests read this source).
-API_GENERATION = 22
+API_GENERATION = 23
 # Mode admission is shared with hooks and operator/service entry points.
 import runpy as _runtime_runpy
 _MODE_API = _runtime_runpy.run_path(str(Path(__file__).resolve().parents[1] / 'bin/lib/runtime_client.py'))
@@ -59,11 +59,12 @@ if __name__ == '__main__':
 # `server.py` is both an executable script and an importable dashboard module
 # in the tests.  Support both import roots without coupling callers to cwd.
 try:
-    from dashboard import codex_models, mail_signals, provider_stalls
+    from dashboard import codex_models, mail_signals, provider_stalls, harness_runtime
 except ModuleNotFoundError:  # direct `python dashboard/server.py`
     import codex_models
     import mail_signals
     import provider_stalls
+    import harness_runtime
 
 try:
     from dashboard.providers.codex_app import CodexAppRuntimeProvider
@@ -871,7 +872,42 @@ def _is_antigravity_process_name(name: str) -> bool:
 
 
 def _supports_agent_process_liveness(program: str | None) -> bool:
-    return (program or "").startswith(("codex", "claude", "antigravity"))
+    return program in harness_runtime.HARNESSES or (program or "").startswith(("codex", "claude", "antigravity"))
+
+
+_NATIVE_COMMAND_CACHE = {}
+
+
+def _native_harness_pid(root, process_tree, program):
+    names, children = process_tree
+    stack, seen, unknown = [root], set(), False
+    now = time.monotonic()
+    while stack:
+        pid = stack.pop()
+        if pid in seen:
+            continue
+        seen.add(pid)
+        stack.extend(children.get(pid, ()))
+        if not harness_runtime.possible_process(program, names.get(pid, '')):
+            continue
+        cached = _NATIVE_COMMAND_CACHE.get(pid)
+        if not cached or now - cached[0] >= _PROCESS_TREE_TTL:
+            command = None
+            try:
+                result = subprocess.run(['ps', '-p', str(pid), '-o', 'args='],
+                                        capture_output=True, text=True, timeout=3)
+                if result.returncode == 0:
+                    command = result.stdout.strip()
+            except (OSError, subprocess.SubprocessError):
+                pass
+            if len(_NATIVE_COMMAND_CACHE) > 512:
+                _NATIVE_COMMAND_CACHE.clear()
+            cached = _NATIVE_COMMAND_CACHE[pid] = (now, command)
+        if cached[1] is None:
+            unknown = True
+        elif harness_runtime.matches_command(program, cached[1]):
+            return pid, False
+    return None, unknown
 
 
 def _is_agent_process_name(name: str, program: str | None) -> bool:
@@ -908,6 +944,8 @@ def _agent_process_pid(
     names, children = process_tree
     if root not in names:
         return None
+    if program in harness_runtime.HARNESSES:
+        return _native_harness_pid(root, process_tree, program)[0]
 
     stack = [root]
     seen: set[int] = set()
@@ -939,6 +977,9 @@ def _agent_process_alive(
     names, _children = process_tree
     if root not in names:
         return None
+    if program in harness_runtime.HARNESSES:
+        pid, unknown = _native_harness_pid(root, process_tree, program)
+        return None if unknown else pid is not None
     return _agent_process_pid(root, process_tree, program) is not None
 
 
@@ -1342,6 +1383,8 @@ def classify(name: str, cmd: str, title: str, in_mail: bool,
         return "infra"
     if name in WARMUP_NAMES:
         return "warmup"
+    if program in harness_runtime.HARNESSES and in_mail:
+        return 'finished' if agent_alive is False else 'agent'
     glyph = bool(title) and _is_activity_glyph(title[0])
     # Claude Code 2.1.26x の native バイナリは pane_current_command を
     # "2.1.259" のようなバージョン文字列で報告する（2026-09-05 Pro 実測:
@@ -1555,13 +1598,15 @@ def _tmux_row_state(name: str, s: dict, m: dict | None, process_tree) -> tuple[s
     )
     if agent_alive is not None:
         running = agent_alive
+    elif program in harness_runtime.HARNESSES:
+        running = False
     watcher_health = None
     if name == "mail-watcher":
         watcher_health = mail_watcher_health()
         running = bool(watcher_health.get("watcher_running"))
     # If process-tree measurement was unavailable, classify() preserves
     # the historical fail-safe category; keep running in sync with it.
-    if not running and cat == "agent":
+    if not running and cat == "agent" and program not in harness_runtime.HARNESSES:
         running = True
     return program, cat, running, watcher_health
 
@@ -1642,7 +1687,8 @@ def lookup_agent(name: str) -> dict | None:
         process_tree = _process_tree_snapshot() if m is not None else None
         program, cat, running, _ = _tmux_row_state(name, s, m, process_tree)
         return {"name": name, "category": cat, "running": running,
-                "attached": s["attached"], "program": program}
+                "attached": s["attached"], "program": program,
+                **harness_runtime.metadata(RUNTIME_DIR, name, program)}
     project_key = _project_key()
     if not project_key:
         return None
@@ -1671,6 +1717,7 @@ def lookup_agent(name: str) -> dict | None:
     runtime = None if r["retired"] else _codex_app_runtimes().get(name)
     if runtime:
         _apply_codex_app_runtime(row, runtime)
+    row.update(harness_runtime.metadata(RUNTIME_DIR, name, row["program"]))
     return row
 
 
@@ -1709,7 +1756,7 @@ def build_agents(history_days: float | None = HISTORY_DAYS_DEFAULT) -> list[dict
         # 4.5s TTL キャッシュ済みなので graph_payload との重複呼び出しは無料。
         rt = (
             _agent_runtime(name, s.get("created"), s.get("session_id"))
-            if running
+            if running and program not in harness_runtime.HARNESSES
             else {}
         )
         pane_model = _pane_model_for(rt.get("pane_model"), (m or {}).get("program"))
@@ -1829,6 +1876,7 @@ def build_agents(history_days: float | None = HISTORY_DAYS_DEFAULT) -> list[dict
 
     observed_now = time.time()
     for row in rows:
+        row.update(harness_runtime.metadata(RUNTIME_DIR, row["name"], row.get("program")))
         profile = persistent_profiles.get(row["name"])
         row.update(
             profile_provider=(profile or {}).get("profile_provider", ""),
@@ -2323,6 +2371,8 @@ def _graph_keep(nodes: list[dict], days: float, show_all: bool):
             agent_alive = _agent_process_alive(s.get("pane_pid"), process_tree, program)
             if agent_alive is not None:
                 running = agent_alive
+            elif program in harness_runtime.HARNESSES:
+                running = False
             elif program.startswith("codex") and not running:
                 running = True
             if running:
@@ -2411,6 +2461,8 @@ def graph_payload(days: float, show_all: bool) -> dict:
         agent_alive = _agent_process_alive(s.get("pane_pid"), process_tree, program)
         if agent_alive is not None:
             running = agent_alive
+        elif program in harness_runtime.HARNESSES:
+            running = False
         elif program and program.startswith("codex") and not running:
             running = True
         live_txt = ""
@@ -2426,7 +2478,7 @@ def graph_payload(days: float, show_all: bool) -> dict:
         # HP(ctx 残量) + 動作状態は running のみ取得（capture-pane 抑制）
         rt = (
             _agent_runtime(name, s.get("created"), s.get("session_id"))
-            if running
+            if running and program not in harness_runtime.HARNESSES
             else {}
         )
         return {
@@ -2434,7 +2486,8 @@ def graph_payload(days: float, show_all: bool) -> dict:
             "running": running,
             "attached": s.get("attached", False),
             "live": live_txt,
-            "state": "run" if running else "finished",
+            "state": ("unknown" if program in harness_runtime.HARNESSES and agent_alive is None
+                      else "run" if running else "finished"),
             "sig": round(sig, 3) if running else 0.0,
             "ctx_used": rt.get("ctx_used"),
             "act_state": rt.get("act_state"),
@@ -2474,6 +2527,7 @@ def graph_payload(days: float, show_all: bool) -> dict:
         if n["name"] in keep
     ]
     for row in fn:
+        row.update(harness_runtime.metadata(RUNTIME_DIR, row["name"], row.get("program")))
         category = (
             "retired"
             if row.get("retired")
@@ -7179,6 +7233,19 @@ def _managed_catalog_providers():
         selected_mode="global" if GLOBAL_MODE else "legacy")
 
 
+def _spawn_catalog_providers():
+    # Reuse keyless configuration checks and the I5 capability evidence, without
+    # constructing the managed controller or importing its runtime adapters.
+    if __package__:
+        from .managed_catalog import standard_catalog
+    else:
+        from managed_catalog import standard_catalog
+    return standard_catalog(
+        os.environ.get("AGENTSTACK_MANAGED_SPAWN_CONFIG"),
+        mode="global" if GLOBAL_MODE else "legacy")
+
+
+
 def spawn_names_payload() -> dict:
     """Picker data; scientist vocabulary is emitted by the launcher source."""
     if sys.platform == "win32":
@@ -7227,7 +7294,7 @@ def spawn_names_payload() -> dict:
              "model_source": claude_catalog.source, "model_error": claude_catalog.error,
              "overflow_models": [m for m in claude_catalog.overflow if m != claude_default]},
             codex_models.provider_catalog(),
-        ] + _managed_catalog_providers(),
+        ] + _spawn_catalog_providers(),
     }
 
 
@@ -7738,10 +7805,6 @@ def _spawn_request(payload: dict) -> tuple[dict | None, dict | None]:
         "claude_chrome", "claude_chrome_device", "async", "dry_run", "headless", "emoji",
         "base", "tools", "harness", "helper_model",
     }
-    if "harness" in payload:
-        native_harness = {"claude": "claudecode", "codex": "codex", "gemini": "gemini"}.get(payload.get("provider", "claude"))
-        if payload["harness"] != native_harness or payload.get("helper_model", "same") != "same":
-            return None, {"ok": False, "error": "unsupported harness or helper"}
     if str(payload.get("provider") or "").strip().lower() == "gemini":
         allowed.add("resources")
     unknown = sorted(set(payload) - allowed)
@@ -7847,24 +7910,36 @@ def do_spawn(payload: dict) -> dict:
               provider?, model?, effort?, claude_chrome?, claude_chrome_device?,
               base?, tools?}.
     """
-    managed_module = _managed_spawn_module()
-    if managed_module.managed(payload):
+    if not isinstance(payload, dict):
+        return {"ok": False, "error": "spawn payload must be an object"}
+    # Only explicit legacy attempt requests enter the old test/controller path.
+    # A provider or harness alone no longer changes the response contract.
+    if "attempt_id" in payload and _managed_spawn_module().managed(payload):
         return _managed_spawn_manager().submit(payload)
-    if isinstance(payload, dict) and "harness" in payload:
-        # Native UI metadata must not become arbitrary launcher flags.
-        native = {"claude": "claudecode", "codex": "codex", "gemini": "gemini"}
-        if payload["harness"] not in (native.get(payload.get("provider", "claude")),):
-            return {"ok": False, "error": "unsupported harness", "error_code": "unsupported_harness"}
-        if payload.get("helper_model", "same") != "same":
-            return {"ok": False, "error": "unsupported helper model"}
-        payload = {k: v for k, v in payload.items() if k not in ("harness", "helper_model")}
+    raw_provider = payload.get("provider") or "claude"
+    if not isinstance(raw_provider, str):
+        return {"ok": False, "error": "provider must be a string"}
+    provider = raw_provider.strip().lower()
+    harness = payload.get("harness")
+    native = {"claude": ("claude-code", "claudecode"),
+              "codex": ("codex-cli", "codex"), "gemini": ("gemini",)}
+    if ((provider in ("deepseek", "strata") and harness not in ("dsh", "hermes"))
+            or (provider not in ("deepseek", "strata") and "harness" in payload
+                and harness not in native.get(provider, ()))):
+        return {"ok": False, "error": "unsupported harness", "error_code": "unsupported_harness"}
+    if payload.get("helper_model", "same") != "same":
+        return {"ok": False, "error": "unsupported helper model"}
+    for field in ("model", "effort"):
+        if payload.get(field) is not None and not isinstance(payload[field], str):
+            return {"ok": False, "error": f"{field} must be a string"}
+    # Metadata is resolved here; launcher arguments only come from our spec.
+    payload = {k: v for k, v in payload.items() if k not in ("harness", "helper_model")}
     unavailable = _spawn_unavailable_error()
     if unavailable:
         return unavailable
     _request, error = _spawn_request(payload)
     if error:
         return error
-    provider = (payload.get("provider") or "claude").strip().lower()
     claude_catalog = _claude_catalog() if provider == "claude" else None
     if claude_catalog and claude_catalog.error:
         return {"ok": False, "error": claude_catalog.error}
@@ -7945,6 +8020,25 @@ def do_spawn(payload: dict) -> dict:
             provider_args=("--codex",) + tools_args,
             launcher_env=(("AGENTSTACK_CODEX_BIN", launcher.binary),) if launcher.binary else (),
             effort_arg=bool(effort),
+        )
+    elif provider in ("deepseek", "strata"):
+        selected = None
+        for row in _spawn_catalog_providers():
+            if row.get("id") != provider:
+                continue
+            for candidate in row.get("models", []):
+                if isinstance(candidate, dict) and candidate.get("id") == model:
+                    selected = next((h for h in candidate.get("harnesses", [])
+                                     if h.get("id") == harness), None)
+        if not selected or selected.get("available") is not True:
+            return {"ok": False, "error": "model and harness are unavailable",
+                    "error_code": "spawn_pair_unavailable"}
+        if effort and effort not in (selected.get("efforts") or []):
+            return {"ok": False, "error": "effort not supported for model and harness"}
+        spec = SpawnLaunchSpec(
+            provider=provider, program=harness, model=model, script=SPAWN_SCRIPT,
+            provider_args=("--harness", harness, "--backend", provider) + tools_args,
+            effort=effort, effort_arg=bool(effort),
         )
     else:
         return {"ok": False, "error": f"provider not allowed: {provider}"}
@@ -8326,7 +8420,7 @@ def _spawn_launch(payload: dict, request: dict, spec: SpawnLaunchSpec,
             f.flush()
             os.fsync(f.fileno())
         os.chmod(token_file, 0o600)
-        if provider in {"claude", "codex"}:
+        if provider in {"claude", "codex", "deepseek", "strata"}:
             binding_file = f"{token_file}.binding.json"
             binding_fd = os.open(binding_file, open_flags, 0o600)
             with os.fdopen(binding_fd, "w") as f:

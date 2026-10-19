@@ -4,12 +4,15 @@ Ordinary missing runtimes or a wrong connection mode must not advertise a
 working launch. No credentials, filesystem discovery, registration or APIs here.
 """
 import hashlib
+import ast
+import importlib.util
 import json
 import os
 from pathlib import Path
 import re
 import subprocess
 import sys
+import types
 
 
 if __package__:
@@ -179,4 +182,73 @@ def catalog_providers(backends, availability, *, mode, enabled):
         if (first or {}).get('default_effort') in provider['efforts']:
             provider['effort_default'] = first['default_effort']
         providers.append(provider)
+    return providers
+
+
+def _thin_selection(manifest, harness, backend, model):
+    # Import the product helper, never a provider runtime or its plugins.
+    # An executable dashboard has only dashboard/ on sys.path. Give the
+    # helpers their own package so relative imports also work in that mode.
+    directory = Path(__file__).resolve().parents[1] / 'hooks'
+    package = '_orrery_thin_hooks_' + hashlib.sha256(str(directory).encode()).hexdigest()[:12]
+    name = package + '.harness_child'
+    if name not in sys.modules:
+        namespace = types.ModuleType(package)
+        namespace.__path__ = [str(directory)]
+        sys.modules.setdefault(package, namespace)
+        spec = importlib.util.spec_from_file_location(name, directory / 'harness_child.py')
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        sys.modules[name] = module
+    return sys.modules[name].selection(manifest, harness, backend, model)
+
+
+def load_standard_inputs(config_file, *, mode):
+    """Admit plain native generations using the launcher's static check."""
+    if not config_file:
+        return {}, {}, False
+    try:
+        manifest = _read(config_file)
+        backends = manifest['backends']
+        if manifest.get('enabled') is not True or not isinstance(backends, dict):
+            return {}, {}, False
+    except (OSError, ValueError, KeyError, TypeError):
+        return {}, {}, False
+    availability = {}
+    for backend, spec in backends.items():
+        if backend not in ('deepseek', 'strata') or not isinstance(spec, dict):
+            continue
+        availability[backend] = {}
+        for harness in ('dsh', 'hermes'):
+            reason, capability = None, dict(UNKNOWN)
+            try:
+                if mode != 'legacy':
+                    raise ValueError('unsupported_mode')
+                if sys.platform != 'darwin':
+                    raise ValueError('unsupported_platform')
+                opt_in = Path(__file__).with_name(harness + '-provider.json')
+                if opt_in.exists() and _read(opt_in).get('enabled') is not True:
+                    raise ValueError('disabled_by_opt_in')
+                runner = _thin_selection(config_file, harness, backend, spec['model'])
+                template = _read(runner['config_file'])
+                capability = load_effort_capability(template, harness=harness,
+                                                    backend_id=backend, model=spec['model'])
+            except ValueError as error:
+                # Only fixed product codes reach the public catalog.
+                code = str(error)
+                reason = code if re.fullmatch(r'[a-z][a-z0-9_]{0,63}', code) else 'runtime_not_prepared'
+            except (OSError, ImportError, SyntaxError, KeyError, TypeError, AttributeError, subprocess.SubprocessError):
+                reason = 'runtime_not_prepared'
+            availability[backend][harness] = {'available': reason is None,
+                                               'reason': reason, **capability}
+    return backends, availability, True
+
+
+def standard_catalog(config_file, *, mode):
+    """Standard spawn choices; legacy managed jobs retain their own checks."""
+    backends, availability, enabled = load_standard_inputs(config_file, mode=mode)
+    providers = catalog_providers(backends, availability, mode=mode, enabled=enabled)
+    for provider in providers:
+        provider.pop('managed', None)
+        provider.pop('helper_models', None)
     return providers
