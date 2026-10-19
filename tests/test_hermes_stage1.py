@@ -53,7 +53,7 @@ class ManagedFixtures(unittest.TestCase):
         runner.save(root / '.orrery-managed-install.json', receipt)
         runner.save(self.fixture.config_path, config)
         state = self.root / 'installed-state'
-        runner.initialize(self.fixture.config_path, state, 'strata', self.fixture.product.run, file_task=True)
+        runner.initialize(self.fixture.config_path, state, 'strata', self.fixture.product.run, file_task=True, selftest=True)
         mail_lifecycle.register(state, self.fixture.product.run, generate_config=False)
         runner.configure(state, self.fixture.product.run)
         configured, _ = runner.check_configured(state)
@@ -79,7 +79,7 @@ class ManagedFixtures(unittest.TestCase):
 
     def test_unstarted_reservation_free_retired_cleanup_has_no_fabricated_group(self):
         state = self.root / 'never-started'
-        runner.initialize(self.fixture.config_path, state, 'strata', self.fixture.product.run, file_task=True)
+        runner.initialize(self.fixture.config_path, state, 'strata', self.fixture.product.run, file_task=True, selftest=True)
         mail_lifecycle.register(state, self.fixture.product.run, generate_config=False)
         mail_lifecycle.retire(state, self.fixture.product.run, require_release=False)
         capture = self.root / 'whois.json'
@@ -149,7 +149,7 @@ class ManagedFixtures(unittest.TestCase):
         import hashlib
         task['expected'] = [{'path': 'result.txt', 'sha256': hashlib.sha256(b'requested-result').hexdigest()}]
         state = self.root / 'generic-state'
-        runner.initialize(self.fixture.config_path, state, 'strata', self.fixture.product.run, file_task=True, task_spec=task)
+        runner.initialize(self.fixture.config_path, state, 'strata', self.fixture.product.run, file_task=True, task_spec=task, batch=True)
         target = Path(runner.read(state / 'task.json')['worktree']) / 'result.txt'
         self.assertFalse(target.exists())
         self.assertEqual((state / 'task.md').read_text().count(task['prompt']), 1)
@@ -183,7 +183,7 @@ class ManagedFixtures(unittest.TestCase):
         self.assertEqual(task_spec.validate(empty), empty)
 
     def test_bad_task_rejected_before_state_or_registration(self):
-        for value in ({}, {**self.task(), 'allowed_paths': ['../live']},
+        for value in ({'unknown': True}, {**self.task(), 'allowed_paths': ['../live']},
                       {**self.task(), 'allowed_paths': ['files/**']},
                       {**self.task(), 'expected': [{'path': 'outside', 'contains': 'x'}]},
                       {**self.task(), 'expected': [{'path': 'result.txt', 'contains': 'x', 'sha256': 'a' * 64}]},
@@ -199,7 +199,7 @@ class ManagedFixtures(unittest.TestCase):
         config = profile_projection.project(spec, self.root / 'profile', ['title_generation', 'background_review'])
         self.assertEqual(config['profile_config']['agent'], {'reasoning_effort': 'none'})
         state = self.root / 'partial-handoff'
-        runner.initialize(self.fixture.config_path, state, 'strata', self.fixture.product.run, file_task=True)
+        runner.initialize(self.fixture.config_path, state, 'strata', self.fixture.product.run, file_task=True, selftest=True)
         def bad_handoff(argv, **kwargs):
             result = self.fixture.product.run(argv, **kwargs)
             if str(argv[0]).endswith('agentstack-preregister-child'):
@@ -214,7 +214,7 @@ class ManagedFixtures(unittest.TestCase):
 
     def test_stop_partial_start_proves_absence_without_inventing_runtime_exit(self):
         state = self.root / 'partial-start'
-        runner.initialize(self.fixture.config_path, state, 'strata', self.fixture.product.run, file_task=True)
+        runner.initialize(self.fixture.config_path, state, 'strata', self.fixture.product.run, file_task=True, selftest=True)
         mail_lifecycle.register(state, self.fixture.product.run, generate_config=False)
         runner.save(state / 'start-intent.json', {'agent_name': 'FixtureChild', 'socket_path': '/fixture/socket'})
         self.assertEqual(runner.stop(state, self.fixture.product.run), {'launch_state': 'not-started-session-absent'})
@@ -385,7 +385,7 @@ class ManagedFixtures(unittest.TestCase):
         if not python or not source:
             self.skipTest('Explicit installed dependency interpreter/source required')
         state = self.root / 'owned-key-state'
-        runner.initialize(self.fixture.config_path, state, 'strata', self.fixture.product.run, file_task=True)
+        runner.initialize(self.fixture.config_path, state, 'strata', self.fixture.product.run, file_task=True, selftest=True)
         mail_lifecycle.register(state, self.fixture.product.run, generate_config=False)
         runner.configure(state, self.fixture.product.run)
         config = runner.read(state / 'run-config.json')

@@ -44,16 +44,17 @@ def execute(state):
     profile = Path(config['profile_home'])
     env = base_env(config) | {'HERMES_HOME': str(Path(config['managed_root'])),
           'ORRERY_HERMES_STATE_ROOT': str(state), 'ORRERY_HERMES_ADAPTER_DIR': str(Path(__file__).resolve().parent),
-          'AGENT_NAME': identity['agent_name'], 'PARENT_AGENT': config['parent']}
+          'AGENT_NAME': identity['agent_name'], **({'PARENT_AGENT': config['parent']} if config['parent'] else {})}
     # The selected profile's key_cmd is resolved by Hermes in this owned pane.
     # No inherited API key, token value, shell config, or another profile's .env.
-    command = [config['hermes_executable'], '-p', config['profile_name'], '-z', (state / 'task.md').read_text(),
-               '--provider', config['provider'], '-m', config['model'], '-t',
-               ','.join(pilot_toolsets(read(profile / 'config.yaml')))]
     if config['purpose'] == 'file-task':
         env['HERMES_HOME'] = str(profile)
         command = [config['hermes_python'], '-I', '-B', str(Path(__file__).with_name('managed_entry.py')),
                    '--state', str(state)]
+    else:
+        command = [config['hermes_executable'], '-p', config['profile_name'], '-z', (state / 'task.md').read_text(),
+                   '--provider', config['provider'], '-m', config['model'], '-t',
+                   ','.join(pilot_toolsets(read(profile / 'config.yaml')))]
     save(state / 'pane-entry.json', {'supervisor_pid': os.getpid(), 'agent_name': identity['agent_name'],
          'profile_home': str(profile), 'hermes_python': config['hermes_python'], 'at': stamp()}, exclusive=True)
     child = None
@@ -71,19 +72,35 @@ def execute(state):
         signal.signal(signum, stop_handler)
     code, reason = None, 'failure'
     try:
-        with os.fdopen(os.open(state / 'stdout.log', os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600), 'w') as out, \
-                os.fdopen(os.open(state / 'stderr.log', os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600), 'w') as err:
-            child = subprocess.Popen(command, cwd=config['worktree'], env=env,
-                                     stdout=out, stderr=err, start_new_session=True)
-            save(state / 'runtime-process.json', {'pid': child.pid, 'pgid': child.pid,
-                 'agent_name': identity['agent_name'], 'started_at': stamp()}, exclusive=True)
+        if config.get('runtime_mode') == 'interactive':
+            from tty_runtime import run as run_tty
+
+            def started(process):
+                nonlocal child
+                child = process
+                save(state / 'runtime-process.json', {'pid': child.pid, 'pgid': child.pid,
+                     'agent_name': identity['agent_name'], 'started_at': stamp()}, exclusive=True)
             try:
-                code = child.wait(timeout=config['task_timeout_seconds'])
-                reason = 'parent' if stopping else 'task-done' if code == 0 else 'failure'
+                code = run_tty(command, cwd=config['worktree'], env=env, log=state / 'stdout.log',
+                               started=started, deadline=config.get('task_timeout_seconds'))
+                reason = 'parent' if stopping else 'native-exit' if code == 0 else 'failure'
             except subprocess.TimeoutExpired:
                 reason = 'limit'
-                terminate(child)
-                code = child.returncode
+                code = child.returncode if child else None
+        else:
+            with os.fdopen(os.open(state / 'stdout.log', os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600), 'w') as out, \
+                    os.fdopen(os.open(state / 'stderr.log', os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600), 'w') as err:
+                child = subprocess.Popen(command, cwd=config['worktree'], env=env,
+                                         stdout=out, stderr=err, start_new_session=True)
+                save(state / 'runtime-process.json', {'pid': child.pid, 'pgid': child.pid,
+                     'agent_name': identity['agent_name'], 'started_at': stamp()}, exclusive=True)
+                try:
+                    code = child.wait(timeout=config.get('task_timeout_seconds'))
+                    reason = 'parent' if stopping else 'task-done' if code == 0 else 'failure'
+                except subprocess.TimeoutExpired:
+                    reason = 'limit'
+                    terminate(child)
+                    code = child.returncode
     finally:
         absent = None
         if child is not None:

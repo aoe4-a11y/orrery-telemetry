@@ -22,11 +22,14 @@ def _read(path: Path, lines=False):
         return None
 
 
-def _result(checks, **metadata):
+def _result(checks, applicable=None, **metadata):
     # Known failures remain failures; absent evidence can never become success.
-    success = False if False in checks.values() else None if None in checks.values() else True
+    applicable = list(checks) if applicable is None else list(applicable)
+    values = [checks[key] for key in applicable]
+    success = False if False in values else None if None in values else True
     return {**metadata, 'success': success, 'checks': checks,
-            'missing': [key for key, value in checks.items() if value is not True]}
+            'applicable_checks': applicable,
+            'missing': [key for key in applicable if checks[key] is not True]}
 
 
 def evaluate_task(state_root):
@@ -41,6 +44,16 @@ def evaluate_task(state_root):
     metadata = {'attempt_id': aid, 'task_id': tid, 'runtime_phase': attempt.get('phase') if attempt else None}
     if not attempt or not task or not aid or not tid or attempt.get('phase') not in ('spike', 'run'):
         return _result(checks, **metadata)
+    mode, policy = task.get('task_mode', 'assignment'), task.get('report_policy', 'mail')
+    metadata.update(task_mode=mode, report_policy=policy)
+    if mode == 'conversation':
+        return {**metadata, 'success': None, 'evaluation': 'not_applicable',
+                'checks': checks, 'applicable_checks': [], 'missing': []}
+    # A formal report is immutable. Later unassigned edits/turns cannot turn a
+    # confirmed report into a failure, or make later evidence satisfy this task.
+    snapshot = _read(root / 'task-reports' / (tid + '.json')) if isinstance(tid, str) and Path(tid).name == tid else None
+    if snapshot and snapshot.get('attempt_id') == aid and snapshot.get('task_id') == tid:
+        return snapshot
     checks['attempt_binding'] = task.get('attempt_id') == aid
     scoped = [row for row in events or [] if row.get('attempt_id') == aid and row.get('task_id') == tid]
     turns = [row for row in scoped if row.get('phase') == 'turn-end']
@@ -75,6 +88,12 @@ def evaluate_task(state_root):
         bad = any(row.get('phase', '').startswith('blocked-') or row.get('phase') in ('runtime-fatal', 'limit-reached') for row in audit)
         requests = any(row.get('phase') == 'provider-request-start' for row in audit)
         checks['provider_audit'] = same_attempt and not bad and requests
+        if task.get('interactive') is True:
+            seqs = {row.get('seq') for row in audit if row.get('phase') == 'provider-request-start'
+                    and row.get('task_id') == tid}
+            usage = {row.get('seq'): row for row in audit if row.get('phase') == 'provider-usage' and row.get('task_id') == tid}
+            confirmed = {seq for seq, row in usage.items() if row.get('confirmed') is True and row.get('terminal') is True}
+            checks['provider_audit'] = checks['provider_audit'] and bool(seqs) and seqs <= confirmed
     if events is not None:
         receipts = [row for row in scoped if row.get('phase') == 'mail-sent']
         parent, child = task.get('report_to'), attempt.get('agent_name')
@@ -95,7 +114,9 @@ def evaluate_task(state_root):
                     and any(row['message_id'] == received.get('message_id') for row in matching))
             # A canonical parent receipt strengthens the server-send proof when
             # available; a malformed or mismatching existing receipt fails.
-    return _result(checks, **metadata)
+    applicable = [key for key in checks if (key != 'mail_receipt' or policy == 'mail')
+                  and (key != 'expected_artifacts' or expected != [] or 'task_mode' not in task)]
+    return _result(checks, applicable, evaluation='pending', **metadata)
 
 
 def evaluate_runtime(state_root):
@@ -115,7 +136,7 @@ def evaluate_runtime(state_root):
                          and value.get('source') == source) else None
 
     release = scoped('release-receipt.json', 'product-bound-proxy')
-    retired = scoped('retire-receipt.json', 'parent-bound-whois')
+    retired = scoped('retire-receipt.json', 'parent-bound-whois') or scoped('retire-receipt.json', 'dashboard-bound-whois')
     task = _read(root / 'task.json')
     released = None
     if release and type(release.get('confirmed')) is bool:
@@ -127,6 +148,15 @@ def evaluate_runtime(state_root):
             released = False
         elif all(valid(ids) for ids in (expected, requested, actual)):
             released = set(expected) == set(requested) == set(actual)
+        if task and task.get('interactive') is True:
+            try:
+                from dynamic_reservations import inventory
+                ids, already_released = inventory(root)
+                valid_ids = lambda value: isinstance(value, list) and all(type(n) is int and n > 0 for n in value) and len(value) == len(set(value))
+                released = (release['confirmed'] is True and valid_ids(requested) and valid_ids(actual)
+                            and ids == set(requested) == set(actual))
+            except (OSError, ValueError, KeyError, TypeError):
+                released = None
     retire = 'unknown'
     if retired:
         timestamp = retired.get('retired_at')
@@ -137,7 +167,7 @@ def evaluate_runtime(state_root):
             and not any((root / name).exists() for name in (
                 'start-intent.json', 'owned-pane.json', 'pane-entry.json', 'runtime-process.json',
                 'runtime-exit.json', 'credential-read.json', 'reservation-intent.json',
-                'reservation-result.json', 'reservations.json', 'release-receipt.json'))):
+                'reservation-result.json', 'reservations.json', 'reservation-ledger.json', 'release-receipt.json'))):
         # No group or lease ever existed. Preserve their unknown/null fields;
         # close this separate pre-launch outcome using confirmed retirement.
         return _result({'launch_not_started': True, 'reservations_not_acquired': True,

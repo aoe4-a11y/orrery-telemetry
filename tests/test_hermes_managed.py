@@ -58,6 +58,8 @@ class FakeProduct:
                 'AGENTSTACK_PROXY_PARENT_AGENT': get('--parent-agent'), 'AGENTSTACK_MCP_URL': get('--mcp-url'),
                 'AGENTSTACK_MAIL_ENV': get('--mail-env'), 'AGENTSTACK_MAIL_HTTP_BEARER_MODE': get('--bearer-mode'),
                 'AGENTSTACK_RUNTIME_DIR': get('--runtime-dir'), 'AGENTSTACK_PYTHON': get('--python-bin')}}
+            if not proxy['env']['AGENTSTACK_PROXY_PARENT_AGENT']:
+                del proxy['env']['AGENTSTACK_PROXY_PARENT_AGENT']
             runner.save(get('--out'), {'mcpServers': {'orrery-mail': proxy}})
             return subprocess.CompletedProcess(argv, 0, '', '')
         if 'has-session' in argv:
@@ -88,6 +90,9 @@ class PilotFixture(unittest.TestCase):
                 'mcp_url': 'http://127.0.0.1:1/mcp', 'mail_env': str(self.root / 'mail.env'), 'bearer_mode': 'off'},
             'profiles': {'strata': profile, 'deepseek': profile}}
         self.config_path = self.root / 'input.json'
+        registry = Path(self.config['hermes_source']) / 'hermes_cli' / 'auth.py'
+        registry.parent.mkdir(parents=True)
+        registry.write_text('_REGISTRY_ROWS: tuple = (("deepseek", "DeepSeek"), ("anthropic", "Anthropic"))\n')
         key = hashlib.sha256(str(Path(self.config['hermes_source']).resolve()).encode()).hexdigest()[:16]
         self.install = Path(self.config['managed_root']) / 'installs' / key
         self.add_generation('fixture-first')

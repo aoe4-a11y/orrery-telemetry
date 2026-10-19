@@ -20,6 +20,7 @@ import uuid
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import mail_lifecycle as lifecycle
+from runtime_profile import config_path as profile_config_path
 
 HERE = Path(__file__).resolve().parent
 read, save = lifecycle.read, lifecycle.save
@@ -99,7 +100,9 @@ def managed_profile(config):
     return profiles / config['profile_name']
 
 
-def initialize(config_path, state, profile_name, run=subprocess.run, *, file_task=False, task_spec=None):
+def initialize(config_path, state, profile_name, run=subprocess.run, *, file_task=False, task_spec=None, selftest=False, batch=False):
+    if file_task and task_spec is None and not selftest:
+        task_spec = {}
     if task_spec is not None:
         from task_spec import validate
         validate(task_spec)
@@ -111,9 +114,11 @@ def initialize(config_path, state, profile_name, run=subprocess.run, *, file_tas
     if profile_name not in ('strata', 'deepseek'):
         raise ValueError('Choose the explicit strata or deepseek profile')
     config = read(config_path)
+    config.setdefault('parent', None)
     known = {'product_root', 'home', 'project_key', 'worktree', 'managed_root', 'hermes_executable',
              'hermes_python', 'hermes_source', 'proxy_python', 'tmux', 'parent', 'connection',
-             'profiles', 'task_timeout_seconds', 'tmux_socket', 'provider_request_limit', 'credential_mode'}
+             'profiles', 'task_timeout_seconds', 'tmux_socket', 'provider_request_limit', 'credential_mode',
+             'task_mode', 'report_policy', 'runtime_mode'}
     profile_keys = {'template', 'provider', 'model', 'base_url', 'api', 'api_mode', 'transport', 'key_cmd',
                     'context_length', 'reasoning_effort'}
     if set(config) - known or set(config['connection']) - {'runtime_dir', 'mcp_url', 'mail_env', 'bearer_mode'}:
@@ -129,8 +134,8 @@ def initialize(config_path, state, profile_name, run=subprocess.run, *, file_tas
                 'hermes_executable', 'hermes_python', 'hermes_source', 'proxy_python', 'tmux'):
         if not Path(config[key]).is_absolute():
             raise ValueError('Configured paths must be absolute')
-    if not re.fullmatch(r'[A-Za-z][A-Za-z0-9-]+', config['parent']):
-        raise ValueError('Explicit canonical parent required')
+    if config.get('parent') is not None and not re.fullmatch(r'[A-Za-z][A-Za-z0-9-]+', config['parent']):
+        raise ValueError('Canonical parent or null required')
     root = Path(config['managed_root']).resolve()
     home = Path(config['home']).resolve()
     if root == home or root.is_relative_to(home / '.hermes'):
@@ -154,7 +159,17 @@ def initialize(config_path, state, profile_name, run=subprocess.run, *, file_tas
     projection = json.loads(result.stdout)
     config.update(profile_name=profile_name, profile_home=str(profile), managed_root=str(root),
                   model=projection['model'], provider=projection['provider'], purpose='file-task' if file_task else 'mail-connectivity',
-                  runner_python=sys.executable, task_timeout_seconds=int(config.get('task_timeout_seconds', 300)))
+                  runner_python=sys.executable)
+    if file_task:
+        config['runtime_mode'] = 'batch' if selftest or batch else config.get('runtime_mode', 'interactive')
+        if config['runtime_mode'] not in ('batch', 'interactive'):
+            raise ValueError('Unknown runtime mode')
+        if task_spec is not None:
+            from task_spec import normalize
+            normalized = normalize(task_spec, config['parent'])
+            config.update(task_mode=normalized['task_mode'], report_policy=normalized['report_policy'])
+        if config['runtime_mode'] == 'interactive':
+            config['runtime_config'] = str(state / 'runtime-profile.json')
     save(state / 'run-config.json', config, exclusive=True)
     save(state / 'profile-plan.json', projection, exclusive=True)
     attempt = {'attempt_id': str(uuid.uuid4()), 'phase': 'run', 'agent_name': None,
@@ -164,18 +179,19 @@ def initialize(config_path, state, profile_name, run=subprocess.run, *, file_tas
          'worktree': config['worktree'], 'report_to': config['parent'], 'allowed_paths': [], 'expected': []}, exclusive=True)
     message = {'to': [config['parent']], 'subject': 'Hermes child Mail probe',
                'body_md': 'Hermes child connected through the product bound MCP proxy.'}
-    save(state / 'message.json', message, exclusive=True)
+    if not file_task:
+        save(state / 'message.json', message, exclusive=True)
     task = ('Your registration is already complete. Do not register, ensure a project, fetch an inbox, '
             'read credentials, or inspect files. Your only task is to call '
             'mcp__orrery_mail__send_message exactly once with this exact JSON:\n' +
             json.dumps(message, ensure_ascii=False) + '\nAfter the tool returns, finish. '
             'If it fails or is unavailable, stop and report failure; do not retry or use another transport.\n')
-    (state / 'task.md').write_text(task)
+    (state / 'task.md').write_text('' if file_task else task)
     (state / 'task.md').chmod(0o600)
     if file_task and task_spec is not None:
         from task_spec import materialize
         materialize(state, task_spec, config, attempt, save)
-    elif file_task:
+    elif file_task and selftest:
         manifest = read(state / 'task.json')
         manifest.update(allowed_paths=['trial-ok.txt'], reservation_receipts=[],
                         reservation_source='product-bound-proxy', expected=[{'path': 'trial-ok.txt', 'contains': 'hermes-first-ok'}])
@@ -195,6 +211,19 @@ def initialize(config_path, state, profile_name, run=subprocess.run, *, file_tas
 
 
 def configure(state, run=subprocess.run):
+    import fcntl
+    state = Path(state).resolve()
+    config = read(state / 'run-config.json')
+    profile = managed_profile(config)
+    profile.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+    lock = profile.parent / ('.orrery-' + config['profile_name'] + '.lock')
+    fd = os.open(lock, os.O_WRONLY | os.O_CREAT | os.O_NOFOLLOW, 0o600)
+    with os.fdopen(fd, 'w') as handle:
+        fcntl.flock(handle, fcntl.LOCK_EX)
+        return _configure(state, run)
+
+
+def _configure(state, run):
     state = Path(state).resolve()
     config, identity = read(state / 'run-config.json'), read(state / 'mail-identity.json')
     if (state / 'configured.json').exists():
@@ -207,7 +236,13 @@ def configure(state, run=subprocess.run):
         raise ValueError('Profile escaped the managed root')
     check_profile_paths(profile)
     marker = profile / '.orrery-profile.json'
-    if profile.exists():
+    interactive = config.get('runtime_mode') == 'interactive'
+    shared = profile / '.orrery-shared-profile.json'
+    expected_shared = {'profile_home': str(profile.resolve()), 'source': 'managed-hermes-profile',
+                       'provider': config['provider'], 'profile_name': config['profile_name']}
+    if interactive and shared.exists() and read(shared) != expected_shared:
+        raise ValueError('Shared profile binding changed')
+    if profile.exists() and not (interactive and shared.is_file()):
         if not marker.is_file():
             raise ValueError('Existing profile is not owned by this adapter')
         prior = read(marker)
@@ -220,6 +255,8 @@ def configure(state, run=subprocess.run):
                 or proof.get('attempt_id') != prior_attempt['attempt_id'] or not proof.get('retired_at')):
             raise ValueError('Previous profile attempt has no parent-confirmed retirement')
     plan = read(state / 'profile-plan.json')['profile_config']
+    from profile_projection import validate_provider_name
+    validate_provider_name(config['provider'], config['hermes_source'])
     check_profile_paths(profile, plan)
     # Reuse only a product projection whose complete bound references match.
     # Nothing in the profile has been touched by this attempt at this point.
@@ -227,7 +264,13 @@ def configure(state, run=subprocess.run):
         proxy = lifecycle.generated_proxy(state)
     else:
         proxy = lifecycle.generate(state, run)
-    plan['mcp_servers'] = {'orrery_mail': {**proxy, 'tools': {'include': ['send_message']}}}
+    plan['mcp_servers'] = {'orrery_mail': {**proxy, 'tools': {'resources': False, 'prompts': False}}
+                           if interactive else {**proxy, 'tools': {'include': ['send_message']}}}
+    if interactive:
+        plan['plugins']['entries'] = {'orrery-mail-receipt': {'mcp_allowlist': ['orrery_mail']}}
+        # The first segment exposes its authenticated roster eagerly. Hermes's
+        # discovery bridge is a separate tool-call surface not yet guarded here.
+        plan['tools'] = {'tool_search': {'enabled': 'off'}}
     pilot_toolsets(plan, file_task=config['purpose'] == 'file-task')
     save(state / 'profile-write-intent.json', {'agent_name': identity['agent_name'],
          'mcp_sha256': digest(state / 'mcp.json'), 'at': lifecycle.stamp()}, exclusive=True)
@@ -235,21 +278,36 @@ def configure(state, run=subprocess.run):
     for name in ('memories', 'skills', 'sessions', 'logs'):
         (profile / name).mkdir(mode=0o700, exist_ok=True)
     # No other profile's .env, auth.json, memories or skill content is copied.
-    save(profile / 'config.yaml', plan)
+    save(profile_config_path(config), plan)
+    if interactive and not (profile / 'config.yaml').exists():
+        # Stable profile identity for native -p resolution; attempt-specific MCP
+        # credentials/paths exist only in runtime-profile.json.
+        stable = {**plan, 'mcp_servers': {}}
+        save(profile / 'config.yaml', stable, exclusive=True)
     plugin = profile / 'plugins' / 'orrery-mail-receipt'
     plugin.mkdir(parents=True, mode=0o700, exist_ok=True)
-    save(plugin / 'plugin.yaml', {'name': 'orrery-mail-receipt', 'version': '0.1.0',
+    manifest = {'name': 'orrery-mail-receipt', 'version': '0.1.0',
          'description': 'Record the product Mail receipt for one explicit parent message',
-         'provides_hooks': ['pre_tool_call', 'post_tool_call']})
-    (plugin / '__init__.py').write_text(
+         'provides_hooks': ['pre_tool_call', 'post_tool_call']}
+    entry = (
         'import os, sys\n'
         'sys.path.insert(0, os.environ["ORRERY_HERMES_ADAPTER_DIR"])\n' +
         ('from task_plugin import register\n' if config['purpose'] == 'file-task' else 'from mail_plugin import register\n'))
-    (plugin / '__init__.py').chmod(0o600)
-    save(marker, {'state': str(state), 'agent_name': identity['agent_name'],
-                  'provider': config['provider'], 'model': config['model']})
+    if interactive and shared.exists():
+        if read(plugin / 'plugin.yaml') != manifest or (plugin / '__init__.py').read_text() != entry:
+            raise ValueError('Shared managed plugin changed')
+    else:
+        save(plugin / 'plugin.yaml', manifest)
+        (plugin / '__init__.py').write_text(entry)
+        (plugin / '__init__.py').chmod(0o600)
+    if interactive:
+        if not shared.exists():
+            save(shared, expected_shared, exclusive=True)
+    else:
+        save(marker, {'state': str(state), 'agent_name': identity['agent_name'],
+                      'provider': config['provider'], 'model': config['model']})
     proof = {'agent_name': identity['agent_name'], 'profile_home': str(profile),
-             'profile_sha256': digest(profile / 'config.yaml'), 'mcp_sha256': digest(state / 'mcp.json'),
+             'profile_sha256': digest(profile_config_path(config)), 'mcp_sha256': digest(state / 'mcp.json'),
              'at': lifecycle.stamp()}
     save(state / 'configured.json', proof, exclusive=True)
     return proof
@@ -264,10 +322,12 @@ def check_configured(state):
         raise ValueError('Profile escaped the managed root')
     check_profile_paths(profile)
     if (proof['agent_name'] != identity['agent_name'] or proof['mcp_sha256'] != digest(state / 'mcp.json')
-            or proof['profile_sha256'] != digest(Path(config['profile_home']) / 'config.yaml')):
+            or proof['profile_sha256'] != digest(profile_config_path(config))):
         raise ValueError('Configured identity or profile changed')
-    check_profile_paths(profile, read(profile / 'config.yaml'))
-    pilot_toolsets(read(profile / 'config.yaml'), file_task=config['purpose'] == 'file-task')
+    if config.get('runtime_config') and profile_config_path(config) != state.resolve() / 'runtime-profile.json':
+        raise ValueError('Runtime config escaped the attempt')
+    check_profile_paths(profile, read(profile_config_path(config)))
+    pilot_toolsets(read(profile_config_path(config)), file_task=config['purpose'] == 'file-task')
     config['hermes_python'] = committed_python(config)
     return config, identity
 
@@ -286,7 +346,7 @@ def start(state, run=subprocess.run):
         if (proof.get('guard_loaded') is not True or proof.get('agent_name') != identity['agent_name']
                 or proof.get('attempt_id') != read(state / 'attempt.json')['attempt_id']
                 or proof.get('task_sha256') != digest(state / 'task.json')
-                or proof.get('profile_sha256') != digest(Path(config['profile_home']) / 'config.yaml')):
+                or proof.get('profile_sha256') != digest(profile_config_path(config))):
             raise ValueError('Current loaded-guard preflight is required')
     if (state / 'start-intent.json').exists():
         raise FileExistsError('A launch was already attempted; preserve it')
@@ -416,7 +476,7 @@ def clean(state, run=subprocess.run):
 def managed_env(config, identity, state):
     return base_env(config) | {'HERMES_HOME': config['profile_home'],
         'ORRERY_HERMES_STATE_ROOT': str(Path(state).resolve()), 'ORRERY_HERMES_ADAPTER_DIR': str(HERE),
-        'AGENT_NAME': identity['agent_name'], 'PARENT_AGENT': config['parent']}
+        'AGENT_NAME': identity['agent_name'], **({'PARENT_AGENT': config['parent']} if config['parent'] else {})}
 
 
 def apply_reservations(state):
@@ -440,7 +500,8 @@ def preflight(state, run=subprocess.run):
     config, identity = check_configured(state)
     if config['purpose'] != 'file-task':
         raise ValueError('Loaded-guard preflight requires a reserved file task')
-    apply_reservations(state)
+    if config.get('runtime_mode') != 'interactive':
+        apply_reservations(state)
     (state / 'preflight-complete.json').unlink(missing_ok=True)
     run([config['hermes_python'], '-I', '-B', str(HERE / 'managed_entry.py'), '--state', str(state), '--check'],
         env=managed_env(config, identity, state), cwd=config['worktree'], capture_output=True, check=True, timeout=30)
@@ -456,7 +517,7 @@ def evaluate(state, runtime=False):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('action', choices=['init', 'init-task', 'preregister', 'configure', 'probe', 'reserve', 'release',
+    parser.add_argument('action', choices=['init', 'init-task', 'init-batch', 'selftest-task', 'preregister', 'configure', 'probe', 'reserve', 'release',
         'preflight', 'start', 'status', 'stop', 'retire', 'confirm-retire', 'record-mail', 'complete',
         'complete-runtime', 'scan-diagnostics', 'clean'])
     parser.add_argument('--state', required=True, type=Path)
@@ -466,9 +527,10 @@ def main():
     args = parser.parse_args()
     exit_code = 0
     try:
-        if args.action in ('init', 'init-task'):
-            result = initialize(args.config, args.state, args.profile, file_task=args.action == 'init-task',
-                                task_spec=read(args.input) if args.input else None)
+        if args.action in ('init', 'init-task', 'init-batch', 'selftest-task'):
+            result = initialize(args.config, args.state, args.profile, file_task=args.action != 'init',
+                                task_spec=read(args.input) if args.input else None,
+                                selftest=args.action == 'selftest-task', batch=args.action == 'init-batch')
         elif args.action == 'preregister':
             result = lifecycle.register(args.state, generate_config=False)
         elif args.action == 'configure':
@@ -510,9 +572,12 @@ def main():
             task = read(args.state / 'task.json')
             reservations = read(args.state / 'reservations.json') if (args.state / 'reservations.json').exists() else {}
             result = lifecycle.retire(args.state, require_release=config['purpose'] == 'file-task'
-                                      and bool(task.get('reservation_receipts') or reservations.get('receipts')))
+                                      and bool(task.get('reservation_receipts') or reservations.get('receipts')
+                                               or (args.state / 'reservation-ledger.json').exists()
+                                               or (config.get('runtime_mode') == 'interactive' and (args.state / 'runtime-exit.json').exists())))
     except (OSError, ValueError, KeyError, TypeError, RuntimeError, subprocess.SubprocessError) as error:
         known = {'Unapproved persistent profile link': 'profile_link_unapproved',
+                 'Managed provider name collides with a Hermes built-in provider': 'provider_name_collision',
                  'Profile escaped the managed root': 'profile_path_mismatch',
                  'Profile may not be a symbolic link': 'profile_symlink',
                  'Profile symbolic link points outside the current profile': 'current_profile_escape'}

@@ -9,11 +9,14 @@ from pathlib import Path
 import sys
 
 HERE = Path(__file__).resolve().parent
+if str(HERE) not in sys.path:
+    sys.path.insert(0, str(HERE))
 CAPABILITIES = {'tools': ['read_file', 'write_file', 'mcp__orrery_mail__send_message'],
+                'interactive': True,
                 'scope': 'relative-files', 'expected_checks': ['contains', 'sha256'],
                 'reservation_guard': 'synchronous-pre-tool', 'helper_models': ['same'],
                 'context_source': 'unreported'}
-FAILURE_CODES = {'profile_link_unapproved', 'profile_path_mismatch', 'profile_symlink',
+FAILURE_CODES = {'profile_link_unapproved', 'profile_path_mismatch', 'profile_symlink', 'provider_name_collision',
                  'current_profile_escape', 'process_failed', 'filesystem_failed',
                  'missing_state', 'runtime_failed', 'validation_failed'}
 
@@ -71,13 +74,16 @@ def prepare(*, state, config_file, backend_id, task, worktree, parent, run):
     if backend_id not in ('strata', 'deepseek') or backend_id not in config['profiles']:
         raise ValueError('Configured managed backend required')
     config.update(worktree=str(Path(worktree).resolve()), parent=parent, credential_mode='owned-once')
+    interactive = 'task_mode' in task or 'report_policy' in task
+    config['runtime_mode'] = 'interactive' if interactive else 'batch'
     inputs = state.parent / (state.name + '-hermes-input')
     inputs.mkdir(mode=0o700, parents=True, exist_ok=False)
     config_path, task_path = inputs / 'run-config.json', inputs / 'task.json'
     save(config_path, config)
     save(task_path, task)
     step(state, 'init-task', run=run, config_file=config_path, profile=backend_id, input_file=task_path)
-    for action in ('preregister', 'configure', 'probe', 'reserve', 'preflight'):
+    for action in (('preregister', 'configure', 'probe', 'preflight') if interactive else
+                   ('preregister', 'configure', 'probe', 'reserve', 'preflight')):
         step(state, action, run=run)
     return status(state)
 
@@ -108,13 +114,33 @@ def status(state):
         credential = read(state / 'credential-read.json', {})
         ready = ready and credential.get('status') == 'available' and credential.get('attempt_id') == attempt.get('attempt_id') \
             and credential.get('process_id') == process.get('pid')
+    if task.get('interactive') is True:
+        ready = ready and any(row.get('phase') == 'native-ready' and row.get('process_id') == process.get('pid')
+                              for row in same)
     runtime = read(state / 'runtime-exit.json')
     task_result, runtime_result = read(state / 'task-completion.json', {}), read(state / 'runtime-completion.json', {})
+    from completion import evaluate_task
+    if task and attempt:
+        if task.get('interactive') is True:
+            from interactive import freeze_report
+            task_result = freeze_report(state)
+        else:
+            task_result = evaluate_task(state)
     current = lambda row: row.get('success') if row.get('attempt_id') == attempt.get('attempt_id') and type(row.get('success')) is bool else None
+    activity = read(state / 'activity.json', {})
+    activity = activity if activity.get('attempt_id') == attempt.get('attempt_id') else {}
+    mode, policy = task.get('task_mode', 'assignment'), task.get('report_policy', 'mail')
     # turn-end precedes Hermes's hard-exit diagnostic scan. Let the supervisor
     # observe exit before the controller stops it, preserving that final scan.
     return {'ready': ready, 'terminal': runtime is not None,
             'task_success': current(task_result), 'runtime_success': current(runtime_result),
+            'task_mode': mode, 'report_policy': policy, 'parent': read(state / 'run-config.json', {}).get('parent'),
+            'activity': 'exited' if runtime is not None else activity.get('activity'),
+            'latest_turn': activity.get('latest_turn'),
+            'task_evaluation': 'not_applicable' if mode == 'conversation' else 'reported' if current(task_result) is True
+                               else 'failed' if current(task_result) is False else 'pending',
+            'capabilities': {'interactive': task.get('interactive') is True,
+                             'followup_via_pane': task.get('interactive') is True, 'followup_via_mail': False},
             'agent_name': identity.get('agent_name'), 'runtime_attempt_id': attempt.get('attempt_id'),
             'state_path': str(state), 'cleaned': read(state / 'cleaned.json', {}).get('attempt_id') == attempt.get('attempt_id')
                and bool(attempt.get('attempt_id'))}
@@ -138,10 +164,15 @@ def finalize(state, *, parent_call, run):
     release = read(state / 'release-receipt.json', {})
     attempt = read(state / 'attempt.json', {})
     ids = {row['id'] for row in reservations.get('receipts', [])}
+    interactive = config.get('runtime_mode') == 'interactive'
+    if interactive:
+        from dynamic_reservations import inventory
+        ids, _ = inventory(state)
     released = (release.get('confirmed') is True and release.get('attempt_id') == attempt.get('attempt_id')
                 and release.get('agent_name') == identity['agent_name'] and release.get('source') == 'product-bound-proxy'
                 and set(release.get('reservation_ids', [])) == ids and set(release.get('released_ids', [])) == ids)
-    if reservations.get('receipts') and not released:
+    needs_release = (interactive and ((state / 'runtime-exit.json').exists() or (state / 'reservation-ledger.json').exists()))
+    if (needs_release or reservations.get('receipts')) and not released:
         step(state, 'release', run=run)
     # Real grants are required even when reserve was partial and task binding
     # never completed. Cleanup may not erase an unreleased grant.

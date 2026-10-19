@@ -133,6 +133,24 @@ async def exercise(session, state, action, report):
         if not receipt or not receipt['ok'] or receipt['from'] != identity['agent_name'] or receipt['to'] != [task['report_to']]:
             raise ValueError('Mail receipt not verified')
     elif action == 'release':
+        if config.get('runtime_mode') == 'interactive':
+            from dynamic_reservations import inventory
+            from mail_lifecycle import launch_state_for_retire
+            import subprocess
+            launch_state_for_retire(state, config, identity, subprocess.run)
+            all_ids, done = inventory(state)
+            outstanding = sorted(all_ids - done)
+            # Empty inventory is a separate no-grants observation, not an
+            # invented successful reservation acquisition.
+            result = unwrap(await session.call_tool('release_reservations', {'file_reservation_ids': outstanding}))
+            confirmed = type(result.get('released')) is int and result['released'] == len(outstanding)
+            save(state / 'release-receipt.json', {'attempt_id': attempt['attempt_id'], 'agent_name': identity['agent_name'],
+                 'reservation_ids': sorted(all_ids), 'released_ids': sorted(all_ids) if confirmed else sorted(done),
+                 'confirmed': confirmed, 'source': 'product-bound-proxy', 'checked_at': stamp()})
+            if not confirmed:
+                raise ValueError('Release not confirmed')
+            report['ok'] = True
+            return
         reservations = read(state / 'reservations.json')
         from mail_lifecycle import launch_state_for_retire
         import subprocess

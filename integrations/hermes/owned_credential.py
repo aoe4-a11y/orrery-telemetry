@@ -7,13 +7,13 @@ import subprocess
 import sys
 
 from mail_lifecycle import read, save, stamp
-from runner import base_env
+from runner import base_env, profile_config_path
 
 
 def install(state, run=subprocess.run, platform=None):
     state = Path(state)
     config = read(state / 'run-config.json')
-    command = read(Path(config['profile_home']) / 'config.yaml')['providers'][config['provider']]['key_cmd']
+    command = read(profile_config_path(config))['providers'][config['provider']]['key_cmd']
     argv = shlex.split(command)
     if (platform or sys.platform) != 'darwin' or argv[:2] != ['/usr/bin/security', 'find-generic-password']:
         raise ValueError('Owned credential mode requires the inspected Mac Keychain reference')
