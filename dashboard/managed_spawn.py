@@ -1,4 +1,4 @@
-"""Persistent, one-task legacy managed-spawn orchestration.
+"""Persistent interactive legacy managed-spawn orchestration.
 
 HTTP retries and dashboard restarts occur normally: keep one request ID and a
 separate worker, and never derive readiness from registration or wrapper exit.
@@ -78,6 +78,29 @@ def _product_module(name):
     return importlib.import_module(name)
 
 
+def task_modes(*, interactive, available, reason=None):
+    return {
+        'conversation': {'available': available and interactive,
+                         'reason': reason if not available else None if interactive else 'interactive_not_ready',
+                         'requires_parent': False, 'requires_scope': False, 'requires_expected': False,
+                         'report_policies': ['pane', 'mail']},
+        'assignment': {'available': available, 'reason': reason,
+                       'requires_parent': not interactive,
+                       'requires_scope': not interactive, 'requires_expected': not interactive,
+                       'report_policies': ['pane', 'mail'] if interactive else ['mail']},
+    }
+
+
+def selected_harness(request, providers):
+    for provider in providers:
+        if provider.get('id') != request['provider']:
+            continue
+        for model in provider.get('models', []):
+            if isinstance(model, dict) and model.get('id') == request['model']:
+                return next((row for row in model.get('harnesses', []) if row.get('id') == request['harness']), None)
+    return None
+
+
 def catalog(config_file, *, selected_mode):
     # Catalog implementation is owned separately; a missing module/config is off.
     if not config_file:
@@ -90,7 +113,19 @@ def catalog(config_file, *, selected_mode):
             if isinstance(selection, dict) and selection.get('enabled') is not True:
                 for status in availability.values():
                     status[harness] = {'available': False, 'reason': 'disabled_by_opt_in'}
-        return module.catalog_providers(backends, availability, mode=selected_mode, enabled=enabled)
+        providers = module.catalog_providers(backends, availability, mode=selected_mode, enabled=enabled)
+        adapters = {}
+        for provider in providers:
+            for model in provider.get('models', []):
+                for harness in model.get('harnesses', []):
+                    name, available = harness['id'], harness.get('available') is True
+                    if available and name not in adapters:
+                        adapter = _product_module('integrations.' + name + '.managed_lifecycle')
+                        adapters[name] = getattr(adapter, 'CAPABILITIES', {}).get('interactive') is True
+                    interactive = adapters.get(name, False)
+                    harness.update(interactive=interactive,
+                                   task_modes=task_modes(interactive=interactive, available=available, reason=harness.get('reason')))
+        return providers
     except (ImportError, OSError, ValueError, KeyError, TypeError) as exc:
         LOG.warning("managed catalog unavailable (%s)", type(exc).__name__)
         return []
@@ -102,43 +137,73 @@ def managed(payload):
 
 def normalize(payload):
     fields = {'attempt_id', 'provider', 'model', 'harness', 'helper_model', 'parent', 'standalone',
-              'task', 'dir', 'worktree', 'allowed_paths', 'expected', 'async', 'effort', 'role', 'group', 'emoji'}
+              'task', 'dir', 'worktree', 'allowed_paths', 'expected', 'async', 'effort', 'role', 'group', 'emoji',
+              'task_mode', 'report_policy'}
     if not isinstance(payload, dict) or set(payload) - fields:
         raise ValueError('unsupported_managed_fields')
     result = dict(payload)
     aid = result.get('attempt_id')
     if not isinstance(aid, str) or str(uuid.UUID(aid)) != aid:
         raise ValueError('invalid_attempt_id')
-    for name in ('model', 'parent', 'task', 'dir'):
+    for name in ('model', 'dir'):
         if not isinstance(result.get(name), str) or not result[name].strip():
             raise ValueError('missing_' + name)
     if result.get('provider') not in PROVIDERS or result.get('harness') not in HARNESSES:
         raise ValueError('unsupported_managed_pair')
-    if result.get('helper_model', 'same') != 'same' or result.get('standalone', False) is not False:
+    if result.get('helper_model', 'same') != 'same':
         raise ValueError('unsupported_managed_controls')
+    parent = result.get('parent')
+    if parent is not None and not isinstance(parent, str):
+        raise ValueError('invalid_parent')
+    parent = parent.strip() if parent else None
+    standalone = result.get('standalone', not bool(parent))
+    if type(standalone) is not bool:
+        raise ValueError('invalid_standalone')
+    if standalone and parent:
+        raise ValueError('contradictory_parent')
+    if not standalone and not parent:
+        raise ValueError('missing_parent')
+    result.update(parent=parent, standalone=standalone)
+    task_mode = result.get('task_mode', 'assignment' if result.get('expected') else 'conversation')
+    if task_mode not in ('conversation', 'assignment'):
+        raise ValueError('invalid_task_mode')
+    prompt = result.get('task', '')
+    if not isinstance(prompt, str) or (task_mode == 'assignment' and not prompt.strip()):
+        raise ValueError('missing_task')
+    policy = result.get('report_policy', 'mail' if task_mode == 'assignment' and parent else 'pane')
+    if policy not in ('mail', 'pane') or (policy == 'mail' and not parent):
+        raise ValueError('invalid_report_policy')
+    result.update(task=prompt, task_mode=task_mode, report_policy=policy)
     if result.get('worktree', True) is not True or result.get('async', True) is not True:
         raise ValueError('private_async_work_required')
     source = Path(result['dir']).expanduser().resolve(strict=True)
     if not source.is_dir():
         raise ValueError('source_directory_required')
     result['dir'] = str(source)
-    paths = result.get('allowed_paths')
-    if not isinstance(paths, list) or not paths or not all(isinstance(p, str) for p in paths):
+    paths = result.get('allowed_paths', [])
+    if not isinstance(paths, list) or not all(isinstance(p, str) for p in paths):
         raise ValueError('literal_scope_required')
-    for name in paths:
+    def literal_name(name):
+        if not isinstance(name, str):
+            raise ValueError('literal_scope_required')
         path = PurePosixPath(name)
         if (not name or path.is_absolute() or str(path) != name or path == PurePosixPath('.')
                 or any(part in ('..', '.git') for part in path.parts) or any(c in name for c in '*?[]\\')):
             raise ValueError('literal_scope_required')
+    for name in paths:
+        literal_name(name)
         target = source / name
         if not target.resolve().is_relative_to(source) or target.is_symlink() or (target.exists() and not target.is_file()):
             raise ValueError('scope_must_be_source_files')
-    expected = result.get('expected')
-    if not isinstance(expected, list) or not expected:
+    expected = result.get('expected', [])
+    if not isinstance(expected, list):
         raise ValueError('expected_artifacts_required')
+    if task_mode == 'conversation' and expected:
+        raise ValueError('conversation_has_expected_artifacts')
     for spec in expected:
-        if not isinstance(spec, dict) or spec.get('path') not in paths:
+        if not isinstance(spec, dict) or (paths and spec.get('path') not in paths):
             raise ValueError('expected_outside_scope')
+        literal_name(spec.get('path'))
         keys = set(spec) - {'path'}
         if keys == {'contains'} and isinstance(spec['contains'], str):
             continue
@@ -149,7 +214,8 @@ def normalize(payload):
             except ValueError:
                 pass
         raise ValueError('invalid_expected_check')
-    for key, default in (('helper_model', 'same'), ('standalone', False), ('worktree', True), ('async', True)):
+    result.update(allowed_paths=paths, expected=expected)
+    for key, default in (('helper_model', 'same'), ('worktree', True), ('async', True)):
         result[key] = default
     return result
 
@@ -160,7 +226,20 @@ def trusted_selection(request, config, providers):
     harness = next((h for h in model.get('harnesses', []) if h.get('id') == request['harness']), None) if model else None
     if not harness or harness.get('available') is not True:
         raise ValueError('managed_pair_unavailable')
-    if request.get('effort') is not None and request['effort'] not in (provider.get('efforts') or []):
+    interactive = harness.get('interactive') is True
+    supported = harness.get('task_modes') or task_modes(interactive=interactive, available=True)
+    selected_mode = supported[request.get('task_mode', 'assignment')]
+    if selected_mode.get('available') is not True:
+        raise ValueError(selected_mode.get('reason') or 'task_mode_unavailable')
+    if selected_mode.get('requires_parent') and not request.get('parent'):
+        raise ValueError('standalone_not_ready')
+    if selected_mode.get('requires_scope') and not request.get('allowed_paths'):
+        raise ValueError('assignment_scope_not_ready')
+    if selected_mode.get('requires_expected') and not request.get('expected'):
+        raise ValueError('assignment_expected_not_ready')
+    if request.get('report_policy', 'mail') not in selected_mode.get('report_policies', []):
+        raise ValueError('report_policy_not_ready')
+    if request.get('effort') is not None and request['effort'] not in (harness.get('efforts') or []):
         raise ValueError('unsupported_effort')
     template = config['harnesses'][request['harness']]
     source = read(template['config_file'])
@@ -232,6 +311,7 @@ class Manager:
                     raise ValueError('managed_spawn_disabled')
                 providers = self.provider_loader(self.config_file, selected_mode=self.selected_mode)
                 template, source = trusted_selection(request, config, providers)
+                interactive = selected_harness(request, providers).get('interactive') is True
                 if root.resolve().is_relative_to(Path(source['project_key']).resolve()):
                     raise ValueError('private_state_outside_live_project_required')
                 if request['harness'] == 'hermes':
@@ -250,7 +330,11 @@ class Manager:
                          'state': 'pending', 'phase': 'queued', 'pending': True, 'running': False,
                          'finished': False, 'task_success': None, 'runtime_success': None, 'cleanup_success': None,
                          'state_path': str(job / 'state'), 'runtime_attempt_id': None,
-                         'error': None, 'error_code': None}
+                         'error': None, 'error_code': None, 'parent': request['parent'],
+                         'task_mode': request['task_mode'], 'report_policy': request['report_policy'],
+                         'task_evaluation': 'not_applicable' if request['task_mode'] == 'conversation' else 'pending',
+                         'activity': 'starting', 'latest_turn': None, 'worktree': None,
+                         'capabilities': {'interactive': interactive, 'followup_via_pane': interactive, 'followup_via_mail': False}}
                 save(job / 'status.json', state)
                 # A worker survives a dashboard restart. Its process gets no model
                 # credentials; the existing pane supervisor performs the lookup.
@@ -349,6 +433,7 @@ def run_job(job, *, adapter=None, parent_call=None, run=None, sleep=time.sleep, 
     try:
         providers = provider_loader(spec['config_file'], selected_mode=spec['selected_mode'])
         template, source = trusted_selection(request, config, providers)
+        interactive = selected_harness(request, providers).get('interactive') is True
         if adapter is None:
             adapter = _product_module('integrations.' + request['harness'] + '.managed_lifecycle')
         if spec['selected_mode'] != 'legacy':
@@ -364,10 +449,12 @@ def run_job(job, *, adapter=None, parent_call=None, run=None, sleep=time.sleep, 
                     or Path(core.MAIL_ENV_PATH).resolve() != Path(source['connection']['mail_env']).resolve()):
                 raise ValueError('mail_connection_mismatch')
             parent_call = parent_connection(core, request['parent'])
-        # Ordinary parent-name/context mistakes must fail before registering.
-        who = parent_call('whois', {'name': request['parent']})
-        if who.get('name') != request['parent'] or who.get('retired_at'):
-            raise ValueError('parent_context_mismatch')
+        # A standalone runtime has no synthetic parent. The same dashboard
+        # read context still confirms this runtime's retirement on close.
+        if request['parent']:
+            who = parent_call('whois', {'name': request['parent']})
+            if who.get('name') != request['parent'] or who.get('retired_at'):
+                raise ValueError('parent_context_mismatch')
         work = job / 'work'
         work.mkdir(mode=0o700)
         source_root = Path(request['dir'])
@@ -379,6 +466,9 @@ def run_job(job, *, adapter=None, parent_call=None, run=None, sleep=time.sleep, 
                 dest.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
                 shutil.copyfile(src, dest)
         projected = dict(source)
+        projected.pop('startup_timeout_seconds', None)
+        if request['harness'] == 'dsh':
+            projected.pop('task_timeout_seconds', None)
         if request.get('effort') is not None:
             if request['harness'] == 'dsh':
                 backend = read(projected['backend_file'])
@@ -391,46 +481,67 @@ def run_job(job, *, adapter=None, parent_call=None, run=None, sleep=time.sleep, 
                 projected['profiles'] = profiles
         save(job / 'run-template.json', projected)
         run = run or command_runner(projected, job / 'runner.log')
-        update(phase='preparing')
-        prompt = (request['task'] + '\n\nManaged task: edit only the scoped files in ' + str(work)
-                  + '. Allowed files: ' + json.dumps(request['allowed_paths'])
-                  + '. Required result checks: ' + json.dumps(request['expected'])
-                  + '. When the task is complete, send one completion report to '
-                  + request['parent'] + ' with mcp__orrery_mail__send_message. '
-                  + 'Include the artifact paths in your report. Do not wait for the TUI to exit.')
+        task_mode = request.get('task_mode', 'assignment')
+        report_policy = request.get('report_policy', 'mail')
+        update(phase='preparing', worktree=str(work), task_mode=task_mode, report_policy=report_policy,
+               parent=request['parent'], activity='starting',
+               task_evaluation='not_applicable' if task_mode == 'conversation' else 'pending',
+               capabilities={'interactive': interactive, 'followup_via_pane': interactive, 'followup_via_mail': False})
+        prompt = request['task']
+        if prompt:
+            prompt += '\n\nManaged workspace: ' + str(work) + '. Remain available for further instructions after responding.'
+            if task_mode == 'assignment':
+                prompt += ('. Allowed files: ' + json.dumps(request['allowed_paths'])
+                           + '. Required result checks: ' + json.dumps(request['expected']))
+            if report_policy == 'mail':
+                prompt += ('. Report completion to ' + request['parent']
+                           + ' with mcp__orrery_mail__send_message. Include artifact paths.')
+        task_input = {'prompt': prompt, 'allowed_paths': request['allowed_paths'], 'expected': request['expected']}
+        if interactive:
+            task_input.update(task_mode=task_mode, report_policy=report_policy)
         adapter.prepare(state=state, config_file=job / 'run-template.json', backend_id=request['provider'],
-                        task={'prompt': prompt, 'allowed_paths': request['allowed_paths'], 'expected': request['expected']},
+                        task=task_input,
                         worktree=work, parent=request['parent'], run=run)
         update(phase='starting')
         handle = adapter.start(state, run=run)
-        deadline = clock() + source.get('task_timeout_seconds', 660)
+        # A task deadline is not an interactive runtime's lifetime. Optional
+        # startup timeouts only bound waiting for actual plugin readiness.
+        startup_timeout = source.get('startup_timeout_seconds')
+        if startup_timeout is not None and (type(startup_timeout) not in (int, float) or startup_timeout <= 0):
+            raise ValueError('invalid_startup_timeout')
+        deadline = clock() + startup_timeout if startup_timeout is not None else None
         while True:
             evidence = adapter.status(state)
+            task_success = evidence.get('task_success') if task_mode == 'assignment' else None
             update(name=evidence.get('agent_name'), runtime_attempt_id=evidence.get('runtime_attempt_id'),
-                   task_success=evidence.get('task_success'), runtime_success=evidence.get('runtime_success'))
+                   task_success=task_success, runtime_success=evidence.get('runtime_success'),
+                   latest_turn=evidence.get('latest_turn'), activity=evidence.get('activity'),
+                   task_evaluation=('not_applicable' if task_mode == 'conversation' else
+                                    'reported' if task_success is True else 'failed' if task_success is False else 'pending'))
             if evidence.get('ready') is True:
                 update(state='ready', phase='running', pending=False, running=True)
             if evidence.get('terminal') or (job / 'stop-request.json').exists():
                 if current['state'] != 'ready':
                     raise RuntimeError('managed_runtime_not_ready')
                 break
-            if clock() >= deadline:
-                raise RuntimeError('managed_runtime_timeout')
+            if deadline is not None and current['state'] != 'ready' and clock() >= deadline:
+                raise RuntimeError('managed_startup_timeout')
             # A short wrapper's exit zero is not a terminal runtime. Nonzero is
             # an actual start error; retain state and finalize the partial run.
             if handle is not None and handle.poll() not in (None, 0):
                 raise RuntimeError('managed_start_failed')
             sleep(.5)
-        update(phase='stopping')
+        update(phase='stopping', activity='stopping')
         finalize_started = True
         result = adapter.finalize(state, parent_call=parent_call, run=run)
-        update(task_success=result.get('task_success'), runtime_success=result.get('runtime_success'), running=False)
+        update(task_success=result.get('task_success') if task_mode == 'assignment' else None,
+               runtime_success=result.get('runtime_success'), running=False)
         if result.get('runtime_success') is not True:
             raise RuntimeError('managed_cleanup_unconfirmed')
         update(phase='cleaning')
         adapter.clean(state, run=run)
-        update(state='ready' if result.get('task_success') is True else 'failed', phase='cleaned',
-               finished=True, pending=False, error_code=None if result.get('task_success') is True else 'task_not_successful')
+        update(state='ready', phase='cleaned', activity='exited',
+               finished=True, pending=False, error_code=None)
     except Exception as exc:
         step = getattr(exc, 'managed_step', None)
         if step not in ('init-task', 'preregister', 'configure', 'probe', 'reserve', 'preflight',
@@ -499,7 +610,7 @@ def main():
         return 0 if result.get('cleanup_success') is True else 1
     result = run_job(args.job)
     return 0 if (result.get('state') != 'failed' and result.get('finished') is True
-                 and result.get('phase') == 'cleaned' and result.get('task_success') is True
+                 and result.get('phase') == 'cleaned'
                  and result.get('runtime_success') is True) else 1
 
 

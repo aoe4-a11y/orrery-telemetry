@@ -154,7 +154,7 @@ class CompletionTests(unittest.TestCase):
                 self.assertFalse(completion.evaluate_runtime(self.root)['success'])
 
     def test_unknown_release_response_stays_pending(self):
-        for change in [{'confirmed': None}, {'released_ids': None}, {'reservation_ids': []}]:
+        for change in [{'confirmed': None}, {'released_ids': None}]:
             with self.subTest(change=change):
                 self.lifecycle_receipts(change)
                 self.assertIsNone(completion.evaluate_runtime(self.root)['success'])
@@ -172,6 +172,62 @@ class CompletionTests(unittest.TestCase):
         self.attempt['phase'] = 'spike'
         self.save()
         self.assertIsNone(completion.evaluate_runtime(self.root)['success'])
+
+
+
+class InteractiveCompletionTests(unittest.TestCase):
+    setUp = CompletionTests.setUp
+    save = CompletionTests.save
+    event = CompletionTests.event
+    result = CompletionTests.result
+    lifecycle_receipts = CompletionTests.lifecycle_receipts
+
+    def test_conversation_needs_no_artifact_or_mail_and_never_claims_task_success(self):
+        self.task.update(task_mode='conversation', report_policy='pane', expected=[], report_to=None)
+        self.events = []; self.audit = []
+        result = self.result()
+        self.assertIsNone(result['success'])
+        self.assertEqual(result['evaluation'], 'not_applicable')
+        self.assertEqual(result['applicable_checks'], [])
+
+    def test_explicit_assignment_pane_checks_artifact_without_fabricating_mail(self):
+        self.task.update(task_mode='assignment', report_policy='pane', report_to=None)
+        self.events.pop()
+        result = self.result()
+        self.assertTrue(result['success'])
+        self.assertNotIn('mail_receipt', result['applicable_checks'])
+        self.assertIsNone(result['checks']['mail_receipt'])
+        (self.work / 'result.txt').write_text('wrong')
+        self.assertFalse(self.result()['success'])
+
+    def test_empty_conversation_reservations_can_be_confirmed_released(self):
+        self.task['reservation_receipts'] = []; self.save()
+        (self.root / 'reservation-ledger.json').write_text(json.dumps({
+            'attempt_id': 'current', 'agent_name': 'FixtureChild', 'receipts': [], 'released_ids': []}))
+        self.lifecycle_receipts({'reservation_ids': [], 'released_ids': []}, {'source': 'dashboard-bound-whois'})
+        self.assertTrue(completion.evaluate_runtime(self.root)['success'])
+
+    def test_dynamic_grants_must_all_be_confirmed_released(self):
+        (self.root / 'reservation-ledger.json').write_text(json.dumps({
+            'attempt_id': 'current', 'agent_name': 'FixtureChild', 'receipts': [{'id': 33}]}))
+        self.lifecycle_receipts()
+        self.assertFalse(completion.evaluate_runtime(self.root)['success'])
+        self.lifecycle_receipts({'reservation_ids': [31, 32, 33], 'released_ids': [31, 32, 33]})
+        self.assertTrue(completion.evaluate_runtime(self.root)['success'])
+
+class OptionalArtifactCheck(unittest.TestCase):
+    setUp = CompletionTests.setUp
+    save = CompletionTests.save
+    event = CompletionTests.event
+    result = CompletionTests.result
+    def test_assignment_without_expected_does_not_fabricate_an_artifact_verdict(self):
+        self.task.update(task_mode='assignment', expected=[])
+        result = self.result()
+        self.assertTrue(result['success'])
+        self.assertNotIn('expected_artifacts', result['applicable_checks'])
+        self.assertIsNone(result['checks']['expected_artifacts'])
+        self.events = []
+        self.assertIsNot(self.result()['success'], True)
 
 
 if __name__ == '__main__':

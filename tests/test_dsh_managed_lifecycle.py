@@ -65,8 +65,6 @@ class DshAdapterTests(unittest.TestCase):
         self.assertFalse(any('confirm-retire' in c[0] or 'clean' in c[0] for c in self.calls))
 
 
-if __name__ == '__main__':
-    unittest.main()
 
 class StartupAbsenceTests(unittest.TestCase):
     def test_stop_before_runtime_marker_keeps_live_startup_unknown(self):
@@ -98,3 +96,53 @@ class StartupAbsenceTests(unittest.TestCase):
                 self.assertTrue(kwargs['background'])
                 return SimpleNamespace(pid=123)
             d.start(Path(tmp), run=run)
+
+class InteractiveAdapterTests(unittest.TestCase):
+    setUp = DshAdapterTests.setUp
+    put = DshAdapterTests.put
+
+    def test_turn_end_keeps_runtime_alive_and_plugin_ready_is_attempt_scoped(self):
+        self.put('attempt.json', {'attempt_id': 'attempt', 'phase': 'run', 'agent_name': 'Child'})
+        self.put('task.json', {'attempt_id': 'attempt', 'task_id': 'task', 'task_mode': 'conversation'})
+        self.put('runtime-process.json', {'pid': 987, 'attempt_id': 'attempt'})
+        self.put('preflight-complete.json', {'attempt_id': 'attempt', 'ok': True, 'schema': True, 'backend': True})
+        rows = [{'phase': 'plugin-ready', 'attempt_id': 'attempt', 'task_id': None, 'process_id': 987},
+                {'phase': 'turn-end', 'attempt_id': 'attempt', 'task_id': None, 'reason_kind': 'completed', 'turn': 2}]
+        (self.state / 'events.jsonl').write_text(''.join(json.dumps(row)+'\n' for row in rows))
+        result = d.status(self.state)
+        self.assertTrue(result['ready']); self.assertFalse(result['terminal'])
+        self.assertIsNone(result['task_success']); self.assertEqual(result['activity'], 'idle')
+        self.put('runtime-exit.json', {'attempt_id': 'old'})
+        self.assertFalse(d.status(self.state)['terminal'])
+        self.put('runtime-exit.json', {'attempt_id': 'attempt'})
+        self.assertTrue(d.status(self.state)['terminal'])
+
+    def test_report_snapshot_survives_following_turn_and_artifact_edit(self):
+        self.put('attempt.json', {'attempt_id': 'attempt', 'agent_name': 'Child', 'phase': 'run'})
+        self.put('task.json', {'attempt_id': 'attempt', 'task_id': 'task'})
+        completed = {'success': True, 'attempt_id': 'attempt', 'task_id': 'task', 'checks': {}}
+        with patch.object(d, 'evaluate', side_effect=lambda state, runtime=False: {'success': None} if runtime else completed):
+            self.assertTrue(d.status(self.state)['task_success'])
+        saved = d.read(self.state / 'task-reports/task.json')
+        self.assertEqual(saved['agent_name'], 'Child')
+        self.assertTrue(d.evaluate(self.state)['success'])
+        self.put('task.json', {'attempt_id': 'attempt', 'task_id': 'next-task'})
+        self.assertIsNot(d.evaluate(self.state)['success'], True)
+
+class InteractiveEmptyReleaseTests(unittest.TestCase):
+    setUp = DshAdapterTests.setUp
+    put = DshAdapterTests.put
+    fake_run = DshAdapterTests.fake_run
+    def test_no_initial_grants_still_releases_the_dynamic_ledger(self):
+        self.put('attempt.json', {'attempt_id': 'attempt'})
+        self.put('mail-identity.json', {'agent_name': 'Child'})
+        self.put('runtime-process.json', {'pid': 123})
+        self.put('reservation-ledger.json', {'attempt_id': 'attempt', 'agent_name': 'Child', 'receipts': []})
+        with patch.object(d, 'status', return_value={'runtime_success': True}):
+            d.finalize(self.state, parent_call=lambda *a: {'name': 'Child', 'retired_at': 'date'}, run=self.fake_run)
+        actions = [next((a for a in c[0] if a in ('stop', 'release', 'retire', 'confirm-retire')), None) for c in self.calls]
+        self.assertEqual(actions, ['stop', 'release', 'retire', 'confirm-retire'])
+
+
+if __name__ == '__main__':
+    unittest.main()

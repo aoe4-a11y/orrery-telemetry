@@ -53,7 +53,7 @@ def inputs(state):
     state = Path(state).resolve()
     config = read(state / 'run-config.json')
     files = [state / name for name in ('run-config.json', 'attempt.json', 'task.json', 'mail-identity.json',
-             'mcp.json', 'mail.patch.json', 'reservations.json', 'selected.patch.json',
+             'mcp.json', 'mail.patch.json', 'reservations.json', 'selected.patch.json', 'wire-tools.json',
              'dsh/profiles/orrery-managed/package.json', 'dsh/profiles/orrery-managed/cordis.patch.yml')]
     files += [Path(config[key]) for key in ('node', 'backend_file', 'patch_receipt', 'proxy_python')]
     files += list(HERE.glob('*.py')) + list(HERE.glob('*.mjs')) + list(HERE.glob('*.yml')) + [HERE / 'tui-managed.patch']
@@ -78,9 +78,10 @@ def verify_reservations(state, *, seconds=630):
     if (attempt['phase'] != 'run' or task['attempt_id'] != attempt['attempt_id'] or
         reservation.get('complete') is not True or reservation['attempt_id'] != attempt['attempt_id'] or reservation['agent_name'] != attempt['agent_name'] or
         task.get('reservation_source') != 'product-bound-proxy' or
-        task.get('reservation_receipts') != reservation['receipts'] or not reservation['receipts']):
+        task.get('reservation_receipts') != reservation['receipts'] or
+        (task.get('scope_mode', 'files') != 'worktree' and not reservation['receipts'])):
         raise ValueError('Actual task reservation binding required')
-    wanted = set(task['allowed_paths'])
+    wanted = set() if task.get('scope_mode') == 'worktree' else set(task['allowed_paths'])
     for row in reservation['receipts']:
         expiry = datetime.fromisoformat(row['expires_ts'].replace('Z', '+00:00')).timestamp()
         if type(row['id']) is not int or row['id'] <= 0 or row['owner'] != attempt['agent_name'] or expiry <= time.time() + seconds:
@@ -100,7 +101,7 @@ def verify(state):
     verify_reservations(state)
 
 
-def full(state):
+def full(state, *, offline_check=False):
     state = Path(state).resolve()
     if (state / 'run-started.json').exists():
         raise ValueError('Do not preflight over a started attempt')
@@ -115,22 +116,34 @@ def full(state):
     # Discard only the previous proof. Never preserve a success after failure.
     (state / 'preflight-complete.json').unlink(missing_ok=True)
     run_probe(state)
-    run_probe(state, fixture='backend-unreachable')
-    run_probe(state, fixture='process-unreachable')
+    if offline_check:
+        run_probe(state, fixture='backend-unreachable')
+        run_probe(state, fixture='process-unreachable')
     if not (state / 'reservations.json').exists():
-        run_probe(state, action='reserve')
+        task = read(state / 'task.json')
+        if task.get('scope_mode') == 'worktree':
+            write(state / 'reservations.json', {'attempt_id': attempt['attempt_id'],
+                  'agent_name': attempt['agent_name'], 'receipts': [], 'complete': True})
+        else:
+            run_probe(state, action='reserve')
     bind('--require-reservations')
     verify_reservations(state)
+    if not offline_check:
+        proof = {'ok': True, 'attempt_id': attempt['attempt_id'], 'agent_name': attempt['agent_name'],
+                 'schema': True, 'backend': True, 'actual_tools': read(state / 'wire-tools.json')['tools'],
+                 'forwarded_requests': 0, 'checked_at': datetime.now(timezone.utc).isoformat(), 'inputs': inputs(state)}
+        write(state / 'preflight-complete.json', proof)
+        return proof
     log = state / 'preflight.tty'
     result = subprocess.run(['/usr/bin/script', '-q', str(log), sys.executable,
                              str(HERE / 'launch.py'), 'assemble', '--state', str(state)],
         env=environment(config), cwd=config['worktree'], stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL, timeout=65)
+        stderr=subprocess.DEVNULL, timeout=110)
     if log.exists():
         log.chmod(0o600)
     audit = [json.loads(line) for line in (state / 'audit.jsonl').read_text().splitlines()]
     events = [json.loads(line) for line in (state / 'events.jsonl').read_text().splitlines()]
-    expected = {'read', 'write', 'mcp__orrery_mail__send_message'}
+    expected = set(read(state / 'wire-tools.json')['tools'])
     ready = any(row.get('phase') == 'plugin-ready' and set(row.get('tools', [])) == expected and row.get('retry_count') == 0 for row in events)
     captured = any(row.get('phase') == 'offline-capture' and row.get('forwarded') == 0 for row in audit)
     if not ready or not captured or any(row.get('phase') == 'provider-request-start' for row in audit):
@@ -157,12 +170,13 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--state', required=True, type=Path)
     parser.add_argument('--verify-only', action='store_true')
+    parser.add_argument('--offline-check', action='store_true', help='Explicit check/CI only: negative controls and real offline TUI assembly')
     args = parser.parse_args()
     try:
         if args.verify_only:
             verify(args.state)
         else:
-            full(args.state)
+            full(args.state, offline_check=args.offline_check)
     except (ValueError, KeyError, OSError, subprocess.SubprocessError):
         raise SystemExit('Preflight failed; no credential lookup performed; preserve state')
     print('Keyless full preflight passed' if not args.verify_only else 'Saved preflight inputs match')

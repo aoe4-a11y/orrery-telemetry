@@ -194,3 +194,49 @@ try {
 
 if __name__ == '__main__':
     unittest.main()
+
+class DynamicReservationTests(unittest.TestCase):
+    def test_write_waits_for_actual_proxy_receipt_and_read_mail_stay_available(self):
+        node = os.environ.get('ORRERY_DSH_TEST_NODE')
+        if not node:
+            self.skipTest('explicit fixed Node required')
+        plugin = Path(__file__).resolve().parents[1] / 'integrations/dsh/managed_plugin.mjs'
+        code = r'''
+import assert from 'node:assert/strict';
+import fs from 'node:fs'; import path from 'node:path'; import os from 'node:os';
+import {pathToFileURL} from 'node:url';
+const {createReservationGuard,createWriteReservationGate}=await import(pathToFileURL(process.argv[1]));
+const root=fs.mkdtempSync(path.join(os.tmpdir(),'dsh-dynamic-reservation-'));
+try {
+ const attempt={phase:'run',agent_name:'Child',attempt_id:'attempt'};
+ const task={worktree:root,scope_mode:'worktree',allowed_paths:[],reservation_receipts:[]};
+ const policy=createReservationGuard({attempt,task,emit:()=>{},wireTools:['read','write',
+  'mcp__orrery_mail__send_message','mcp__orrery_mail__fetch_inbox']});
+ const exec={name:'write',arguments:{file_path:path.join(root,'new.txt')}};
+ assert.equal(policy.guard(exec),'not-reserved');
+ assert.equal(policy.guard({name:'read',arguments:{file_path:path.join(root,'any.txt')}}),undefined);
+ assert.equal(policy.guard({name:'mcp__orrery_mail__send_message',arguments:{to:['UnrelatedAgent']}}),undefined);
+ assert.equal(policy.guard({name:'mcp__orrery_mail__fetch_inbox',arguments:{}}),undefined);
+ const saved=[];let resolve;let calls=0;
+ const gate=createWriteReservationGate({attempt,task,policy,record:(r,p)=>saved.push({r,p}),
+  call:(name,args)=>{calls++;assert.equal(name,'reserve_files');
+   assert.deepEqual(args.paths,['_managed_workspaces/attempt/new.txt']);
+   assert.ok(args.ttl_seconds>=600);return new Promise(r=>{resolve=r});}});
+ const pending=gate(exec);
+ assert.equal(calls,1);assert.equal(policy.guard(exec),'not-reserved');assert.equal(saved.length,0);
+ resolve({granted:[{id:12,path_pattern:'_managed_workspaces/attempt/new.txt',
+   expires_ts:new Date(Date.now()+900000).toISOString()}],conflicts:[]});
+ assert.deepEqual(await pending,[12]);assert.equal(saved[0].p,'new.txt');
+ assert.equal(policy.guard(exec),undefined);
+ policy.dropReceipt(12);assert.equal(policy.guard(exec),'not-reserved');
+ const blocked=createWriteReservationGate({attempt,task,policy,record:()=>assert.fail('bad receipt'),
+  call:async()=>({granted:[],conflicts:[{}]})});
+ await assert.rejects(blocked(exec),/CONFLICT_OR_PARTIAL/);
+ assert.equal(policy.guard(exec),'not-reserved');
+ assert.equal(await gate({name:'write',arguments:{file_path:path.join(root,'../outside.txt')}}),undefined);
+ assert.equal(calls,1);
+} finally {fs.rmSync(root,{recursive:true,force:true});}
+'''
+        result = subprocess.run([node, '--input-type=module', '-e', code, str(plugin)],
+                                capture_output=True, text=True, timeout=15)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)

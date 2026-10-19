@@ -116,7 +116,9 @@ def main():
             os.environ['ORRERY_DSH_TEST_EVIDENCE'] = str(evidence)
             loader = unittest.TestLoader()
             suite = (loader.discover(str(ROOT / 'tests'), pattern='test_dsh_*.py') if backend == 'strata'
-                     else loader.loadTestsFromName('test_dsh_run_connection.ProductLifecycle.test_keyless_full_preflight_with_real_tui_and_synthetic_stdio_server'))
+                     else loader.loadTestsFromNames([
+                         'test_dsh_run_connection.ProductLifecycle.test_keyless_full_preflight_with_real_tui_and_synthetic_stdio_server',
+                         'test_dsh_run_connection.ProductLifecycle.test_keyless_two_turn_native_tui']))
             if backend == 'strata':
                 suite.addTests(loader.loadTestsFromName('test_managed_catalog'))
                 suite.addTests(loader.loadTestsFromName('test_managed_harness_install'))

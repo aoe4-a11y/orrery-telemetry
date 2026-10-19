@@ -10,6 +10,7 @@ from pathlib import Path
 import sys
 
 HERE = Path(__file__).resolve().parent
+CAPABILITIES = {'interactive': True, 'scope': 'private-workspace', 'context_source': 'unreported'}
 
 
 def read(path, default=None):
@@ -69,18 +70,42 @@ def status(state, *, persist=False):
     except (OSError, ValueError):
         events = []
     aid, tid = attempt.get('attempt_id'), task.get('task_id')
-    same = [r for r in events if aid and tid and r.get('attempt_id') == aid and r.get('task_id') == tid]
+    same = [r for r in events if aid and r.get('attempt_id') == aid]
     loaded = any(r.get('phase') == 'plugin-ready' and process.get('attempt_id') == aid and type(process.get('pid')) is int
                  and r.get('process_id') == process['pid'] for r in same)
     ready = bool(loaded and proof.get('attempt_id') == aid and proof.get('ok') is True
                  and proof.get('schema') is True and proof.get('backend') is True)
     task_result, runtime_result = evaluate(state), evaluate(state, runtime=True)
+    finalized = any(r.get('phase') == 'task-report-finalized' and r.get('task_id') == tid for r in same)
+    if ((task_result['success'] is True or finalized and type(task_result['success']) is bool)
+            and isinstance(tid, str) and Path(tid).name == tid
+            and tid not in ('.', '..')):
+        reports = state / 'task-reports'
+        reports.mkdir(mode=0o700, exist_ok=True)
+        report = reports / (tid + '.json')
+        if not report.exists():
+            # Trusted saved evidence, not an LLM completion claim. Retain the
+            # report when later interactive turns edit those same artifacts.
+            artifact_rows = [r for r in same if r.get('task_id') == tid and r.get('phase') == 'artifact-written']
+            task_result = {**task_result, 'agent_name': attempt.get('agent_name'),
+                           'artifacts': artifact_rows,
+                           'mail_receipts': [r for r in same if r.get('task_id') == tid and r.get('phase') == 'mail-sent'],
+                           'source': 'managed-task-evaluator'}
+            save(report, task_result)
     if persist:
         save(state / 'task-completion.json', task_result)
         save(state / 'runtime-completion.json', runtime_result)
-    terminal = bool((state / 'runtime-exit.json').exists() or any(r.get('phase') == 'turn-end' for r in same))
+    runtime_exit = read(state / 'runtime-exit.json', {})
+    terminal = runtime_exit.get('attempt_id') == aid and bool(aid)
+    turns = [r for r in same if r.get('phase') in ('task-start', 'turn-start', 'turn-end')]
+    last = turns[-1] if turns else None
+    latest_turn = next((r for r in reversed(turns) if r['phase'] == 'turn-end'), None)
+    activity = 'exited' if terminal else 'idle' if last and last['phase'] == 'turn-end' else 'thinking' if last else 'starting'
     return {'ready': ready, 'terminal': terminal, 'agent_name': attempt.get('agent_name'),
-            'runtime_attempt_id': aid, 'task_success': task_result['success'] if terminal else None,
+            'runtime_attempt_id': aid, 'task_success': task_result['success'],
+            'task_evaluation': task_result.get('evaluation'), 'activity': activity,
+            'latest_turn': {'id': latest_turn.get('turn'), 'completed': latest_turn.get('reason_kind') == 'completed',
+                            'at': latest_turn.get('at')} if latest_turn else None,
             'runtime_success': runtime_result['success'], 'state_path': str(state),
             'cleaned': bool(aid and read(state / 'cleaned.json', {}).get('attempt_id') == aid)}
 
@@ -93,7 +118,7 @@ def finalize(state, *, parent_call, run):
     identity = read(state / 'mail-identity.json')
     if not identity:
         return {**status(state), 'cleanup_pending': (state / 'registration-intent.json').exists()}
-    if (state / 'reservation-intent.json').exists():
+    if (state / 'reservation-intent.json').exists() or (state / 'reservation-ledger.json').exists():
         step(state, 'launch.py', 'release', run=run)
     step(state, 'mail_lifecycle.py', 'retire', run=run)
     if parent_call is None:

@@ -11,7 +11,7 @@ export function unwrap(reply) {
 
 export function checkBinding(status, who, identity, proxy) {
   if (status.agent_name !== identity.agent_name || status.project_key !== identity.project_key ||
-      status.program !== proxy.env.AGENTSTACK_PROXY_PROGRAM || status.lineage?.parent_agent !== identity.parent)
+      status.program !== proxy.env.AGENTSTACK_PROXY_PROGRAM || (status.lineage?.parent_agent || null) !== (identity.parent || null))
     throw new Error('MAIL_BINDING_MISMATCH');
   if (who.name !== identity.agent_name || who.program !== identity.program || who.retired_at)
     throw new Error('MAIL_REMOTE_IDENTITY_MISMATCH');
@@ -32,7 +32,7 @@ export function normalizeReservations(result, paths, owner, now = Date.now()) {
 }
 
 export function releaseReceipt({attempt, ids, result}) {
-  const confirmed = ids.length > 0 && result.released === ids.length;
+  const confirmed = result.released === ids.length;
   return {attempt_id: attempt.attempt_id, agent_name: attempt.agent_name,
     reservation_ids: ids, released_ids: confirmed ? ids : [], confirmed,
     source: 'product-bound-proxy', checked_at: new Date().toISOString()};
@@ -85,6 +85,11 @@ export async function main() {
       checkBinding(status, who, identity, original);
       report.backend = true;
       if (fixture) throw new Error('NEGATIVE_FIXTURE_UNEXPECTEDLY_REACHED_BACKEND');
+      if (action === 'probe') {
+        const attempt = read('attempt.json');
+        write(path.join(state, 'wire-tools.json'), {attempt_id: attempt.attempt_id,
+          tools: ['read', 'write', ...report.tools.map(name => 'mcp__orrery_mail__' + name)].sort()});
+      }
       if (action === 'reserve') {
         const task = read('task.json');
         // Never repeat a potentially successful partial reservation implicitly.
@@ -110,9 +115,17 @@ export async function main() {
         const reservation = read('reservations.json');
         if (reservation.attempt_id !== attempt.attempt_id || reservation.agent_name !== identity.agent_name ||
             attempt.agent_name !== identity.agent_name) throw new Error('MAIL_RELEASE_IDENTITY');
-        const ids = reservation.receipts.map(r => r.id);
-        const result = unwrap(await client.callTool({name: 'release_reservations', arguments: {file_reservation_ids: ids}}));
-        const receipt = releaseReceipt({attempt, ids, result});
+        const ledgerFile = path.join(state, 'reservation-ledger.json');
+        const ledger = fs.existsSync(ledgerFile) ? read('reservation-ledger.json') : null;
+        if (ledger && (ledger.attempt_id !== attempt.attempt_id || ledger.agent_name !== identity.agent_name))
+          throw new Error('MAIL_LEDGER_IDENTITY');
+        const ids = [...new Set([...reservation.receipts, ...(ledger?.receipts ?? [])].map(r => r.id))];
+        const already = new Set(ledger?.released_ids ?? []);
+        const pending = ids.filter(id => !already.has(id));
+        const result = pending.length ? unwrap(await client.callTool({name: 'release_reservations',
+          arguments: {file_reservation_ids: pending}})) : {released: 0};
+        const confirmed = result.released === pending.length;
+        const receipt = releaseReceipt({attempt, ids, result: {released: confirmed ? ids.length : -1}});
         write(path.join(state, 'release-receipt.json'), receipt);
         if (!receipt.confirmed) throw new Error('MAIL_RELEASE_UNCONFIRMED');
       }

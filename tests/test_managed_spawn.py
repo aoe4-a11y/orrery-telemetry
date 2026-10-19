@@ -55,7 +55,7 @@ class ManagedTests(unittest.TestCase):
         m.save(self.config, {'enabled': True, 'state_root': str(self.root / 'jobs'),
             'harnesses': {h: {'config_file': str(self.template), 'python': '/usr/bin/python3'} for h in m.HARNESSES}})
         self.providers = [{'id': b, 'efforts': ['off', 'low', 'high', 'max'],
-            'models': [{'id': b + '-model', 'harnesses': [{'id': h, 'available': True} for h in m.HARNESSES]}]}
+            'models': [{'id': b + '-model', 'harnesses': [{'id': h, 'available': True, 'interactive': True, 'efforts': ['off', 'low', 'high', 'max']} for h in m.HARNESSES]}]}
             for b in m.PROVIDERS]
         self.spawn_calls = []
         def spawn(*args, **kwargs):
@@ -176,8 +176,6 @@ class ManagedTests(unittest.TestCase):
                 self.assertNotIn('reasoning_effort', m.read(self.template)['profiles']['strata'])
 
 
-if __name__ == '__main__':
-    unittest.main()
 
 class ServerRoutingTests(unittest.TestCase):
     def setUp(self):
@@ -391,3 +389,121 @@ class ManagedFinishedStopTests(unittest.TestCase):
             self.assertEqual(result['ok'], clean)
             if not clean:
                 self.assertEqual(result['error_code'], 'managed_cleanup_unconfirmed')
+
+class InteractiveControllerTests(unittest.TestCase):
+    setUp = ManagedTests.setUp
+    payload = ManagedTests.payload
+    parent_call = ManagedTests.parent_call
+
+    def test_blank_top_level_is_accepted_without_synthetic_parent(self):
+        request = self.payload()
+        for key in ('parent', 'task', 'allowed_paths', 'expected'):
+            request.pop(key)
+        accepted = self.manager.submit(request)
+        self.assertTrue(accepted['ok'])
+        self.assertIsNone(accepted['parent'])
+        self.assertEqual(accepted['task_mode'], 'conversation')
+        self.assertEqual(accepted['report_policy'], 'pane')
+        self.assertEqual(accepted['task_evaluation'], 'not_applicable')
+        job = self.root / 'jobs' / request['attempt_id']
+        adapter = Adapter(job)
+        final = m.run_job(job, adapter=adapter, parent_call=lambda *args: self.fail('synthetic whois'),
+                          run=object(), sleep=lambda _: None, provider_loader=self.loader)
+        self.assertIsNone(adapter.kwargs['parent'])
+        self.assertEqual(adapter.kwargs['task']['prompt'], '')
+        self.assertIsNone(final['task_success'])
+        self.assertTrue(final['cleanup_success'])
+        self.assertEqual(final['state'], 'ready')
+
+    def test_report_does_not_close_runtime_and_idle_has_no_660_second_limit(self):
+        request = self.payload(); self.manager.submit(request)
+        job = self.root / 'jobs' / request['attempt_id']
+        test = self
+        class Continuing(Adapter):
+            def status(self, state):
+                self.tick += 1
+                if self.tick >= 2:
+                    test.assertNotIn('finalize', self.calls)
+                if self.tick >= 3:
+                    test.assertTrue(m.read(job / 'status.json')['task_success'])
+                    test.assertFalse(m.read(job / 'status.json')['finished'])
+                return {'ready': True, 'terminal': self.tick == 4, 'agent_name': 'TestChild',
+                        'task_success': self.tick >= 2, 'activity': 'idle'}
+        tick = iter([0, 10000, 20000, 30000, 40000])
+        adapter = Continuing(job)
+        result = m.run_job(job, adapter=adapter, parent_call=self.parent_call, run=object(),
+                           sleep=lambda _: None, clock=lambda: next(tick), provider_loader=self.loader)
+        self.assertEqual(adapter.tick, 4)
+        self.assertEqual(adapter.calls.count('finalize'), 1)
+        self.assertTrue(result['cleanup_success'])
+
+    def test_mail_policy_and_explicit_standalone_are_not_contradictory(self):
+        for values, code in (({'parent': None, 'standalone': False}, 'missing_parent'),
+                             ({'standalone': True}, 'contradictory_parent'),
+                             ({'parent': None, 'report_policy': 'mail'}, 'invalid_report_policy')):
+            request = self.payload(); request.update(values)
+            self.assertEqual(self.manager.submit(request)['error_code'], code)
+
+    def test_effort_must_match_selected_harness(self):
+        for provider in self.providers:
+            for entry in provider['models'][0]['harnesses']:
+                entry['efforts'] = ['off'] if entry['id'] == 'dsh' else None
+        request = self.payload(); request['effort'] = 'off'
+        self.assertTrue(self.manager.submit(request)['ok'])
+        request = self.payload(harness='hermes'); request['effort'] = 'off'
+        self.assertEqual(self.manager.submit(request)['error_code'], 'unsupported_effort')
+
+class LegacyHermesModeTests(unittest.TestCase):
+    setUp = ManagedTests.setUp
+    payload = ManagedTests.payload
+    parent_call = ManagedTests.parent_call
+    def legacy_hermes(self):
+        for provider in self.providers:
+            for entry in provider['models'][0]['harnesses']:
+                if entry['id'] == 'hermes': entry['interactive'] = False
+    def test_old_assignment_gets_three_fields_and_conversation_is_rejected(self):
+        self.legacy_hermes()
+        request = self.payload(harness='hermes')
+        self.assertTrue(self.manager.submit(request)['ok'])
+        job = self.root / 'jobs' / request['attempt_id']; adapter = Adapter(job)
+        m.run_job(job, adapter=adapter, parent_call=self.parent_call, run=object(),
+                  sleep=lambda _: None, provider_loader=self.loader)
+        self.assertEqual(set(adapter.kwargs['task']), {'prompt', 'allowed_paths', 'expected'})
+        request = self.payload(harness='hermes')
+        request.update(task_mode='conversation', expected=[])
+        self.assertEqual(self.manager.submit(request)['error_code'], 'interactive_not_ready')
+    def test_legacy_assignment_does_not_pretend_to_support_standalone_or_pane_reports(self):
+        self.legacy_hermes()
+        for values, code in (({'parent': None, 'standalone': True}, 'standalone_not_ready'),
+                             ({'report_policy': 'pane'}, 'report_policy_not_ready')):
+            request = self.payload(harness='hermes'); request.update(values)
+            self.assertEqual(self.manager.submit(request)['error_code'], code)
+    def test_mode_metadata_keeps_legacy_assignment_available(self):
+        modes = m.task_modes(interactive=False, available=True)
+        self.assertFalse(modes['conversation']['available'])
+        self.assertEqual(modes['conversation']['reason'], 'interactive_not_ready')
+        self.assertTrue(modes['assignment']['available'])
+        self.assertTrue(modes['assignment']['requires_parent'])
+        self.assertIs(modes['assignment']['requires_scope'], True)
+        self.assertIs(modes['assignment']['requires_expected'], True)
+        for mode in m.task_modes(interactive=True, available=True).values():
+            self.assertIs(mode['requires_scope'], False)
+            self.assertIs(mode['requires_expected'], False)
+
+class OptionalAssignmentChecks(unittest.TestCase):
+    setUp = ManagedTests.setUp
+    payload = ManagedTests.payload
+    def test_dsh_assignment_needs_only_a_prompt(self):
+        request = self.payload(); request.update(task_mode='assignment', allowed_paths=[], expected=[])
+        self.assertTrue(self.manager.submit(request)['ok'])
+    def test_expected_without_scope_is_checked_in_the_private_workspace(self):
+        request = self.payload(); request.update(task_mode='assignment', allowed_paths=[])
+        self.assertTrue(self.manager.submit(request)['ok'])
+        for path in ('../outside', '/absolute', '.git/config'):
+            request = self.payload(); request.update(task_mode='assignment', allowed_paths=[],
+                expected=[{'path': path, 'contains': 'done'}])
+            self.assertFalse(self.manager.submit(request)['ok'])
+
+
+if __name__ == '__main__':
+    unittest.main()

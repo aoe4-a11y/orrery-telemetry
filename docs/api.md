@@ -65,7 +65,7 @@ curl -s http://127.0.0.1:8770/api/version
 ```
 
 ```json
-{"name":"orrery-telemetry","version":"2026.09.16.1","api":21}
+{"name":"orrery-telemetry","version":"2026.09.16.1","api":22}
 ```
 
 version の解決順は [インストール](install.md#version)を参照してください。
@@ -695,3 +695,7 @@ curl -s 'http://127.0.0.1:8770/api/spawn-status?name=WindyFermi'
 `global_runtime_observation=1` と `operator_session=1` を広告します。global の `/api/quotas` と `/portrait` も同じ admission を通り、既存の読取処理を使用します。画像は共有 session の `apiBlob` で取得して object URL とし、Lock で revoke します。
 
 Managed spawn (legacy, opt-in): see [request/status contract](managed-spawn-contract.md). `POST /api/spawn` returns 202 for accepted managed jobs; `GET /api/spawn-status?attempt_id=<UUID>` reads persistent status. API generation 21.
+
+## Managed の継続対話（API 22）
+
+親・初期入力を省略して起動できる。`task_mode` は conversation/assignment、`report_policy` は pane/mail。task の報告では閉じず、close・retire・runtime 終了で後片付けする。会話の task 成否は適用外。status は `task_evaluation`・`activity`・`latest_turn`・実際の私有作業先 `worktree` を runtime/cleanup の成否と分ける。親なしでも通常の製品 Mail tool を保持する。追加指示は pane から可能、自動の受信 Mail 配送は未接続。[managed 契約](managed-spawn-contract.md)参照。

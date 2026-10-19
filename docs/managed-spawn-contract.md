@@ -20,7 +20,7 @@
 1. standalone=trueならparentはnull（非空parentを同時指定ならcontradictory_parentで拒否）。standalone=false明示かつparentが空ならmissing_parent。両方省略かparent=nullならstandalone=true。
 2. task_mode省略はexpected非空ならassignment、それ以外はconversation。task文字列は省略/空をconversationで許可、assignmentでは非空必須。
 3. conversationはallowed_paths/expected省略を許可。allowed_pathsを渡す場合は初期コピーする既存literal相対fileの一覧（従来のpath検査を維持）。実行時の編集範囲は私有worktree全体。expectedを非空にして曖昧に混ぜずassignmentを使う。
-4. assignmentはallowed_paths非空・expected非空、各expectedはscope内contains/sha256の現行形式を維持。
+4. assignmentはpromptのみ必須。allowed_paths/expectedは省略又は空を許す。scope指定時はexpectedのpathもscope内、scopeなしなら選んだworktree内のliteral相対pathとしてcontains/sha256を検査する。root外・.git・../等は拒否する。
 5. report_policy省略はassignmentかつparentありならmail、それ以外はpane。正式taskのmail報告には実在するparent必須。ただしこれは成功判定の必須宛先であって、通常のMail送信の権限ではない。親なしでも任意の実在agentへの連絡を許す。conversationのmailは正式完了条件を作らない。
 6. effort未指定はkeyを送らない。明示したときだけ選択model×harnessの能力cacheと照合。provider共通の手書き配列では検証しない。
 
@@ -36,7 +36,7 @@
 ## 3. status（GET attempt_idの形は維持）
 
 既存state=pending|ready|failed、phase、finished、running、task_success/runtime_success/cleanup_successを維持し、次を追加する:
-- task_mode、report_policy、parent（null可）
+- task_mode、report_policy、parent（null可）、worktree（実私有作業dirの絶対path、生成前はnull）
 - activity="starting"|"thinking"|"idle"|"stopping"|"exited"（分からなければnull）
 - task_evaluation="not_applicable"|"pending"|"reported"|"failed"
 - latest_turn={id,completed,at}又はnull（nativeイベントがある場合だけ）
@@ -52,7 +52,7 @@ prepare(...,parent=None,task=...)のtask拡張:
 ```json
 {"prompt":"","task_mode":"conversation","report_policy":"pane","allowed_paths":[],"expected":[]}
 ```
-runnerのrun-configにもtask_mode/report_policy/parentを保存し、attempt.jsonは既存phase=runのまま（対話用の偽spike phaseは作らない）。task.jsonは同attempt/task IDとworktree、report_to=null可、scope_mode=worktree|filesを持つ。assignmentはscope_mode=files、conversationはworktree。conversationは起動時に架空の予約receiptを作らない。
+runnerのrun-configにもtask_mode/report_policy/parentを保存し、attempt.jsonは既存phase=runのまま（対話用の偽spike phaseは作らない）。task.jsonは同attempt/task IDとworktree、report_to=null可、scope_mode=worktree|filesを持つ。assignmentは宣言したscopeがあるときfiles、未指定ならworktree。conversationもworktree。conversationは起動時に架空の予約receiptを作らない。
 
 status(state)はterminalをruntime-exitのみから判定（turn-endではfalse）。readyは実process一致plugin-ready＋full preflightのまま。task_successはterminalまで待たず、正式assignmentの証拠がそろった時点で返す。task報告後もterminal=false。
 finalize(state,parent_call=...)のparent_callは名前互換のcallback引数として残してよいが、意味はdashboardのread-only whois。親なしでも必須の同じ照合を行う。
@@ -63,11 +63,13 @@ finalize(state,parent_call=...)のparent_callは名前互換のcallback引数と
 
 completion第5条件:
 - conversation: task全体が適用外。success=null、evaluation=not_applicable、mail_receipt=not_applicable。
-- assignment/pane: 既存binding/turn/artifact/providerの4条件を必須、第5はnot_applicable。checksに文字列を入れてtruthy成功にせずapplicable_checksを明示して集計する。
+- assignment/pane: binding/turn/providerを必須、artifactはexpected指定時だけ適用、第5はnot_applicable。checksに文字列を入れてtruthy成功にせずapplicable_checksを明示して集計する。
 - assignment/mail: 既存のverified server send receipt必須。親captureが存在すれば両方一致必須。
 - 旧taskにmode/policyが無いときはassignment/mailとして読取互換。新旧のruntime cleanupの証拠条件は同じ。
 
 ## 5. 動的予約・終了証拠
+
+private copyでの暫定予約名は `_managed_workspaces/<attempt_id>/<relative-file>`。ledgerに実worktree内のrelative_pathを併記する。実sourceを予約した証拠にはせず、実dir/git worktree対応時は既存子のpath規則へ統合する。
 
 conversationはroot内read、writeはexact fileごとの製品reserve/renew→receipt検証→同期guard→実行→release。assignmentは宣言scopeも重ねる。モデル自身に予約の有無を判断させずtrusted管理処理にする。
 新しいreceiptsは同attemptのreservation-ledger.jsonへ記録（agent_name、attempt_id、receipts、released_ids）。receipt行は製品id/path_pattern/expires_ts/ownerそのまま。ledgerを空で作成しても「実予約があった」とは記録しない。既存taskの起動時receiptとledgerの実ID集合をruntime評価でまとめ、成功確認済みのreleaseだけを差し引く。
@@ -78,5 +80,14 @@ retire-receiptは旧parent-bound-whoisと新dashboard-bound-whoisの両方を読
 ## 6. I5能力cache（能力取得との接続）
 
 非秘密cacheはversion/runtime hash/model/harness/source/取得時刻、efforts/default_effortを含む。dshはresolveModelInfo由来、Hermesの設定resolverはmodel×route能力の証明ではない。初版DeepSeek/Strataはsource=unknown、efforts/default_effort=nullとし推測しない。Strataはsource=harnessでserver報告と表示しない。catalogはmodel.harnesses[]の各entryへefforts/default_effort/effort_sourceを投影し、UIは選んだharnessの値を使う。古いprovider共通値は互換用でありmanaged POSTの根拠にしない。default_effortが分かっても未操作のUIはeffortを送らない。
-能力取得のloaderとcache schemaは対応する能力cache文書に記す。catalogとPOSTは同じ値を検査する。
+loaderは dashboard.managed_capabilities.load_effort_capability(template, *, harness, backend_id, model)。戻り値は efforts/default_effort/effort_source の3field（unknownはnull/null/unknown）。catalogとPOSTは同じharness entryを検査する。
 
+## Mode ごとの互換（Hermes 対話の結合前）
+
+各 model.harnesses[] は `interactive: bool` と `task_modes` を持つ。`task_modes` は conversation/assignment を key とし、値は available/reason/requires_parent/requires_scope/requires_expected/report_policies。旧 Hermes の conversation だけ available=false、reason=interactive_not_ready。assignment は既存どおり available=true、requires_parent=true、report_policies=[mail] として残す。controller はこの経路に限り task 入力を prompt/allowed_paths/expected の3fieldへ投影する。親なし又は pane 報告の assignment は対応前として登録前に拒否する。
+
+I1 dsh と I2 完了後の Hermes は両 mode が available、requires_parent=false、report_policies=[pane,mail]。ただし mail を task の完了条件にする場合は report_to の親を必要とする。通常の Mail tool の権限を mode で削らない。
+
+親なしの正式な Mail 報告は、実在する宛先を利用者が明示し whois で確認する形を後続で受け付ける。最小段ではその report_to 選択は未対応であり、mail を完了条件にする経路は親への報告だけ。これは互換上の暫定で、恒久的な親必須仕様ではない。親なしの通常 send_message は既に許可し、pane 報告で起動できる。
+
+新dshの各modeは requires_scope=false・requires_expected=false。旧Hermes assignmentだけ両方trueを公開する。assignmentのexpectedがありallowed_paths=[]なら、expected.pathはworktree内のliteral相対pathとして検査する。成果物検査の未指定は適用外であり、架空の成果物成功に置き換えない。

@@ -22,11 +22,14 @@ def _read(path: Path, lines=False):
         return None
 
 
-def _result(checks, **metadata):
+def _result(checks, *, applicable_checks=None, **metadata):
     # Known failures remain failures; absent evidence can never become success.
-    success = False if False in checks.values() else None if None in checks.values() else True
+    applicable = list(checks) if applicable_checks is None else applicable_checks
+    values = [checks[key] for key in applicable]
+    success = False if False in values else None if None in values or not applicable else True
     return {**metadata, 'success': success, 'checks': checks,
-            'missing': [key for key, value in checks.items() if value is not True]}
+            'applicable_checks': applicable,
+            'missing': [key for key in applicable if checks[key] is not True]}
 
 
 def evaluate_task(state_root):
@@ -41,6 +44,26 @@ def evaluate_task(state_root):
     metadata = {'attempt_id': aid, 'task_id': tid, 'runtime_phase': attempt.get('phase') if attempt else None}
     if not attempt or not task or not aid or not tid or attempt.get('phase') not in ('spike', 'run'):
         return _result(checks, **metadata)
+    if task.get('task_mode', 'assignment') == 'conversation':
+        return _result(checks, applicable_checks=[], evaluation='not_applicable', **metadata)
+    # A completed assignment remains a report about that moment. Further turns
+    # or edits in the same runtime cannot rewrite the already reported result.
+    if isinstance(tid, str) and Path(tid).name == tid and tid not in ('.', '..'):
+        saved = _read(root / 'task-reports' / (tid + '.json'))
+        if (saved and saved.get('attempt_id') == aid and saved.get('task_id') == tid
+                and saved.get('agent_name') == attempt.get('agent_name')
+                and type(saved.get('success')) is bool and saved.get('source') == 'managed-task-evaluator'
+                and task.get('attempt_id') == aid):
+            if task.get('report_policy', 'mail') == 'mail' and (root / 'parent-mail-receipt.json').exists():
+                parent = _read(root / 'parent-mail-receipt.json')
+                valid_parent = parent and (parent.get('source') == 'parent-bound-fetch-inbox'
+                    and parent.get('attempt_id') == aid and parent.get('task_id') == tid
+                    and parent.get('agent_name') == attempt.get('agent_name')
+                    and parent.get('from') == attempt.get('agent_name') and parent.get('to') == [task.get('report_to')]
+                    and any(r.get('message_id') == parent.get('message_id') for r in saved.get('mail_receipts', [])))
+                if not valid_parent:
+                    return _result({**saved['checks'], 'mail_receipt': False}, **metadata)
+            return saved
     checks['attempt_binding'] = task.get('attempt_id') == aid
     scoped = [row for row in events or [] if row.get('attempt_id') == aid and row.get('task_id') == tid]
     turns = [row for row in scoped if row.get('phase') == 'turn-end']
@@ -95,7 +118,13 @@ def evaluate_task(state_root):
                     and received.get('agent_name') == child and received.get('from') == child
                     and received.get('to') == [parent]
                     and any(row.get('message_id') == received.get('message_id') for row in matching))
-    return _result(checks, **metadata)
+    applicable = list(checks)
+    if task.get('task_mode') == 'assignment' and task.get('expected') == []:
+        applicable.remove('expected_artifacts')
+    if task.get('report_policy', 'mail') == 'pane':
+        applicable.remove('mail_receipt')
+        checks['mail_receipt'] = None
+    return _result(checks, applicable_checks=applicable, **metadata)
 
 
 def evaluate_runtime(state_root):
@@ -115,14 +144,20 @@ def evaluate_runtime(state_root):
                          and value.get('source') == source) else None
 
     release = scoped('release-receipt.json', 'product-bound-proxy')
-    retired = scoped('retire-receipt.json', 'parent-bound-whois')
+    retired = (scoped('retire-receipt.json', 'dashboard-bound-whois')
+               or scoped('retire-receipt.json', 'parent-bound-whois'))
     task = _read(root / 'task.json')
     released = None
     if release and type(release.get('confirmed')) is bool:
         reservations = task.get('reservation_receipts') if task and task.get('attempt_id') == aid else None
         expected = [row.get('id') for row in reservations if isinstance(row, dict)] if isinstance(reservations, list) else None
+        ledger = _read(root / 'reservation-ledger.json')
+        if ledger and ledger.get('attempt_id') == aid and ledger.get('agent_name') == child:
+            rows = ledger.get('receipts')
+            if isinstance(rows, list) and all(isinstance(row, dict) for row in rows):
+                expected = list(set((expected or []) + [row.get('id') for row in rows]))
         requested, actual = release.get('reservation_ids'), release.get('released_ids')
-        valid = lambda ids: isinstance(ids, list) and bool(ids) and all(type(n) is int and n > 0 for n in ids)
+        valid = lambda ids: isinstance(ids, list) and all(type(n) is int and n > 0 for n in ids)
         if not release['confirmed']:
             released = False
         elif all(valid(ids) for ids in (expected, requested, actual)):

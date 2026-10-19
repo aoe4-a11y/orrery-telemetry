@@ -192,7 +192,10 @@ syncBuiltinESMExports();
 for (const event of ['uncaughtException','unhandledRejection']) process.prependListener(event, () => {
   audit({phase: 'runtime-fatal', reason: event}); process.exit(79);
 });
-globalThis.fetch = createEgress({backend, limits: spec.limits, wireTools: spec.wire_tools,
+const wireFile = path.join(stateRoot, 'wire-tools.json');
+const wire = fs.existsSync(wireFile) ? JSON.parse(fs.readFileSync(wireFile, 'utf8')) : null;
+if (wire && wire.attempt_id !== attemptId) throw new Error('DSH_MAIL_SCHEMA_ATTEMPT');
+globalThis.fetch = createEgress({backend, limits: spec.limits, wireTools: wire?.tools ?? spec.wire_tools,
   offline, phase: attempt.phase, fetchImpl: globalThis.fetch, audit, key, fail(reason, code) {
     if (offline && reason === 'DSH_OFFLINE') process.exit(73);
     audit({phase: 'runtime-fatal', reason}); process.exit(code);

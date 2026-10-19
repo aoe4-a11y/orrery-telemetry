@@ -36,7 +36,8 @@ const task = JSON.parse(fs.readFileSync(path.join(state, 'task.json'), 'utf8'));
 if (manifest.phase === 'run') {
   const identity = JSON.parse(fs.readFileSync(path.join(state, 'mail-identity.json'), 'utf8'));
   if (identity.agent_name !== manifest.agent_name || task.attempt_id !== manifest.attempt_id ||
-      task.reservation_source !== 'product-bound-proxy' || !task.reservation_receipts?.length)
+      task.reservation_source !== 'product-bound-proxy' ||
+      (task.scope_mode !== 'worktree' && !task.reservation_receipts?.length))
     throw new Error('DSH_RUN_IDENTITY_RESERVATIONS_REQUIRED');
   if (!offline) {
     const proof = JSON.parse(fs.readFileSync(path.join(state, 'preflight-complete.json'), 'utf8'));
@@ -59,7 +60,7 @@ await runProfile({
   profile: 'orrery-managed',
   patchFiles: [path.join(here, 'managed.patch.yml'), path.join(state, 'selected.patch.json'),
     ...(manifest.phase === 'run' ? [path.join(state, 'mail.patch.json')] : [])],
-  args: manifest.phase === 'run' ? ['--', offline ? 'Keyless preflight: await instructions.' : task.prompt] : [],
+  args: manifest.phase === 'run' && (offline || task.prompt) ? ['--', offline ? 'Keyless preflight: await instructions.' : task.prompt] : [],
 });
 }
 
