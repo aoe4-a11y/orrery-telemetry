@@ -135,6 +135,40 @@ class ThinConfig(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, '^invalid_resume_session_id$'):
                 self.generate(resume_session_id=value)
 
+    def test_resume_reads_new_and_existing_yaml_profile_without_changing_answer(self):
+        profile = self.runtime / 'profiles/deepseek'
+        path = profile / 'config.yaml'
+        for raw in (None, '# keep comment\nmemory: {memory_enabled: true}\n'):
+            with self.subTest(existing_yaml=raw is not None):
+                if raw is None:
+                    path.unlink(missing_ok=True)
+                else:
+                    profile.mkdir(parents=True, exist_ok=True)
+                    path.write_text(raw)
+                first = self.generate()
+                before = path.read_bytes()
+                self.assertEqual(config.read(path)['telemetry']['shared_metrics'],
+                                 {'enabled': False, 'send': False, 'offer_version': 2})
+                resumed = self.generate(resume_session_id='exact-owned-fixture-id')
+                index = resumed['argv'].index('--resume')
+                self.assertEqual(resumed['argv'][index + 1], 'exact-owned-fixture-id')
+                self.assertEqual(resumed['profile_home'], first['profile_home'])
+                self.assertEqual(path.read_bytes(), before)
+                if raw:
+                    self.assertIn(raw.encode(), before)
+
+    def test_invalid_telemetry_config_keeps_specific_cli_reason(self):
+        self.save(self.runtime / 'profiles/deepseek/config.yaml', {'telemetry': 'invalid fixture'})
+        source, output = self.base / 'invalid-input.json', self.base / 'invalid-plan.json'
+        self.save(source, self.document)
+        stderr = io.StringIO()
+        with patch('sys.argv', ['thin_config.py', '--input', str(source), '--out', str(output)]), \
+                patch('sys.stderr', stderr), self.assertRaises(SystemExit) as stopped:
+            config.main()
+        self.assertEqual(stopped.exception.code, 1)
+        self.assertEqual(stderr.getvalue(), 'HERMES_THIN_CONFIG_ERROR=invalid_telemetry_config\n')
+        self.assertFalse(output.exists())
+
     def test_resume_profile_pin_is_canonical_and_checked_before_writes(self):
         with self.assertRaisesRegex(ValueError, '^native_resume_profile_changed$'):
             self.generate(native_profile_env={'HERMES_HOME': str(self.base / 'other-profile')})
