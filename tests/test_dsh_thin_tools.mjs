@@ -92,6 +92,35 @@ test('real subprocess hook exit is observed without exposing stderr', async () =
   } finally { f.clean(); }
 });
 
+test('only a successful public systemMessage is visible; other hook output stays private', async t => {
+  const f = fixture();
+  let visible = '';
+  t.mock.method(process.stderr, 'write', text => {visible += text; return true;});
+  try {
+    const file = path.join(f.root, 'public-hook.sh');
+    for (const [stdout, status, expected] of [
+      ['', 0, ''],
+      ['{"systemMessage":"Public reservation warning"}', 0, 'Public reservation warning\n'],
+      ['PRIVATE_STDOUT', 0, ''],
+      ['{"private":"PRIVATE_JSON"}', 0, ''],
+      ['{"systemMessage":""}', 0, ''],
+      ['{"systemMessage":123}', 0, ''],
+      ['[{"systemMessage":"PRIVATE_ARRAY"}]', 0, ''],
+      ['null', 0, ''],
+      ['{"systemMessage":"PRIVATE_FAILED_WARNING"}', 2, ''],
+    ]) {
+      visible = '';
+      fs.writeFileSync(file, '#!/bin/sh\ncat >/dev/null\nprintf "%s" "$FIXTURE_STDOUT"\n' +
+        'echo PRIVATE_STDERR >&2\nexit "$FIXTURE_STATUS"\n', {mode: 0o700});
+      const result = await callHook(file, {tool_name: 'Read', cwd: f.root},
+        {...process.env, FIXTURE_STDOUT: stdout, FIXTURE_STATUS: String(status)});
+      assert.equal(result.ok, status === 0);
+      assert.equal(visible, expected);
+      assert.equal(JSON.stringify(result).includes('PRIVATE_'), false);
+    }
+  } finally {f.clean();}
+});
+
 test('hook subprocess follows native cwd for relative reservation checks and release', async () => {
   const f = fixture();
   const originalCwd = process.cwd();
@@ -175,7 +204,7 @@ test('native CLI tool dispatch invokes common hooks; broken adapter leaves nativ
       fs.mkdirSync(hooks);
       fs.copyFileSync(realGuard, path.join(hooks, 'deny-llm-key-read.py'));
       fs.chmodSync(path.join(hooks, 'deny-llm-key-read.py'), 0o700);
-      save('hooks/check-agent-registered.sh', '#!/bin/sh\ncat >/dev/null\nexit 0\n', 0o700);
+      save('hooks/check-agent-registered.sh', '#!/bin/sh\ncat >/dev/null\nprintf \'%s\\n\' \'{"systemMessage":"ORRERY_PUBLIC_HOOK_WARNING"}\'\nexit 0\n', 0o700);
       save('hooks/release-file-reservation.sh', '#!/bin/sh\ncat >/dev/null\nexit 0\n', 0o700);
       save('hooks/check-file-reservation.sh', '#!/bin/sh\ninput=$(cat)\ncase "$input" in *allowed.txt*) exit 0;; *) exit 2;; esac\n', 0o700);
       const secretHelper = save('security', '#!/bin/sh\necho CALLED >>"' + path.join(root, 'helper-calls') + '"\necho SYNTHETIC\n', 0o700);
@@ -206,6 +235,7 @@ ctx.get('appExit')(0);});}`);
           AGENTSTACK_LLM_KEY_DEFINITIONS: definitions, AGENTSTACK_LLM_KEY_FILES: JSON.stringify([protectedFile])}, encoding: 'utf8', timeout: 45000});
       assert.equal(result.error, undefined, result.stdout + result.stderr);
       assert.equal(result.status, 0, result.stdout + result.stderr);
+      assert.equal((result.stdout + result.stderr).includes('ORRERY_PUBLIC_HOOK_WARNING'), mode === 'loaded');
       const evidence = JSON.parse(fs.readFileSync(path.join(root, 'result.json')));
       assert.equal(evidence.error, undefined, JSON.stringify(evidence) + result.stdout + result.stderr);
       assert.ok(evidence.tools.includes('write'));
