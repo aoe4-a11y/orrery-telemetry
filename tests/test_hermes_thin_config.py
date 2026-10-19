@@ -73,7 +73,9 @@ class ThinConfig(unittest.TestCase):
 
     def test_native_plan_no_caps_no_key_env_and_literal_query_file(self):
         plan = self.generate()
-        self.assertEqual(plan['argv'][1:6], ['chat', '--provider', 'fixture-api', '--model', 'fixture-main'])
+        self.assertEqual(plan['argv'][1:3], ['chat', '--provider'])
+        self.assertRegex(plan['argv'][3], '^orrery-deepseek-[a-f0-9]{24}$')
+        self.assertEqual(plan['argv'][4:6], ['--model', 'fixture-main'])
         self.assertEqual(plan['argv'][-2:], ['--query-file', str(self.base / 'prompt')])
         for option in ('--oneshot', '--toolsets', '--reasoning', '--quiet', '--yolo'):
             self.assertNotIn(option, plan['argv'])
@@ -97,14 +99,24 @@ class ThinConfig(unittest.TestCase):
         second = self.generate(agent_name='OtherAgent', state_dir=str(self.base / 'other'))
         self.assertEqual(first['profile_home'], second['profile_home'])
         self.assertNotEqual(first['config_dir'], second['config_dir'])
+        self.assertNotEqual(first['argv'][3], second['argv'][3])
         self.assertEqual(marker.read_text(), 'kept memory')
         self.assertIn('User instructions', config.read(Path(second['config_dir']) / 'config.yaml')['agent']['system_prompt'])
         self.assertNotIn('mcp_servers', config.read(profile / 'config.yaml'))
 
+    def test_preexisting_private_provider_slug_is_not_merged(self):
+        first = self.generate()
+        path = Path(first['profile_home']) / 'config.yaml'
+        self.save(path, {'providers': {first['argv'][3]: {'api': 'https://stale.invalid/v1'}}})
+        original = path.read_bytes()
+        with self.assertRaisesRegex(ValueError, '^native_provider_conflict$'):
+            self.generate()
+        self.assertEqual(path.read_bytes(), original)
+
     def test_helper_and_main_only_same_backend_ids_and_effort_explicit(self):
         plan = self.generate(model='fixture-helper', helper_model='fixture-main', effort='high')
         overlay = config.read(Path(plan['config_dir']) / 'config.yaml')
-        self.assertEqual(overlay['delegation'], {'provider': 'fixture-api', 'model': 'fixture-main'})
+        self.assertEqual(overlay['delegation'], {'provider': plan['argv'][3], 'model': 'fixture-main'})
         self.assertEqual(plan['argv'][-4:-2], ['--reasoning', 'high'])
         for changes, reason in [({'helper_model': 'foreign/model'}, 'invalid_helper_model'),
                                 ({'model': 'foreign/model'}, 'model_mismatch'),

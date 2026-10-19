@@ -204,6 +204,9 @@ def generate(document):
                             or Path(pin['HERMES_HOME']).resolve() != profile.resolve()):
         raise ValueError('native_resume_profile_changed')
     state, cwd = Path(document['state_dir']).resolve(), Path(document['cwd']).resolve()
+    # A private config slug keeps old named/custom credential pools and endpoint
+    # aliases out of this selection, while the memory profile remains shared.
+    native_provider = 'orrery-' + document['backend_id'] + '-' + hashlib.sha256(str(state).encode()).hexdigest()[:24]
     if not re.fullmatch(r'[A-Za-z][A-Za-z0-9_-]*', document['agent_name']) or not cwd.is_dir():
         raise ValueError('invalid_input')
     if document.get('worktree') and Path(document['worktree']).resolve() != cwd:
@@ -217,6 +220,15 @@ def generate(document):
     prompt_text = prompt.read_text(encoding='utf-8')
     with _profile_lock(profile):
         existing = read(profile / 'config.yaml') if (profile / 'config.yaml').exists() else {}
+        providers = existing.get('providers')
+        providers = providers if isinstance(providers, dict) else {}
+        legacy = existing.get('custom_providers')
+        legacy = legacy if isinstance(legacy, list) else []
+        names = list(providers)
+        names += [row.get('name', '') for row in providers.values() if isinstance(row, dict)]
+        names += [row.get('name', '') for row in legacy if isinstance(row, dict)]
+        if any(str(name).strip().lower().replace(' ', '-').removeprefix('custom:') == native_provider for name in names):
+            raise ValueError('native_provider_conflict')
         enabled = existing.get('plugins', {}).get('enabled', [])
         if not isinstance(enabled, list):
             raise ValueError('inherited_mcp_conflict')
@@ -241,7 +253,13 @@ def generate(document):
         for source in skills.glob('*/SKILL.md'):
             _link(profile / 'skills' / source.parent.name, source.parent)
         overlay = {
-            'providers': {facts['provider']: facts['route']},
+            'providers': {native_provider: {'api': facts['route']['base_url'], **facts['route']}},
+            # The native legacy pool seeder also consults model.api_key/api.
+            # Keep those pointers out of this child's route without editing
+            # the persistent profile or reading its auth store.
+            'model': {'provider': native_provider, 'default': facts['model'],
+                      'base_url': facts['route']['base_url'], 'api_mode': facts['route']['api_mode'],
+                      'api': '', 'api_key': '', 'key_env': '', 'api_key_env': ''},
             'display': {'busy_input_mode': 'queue'},
             'agent': {'system_prompt': '\n\n'.join(filter(None, [existing.get('agent', {}).get('system_prompt'), instructions]))},
             'auth': {'adopt_external_logins': False},
@@ -249,13 +267,13 @@ def generate(document):
             'plugins': {'enabled': list(dict.fromkeys([*enabled, PLUGIN]))},
             'auxiliary': {task: {'provider': 'main', 'model': facts['helper_model'], 'fallback_chain': []}
                           for task in _auxiliary_tasks(Path(facts['source']))},
-            'delegation': {'provider': facts['provider'], 'model': facts['helper_model']},
+            'delegation': {'provider': native_provider, 'model': facts['helper_model']},
         }
         personality = _personality_prompt(existing, Path(facts['source']))
         _save(state / 'overlay/config.yaml', overlay)
     definitions = state / 'credential-references.json'
     _save(definitions, {'backends': {'hermes': {'auth_command': shlex.split(facts['route']['key_cmd'])}}})
-    argv = [facts['executable'], 'chat', '--provider', facts['provider'], '--model', facts['model']]
+    argv = [facts['executable'], 'chat', '--provider', native_provider, '--model', facts['model']]
     if document.get('effort') is not None:
         argv.extend(['--reasoning', document['effort']])
     if document.get('resume_session_id') is not None:
@@ -288,7 +306,7 @@ def main():
         allowed = {'unknown_backend', 'model_mismatch', 'invalid_effort', 'builtin_provider_collision',
                    'invalid_runtime', 'invalid_route', 'invalid_input', 'unsupported_mcp_selection',
                    'inherited_mcp_conflict', 'owned_link_conflict', 'invalid_helper_model',
-                   'invalid_resume_session_id', 'native_resume_profile_changed'}
+                   'invalid_resume_session_id', 'native_resume_profile_changed', 'native_provider_conflict'}
         reason = str(error) if str(error) in allowed else 'invalid_input'
         print('HERMES_THIN_CONFIG_ERROR=' + reason, file=sys.stderr)
         raise SystemExit(1)

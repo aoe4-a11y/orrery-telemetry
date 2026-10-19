@@ -11,6 +11,11 @@ The standard launcher supplies the registered identity, product-generated MCP
 configuration, shared rendered Codex instructions and the actual working directory.
 The generator selects the installed committed executable and a custom provider
 with native `key_cmd`; provider credentials remain Hermes's responsibility.
+Each child uses a private provider name and minimal route in its overlay, so
+old endpoint aliases, inline keys and named credential pools in the persistent
+profile cannot override the selected route. The profile and its auth store are
+not rewritten or copied. Legacy model credential pointers are cleared only in
+the child overlay; memory and skills remain in the fixed backend profile.
 Optional model and helper selections must belong to the selected backend's
 configured formal model IDs. An omitted effort leaves the native default intact.
 The helper model applies to auxiliary tasks and delegation on that same provider.
