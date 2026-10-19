@@ -110,6 +110,18 @@ class ThinGuard(unittest.TestCase):
                 self.assertEqual(guard.before('terminal', {'command': 'true'}),
                     {'action': 'block', 'message': 'ORRERY hook denied: deny-llm-key-read.py'})
 
+    def test_coloured_internal_diagnostics_never_become_public_reasons(self):
+        for diagnostic in ('Traceback (most recent call last):\nprivate diagnostic',
+                           'RuntimeError: private diagnostic'):
+            coloured = '\x1b[31m' + diagnostic + '\x1b[0m'
+            for structured in (False, True):
+                with self.subTest(diagnostic=diagnostic, structured=structured), \
+                        patch.object(guard.subprocess, 'run', return_value=SimpleNamespace(
+                            returncode=2, stdout=json.dumps({'reason': coloured}) if structured else '',
+                            stderr='' if structured else coloured)):
+                    self.assertEqual(guard.before('terminal', {'command': 'true'}),
+                        {'action': 'block', 'message': 'ORRERY hook denied: deny-llm-key-read.py'})
+
     def test_denial_codepoint_boundary_controls_and_invalid_utf8(self):
         boundary = '拒😀' * 1000
         cases = [(2, '', 'short denial', 'short denial'), (2, '', boundary, boundary),

@@ -37,11 +37,12 @@ def _denial_reason(result):
         reason = specific.get('permissionDecisionReason') if isinstance(specific, dict) else None
     if not isinstance(reason, str) or not reason.strip():
         reason = getattr(result, 'stderr', '') or ''
+    # Diagnose the visible text, including errors decorated by a terminal.
+    reason = re.sub(r'\x1b\[[0-?]*[ -/]*[@-~]', '', reason)
     if re.search(r'(?m)^\s*(?:Traceback \(|File ".*", line \d+|\w*(?:Error|Exception):)|: line \d+:', reason):
         return ''
     # Like Claude's blocking hook stderr, this is intended for the caller.
     # Bound the message and remove terminal control sequences from tool output.
-    reason = re.sub(r'\x1b\[[0-?]*[ -/]*[@-~]', '', reason)
     return ''.join(char for char in reason.strip() if char.isprintable() or char in '\n\t')[:2000]
 
 
