@@ -12,6 +12,12 @@ import subprocess
 import sys
 
 
+if __package__:
+    from .managed_capabilities import load_effort_capability, UNKNOWN
+else:
+    from managed_capabilities import load_effort_capability, UNKNOWN
+
+
 def _read(file):
     return json.loads(Path(file).read_text())
 
@@ -133,7 +139,9 @@ def load_catalog_inputs(config_file, *, mode):
                         reason = (_dsh_ready if harness == 'dsh' else _hermes_ready)(template, spec['model'], backend_id)
                     except (OSError, ValueError, KeyError, TypeError, subprocess.SubprocessError):
                         reason = 'runtime_not_prepared'
-                availability[backend_id][harness] = {'available': reason is None, 'reason': reason}
+                capability = (load_effort_capability(template, harness=harness, backend_id=backend_id, model=spec['model'])
+                              if reason is None else dict(UNKNOWN))
+                availability[backend_id][harness] = {'available': reason is None, 'reason': reason, **capability}
         return backends, availability, True
     except (OSError, ValueError, KeyError, TypeError):
         return {}, {}, False
@@ -154,7 +162,8 @@ def catalog_providers(backends, availability, *, mode, enabled):
             status = readiness.get(harness, {})
             ready = mode == 'legacy' and status.get('available') is True
             reason = None if ready else 'unsupported_mode' if mode != 'legacy' else status.get('reason') or 'runtime_not_prepared'
-            harnesses.append({'id': harness, 'available': ready, 'default': False, 'reason': reason})
+            harnesses.append({'id': harness, 'available': ready, 'default': False, 'reason': reason,
+                              **{key: status.get(key, value) for key, value in UNKNOWN.items()}})
         first = next((h for h in harnesses if h['available']), None)
         if first:
             first['default'] = True
@@ -163,11 +172,11 @@ def catalog_providers(backends, availability, *, mode, enabled):
             'locality': spec.get('locality') or locality, 'server': spec.get('server') or label,
             'context': None, 'context_source': 'unreported', 'context_note': 'Server-reported context not available yet',
             'helper_models': [{'id': 'same', 'label': 'Same as main'}],
-            'efforts': list(spec.get('efforts') or []),
+            'efforts': list((first or {}).get('efforts') or []),
             'default_model': spec['model'],
             'models': [{'id': spec['model'], 'label': spec['model'], 'harnesses': harnesses}],
         }
-        if spec.get('default_effort') in provider['efforts']:
-            provider['effort_default'] = spec['default_effort']
+        if (first or {}).get('default_effort') in provider['efforts']:
+            provider['effort_default'] = first['default_effort']
         providers.append(provider)
     return providers

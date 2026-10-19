@@ -6,6 +6,7 @@ Runtime generations are separate from manual installations and user profiles.
 import argparse
 import base64
 import hashlib
+import importlib.util
 import json
 import os
 from pathlib import Path
@@ -203,7 +204,7 @@ def validate(repo, harness, receipt):
 
 
 def provision(repo, install, harness, choice='keep', node='', python=sys.executable,
-              cache=None, dry_run=False):
+              cache=None, dry_run=False, capabilities_manifest=None):
     repo, install = Path(repo).resolve(), Path(install).resolve()
     setting = install / 'dashboard' / (harness + '-provider.json')
     enabled = choice == 'enable' or choice == 'keep' and setting.is_file() and read(setting).get('enabled') is True
@@ -243,6 +244,13 @@ def provision(repo, install, harness, choice='keep', node='', python=sys.executa
     for file in (repo / 'integrations' / harness).iterdir():
         if file.is_file() and file.suffix in ('.py', '.mjs', '.json', '.patch', '.yml', '.md'):
             shutil.copy2(file, destination / file.name)
+    if harness == 'dsh':
+        spec = importlib.util.spec_from_file_location('_managed_capabilities', repo / 'dashboard/managed_capabilities.py')
+        capabilities = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(capabilities)
+        facts = capabilities.refresh_dsh_capabilities(repo, receipt['details'], capabilities_manifest)
+        if facts['extraction_status'] != 'known':
+            print('Managed dsh effort capabilities unknown; runtime defaults remain available.')
     save(base / 'current.json', {'generation': root.name, **receipt['details']})
     save(setting, {'enabled': True})
     print(f'Managed {harness} installed; configure backend and Keychain service/account separately (no key installed).')
@@ -257,6 +265,7 @@ def main():
     parser.add_argument('--node', default='')
     parser.add_argument('--python', default=sys.executable)
     parser.add_argument('--cache')
+    parser.add_argument('--managed-spawn-config', dest='capabilities_manifest')
     parser.add_argument('--dry-run', action='store_true')
     args = vars(parser.parse_args())
     try:

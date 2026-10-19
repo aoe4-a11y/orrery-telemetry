@@ -105,7 +105,7 @@ def main():
         tap = args.out / 'egress.tap'
         with tap.open('w') as log:
             run = subprocess.run([env['ORRERY_DSH_TEST_NODE'], '--test', '--test-reporter=tap',
-                                  str(ROOT / 'tests/test_dsh_egress.mjs')], env=env,
+                                  str(ROOT / 'tests/test_dsh_egress.mjs'), str(ROOT / 'tests/test_dsh_capabilities.mjs')], env=env,
                                  stdout=log, stderr=subprocess.STDOUT, timeout=120)
         n, f, e, s = node_result(tap.read_text(), run.returncode)
         totals += n; failures += f; errors += e; skips += s
@@ -119,6 +119,7 @@ def main():
                      else loader.loadTestsFromName('test_dsh_run_connection.ProductLifecycle.test_keyless_full_preflight_with_real_tui_and_synthetic_stdio_server'))
             if backend == 'strata':
                 suite.addTests(loader.loadTestsFromName('test_managed_catalog'))
+                suite.addTests(loader.loadTestsFromName('test_managed_capabilities'))
                 suite.addTests(loader.loadTestsFromName('test_managed_harness_install'))
             with (args.out / (backend + '-tests.txt')).open('w') as log, contextlib.redirect_stdout(log), contextlib.redirect_stderr(log):
                 checked = unittest.TextTestRunner(stream=log, verbosity=2).run(suite)

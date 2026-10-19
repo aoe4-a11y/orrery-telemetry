@@ -16,7 +16,6 @@
         "service": "orrery-dsh-deepseek",
         "account": ""
       },
-      "effort": "low",
       "idle_check": false,
       "model_definition": null,
       "auxiliary": null
@@ -28,7 +27,6 @@
         "service": "orrery-dsh-strata",
         "account": ""
       },
-      "effort": "high",
       "idle_check": true,
       "model_definition": {
         "id": "qwen3.8-flash-next-iq3_xxs",

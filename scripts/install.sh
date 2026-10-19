@@ -2447,6 +2447,7 @@ PYNODE
   local args=(--repo "$REPO_ROOT" --install "$INSTALL_DIR" --node "$DSH_NODE" --python "$PYTHON_BIN")
   [[ "$DRY_RUN" != true ]] || args+=(--dry-run)
   [[ -z "$HARNESS_CACHE" ]] || args+=(--cache "$HARNESS_CACHE")
+  [[ -z "${MANAGED_SPAWN_CONFIG_SETTING:-}" ]] || args+=(--managed-spawn-config "$MANAGED_SPAWN_CONFIG_SETTING")
   for harness in dsh hermes; do
     if [[ "$harness" == dsh ]]; then choice="${DSH_OPT_IN:-keep}"; else choice="${HERMES_OPT_IN:-keep}"; fi
     "$PYTHON_BIN" "$SCRIPT_DIR/lib/managed_harness_install.py" \

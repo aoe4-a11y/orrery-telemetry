@@ -91,6 +91,24 @@ class InstallTests(unittest.TestCase):
             dsh.assert_not_called()
             hermes.assert_not_called()
 
+    def test_enabled_update_refreshes_capabilities_but_off_dry_run_do_not(self):
+        from dashboard import managed_capabilities
+        # The installer imports this pure file by location; verify its actual
+        # output under synthetic acquisition rather than touching user config.
+        with patch.object(installer, 'install_dsh', side_effect=self.fake_acquire):
+            installer.provision(ROOT, self.install, 'dsh', choice='enable')
+            target = self.generation('dsh') / 'evidence/effort-capabilities.json'
+            self.assertTrue(target.is_file())
+            self.assertEqual(installer.read(target)['entries'], [])
+            target.write_text('{"stale":true}')
+            installer.provision(ROOT, self.install, 'dsh')
+            self.assertNotIn('stale', installer.read(target))
+            target.write_text('{"kept":true}')
+            installer.provision(ROOT, self.install, 'dsh', choice='disable')
+            self.assertEqual(installer.read(target), {'kept': True})
+            installer.provision(ROOT, self.install, 'dsh', choice='enable', dry_run=True)
+            self.assertEqual(installer.read(target), {'kept': True})
+
     def test_separate_opt_in_keeps_manual_home_and_uninstalls_owned_roots(self):
         manual = self.install / 'hermes-managed/profiles/manual'
         manual.mkdir(parents=True)
