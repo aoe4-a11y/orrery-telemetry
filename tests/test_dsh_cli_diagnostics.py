@@ -75,22 +75,27 @@ class DiagnosticsTests(unittest.TestCase):
         from types import SimpleNamespace
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
-            managed_spawn.save(root / 'manifest.json', {})
+            managed_spawn.save(root / 'backend.json', {'backends': {'strata': {'model': 'fixture-strata'}}})
+            source = {'project_key': str(root.resolve()), 'backend_file': str(root / 'backend.json')}
+            managed_spawn.save(root / 'template.json', source)
+            managed_spawn.save(root / 'manifest.json', {'harnesses': {'dsh': {
+                'config_file': str(root / 'template.json')}}})
             managed_spawn.save(root / 'request.json', {'config_file': str(root / 'manifest.json'),
                 'selected_mode': 'legacy', 'request': {'harness': 'dsh', 'parent': 'FixtureParent',
-                'dir': tmp, 'allowed_paths': [], 'provider': 'strata', 'task': 'fixture', 'expected': []}})
+                'dir': tmp, 'allowed_paths': [], 'provider': 'strata', 'model': 'fixture-strata',
+                'task_mode': 'assignment', 'report_policy': 'mail', 'task': 'fixture', 'expected': []}})
             managed_spawn.save(root / 'status.json', {'phase': 'queued'})
             def prepare(**kwargs):
                 kwargs['run'](['python', '-I', '/product/launch.py', 'init'])
             adapter = SimpleNamespace(prepare=prepare)
-            source = {'project_key': str(root.resolve())}
+            providers = [{'id': 'strata', 'models': [{'id': 'fixture-strata', 'harnesses': [
+                {'id': 'dsh', 'available': True, 'interactive': True}]}]}]
             result = subprocess.CompletedProcess([], 1, '', diag.encode('init', ValueError('PRIVATE')))
-            with patch.object(managed_spawn, 'trusted_selection', return_value=({}, source)), patch.object(
-                    managed_spawn, 'worker_environment', return_value={}), patch.object(
+            with patch.object(managed_spawn, 'worker_environment', return_value={}), patch.object(
                     managed_spawn.subprocess, 'run', return_value=result):
                 run = managed_spawn.command_runner({}, root / 'runner.log')
                 managed_spawn.run_job(root, adapter=adapter, run=run,
-                    parent_call=lambda *a: {'name': 'FixtureParent'}, provider_loader=lambda *a, **k: [])
+                    parent_call=lambda *a: {'name': 'FixtureParent'}, provider_loader=lambda *a, **k: providers)
             failure = managed_spawn.read(root / 'worker-failure.json')
             self.assertEqual(failure['step'], 'init')
             self.assertEqual(failure['type'], 'ValueError')
