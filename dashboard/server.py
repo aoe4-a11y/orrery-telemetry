@@ -8468,6 +8468,8 @@ def _spawn_launch(payload: dict, request: dict, spec: SpawnLaunchSpec,
     token_file = ""
     token_created = False
     log_fh = None
+    log_path = None
+    log_start_offset = 0
 
     token_key = re.sub(r"[^A-Za-z0-9_.-]", "_", child_name)
     owner_credential = os.path.join(RUNTIME_DIR, f"agent_token_{token_key}")
@@ -8555,6 +8557,9 @@ def _spawn_launch(payload: dict, request: dict, spec: SpawnLaunchSpec,
     def kill_spawn_session() -> bool:
         nonlocal spawn_stop_confirmed
         spawn_stop_confirmed = False
+        if log_path is None:
+            # Logging failed before the launcher started: no session ownership.
+            return False
         tail, _ = _spawn_log_tail_and_reason(log_path, log_start_offset)
         if any(marker in tail for marker in (
                 "Harness start/stop unconfirmed; recovery state retained",
@@ -8672,8 +8677,8 @@ def _spawn_launch(payload: dict, request: dict, spec: SpawnLaunchSpec,
     try:
         log_dir = os.path.join(HERE, "logs")
         os.makedirs(log_dir, exist_ok=True)
-        log_path = os.path.join(log_dir, "spawn.log")
-        log_fh = open(log_path, "ab", buffering=0)
+        log_fh = open(os.path.join(log_dir, "spawn.log"), "ab", buffering=0)
+        log_path = log_fh.name
         log_start_offset = log_fh.tell()
         ts = datetime.now(timezone.utc).isoformat()
         log_fh.write(

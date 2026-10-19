@@ -347,3 +347,31 @@ def test_failed_spawn_uses_real_cleanup_only_after_stop_and_owner_confirmation(
             assert owner.read_text() == 'fixture-token' and state.exists()
     if mode in ('update', 'creation_pending', 'probe_unknown', 'confirmed_absent'):
         assert not killed
+
+
+
+def test_log_directory_failure_returns_unknown_and_preserves_handoff(preview, monkeypatch, tmp_path):
+    runtime = tmp_path / 'runtime'
+    monkeypatch.setattr(server, 'RUNTIME_DIR', str(runtime))
+    monkeypatch.setattr(server, 'HERE', str(tmp_path))
+    monkeypatch.setattr(server, '_spawn_name_status', lambda _: 'available')
+    monkeypatch.setattr(server, '_mcp_call', lambda *a, **k: {'ok': True, 'data': {
+        'id': 73, 'name': 'FixtureAgent', 'registration_token': 'fixture-token'}})
+    monkeypatch.setattr(server.subprocess, 'Popen', lambda *a, **k: pytest.fail('launcher started without log'))
+    monkeypatch.setattr(server, '_tmux_run', lambda *a, **k: pytest.fail('session ownership unknown before launch'))
+    monkeypatch.setattr(server, '_failed_spawn_cleanup', lambda *a: pytest.fail('cleanup before launch'))
+    real_makedirs = server.os.makedirs
+    def makedirs(path, *args, **kwargs):
+        if Path(path) == tmp_path / 'logs':
+            raise PermissionError('fixture logs directory denied')
+        return real_makedirs(path, *args, **kwargs)
+    monkeypatch.setattr(server.os, 'makedirs', makedirs)
+    spec = server.SpawnLaunchSpec(provider='deepseek', program='dsh',
+        model='deepseek-fixture', script=server.SPAWN_SCRIPT)
+    result = server.spawn_with_launch_spec({**preview, 'dry_run': False,
+        'provider': 'deepseek', 'name': 'FixtureAgent'}, spec)
+    assert result['ok'] is False and result['cleanup_state'] == 'unknown'
+    assert 'fixture logs directory denied' in result['error']
+    handoffs = list((runtime / 'spawn-tokens').glob('*.token'))
+    assert len(handoffs) == 1 and handoffs[0].read_text() == 'fixture-token'
+    assert Path(str(handoffs[0]) + '.binding.json').exists()
