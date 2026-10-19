@@ -21,7 +21,10 @@ def model_ids(models):
 def configured_models(manifest, backend_id):
     """Explicit same-backend IDs only; never synthesize vendor model lists."""
     spec = manifest.get('backends', {}).get(backend_id, {})
-    return model_ids(spec.get('models', [spec.get('model')]))
+    models = spec.get('models', [spec.get('model')])
+    if not isinstance(models, list) or not all(isinstance(item, str) and item.strip() for item in models):
+        return []
+    return model_ids(models)
 
 
 def generator_supports_helpers(product_root, harness):
