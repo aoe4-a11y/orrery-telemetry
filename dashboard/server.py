@@ -59,12 +59,14 @@ if __name__ == '__main__':
 # `server.py` is both an executable script and an importable dashboard module
 # in the tests.  Support both import roots without coupling callers to cwd.
 try:
-    from dashboard import codex_models, mail_signals, provider_stalls, harness_runtime
+    from dashboard import codex_models, mail_signals, provider_stalls, harness_runtime, harness_helpers, harness_context
 except ModuleNotFoundError:  # direct `python dashboard/server.py`
     import codex_models
     import mail_signals
     import provider_stalls
     import harness_runtime
+    import harness_helpers
+    import harness_context
 
 try:
     from dashboard.providers.codex_app import CodexAppRuntimeProvider
@@ -1755,9 +1757,10 @@ def build_agents(history_days: float | None = HISTORY_DAYS_DEFAULT) -> list[dict
         # 稼働中はペイン直読みの runtime（HP・状態・経過時間・窓）を一括取得。
         # 4.5s TTL キャッシュ済みなので graph_payload との重複呼び出しは無料。
         rt = (
-            _agent_runtime(name, s.get("created"), s.get("session_id"))
-            if running and program not in harness_runtime.HARNESSES
-            else {}
+            (_native_context_runtime(name, s.get("created"), s.get("session_id"), program)
+             if program in harness_runtime.HARNESSES
+             else _agent_runtime(name, s.get("created"), s.get("session_id")))
+            if running else {}
         )
         pane_model = _pane_model_for(rt.get("pane_model"), (m or {}).get("program"))
         rows.append(
@@ -1792,8 +1795,9 @@ def build_agents(history_days: float | None = HISTORY_DAYS_DEFAULT) -> list[dict
                     or (m or {}).get("model_raw")
                     or (m or {}).get("model")
                     or (m or {}).get("program")),
-                "ctx_window": rt.get("ctx_window") or _ctx_window(
-                    (m or {}).get("model_raw") or (m or {}).get("model")),
+                "ctx_window": (rt.get("ctx_window") if program in harness_runtime.HARNESSES else
+                               rt.get("ctx_window") or _ctx_window(
+                                   (m or {}).get("model_raw") or (m or {}).get("model"))),
                 "ctx_used": rt.get("ctx_used"),
                 "act_state": rt.get("act_state"),
                 "provider_stall": _provider_stall_view(name, s) if running else None,
@@ -1850,7 +1854,7 @@ def build_agents(history_days: float | None = HISTORY_DAYS_DEFAULT) -> list[dict
                     "model": _display_model(r["model"]), "model_raw": r["model"],
                     "program": r["program"] or "",
                     "provider": _provider_of(r["model"]),
-                    "ctx_window": _ctx_window(r["model"]),
+                    "ctx_window": None if r["program"] in harness_runtime.HARNESSES else _ctx_window(r["model"]),
                     "ctx_used": None, "act_state": None,
                     "work_disp": None, "last_disp": None,
                     "task": r["task_description"] or "",
@@ -2477,9 +2481,10 @@ def graph_payload(days: float, show_all: bool) -> dict:
         # = exit 済でセッションだけ残った husk → idle ではなく finished
         # HP(ctx 残量) + 動作状態は running のみ取得（capture-pane 抑制）
         rt = (
-            _agent_runtime(name, s.get("created"), s.get("session_id"))
-            if running and program not in harness_runtime.HARNESSES
-            else {}
+            (_native_context_runtime(name, s.get("created"), s.get("session_id"), program)
+             if program in harness_runtime.HARNESSES
+             else _agent_runtime(name, s.get("created"), s.get("session_id")))
+            if running else {}
         )
         return {
             "present": True,
@@ -2516,7 +2521,8 @@ def graph_payload(days: float, show_all: bool) -> dict:
          "interaction": persistent_profiles.get(n["name"], {}).get("interaction", "unknown"),
          **(lv := live(n["name"], n.get("program"))),
          # 窓: running はペイン直読み(権威)、不在はモデル文字列で補完
-         "ctx_window": lv.get("ctx_window") or _ctx_window(n.get("model")),
+         "ctx_window": (lv.get("ctx_window") if n.get("program") in harness_runtime.HARNESSES
+                        else lv.get("ctx_window") or _ctx_window(n.get("model"))),
          # モデル: pane 由来を優先 (warm pool claim で DB が乖離するケース)
          #   display 形式に揃える (build_agents と同じ正規化)
          "model": _display_model(_pane_model_for(lv.get("pane_model"), n.get("program"))) or n.get("model"),
@@ -3416,6 +3422,8 @@ def do_resume(session: str, *, open_terminal: bool | None = None, replace_husk: 
       する別 agent(=子)の transcript」を誤マッチする(親 agent が子 agent の
       会話で復元される事故の実績あり)。program で先に分岐して回避する。"""
     program = _agent_program(session)
+    if program in harness_runtime.HARNESSES:
+        return _do_resume_native(session, program, open_terminal=open_terminal, replace_husk=replace_husk)
     if program.startswith("antigravity"):
         return {
             "ok": False,
@@ -4548,6 +4556,80 @@ def _codex_resume_provenance(
     return state, None
 
 
+def _native_resume_launcher_ready():
+    try:
+        return bool(re.search(r'^NATIVE_RESUME_CONTRACT=1$', Path(SPAWN_SCRIPT).read_text(), re.M))
+    except OSError:
+        return False
+
+
+def _native_resume_material(session, program):
+    registration = _resume_registration(session, {program})
+    if registration is None:
+        raise _ResumeCapabilityError('registration_missing', 'Native registration is unavailable')
+    module = _child_resume_module()
+    try:
+        state = module.inspect_retained(Path(RUNTIME_DIR), session,
+            agent_id=registration['agent_id'], project_key=registration['project_key'], program=program)
+        document = module.native_resume_input(Path(RUNTIME_DIR), state)
+    except module.ResumeStateError as error:
+        raise _ResumeCapabilityError(error.code, str(error)) from None
+    except (OSError, ValueError, TypeError):
+        raise _ResumeCapabilityError('config_unrestorable', 'Native resume material is unavailable') from None
+    if not _native_resume_launcher_ready():
+        raise _ResumeCapabilityError('cli_missing', 'Native resume launcher is unavailable')
+    return registration, state, document
+
+
+def _do_resume_native(session, program, *, open_terminal=None, replace_husk=False):
+    started = mail_changed = was_retired = False
+    registration = None
+    try:
+        module = _child_resume_module()
+        registration, state, document = _native_resume_material(session, program)
+        module.begin_resume(Path(RUNTIME_DIR), session, agent_id=registration['agent_id'],
+                            project_key=registration['project_key'], program=program)
+        started = True
+        # Reuse existing-owner authentication; never create a replacement identity.
+        registration = {**registration, 'model': document['model']}
+        was_retired = _register_claude_resume(session, registration, state['registration_token'])
+        mail_changed = True
+        _set_claude_mail_retired(session, registration, retired=False)
+        environment = {
+            'AGENTSTACK_HOME': str(Path(HOOKS_DIR).parent), 'AGENTSTACK_RUNTIME_DIR': RUNTIME_DIR,
+            'AGENTSTACK_HOOKS_DIR': HOOKS_DIR, 'AGENTSTACK_PROJECT_KEY': registration['project_key'],
+            'AGENTSTACK_MCP_URL': _env_text('AGENTSTACK_MCP_URL', 'http://127.0.0.1:18765/mcp'),
+            'AGENTSTACK_MAIL_ENV': MAIL_ENV_PATH, 'AGENTSTACK_MAIL_HTTP_BEARER_MODE': MAIL_HTTP_BEARER_MODE,
+            'AGENT_NAME': session, 'AGENTSTACK_RESERVED_IDENTITY': '1',
+        }
+        if os.environ.get('AGENTSTACK_PYTHON'):
+            environment['AGENTSTACK_PYTHON'] = os.environ['AGENTSTACK_PYTHON']
+        command = shlex.join(['/bin/bash', SPAWN_SCRIPT, '--resume-native', session])
+        launched = _launch_claude_resume_tmux(
+            ['tmux', 'new-session', '-A', '-s', session, '-c', document['cwd'],
+             *[arg for key, value in environment.items() for arg in ('-e', key + '=' + value)],
+             _login_shell(), '-lic', command], title=session,
+            open_terminal=open_terminal, replace_husk=replace_husk)
+        if not launched.get('ok'):
+            raise _ResumeCapabilityError('config_unrestorable', 'Native resume startup failed')
+    except Exception as error:
+        result = {'ok': False, 'resume_capability': getattr(error, 'code', 'config_unrestorable'),
+                  'error': 'Native resume prerequisites or startup could not be confirmed'}
+        if started:
+            try:
+                module.cancel_resume(Path(RUNTIME_DIR), session, agent_id=registration['agent_id'],
+                                     project_key=registration['project_key'])
+            except Exception:
+                result['rollback_errors'] = ['Native retained state could not be restored']
+        if mail_changed and was_retired:
+            _rollback_claude_mail(session, registration, result)
+        return result
+    _invalidate_resume_capability_cache(session)
+    return {'ok': True, 'action': 'resumed', 'resume_capability': 'ready',
+            'terminal': launched.get('adapter'),
+            **({'warning': launched['warning']} if launched.get('warning') else {})}
+
+
 def _resume_capability(
     session: str,
     program: str,
@@ -4576,10 +4658,18 @@ def _resume_capability(
     if not (
         normalized_program.startswith("claude")
         or normalized_program in _CODEX_PROGRAMS
+        or normalized_program in harness_runtime.HARNESSES
     ):
         return "unsupported_provider"
     if _resume_opens_terminal(open_terminal) and _terminal_adapter() == "none":
         return "terminal_unavailable"
+
+    if normalized_program in harness_runtime.HARNESSES:
+        try:
+            _native_resume_material(session, normalized_program)
+        except _ResumeCapabilityError as error:
+            return error.code
+        return 'ready'
 
     if normalized_program.startswith("claude"):
         if not verify_transcript:
@@ -5012,6 +5102,7 @@ def _block_text(content) -> list[tuple[str, str]]:
 def _resume_registration(session: str, programs: set[str]) -> dict | None:
     """Return the exact project registration, never an alias or another provider."""
 
+    include_profile = "claude" in programs or bool(programs.intersection(harness_runtime.HARNESSES))
     project_key = _project_key()
     if not project_key or not os.path.isfile(DB_PATH):
         return None
@@ -5020,7 +5111,7 @@ def _resume_registration(session: str, programs: set[str]) -> dict | None:
         program = (row["program"] or "") if row else ""
         if not row or program not in programs:
             return None
-        claude = "claude" in programs
+        claude = include_profile
         return {
             "agent_id": int(row["id"]),
             "agent_name": session,
@@ -5032,7 +5123,7 @@ def _resume_registration(session: str, programs: set[str]) -> dict | None:
     try:
         with _db() as con:
             con.row_factory = sqlite3.Row
-            profile_columns = ", a.model, a.task_description" if "claude" in programs else ""
+            profile_columns = ", a.model, a.task_description" if include_profile else ""
             row = con.execute(
                 f"SELECT a.id, a.program{profile_columns} FROM agents a "
                 "JOIN projects p ON a.project_id=p.id "
@@ -6486,6 +6577,33 @@ def _prune_runtime_cache(sessions: dict[str, dict]) -> None:
                 _provider_captures.pop(name, None)
 
 
+_NATIVE_CONTEXT_CACHE = {}
+
+
+def _native_context_runtime(session, created, session_id, program):
+    """Native footer context only; hidden status stays unknown on each capture."""
+    generation = (program, _runtime_generation(created, session_id))
+    now = time.monotonic()
+    with _rt_lock:
+        cached = _NATIVE_CONTEXT_CACHE.get(session)
+        if cached and cached[1] == generation and now - cached[0] < _RT_TTL:
+            return cached[2]
+    result = {'ctx_used': None, 'ctx_window': None}
+    if _valid(session):
+        try:
+            capture = _tmux_run(['capture-pane', '-p', '-J', '-t', '=' + session, '-S', '-45'],
+                                capture_output=True, text=True, timeout=3)
+            if capture.returncode == 0:
+                result = harness_context.parse_context(capture.stdout, program)
+        except (OSError, subprocess.SubprocessError):
+            pass
+    with _rt_lock:
+        if len(_NATIVE_CONTEXT_CACHE) > 512:
+            _NATIVE_CONTEXT_CACHE.clear()
+        _NATIVE_CONTEXT_CACHE[session] = (now, generation, result)
+    return result
+
+
 def _agent_runtime(
     session: str,
     session_created: int | None,
@@ -7651,8 +7769,10 @@ _SPAWN_TERMINATE_GRACE_SECONDS = 5.0
 _SPAWN_CLEANUP_GRACE_SECONDS = 150.0
 # After SIGKILL, only reap; nothing is left to finish.
 _SPAWN_KILL_REAP_SECONDS = 5.0
+# A final shared cleanup is separately bounded after failed startup.
+_SPAWN_FAILURE_CLEANUP_SECONDS = 30.0
 # The page's wait for an asynchronous verdict: never shorter than the 140s it
-# has always used, which is exactly the Claude/Codex worst case plus the margin.
+# has always used; current servers advertise their larger cleanup budget.
 _SPAWN_DEFAULT_WATCH_SECONDS = 140
 # Covers the page's 2s poll, the tmux probes and the credential checks that run
 # after the launcher is reaped but before the verdict is recorded.
@@ -7673,11 +7793,12 @@ def _spawn_verdict_deadline_seconds(spec: SpawnLaunchSpec) -> int:
     """Seconds the page should wait for an asynchronous launch verdict.
 
     Derived only from server constants and the trusted spec: readiness timeout,
-    then the full termination grace, then the post-SIGKILL reap.  A spawn
-    payload has no say in it.
+    then the full termination grace, the post-SIGKILL reap and the final
+    shared cleanup. A spawn payload has no say in it.
     """
     worst = (_SPAWN_READINESS_TIMEOUT_SECONDS + _spawn_termination_grace(spec)
-             + _SPAWN_KILL_REAP_SECONDS + _SPAWN_WATCH_MARGIN_SECONDS)
+             + _SPAWN_KILL_REAP_SECONDS + _SPAWN_FAILURE_CLEANUP_SECONDS
+             + _SPAWN_WATCH_MARGIN_SECONDS)
     return max(_SPAWN_DEFAULT_WATCH_SECONDS, math.ceil(worst))
 
 
@@ -7927,7 +8048,8 @@ def do_spawn(payload: dict) -> dict:
             or (provider not in ("deepseek", "strata") and "harness" in payload
                 and harness not in native.get(provider, ()))):
         return {"ok": False, "error": "unsupported harness", "error_code": "unsupported_harness"}
-    if payload.get("helper_model", "same") != "same":
+    helper_model = payload.get("helper_model")
+    if provider not in ("deepseek", "strata") and helper_model not in (None, "same"):
         return {"ok": False, "error": "unsupported helper model"}
     for field in ("model", "effort"):
         if payload.get(field) is not None and not isinstance(payload[field], str):
@@ -8035,9 +8157,16 @@ def do_spawn(payload: dict) -> dict:
                     "error_code": "spawn_pair_unavailable"}
         if effort and effort not in (selected.get("efforts") or []):
             return {"ok": False, "error": "effort not supported for model and harness"}
+        try:
+            helper = harness_helpers.validate_helper_model(helper_model,
+                selected.get('helper_models') or [harness_helpers.SAME])
+        except ValueError:
+            return {'ok': False, 'error': 'invalid helper model for model and harness',
+                    'error_code': 'invalid_helper_model'}
+        helper_args = ('--helper-model', helper) if helper != 'same' else ()
         spec = SpawnLaunchSpec(
             provider=provider, program=harness, model=model, script=SPAWN_SCRIPT,
-            provider_args=("--harness", harness, "--backend", provider) + tools_args,
+            provider_args=("--harness", harness, "--backend", provider) + helper_args + tools_args,
             effort=effort, effort_arg=bool(effort),
         )
     else:
@@ -8058,7 +8187,7 @@ def spawn_with_launch_spec(payload: dict, spec: SpawnLaunchSpec) -> dict:
     handoff = {"transferred": False}
 
     def discard_handoff() -> None:
-        if payload.get("dry_run") is True:
+        if payload.get("dry_run") is True or handoff.get('cleanup_unknown'):
             return
         for path in spec.handoff_paths:
             try:
@@ -8123,6 +8252,19 @@ def _codex_self_update_on_screen(session: str) -> bool:
         return False
     pane = getattr(result, "stdout", "")
     return isinstance(pane, str) and "Updating Codex via" in pane
+
+
+def _failed_spawn_cleanup(script: str, child_name: str, environment: dict) -> bool:
+    """The common launcher-owned cleanup decides what material to retain."""
+    helper = Path(script).with_name('cleanup-child-agent.sh')
+    if not helper.is_file():
+        return False
+    try:
+        result = subprocess.run(['/bin/bash', str(helper), child_name],
+            env=environment, capture_output=True, text=True, timeout=_SPAWN_FAILURE_CLEANUP_SECONDS)
+        return result.returncode == 0
+    except (OSError, subprocess.SubprocessError):
+        return False
 
 
 def _spawn_launch(payload: dict, request: dict, spec: SpawnLaunchSpec,
@@ -8404,6 +8546,22 @@ def _spawn_launch(payload: dict, request: dict, spec: SpawnLaunchSpec,
         except OSError:
             pass
 
+    def failed_spawn_result(error, **fields):
+        nonlocal token_created
+        cleanup_env = {**env, 'AGENTSTACK_RUNTIME_DIR': RUNTIME_DIR,
+                       'AGENTSTACK_HOOKS_DIR': str(Path(spec.script).parent),
+                       'AGENTSTACK_PROJECT_KEY': project_key}
+        if _failed_spawn_cleanup(spec.script, child_name, cleanup_env):
+            # A successful cleanup may intentionally retain a resumable child.
+            # Only the consumed one-shot handoff is ours to discard here.
+            remove_spawn_credentials(keep_owner_credential=True)
+            return retained_registration_error(error, **fields)
+        token_created = False
+        handoff['cleanup_unknown'] = True
+        return retained_registration_error(
+            error + '; cleanup is unconfirmed; owner state and credential handoff were retained',
+            cleanup_incomplete=True, cleanup_state='unknown', **fields)
+
     token_dir = os.path.join(RUNTIME_DIR, "spawn-tokens")
     try:
         os.makedirs(token_dir, mode=0o700, exist_ok=True)
@@ -8532,8 +8690,7 @@ def _spawn_launch(payload: dict, request: dict, spec: SpawnLaunchSpec,
                     error = ("spawn launcher did not finish readiness checks "
                              f"within {_SPAWN_READINESS_TIMEOUT_SECONDS:g}s")
                     if stopped or not spec.signal_process_group:
-                        remove_spawn_credentials()
-                        return retained_registration_error(
+                        return failed_spawn_result(
                             error, registration_may_remain=spec.signal_process_group)
                     # The launcher's own cleanup was killed midway, so nothing
                     # it created is known to be gone.  Say so, and keep a
@@ -8547,20 +8704,18 @@ def _spawn_launch(payload: dict, request: dict, spec: SpawnLaunchSpec,
                         cleanup_incomplete=True, **fields)
                 if returncode != 0:
                     kill_spawn_session()
-                    remove_spawn_credentials()
                     tail, reason = _spawn_log_tail_and_reason(log_path, log_start_offset)
                     error = f"spawn launcher exited with status {returncode}"
-                    return retained_registration_error(
+                    return failed_spawn_result(
                         f"{reason} ({error})" if reason else error,
                         detail=tail)
 
             probe = _tmux_run(['has-session', '-t', f'={child_name}'], capture_output=True, text=True)
             if probe.returncode:
                 kill_spawn_session()
-                remove_spawn_credentials()
                 tail, reason = _spawn_log_tail_and_reason(log_path, log_start_offset)
                 error = "spawn launcher exited before a live tmux session was created"
-                return retained_registration_error(
+                return failed_spawn_result(
                     f"{reason} ({error})" if reason else error,
                     detail=tail)
             return {
@@ -8610,8 +8765,7 @@ def _spawn_launch(payload: dict, request: dict, spec: SpawnLaunchSpec,
                     verdict = settle()
                 except Exception as e:  # noqa: BLE001
                     kill_spawn_session()
-                    remove_spawn_credentials()
-                    verdict = retained_registration_error(f"spawn launch failed: {e}")
+                    verdict = failed_spawn_result(f"spawn launch failed: {e}")
                 finally:
                     owned_log.close()
                     discard_handoff()
@@ -8624,8 +8778,7 @@ def _spawn_launch(payload: dict, request: dict, spec: SpawnLaunchSpec,
         result = settle()
     except Exception as e:  # noqa: BLE001
         kill_spawn_session()
-        remove_spawn_credentials()
-        return retained_registration_error(f"spawn launch failed: {e}")
+        return failed_spawn_result(f"spawn launch failed: {e}")
     finally:
         if log_fh is not None:
             log_fh.close()

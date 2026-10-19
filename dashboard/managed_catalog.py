@@ -16,8 +16,10 @@ import types
 
 
 if __package__:
+    from . import harness_helpers
     from .managed_capabilities import load_effort_capability, UNKNOWN
 else:
+    import harness_helpers
     from managed_capabilities import load_effort_capability, UNKNOWN
 
 
@@ -219,36 +221,51 @@ def load_standard_inputs(config_file, *, mode):
         if backend not in ('deepseek', 'strata') or not isinstance(spec, dict):
             continue
         availability[backend] = {}
-        for harness in ('dsh', 'hermes'):
-            reason, capability = None, dict(UNKNOWN)
-            try:
-                if mode != 'legacy':
-                    raise ValueError('unsupported_mode')
-                if sys.platform != 'darwin':
-                    raise ValueError('unsupported_platform')
-                opt_in = Path(__file__).with_name(harness + '-provider.json')
-                if opt_in.exists() and _read(opt_in).get('enabled') is not True:
-                    raise ValueError('disabled_by_opt_in')
-                runner = _thin_selection(config_file, harness, backend, spec['model'])
-                template = _read(runner['config_file'])
-                capability = load_effort_capability(template, harness=harness,
-                                                    backend_id=backend, model=spec['model'])
-            except ValueError as error:
-                # Only fixed product codes reach the public catalog.
-                code = str(error)
-                reason = code if re.fullmatch(r'[a-z][a-z0-9_]{0,63}', code) else 'runtime_not_prepared'
-            except (OSError, ImportError, SyntaxError, KeyError, TypeError, AttributeError, subprocess.SubprocessError):
-                reason = 'runtime_not_prepared'
-            availability[backend][harness] = {'available': reason is None,
-                                               'reason': reason, **capability}
+        for model in harness_helpers.configured_models(manifest, backend):
+            for harness in ('dsh', 'hermes'):
+                reason, capability, runner = None, dict(UNKNOWN), None
+                try:
+                    if mode != 'legacy':
+                        raise ValueError('unsupported_mode')
+                    if sys.platform != 'darwin':
+                        raise ValueError('unsupported_platform')
+                    opt_in = Path(__file__).with_name(harness + '-provider.json')
+                    if opt_in.exists() and _read(opt_in).get('enabled') is not True:
+                        raise ValueError('disabled_by_opt_in')
+                    runner = _thin_selection(config_file, harness, backend, model)
+                    template = _read(runner['config_file'])
+                    capability = load_effort_capability(template, harness=harness,
+                                                        backend_id=backend, model=model)
+                except ValueError as error:
+                    # Only fixed product codes reach the public catalog.
+                    code = str(error)
+                    reason = code if re.fullmatch(r'[a-z][a-z0-9_]{0,63}', code) else 'runtime_not_prepared'
+                except (OSError, ImportError, SyntaxError, KeyError, TypeError, AttributeError, subprocess.SubprocessError):
+                    reason = 'runtime_not_prepared'
+                availability[backend][(model, harness)] = {'available': reason is None,
+                                                   'reason': reason, '_selection': runner if reason is None else None, **capability}
     return backends, availability, True
 
 
 def standard_catalog(config_file, *, mode):
     """Standard spawn choices; legacy managed jobs retain their own checks."""
     backends, availability, enabled = load_standard_inputs(config_file, mode=mode)
-    providers = catalog_providers(backends, availability, mode=mode, enabled=enabled)
+    primary = {}
+    for backend, statuses in availability.items():
+        model = backends[backend].get('model')
+        primary[backend] = {h: statuses.get((model, h), {}) if isinstance(model, str) else {}
+                            for h in ('dsh', 'hermes')}
+    providers = catalog_providers(backends, primary, mode=mode, enabled=enabled)
+    manifest = {'backends': backends}
     for provider in providers:
+        backend = provider['id']
+        statuses = availability.get(backend, {})
+        provider['models'] = harness_helpers.model_rows(manifest, backend,
+            selections={pair: status.get('_selection') for pair, status in statuses.items()},
+            statuses=statuses, product_root=Path(__file__).resolve().parents[1])
+        ids = [row['id'] for row in provider['models']]
+        if provider['default_model'] not in ids:
+            provider['default_model'] = ids[0] if ids else None
         provider.pop('managed', None)
         provider.pop('helper_models', None)
-    return providers
+    return [provider for provider in providers if provider['models']]

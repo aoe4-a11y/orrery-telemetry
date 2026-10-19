@@ -81,9 +81,11 @@ def test_views_and_controls_agree_on_native_liveness(monkeypatch, tmp_path, aliv
         monkeypatch.setattr(server, function, lambda: {})
     monkeypatch.setattr(server, '_retired_names', lambda *a: set())
     monkeypatch.setattr(server, '_project_key', lambda: '')
+    monkeypatch.setattr(server, '_ctx_window', lambda *a: 'FORBIDDEN_FALLBACK')
     monkeypatch.setattr(server, '_resume_capability_for_row', lambda *a, **k: 'not_required')
     monkeypatch.setattr(server, '_provider_stall_view', lambda *a: None)
     monkeypatch.setattr(server, '_agent_runtime', lambda *a: pytest.fail('foreign TUI parser'))
+    monkeypatch.setattr(server, '_native_context_runtime', lambda *a: {'ctx_used': None, 'ctx_window': None})
     monkeypatch.setattr(server, '_raw_graph', lambda: dict(nodes=[dict(
         name=name, program='dsh', model='gpt-fixture', last_active=200, retired=False)],
         edges=[], spawn=[]))
@@ -93,6 +95,7 @@ def test_views_and_controls_agree_on_native_liveness(monkeypatch, tmp_path, aliv
     for row in (roster, lookup, node):
         assert row['running'] is (alive is True)
         assert row['provider'] == 'strata' and row['harness'] == 'dsh'
+        assert row.get('ctx_window') is None
     assert roster['category'] == lookup['category'] == ('finished' if alive is False else 'agent')
     assert node['state'] == ('unknown' if alive is None else 'run' if alive else 'finished')
     monkeypatch.setattr(server, '_managed_spawn_manager', lambda: SimpleNamespace(stop=lambda _: None))
@@ -142,3 +145,48 @@ def test_shared_helper_import_is_independent_of_cwd(monkeypatch, tmp_path):
     monkeypatch.chdir('/')
     assert managed_catalog._thin_selection('manifest', 'dsh', 'strata', 'model') == (
         17, ('manifest', 'dsh', 'strata', 'model'))
+
+
+def test_each_model_gets_its_own_capability_and_helper_choices(monkeypatch, tmp_path):
+    manifest = tmp_path / 'manifest.json'
+    config = tmp_path / 'config.json'
+    config.write_text('{}')
+    manifest.write_text(json.dumps({'enabled': True, 'backends': {'strata': {
+        'model': 'main-model', 'models': ['main-model', 'small-model']}}}))
+    monkeypatch.setattr(managed_catalog, '__file__', str(tmp_path / 'managed_catalog.py'))
+    monkeypatch.setattr(managed_catalog.sys, 'platform', 'darwin')
+    monkeypatch.setattr(managed_catalog.harness_helpers, 'generator_supports_helpers', lambda *a: True)
+    selected = []
+    def select(file, harness, backend, model):
+        selected.append((model, harness))
+        if harness == 'hermes':
+            raise ValueError('generator_unavailable')
+        return {'config_file': str(config)}
+    monkeypatch.setattr(managed_catalog, '_thin_selection', select)
+    monkeypatch.setattr(managed_catalog, 'load_effort_capability', lambda *a, **k: {
+        'efforts': ['high'] if k['model'] == 'main-model' else ['low'],
+        'default_effort': None, 'effort_source': 'harness'})
+    row = managed_catalog.standard_catalog(str(manifest), mode='legacy')[0]
+    first, second = row['models']
+    assert first['harnesses'][0]['efforts'] == ['high']
+    assert second['harnesses'][0]['efforts'] == ['low']
+    assert [entry['id'] for entry in second['harnesses'][0]['helper_models']] == [
+        'same', 'main-model', 'small-model']
+    assert second['harnesses'][1]['available'] is False
+    assert len(selected) == 4
+    assert '_selection' not in json.dumps(row)
+
+
+def test_native_context_unknown_never_reuses_previous_footer(monkeypatch):
+    server._NATIVE_CONTEXT_CACHE.clear()
+    clock = [100.0]
+    capture = ['ctx 19% (24k/128k)']
+    monkeypatch.setattr(server.time, 'monotonic', lambda: clock[0])
+    monkeypatch.setattr(server, '_tmux_run', lambda *a, **k: SimpleNamespace(
+        returncode=0, stdout=capture[0]))
+    first = server._native_context_runtime('FixtureAgent', 100, '$1', 'dsh')
+    assert first == {'ctx_used': 19, 'ctx_window': '128K'}
+    capture[0] = 'footer hidden'
+    clock[0] += server._RT_TTL + 1
+    assert server._native_context_runtime('FixtureAgent', 100, '$1', 'dsh') == {
+        'ctx_used': None, 'ctx_window': None}

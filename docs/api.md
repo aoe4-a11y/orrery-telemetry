@@ -590,7 +590,7 @@ request:
 | `dir` | no | 存在する working directory。既定は source repo |
 | `provider` | no | `claude`（既定）、`codex`、`deepseek`、`strata`。Local の表示グループも送信 ID は `strata` |
 | `harness` | DeepSeek / Local 必須 | `dsh` または `hermes`。Claude は `claude-code`（従来 alias `claudecode`）、Codex は `codex-cli`（従来 alias `codex`）を省略可 |
-| `helper_model` | no | 省略または `same`。別 helper を黙って無視せず拒否する |
+| `helper_model` | no | 省略または `same` は主モデルを継承。DeepSeek / Local は選択した model × harness の `helper_models` にある同 backend の正式 ID も指定可。未提供・別 backend の ID は拒否 |
 | `model` | DeepSeek / Local 必須 | 正式 ID。DeepSeek / Local は選択した provider と harness の有効な catalog entry と一致必須。Claude / Codex は既存の省略時の既定を維持 |
 | `effort` | no | 明示時だけ送る。Claude / Codex は `model_efforts` / `model_effort_defaults`、DeepSeek / Local は選択した model × harness の能力で検証。未指定は CLI 設定を使用し、能力不明の値は推測しない |
 | `role` | no | 最大40文字 |
@@ -609,6 +609,8 @@ API 8 では、`tools: {}` または `base: "default"` を明示すると `--bas
 `base` か `tools` で選択した child は、選択どおりにできなければ（Mail の proxy が無い、server を写せない、computer use が有効な project での `mail-only` など）起動しません。形の誤りはここで 400、child の起動ディレクトリで決まる誤りは launcher の失敗として返ります。Gemini など他の provider では、`mail-only` と `tools` を拒否します。
 
 未知の request field はモデル解決や起動の前に HTTP 400 で拒否します。任意の Gemini provider を導入した環境では `resources` も受け付けます（[Gemini の委任](delegation.md)を参照）。他の provider では拒否します。
+
+起動失敗後は launcher と同じ共通 cleanup を呼びます。cleanup が確認に失敗した場合、応答は `ok: false`・`cleanup_state: "unknown"`・`cleanup_incomplete: true` となり、API は子の state・owner credential・handoff を消しません。cleanup が正常に完了した場合も、保持期間内の再開に必要な state と資格を API が追加で削除することはありません。
 
 `"dry_run": true` を付けると request を検証し、provider・model・effort・directory を解決した起動プレビューを HTTP 200 で返します。
 

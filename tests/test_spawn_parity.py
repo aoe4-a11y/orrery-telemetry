@@ -138,11 +138,12 @@ def test_registration_binding_and_response_use_standard_name_contract(
 
 def test_standard_catalog_shares_i5_without_managed_ui_metadata(monkeypatch, tmp_path):
     capability = {'available': True, 'efforts': ['low', 'high'],
-                  'default_effort': 'high', 'effort_source': 'harness'}
+                  'default_effort': 'high', 'effort_source': 'harness',
+                  '_selection': {'config_file': 'fixture'}}
     monkeypatch.setattr(managed_catalog, '__file__', str(tmp_path / 'managed_catalog.py'))
     monkeypatch.setattr(managed_catalog, 'load_standard_inputs', lambda *a, **k: (
         {'deepseek': {'model': 'deepseek-fixture', 'effort': 'low'}},
-        {'deepseek': {'dsh': capability}}, True))
+        {'deepseek': {('deepseek-fixture', 'dsh'): capability}}, True))
     row = managed_catalog.standard_catalog('fixture-manifest', mode='legacy')[0]
     assert 'managed' not in row and 'helper_models' not in row
     selected = row['models'][0]['harnesses'][0]
@@ -154,6 +155,70 @@ def test_standard_catalog_shares_i5_without_managed_ui_metadata(monkeypatch, tmp
 
 def test_standard_catalog_is_off_without_config():
     assert managed_catalog.standard_catalog(None, mode='legacy') == []
+
+
+def test_explicit_helper_uses_selected_harness_catalog(preview, catalog):
+    selected = catalog[0]['models'][0]['harnesses'][0]
+    selected['helper_models'] = [{'id': 'same'}, {'id': 'small-fixture'}]
+    payload = {**preview, 'provider': 'deepseek', 'harness': 'dsh',
+               'model': 'deepseek-fixture', 'helper_model': 'small-fixture'}
+    result = server.do_spawn(payload)
+    assert result['ok']
+    index = result['argv'].index('--helper-model')
+    assert result['argv'][index + 1] == 'small-fixture'
+    assert '--helper-model' not in server.do_spawn({**payload, 'helper_model': 'same'})['argv']
+    selected['helper_models'] = [{'id': 'same'}]
+    rejected = server.do_spawn(payload)
+    assert not rejected['ok'] and rejected['error_code'] == 'invalid_helper_model'
+
+
+@pytest.mark.parametrize('provider,harness', [('claude', None), ('codex', None), ('deepseek', 'dsh')])
+@pytest.mark.parametrize('cleanup_ok', [False, True])
+def test_cleanup_result_preserves_canonical_state(preview, monkeypatch, tmp_path, provider, harness, cleanup_ok):
+    runtime = tmp_path / 'runtime'
+    monkeypatch.setattr(server, 'RUNTIME_DIR', str(runtime))
+    monkeypatch.setattr(server, 'HERE', str(tmp_path))
+    monkeypatch.setattr(server, '_spawn_name_status', lambda _: 'available')
+    monkeypatch.setattr(server, '_mcp_call', lambda *a, **k: {'ok': True, 'data': {
+        'id': 73, 'name': 'FixtureAgent', 'registration_token': 'fixture-token'}})
+    class Proc:
+        def wait(self, timeout=None):
+            return 2
+    monkeypatch.setattr(server.subprocess, 'Popen', lambda *a, **k: Proc())
+    monkeypatch.setattr(server, '_tmux_run', lambda *a, **k: SimpleNamespace(returncode=0))
+    owner = runtime / 'agent_token_FixtureAgent'
+    state = runtime / 'child-agents/FixtureAgent.json'
+    def cleanup(script, name, environment):
+        owner.write_text('fixture-token')
+        state.parent.mkdir(parents=True, exist_ok=True)
+        state.write_text('{"fixture":true}')
+        return cleanup_ok
+    monkeypatch.setattr(server, '_failed_spawn_cleanup', cleanup)
+    payload = {**preview, 'provider': provider, 'name': 'FixtureAgent', 'dry_run': False}
+    spec = server.SpawnLaunchSpec(provider=provider,
+        program=harness or ('claude-code' if provider == 'claude' else 'codex-cli'),
+        model='fixture-model', script=server.SPAWN_SCRIPT)
+    result = server.spawn_with_launch_spec(payload, spec)
+    assert not result['ok']
+    if cleanup_ok:
+        assert 'cleanup_incomplete' not in result
+    else:
+        assert result['cleanup_state'] == 'unknown'
+    assert owner.read_text() == 'fixture-token' and state.read_text() == '{"fixture":true}'
+    assert len(list((runtime / 'spawn-tokens').glob('*.token'))) == (0 if cleanup_ok else 1)
+
+
+def test_cleanup_helper_uses_only_launcher_sibling_and_fixed_timeout(monkeypatch, tmp_path):
+    launcher = tmp_path / 'spawn_child.sh'
+    assert not server._failed_spawn_cleanup(str(launcher), 'FixtureAgent', {})
+    helper = tmp_path / 'cleanup-child-agent.sh'
+    helper.write_text('#!/bin/bash\nexit 1\n')
+    def run(argv, **kwargs):
+        assert argv == ['/bin/bash', str(helper), 'FixtureAgent']
+        assert kwargs['timeout'] == 30 and kwargs['env'] == {'FIXTURE': '1'}
+        return SimpleNamespace(returncode=1)
+    monkeypatch.setattr(server.subprocess, 'run', run)
+    assert not server._failed_spawn_cleanup(str(launcher), 'FixtureAgent', {'FIXTURE': '1'})
 
 
 
