@@ -609,7 +609,7 @@ def _update_watch(tmp_path, screens: list[str], *, alive_polls: int = 99, limit:
         '  printf "%s\\n" "$*" >> "$DIR/calls"\n'
         '  local i; i="$(cat "$DIR/i")"\n'
         '  case "$1" in\n'
-        '    has-session) [[ -f "$DIR/killed" ]] && return 1; (( i < ALIVE )) ;;\n'
+        '    has-session) if [[ -f "$DIR/killed" ]] || (( i >= ALIVE )); then echo "can\'t find session: Child" >&2; return 1; fi ;;\n'
         '    capture-pane) (( CAPTURE_FAILS )) && return 1; cat "$DIR/screen$(( i < SCREENS ? i : SCREENS - 1 ))" ;;\n'
         '    kill-session) (( KILL_FAILS )) && return 1; : > "$DIR/killed" ;;\n'
         "  esac\n"

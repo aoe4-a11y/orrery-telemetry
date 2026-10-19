@@ -2338,35 +2338,34 @@ codex_self_update_on_screen() {
     tmux capture-pane -t "=$1" -p 2>/dev/null | grep -q 'Updating Codex via'
 }
 
-# A Codex child left updating keeps running after the launcher's cleanup has
-# rolled its registration back, so it must not go on to work: retired, and
-# (with --worktree) in a directory nobody would keep. Its worktree is left to
-# this watch, which runs in the background after the launcher exits:
-# - the session closed by itself (codex ended after the update and the launch
-#   line ran its cleanup): remove the worktree;
-# - the update is no longer on screen but codex still runs: close the session,
-#   then remove the worktree;
-# - still updating at the limit: leave both and say so in the incident log.
-# Args: session worktree worktree-source child limit-seconds poll-seconds.
+# An updating Codex keeps its working directory until this watch confirms
+# the session stopped. Direct-registration failures also hand their retained
+# Mail identity to the watch; it confirms cleanup before removing the worktree.
+# Preregistered startup rollback remains owned by its separate failure trap.
+# A still-running update or unconfirmed stop/cleanup keeps recovery material.
+# Args: session worktree worktree-source child limit-seconds poll-seconds
+#       cleanup-required (direct registration only; preregistered rollback is separate).
 codex_update_watch() {
     local session="$1" worktree="$2" source="$3" child="$4" limit="${5:-600}" poll="${6:-5}" waited=0
-    local log="${SPAWN_INCIDENT_LOG:-/dev/null}" pane
+    local cleanup_required="${7:-false}" log="${SPAWN_INCIDENT_LOG:-/dev/null}" pane
+    local probe_status probe_output stopped=false
     while (( waited < limit )); do
-        if ! tmux has-session -t "=$session" 2>/dev/null; then
+        probe_status=0
+        probe_output="$(tmux has-session -t "=$session" 2>&1)" || probe_status=$?
+        if [[ "$probe_status" != 0 ]]; then
+            if [[ "$probe_status" == 1 && "$probe_output" == *"can't find session"* ]]; then
+                stopped=true
+            fi
             break
         fi
         # A capture that fails says nothing about the update: wait.
         if pane="$(tmux capture-pane -t "=$session" -p 2>/dev/null)" \
             && ! printf '%s' "$pane" | grep -q 'Updating Codex via'; then
-            tmux kill-session -t "=$session" >/dev/null 2>&1 || true
-            # Its worktree is a live codex's cwd until the session is gone.
-            if tmux has-session -t "=$session" 2>/dev/null; then
-                printf '%s %s\n' "$(date '+%Y-%m-%dT%H:%M:%S%z')" \
-                    "WARNING: Codex update finished in session $session, but the session could not be closed; left it with its worktree. Close it with 'tmux kill-session -t $session'." >> "$log" 2>/dev/null || true
-                return 0
+            if tmux kill-session -t "=$session" >/dev/null 2>&1; then
+                probe_status=0
+                tmux has-session -t "=$session" >/dev/null 2>&1 || probe_status=$?
+                [[ "$probe_status" != 1 ]] || stopped=true
             fi
-            printf '%s %s\n' "$(date '+%Y-%m-%dT%H:%M:%S%z')" \
-                "Codex update finished in session $session; closed it (its registration was rolled back when the spawn failed)" >> "$log" 2>/dev/null || true
             break
         fi
         sleep "$poll"
@@ -2377,6 +2376,23 @@ codex_update_watch() {
             "WARNING: Codex in session $session is still updating after ${limit}s; left running with its worktree. Close it with 'tmux kill-session -t $session' once the update is done, then spawn again." >> "$log" 2>/dev/null || true
         return 0
     fi
+    if [[ "$stopped" != true ]]; then
+        printf '%s %s\n' "$(date '+%Y-%m-%dT%H:%M:%S%z')" \
+            "WARNING: Codex update session $session could not be closed or its absence confirmed; cleanup unknown, credentials, state and worktree retained." >> "$log" 2>/dev/null || true
+        return 1
+    fi
+    if [[ "$cleanup_required" == true ]]; then
+        if ! AGENTSTACK_CHILD_RESUME_RETENTION_DAYS=0 /bin/bash "$HOOKS_DIR/cleanup-child-agent.sh" "$child"; then
+            printf '%s %s\n' "$(date '+%Y-%m-%dT%H:%M:%S%z')" \
+                "WARNING: Codex update finished in session $session; Mail cleanup unknown, credentials, state and worktree retained." >> "$log" 2>/dev/null || true
+            return 1
+        fi
+        printf '%s %s\n' "$(date '+%Y-%m-%dT%H:%M:%S%z')" \
+            "Codex update finished in session $session; stopped and reservation release and retirement confirmed." >> "$log" 2>/dev/null || true
+    else
+        printf '%s %s\n' "$(date '+%Y-%m-%dT%H:%M:%S%z')" \
+            "Codex update finished in session $session; stopped after preregistered startup rollback." >> "$log" 2>/dev/null || true
+    fi
     if [[ -n "$worktree" && -d "$worktree" && -n "$source" ]]; then
         git -C "$source" worktree remove --force "$worktree" 2>/dev/null || true
         git -C "$source" branch -D "exp/${child}" 2>/dev/null || true
@@ -2385,10 +2401,10 @@ codex_update_watch() {
 
 # Leave an updating Codex child running and hand its worktree to the watch.
 leave_updating_codex_child() {
-    local session="$1" limit="${AGENTSTACK_CODEX_UPDATE_WATCH_SECONDS:-600}"
+    local session="$1" cleanup_required="${2:-false}" limit="${AGENTSTACK_CODEX_UPDATE_WATCH_SECONDS:-600}"
     CODEX_UPDATE_LEFT_RUNNING=true
-    spawn_note "WARNING: Codex is updating itself in session $session; left running so the install is not cut off. A background watch closes it when the update is over (up to ${limit}s) and then removes its worktree; see $SPAWN_INCIDENT_LOG. Spawn again afterwards."
-    ( codex_update_watch "$session" "${WORKTREE_DIR:-}" "${WORKTREE_SOURCE:-}" "${CHILD_NAME:-$session}" "$limit" 5 ) \
+    spawn_note "WARNING: Codex is updating itself in session $session; left running so the install is not cut off. A background watch closes it when the update is over (up to ${limit}s) and removes its worktree after any required Mail cleanup is confirmed; see $SPAWN_INCIDENT_LOG. Spawn again afterwards."
+    ( codex_update_watch "$session" "${WORKTREE_DIR:-}" "${WORKTREE_SOURCE:-}" "${CHILD_NAME:-$session}" "$limit" 5 "$cleanup_required" ) \
         </dev/null >/dev/null 2>&1 &
     disown 2>/dev/null || true
 }
@@ -4016,6 +4032,7 @@ fi
 # 一瞬 tmux session が作られていても child credentials と予約を回収する。
 SPAWN_COMPLETED=false
 CHILD_SESSION_STARTED=false
+CHILD_SESSION_START_PENDING=false
 cleanup_on_failure() {
     if [[ "$SPAWN_COMPLETED" == true ]]; then
         return
@@ -4024,11 +4041,17 @@ cleanup_on_failure() {
         cleanup_harness_failure || echo "Harness cleanup unconfirmed; recovery state retained" >&2
         return
     fi
+    if [[ "${CHILD_SESSION_START_PENDING:-false}" == true ]]; then
+        # A client failure does not prove whether the server created a pane.
+        # Do not kill a same-named session whose ownership was not confirmed.
+        echo "[spawn_child] creation unconfirmed; recovery state and worktree retained" >&2
+        return 1
+    fi
     warn_if_uninjected
     rm -f "${CODEX_PROMPT_FILE:-}" "${CLAUDE_CHILD_PROMPT_FILE:-}"
     if [[ "$CHILD_SESSION_STARTED" == true && -n "${CHILD_NAME:-}" ]]; then
         if [[ "$USE_CODEX" == true ]] && codex_self_update_on_screen "$CHILD_NAME"; then
-            leave_updating_codex_child "$CHILD_NAME"
+            leave_updating_codex_child "$CHILD_NAME" true
             # The updater still owns its identity and working directory.
             return 1
         fi
@@ -4051,7 +4074,7 @@ cleanup_on_failure() {
     fi
     if [[ -n "${CHILD_NAME:-}" ]]; then
         echo "[spawn_child] cleanup: confirming reservation release and retirement for $CHILD_NAME" >&2
-        if ! /bin/bash "$HOOKS_DIR/cleanup-child-agent.sh" "$CHILD_NAME"; then
+        if ! AGENTSTACK_CHILD_RESUME_RETENTION_DAYS=0 /bin/bash "$HOOKS_DIR/cleanup-child-agent.sh" "$CHILD_NAME"; then
             echo "[spawn_child] cleanup unconfirmed; recovery state and worktree retained" >&2
             return 1
         fi
@@ -4295,6 +4318,7 @@ elif [[ "$USE_CODEX" == true ]]; then
         exit 1
     fi
     TMUX_ENV_ARGS+=(-e "AGENTSTACK_CODEX_PROMPT_FILE=$CODEX_PROMPT_FILE")
+    CHILD_SESSION_START_PENDING=true
     tmux new-session -d -s "$CHILD_NAME" \
         -c "$WORK_DIR" \
         "${TMUX_ENV_ARGS[@]}" \
@@ -4334,6 +4358,7 @@ elif [[ "$USE_CODEX" == true ]]; then
             /bin/bash "$AGENTSTACK_HOOKS_DIR/cleanup-child-agent.sh"
         '"'"''
     CHILD_SESSION_STARTED=true
+    CHILD_SESSION_START_PENDING=false
     SPAWN_TRAP_SESSION="$CHILD_NAME"
     echo "[spawn_child] Waiting for Codex to start the task..." >&2
     WATCH_STATUS=0
@@ -4387,6 +4412,7 @@ else
     CLAUDE_READY_PROMPT_ECHO="$(claude_prompt_echo_head "$CHILD_PROMPT" "$CHILD_NAME")"
     CLAUDE_CHILD_SYSTEM_PROMPT="$(claude_child_system_prompt "$CHILD_NAME" "$PARENT_NAME" "$CHILD_MCP_CONFIG")"
     CLAUDE_LAUNCH_EPOCH="$(date +%s)"
+    CHILD_SESSION_START_PENDING=true
     tmux new-session -d -s "$CHILD_NAME" \
         -c "$WORK_DIR" \
         "${TMUX_ENV_ARGS[@]}" \
@@ -4399,6 +4425,7 @@ else
         ${CLAUDE_CHROME_TMUX_ENV[@]+"${CLAUDE_CHROME_TMUX_ENV[@]}"} \
         "$(claude_child_launch_command)"
     CHILD_SESSION_STARTED=true
+    CHILD_SESSION_START_PENDING=false
     SPAWN_TRAP_SESSION="$CHILD_NAME"
     # Claude REPL起動待機
     echo "[spawn_child] Waiting for Claude REPL..." >&2

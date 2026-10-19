@@ -117,7 +117,7 @@ private な `harness_state_dir` に初期 prompt・native launch plan・共通 r
 
 終了は Codex と同じ `cleanup-child-agent.sh <name>` を使います。すべての provider で、予約の解放・retire の応答・`whois` の retired 確認に失敗したら、identity の state と owner credential を保持して非0を返します。
 
-通常の Claude・Codex の直接登録による起動も、登録後に失敗したら停止を確認してから同じ cleanup を呼びます。停止や Mail の確認ができなければ state・credential・worktree を残し、起動は非0で終わります。Codex が自身を更新中なら既存の watch に任せ、動いている間は資格と worktree を保持します。pre-registered の起動 rollback は従来どおりです。
+通常の Claude・Codex の直接登録による起動も、登録後に失敗したら停止を確認してから同じ cleanup を呼びます。作成要求の応答が未確認なら、同名の別 session を止めないため kill・予約解放・retire をせず、state・credential・worktree を残します。停止や Mail の確認ができない場合も保持し、起動は非0で終わります。失敗した起動は確認付き retire 後に資格と state を即削除し、正常終了の再開用 retention は適用しません。Codex が自身を更新中なら watch に資格を引き継ぎ、停止と共通 cleanup の確認後だけ worktree を片付けます。未確認ならその旨を記録して保持します。pre-registered の起動 rollback は従来どおりです。
 
 pre-registered child へ親 token は渡しません。dashboard spawn は child 専用 token を生成し、mode `0600` の一時 token file 経由で `spawn_child.sh --pre-registered` へ渡します。Claude / Codex では正式な登録応答の数値 ID・name・project・program を非秘密の `.binding.json` sidecar に添えます。launcher は token と sidecar を検証します。Claude / Codex とも incoming receipt の正式 ID・name・project・provider と token の安全性を保存前に検証し、CLI の起動準備が成功してから一時 handoff を消費します。検証失敗では handoff と既存 canonical state / credential を変更しません。起動失敗では今回作ったファイルだけを片付け、置き換えた既存の canonical material を private undo record から戻します。token を transcript、command-line argument、dashboard response に表示しません。
 
