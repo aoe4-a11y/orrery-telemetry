@@ -72,9 +72,11 @@ class InstallTests(unittest.TestCase):
                     file.write_text('synthetic original upstream')
                     files.append({'file': name, 'sha256': hashlib.sha256(file.read_bytes()).hexdigest()})
                 receipt = root / 'evidence/upstream-runtime.json'
-                installer.save(receipt, {'variant': 'plain', 'source_patch': None, 'files': files})
+                variant = 'plain-datadir' if kwargs.get('datadir') else 'plain'
+                installer.save(receipt, {'variant': variant, 'source_patch': 'tui-datadir-v1' if kwargs.get('datadir') else None,
+                    'recipe_sha256': hashlib.sha256((ROOT / 'integrations/dsh/tui-datadir.patch.json').read_bytes()).hexdigest(), 'files': files})
                 return {'node': str(node), 'runtime': str(runtime), 'runtime_receipt': str(receipt),
-                        'variant': 'plain', 'thin_config_contract': 1}
+                        'variant': variant, 'thin_config_contract': 1}
             recipe = ROOT / 'integrations/dsh/tui-managed.patch'
             changes = []
             for name in {r['file'] for r in installer.read(recipe)['replacements']}:
@@ -119,7 +121,7 @@ class InstallTests(unittest.TestCase):
         self.assertEqual(sentinel.read_text(), 'existing managed runtime')
         current = installer.read(self.install / 'harnesses/dsh/current.json')
         receipt = installer.read(current['generation_receipt'])
-        self.assertEqual(receipt['variant'], 'plain')
+        self.assertEqual(receipt['variant'], 'plain-datadir')
         self.assertEqual(receipt['thin_config_contract'], 1)
         self.assertEqual(receipt['details']['generation_receipt'], current['generation_receipt'])
         self.assertNotEqual(Path(current['runtime']).parent, old)
@@ -275,7 +277,7 @@ class AcquisitionTests(unittest.TestCase):
                     files = {'package/package.json': json.dumps({'version': item['version']}),
                              'package/lib/probe.js': 'old-one\nold-two\n',
                              'package/node_modules/bundled/package.json': '{"version":"bundled-original"}'}
-                    files.update({'package/' + name: 'native original ' + name for name in installer.UPSTREAM_PROOF_FILES})
+                    files.update({'package/' + name: installer.read(ROOT / 'integrations/dsh/tui-datadir.patch.json')['old'] if name.endswith('utils/paths.js') else 'native original ' + name for name in installer.UPSTREAM_PROOF_FILES})
                     for name, content in files.items():
                         member = tarfile.TarInfo(name)
                         member.size = len(content.encode())
@@ -287,6 +289,7 @@ class AcquisitionTests(unittest.TestCase):
         installer.save(self.repo / 'integrations/dsh/runtime-package-lock.json', {'packages': {'': {'dependencies': {'fixture': 'file:../evidence/package-0.tgz'}}}})
         installer.save(self.repo / 'integrations/dsh/ui-package.json', {'dependencies': {'bundled': '1.0.0', 'missing': '1.0.0'}})
         installer.save(self.repo / 'integrations/dsh/ui-package-lock.json', {'lockfileVersion': 3})
+        installer.save(self.repo / 'integrations/dsh/tui-datadir.patch.json', installer.read(ROOT / 'integrations/dsh/tui-datadir.patch.json'))
         installer.save(self.repo / 'integrations/dsh/tui-managed.patch', {'replacements': [
             {'file': 'lib/probe.js', 'old': 'old-one', 'new': 'new-one'},
             {'file': 'lib/probe.js', 'old': 'old-two', 'new': 'new-two'}]})
@@ -382,6 +385,23 @@ class AcquisitionTests(unittest.TestCase):
         (tui / installer.UPSTREAM_PROOF_FILES[0]).write_text('changed')
         with self.assertRaisesRegex(ValueError, 'upstream runtime changed'):
             installer.validate(self.repo, 'dsh', receipt)
+
+    def test_datadir_acquisition_is_one_line_and_preimage_is_required(self):
+        with patch.object(installer, 'run', side_effect=self.fake_run):
+            details = installer.install_dsh(self.repo, self.root, str(self.node), self.cache, plain=True, datadir=True)
+        receipt = {'harness': 'dsh', 'complete': True, 'variant': 'plain-datadir', 'thin_config_contract': 1, 'details': details}
+        installer.validate(self.repo, 'dsh', receipt)
+        recipe = installer.read(self.repo / 'integrations/dsh/tui-datadir.patch.json')
+        tui = self.root / 'runtime/node_modules/@deepseek-harness-tui/dsh-tui'
+        self.assertEqual((tui / recipe['file']).read_text(), recipe['new'])
+        self.assertEqual((tui / 'lib/probe.js').read_text(), 'old-one\nold-two\n')
+        self.assertNotEqual(installer.generation_id(self.repo, 'dsh'), installer.generation_id(self.repo, 'dsh', datadir=False))
+        recipe['old'] = 'wrong native version'
+        installer.save(self.repo / 'integrations/dsh/tui-datadir.patch.json', recipe)
+        with self.assertRaisesRegex(ValueError, 'preimage mismatch'), patch.object(installer, 'run', side_effect=self.fake_run):
+            second = self.base / 'second-generation'
+            second.mkdir()
+            installer.install_dsh(self.repo, second, str(self.node), self.cache, plain=True, datadir=True)
 
     def test_sha512_mismatch_stops_before_npm(self):
         (self.cache / 'package-0.tgz').write_bytes(b'wrong tarball')

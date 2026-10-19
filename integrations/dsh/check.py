@@ -108,7 +108,8 @@ def main():
                                   str(ROOT / 'tests/test_dsh_egress.mjs'), str(ROOT / 'tests/test_dsh_capabilities.mjs'),
                                   str(ROOT / 'tests/test_dsh_provider_error.mjs'),
                                   str(ROOT / 'tests/test_dsh_thin_tools.mjs'),
-                                  str(ROOT / 'tests/test_dsh_thin_credentials.mjs')], env=env,
+                                  str(ROOT / 'tests/test_dsh_thin_credentials.mjs'),
+                                  str(ROOT / 'tests/test_dsh_tui_datadir.mjs')], env=env,
                                  stdout=log, stderr=subprocess.STDOUT, timeout=120)
         n, f, e, s = node_result(tap.read_text(), run.returncode)
         totals += n; failures += f; errors += e; skips += s

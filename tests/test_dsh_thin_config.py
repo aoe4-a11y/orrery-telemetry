@@ -44,10 +44,12 @@ class ThinTests(unittest.TestCase):
         source.parent.mkdir()
         source.write_text('unmodified native fixture')
         native = self.runtime.parent / 'evidence/upstream-runtime.json'
-        thin.save(native, {'variant': 'plain', 'source_patch': None,
+        thin.save(self.integration / 'tui-datadir.patch.json', thin.read(ROOT / 'integrations/dsh/tui-datadir.patch.json'))
+        thin.save(native, {'variant': 'plain-datadir', 'source_patch': 'tui-datadir-v1',
+            'recipe_sha256': hashlib.sha256((self.integration / 'tui-datadir.patch.json').read_bytes()).hexdigest(),
             'files': [{'file': 'lib/native.js', 'sha256': hashlib.sha256(source.read_bytes()).hexdigest()}]})
         owner = self.runtime.parent / '.orrery-managed-install.json'
-        thin.save(owner, {'harness': 'dsh', 'complete': True, 'variant': 'plain', 'thin_config_contract': 1,
+        thin.save(owner, {'harness': 'dsh', 'complete': True, 'variant': 'plain-datadir', 'thin_config_contract': 1,
             'details': {'node': str(self.node), 'runtime': str(self.runtime), 'runtime_receipt': str(native)}})
         backends = self.root / 'backends.json'
         thin.save(backends, {'backends': {'strata': {'base_url': 'https://strata.invalid', 'model': 'a',
@@ -78,7 +80,7 @@ class ThinTests(unittest.TestCase):
         with patch('subprocess.run', side_effect=AssertionError('subprocess forbidden')):
             plan = thin.generate(self.doc)
         self.assertEqual(plan['argv'][:2], [str(self.node), str(self.runtime / 'node_modules/@deepseek-ai/dsh/lib/bin.js')])
-        self.assertEqual(set(plan['env']), {'DSH_HOME', 'AGENTSTACK_LLM_KEY_FILES', 'AGENTSTACK_LLM_KEY_DEFINITIONS'})
+        self.assertEqual(set(plan['env']), {'DSH_HOME', 'DSH_TUI_DATA_DIR', 'AGENTSTACK_LLM_KEY_FILES', 'AGENTSTACK_LLM_KEY_DEFINITIONS'})
         rows = self.rows(plan)
         self.assertFalse(any(row.get('disabled') for row in rows))
         self.assertIn('credentials', next(row for row in rows if row.get('id') == 'llm-deepseek')['inject'])
@@ -123,7 +125,7 @@ class ThinTests(unittest.TestCase):
             self.assertFalse(home.exists())
             self.assertEqual(list(self.state.iterdir()), [])
 
-    def test_old_managed_generation_and_missing_key_plugin_are_not_ready(self):
+    def test_old_plain_generation_and_missing_key_plugin_are_not_ready(self):
         plugin = self.integration / 'keychain_credentials.mjs'
         plugin.unlink()
         with self.assertRaisesRegex(ValueError, 'credential_adapter_unavailable'):
@@ -131,7 +133,7 @@ class ThinTests(unittest.TestCase):
         plugin.write_text('synthetic file')
         template = thin.read(self.template)
         owner = thin.read(template['generation_receipt'])
-        owner.pop('variant')
+        owner['variant'] = 'plain'
         thin.save(template['generation_receipt'], owner)
         with self.assertRaisesRegex(ValueError, 'plain_runtime_required'):
             thin.validate_input(self.doc)
@@ -161,6 +163,23 @@ class ThinTests(unittest.TestCase):
         inherited.write_text('- insert: [{name: arbitrary-plugin}]')
         with self.assertRaisesRegex(ValueError, 'inherited_mcp_conflict'):
             thin.generate(self.doc)
+
+    def test_child_tui_state_and_selected_models_are_independent(self):
+        user = self.root / '.dsh-tui/model.json'
+        thin.save(user, {'provider': 'user-provider', 'model': 'user-choice'})
+        before = user.read_bytes()
+        a = thin.generate(self.doc)
+        b_state = self.root / 'child-b'
+        b_state.mkdir()
+        b = thin.generate({**self.doc, 'agent_name': 'ChildB', 'state_dir': str(b_state), 'model': 'b'})
+        a_file = Path(a['env']['DSH_TUI_DATA_DIR']) / 'model.json'
+        b_file = Path(b['env']['DSH_TUI_DATA_DIR']) / 'model.json'
+        self.assertNotEqual(a_file, b_file)
+        self.assertEqual(thin.read(a_file)['model'], 'a')
+        self.assertEqual(thin.read(b_file)['model'], 'b')
+        thin.save(a_file, {'provider': 'deepseek-official', 'model': 'changed-in-a'})
+        self.assertEqual(thin.read(b_file)['model'], 'b')
+        self.assertEqual(user.read_bytes(), before)
 
     def test_cli_failure_is_one_fixed_reason_without_input_content(self):
         Path(self.doc['prompt_file']).write_text('PRIVATE_PROMPT')
