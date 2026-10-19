@@ -36,7 +36,7 @@ class FileTask(unittest.TestCase):
         inputs = runner.read(self.fixture.config_path)
         inputs['profiles']['strata'].update(context_length=131072)
         runner.save(self.fixture.config_path, inputs)
-        runner.initialize(self.fixture.config_path, self.state, 'strata', self.product.run, file_task=True)
+        runner.initialize(self.fixture.config_path, self.state, 'strata', self.product.run, file_task=True, selftest=True)
         mail_lifecycle.register(self.state, self.product.run, generate_config=False)
         runner.configure(self.state, self.product.run)
         self.config = runner.read(self.state / 'run-config.json')
@@ -96,7 +96,7 @@ class FileTask(unittest.TestCase):
         unsafe_path = self.root / 'unsafe-input.json'
         runner.save(unsafe_path, unsafe)
         with self.assertRaisesRegex(ValueError, 'dedicated worktree'):
-            runner.initialize(unsafe_path, self.root / 'unsafe-state', 'strata', self.product.run, file_task=True)
+            runner.initialize(unsafe_path, self.root / 'unsafe-state', 'strata', self.product.run, file_task=True, selftest=True)
         self.assertFalse(Path(unsafe['worktree']).exists())
         self.reservations()
         callbacks = self.plugin()
@@ -272,7 +272,7 @@ class FileTask(unittest.TestCase):
             path = self.root / 'invalid-limit.json'
             runner.save(path, bad)
             with self.assertRaisesRegex(ValueError, 'request limit'):
-                runner.initialize(path, self.root / 'invalid-limit-state', 'deepseek', self.product.run, file_task=True)
+                runner.initialize(path, self.root / 'invalid-limit-state', 'deepseek', self.product.run, file_task=True, selftest=True)
             runner.save(self.state / 'run-config.json', {**self.config, 'provider_request_limit': value})
             with self.assertRaises(ValueError):
                 provider_audit.Policy(self.state)
@@ -289,7 +289,7 @@ class FileTask(unittest.TestCase):
         path = self.root / 'larger-trial-input.json'
         runner.save(path, inputs)
         state = self.root / 'larger-trial-state'
-        runner.initialize(path, state, 'deepseek', self.product.run, file_task=True)
+        runner.initialize(path, state, 'deepseek', self.product.run, file_task=True, selftest=True)
         self.assertEqual(runner.read(state / 'run-config.json')['provider_request_limit'], 100)
         # Runtime policy reads the same value without requiring another profile.
         runner.save(self.state / 'run-config.json', {**self.config, 'provider_request_limit': 100})

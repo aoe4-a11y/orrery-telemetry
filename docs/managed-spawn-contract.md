@@ -91,3 +91,5 @@ I1 dsh と I2 完了後の Hermes は両 mode が available、requires_parent=fa
 親なしの正式な Mail 報告は、実在する宛先を利用者が明示し whois で確認する形を後続で受け付ける。最小段ではその report_to 選択は未対応であり、mail を完了条件にする経路は親への報告だけ。これは互換上の暫定で、恒久的な親必須仕様ではない。親なしの通常 send_message は既に許可し、pane 報告で起動できる。
 
 新dshの各modeは requires_scope=false・requires_expected=false。旧Hermes assignmentだけ両方trueを公開する。assignmentのexpectedがありallowed_paths=[]なら、expected.pathはworktree内のliteral相対pathとして検査する。成果物検査の未指定は適用外であり、架空の成果物成功に置き換えない。
+
+Hermes I2がinteractive capabilityを公開した場合、固定profileの記憶は維持しつつattemptごとのconfig overlayを使う。同backendでも、新要求と既存attemptの保存済capabilities.interactiveがともにtrueなら並行起動を許す。旧batch又はcapability不明の稼働中attemptとの混在は、共有configを書き換えるため登録前にprofile_busyで拒否する。I2未導入のadapterのconversation gateは維持する。

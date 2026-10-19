@@ -4,9 +4,33 @@ Run with Hermes's installed dependency interpreter. Only command references,
 never a literal API key or another profile's memory/auth/env, are copied.
 """
 import argparse
+import ast
 import json
 from pathlib import Path
 import sys
+from urllib.parse import urlsplit
+
+
+def builtin_provider_ids(source):
+    """Read the pinned registry as data, without credential/plugin discovery."""
+    tree = ast.parse((Path(source) / 'hermes_cli' / 'auth.py').read_text())
+    rows = next((node.value for node in tree.body if isinstance(node, ast.AnnAssign)
+                 and isinstance(node.target, ast.Name) and node.target.id == '_REGISTRY_ROWS'), None)
+    if not isinstance(rows, (ast.Tuple, ast.List)) or not rows.elts:
+        raise ValueError('Pinned Hermes provider registry is unavailable')
+    names = {'openrouter'}  # resolve_provider's explicit canonical special case.
+    for row in rows.elts:
+        first = row.elts[0] if isinstance(row, ast.Tuple) and row.elts else row.args[0] if isinstance(row, ast.Call) and row.args else None
+        if not isinstance(first, ast.Constant) or not isinstance(first.value, str):
+            raise ValueError('Pinned Hermes provider registry shape changed')
+        names.add(first.value)
+    return frozenset(names)
+
+
+def validate_provider_name(provider, source):
+    if not isinstance(provider, str) or provider.strip().lower() in builtin_provider_ids(source):
+        raise ValueError('Managed provider name collides with a Hermes built-in provider')
+    return provider
 
 
 def load_template(path):
@@ -34,6 +58,9 @@ def project(spec, profile, auxiliary_tasks):
             or mode not in ('chat_completions', 'anthropic_messages')
             or not isinstance(route.get('key_cmd'), str) or not route['key_cmd'].strip()):
         raise ValueError('Explicit provider/model/HTTPS route/transport/key command reference required')
+    url = urlsplit(base)
+    if not url.hostname or url.username is not None or url.password is not None or url.query or url.fragment:
+        raise ValueError('Managed route must not contain URL credentials, query or fragment')
     # Canonical route spelling: aux inherits this named entry's key_cmd rather
     # than losing it by flattening into an unnamed custom endpoint.
     route = {'base_url': base, 'api_mode': mode, 'model': model,

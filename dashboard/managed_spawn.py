@@ -319,6 +319,10 @@ class Manager:
                         old = read(previous / 'request.json', {}).get('request', {})
                         status = read(previous / 'status.json', {})
                         if old.get('harness') == 'hermes' and old.get('provider') == request['provider']:
+                            # Both adapters use attempt-owned config overlays.
+                            # A legacy attempt still writes shared profile config.
+                            if interactive and status.get('capabilities', {}).get('interactive') is True:
+                                continue
                             if (status.get('finished') is not True
                                     or ((previous / 'state/registration-intent.json').exists()
                                         and status.get('runtime_success') is not True)):
@@ -491,8 +495,9 @@ def run_job(job, *, adapter=None, parent_call=None, run=None, sleep=time.sleep, 
                 shutil.copyfile(src, dest)
         projected = dict(source)
         projected.pop('startup_timeout_seconds', None)
-        if request['harness'] == 'dsh':
-            projected.pop('task_timeout_seconds', None)
+        # Template trial deadlines do not define a managed runtime's lifetime.
+        # Explicit runtime run-config deadlines remain supported by the CLI.
+        projected.pop('task_timeout_seconds', None)
         if request.get('effort') is not None:
             if request['harness'] == 'dsh':
                 backend = read(projected['backend_file'])

@@ -36,7 +36,8 @@ def product_env(config):
             'PROJECT_KEY': config['project_key'], 'AGENTSTACK_PYTHON': config['proxy_python'],
             'AGENTSTACK_RUNTIME_DIR': connection['runtime_dir'], 'AGENTSTACK_MCP_URL': connection['mcp_url'],
             'AGENTSTACK_MAIL_ENV': connection['mail_env'],
-            'AGENTSTACK_MAIL_HTTP_BEARER_MODE': connection['bearer_mode']}
+            'AGENTSTACK_MAIL_HTTP_BEARER_MODE': connection['bearer_mode'],
+            **({'PARENT_AGENT': config['parent']} if config.get('parent') else {})}
 
 
 def require_legacy(config, run=subprocess.run):
@@ -106,7 +107,7 @@ def generate(state, run=subprocess.run):
          '--runner', str(runner), '--child', name, '--project-key', config['project_key'],
          '--token-file', str(token), '--mcp-url', connection['mcp_url'], '--mail-env', connection['mail_env'],
          '--runtime-dir', connection['runtime_dir'], '--bearer-mode', connection['bearer_mode'],
-         '--python-bin', config['proxy_python'], '--parent-agent', config['parent'],
+         '--python-bin', config['proxy_python'], '--parent-agent', config.get('parent') or '',
          '--claude-json', str(empty), '--chrome', '0'], env=env, cwd=state,
         capture_output=True, text=True, check=True, timeout=30)
     return generated_proxy(state)
@@ -134,7 +135,7 @@ def generated_proxy(state):
                 'AGENTSTACK_MCP_URL': connection['mcp_url'], 'AGENTSTACK_MAIL_ENV': connection['mail_env'],
                 'AGENTSTACK_MAIL_HTTP_BEARER_MODE': connection['bearer_mode'],
                 'AGENTSTACK_RUNTIME_DIR': connection['runtime_dir'], 'AGENTSTACK_PYTHON': config['proxy_python'],
-                'AGENTSTACK_PROXY_PARENT_AGENT': config['parent']}
+                **({'AGENTSTACK_PROXY_PARENT_AGENT': config['parent']} if config.get('parent') else {})}
     if proxy['env'] != expected:
         raise ValueError('Generated proxy binding or environment changed')
     # Preserve the product's PROGRAM too: remote whois checks program=hermes.
@@ -222,9 +223,15 @@ def confirm_retire(state, input_file):
             or receipt.get('agent_name') != attempt['agent_name'] or type(receipt.get('cleanup_exit_code')) is not int):
         raise ValueError('Cleanup receipt is missing or belongs to another attempt')
     datetime.fromisoformat(who['retired_at'].replace('Z', '+00:00'))
-    receipt.update(retired_at=who['retired_at'], confirmed=True, source='parent-bound-whois', checked_at=stamp())
+    source = 'dashboard-bound-whois' if config_is_interactive(state) else 'parent-bound-whois'
+    receipt.update(retired_at=who['retired_at'], confirmed=True, source=source, checked_at=stamp())
     save(state / 'retire-receipt.json', receipt)
     return receipt
+
+
+def config_is_interactive(state):
+    path = Path(state) / 'run-config.json'
+    return path.exists() and read(path).get('runtime_mode') == 'interactive'
 
 
 def record_mail(state, input_file):

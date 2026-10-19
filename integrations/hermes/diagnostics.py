@@ -4,7 +4,7 @@ import shlex
 import subprocess
 
 from mail_lifecycle import read, save, stamp
-from runner import base_env
+from runner import base_env, profile_config_path
 
 
 def scan(state, run=subprocess.run):
@@ -17,7 +17,7 @@ def scan(state, run=subprocess.run):
             raise ValueError('Owned credential scan evidence unavailable; never read the key again')
         return report
     profile = Path(config['profile_home'])
-    route = read(profile / 'config.yaml')['providers'][config['provider']]
+    route = read(profile_config_path(config))['providers'][config['provider']]
     result = run(shlex.split(route['key_cmd']), env=base_env(config),
                  capture_output=True, timeout=15)
     secret = result.stdout.rstrip(b'\r\n') if result.returncode == 0 else b''

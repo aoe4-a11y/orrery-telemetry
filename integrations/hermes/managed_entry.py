@@ -7,7 +7,7 @@ import sys
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from mail_lifecycle import read, save, stamp
-from runner import check_configured, digest, pilot_toolsets
+from runner import check_configured, digest, pilot_toolsets, profile_config_path
 from task_evidence import audit, callers, event
 
 
@@ -51,7 +51,7 @@ def disable_live_metadata(state):
     Inference requests and the denying transport policy are unchanged.
     """
     config = read(Path(state) / 'run-config.json')
-    profile = read(Path(config['profile_home']) / 'config.yaml')
+    profile = read(profile_config_path(config))
     if profile.get('model_catalog', {}).get('enabled') is not False:
         raise ValueError('Managed entry requires live model catalogs disabled')
     from agent import model_metadata
@@ -81,7 +81,16 @@ def load_guard(state):
             raise ValueError('Managed profile or source dotenv exists')
     deny_dotenv(state)
     sys.path.insert(0, config['hermes_source'])
+    # Importing the native config loader discovers provider plugins, which can
+    # consult dotenv before the first explicit load_config call.
     skip_absent_dotenv(state)
+    if config.get('runtime_config'):
+        from runtime_profile import install as install_profile
+        install_profile(config)
+        from runtime_profile import require_prepared
+        require_prepared(config)
+    from runtime_profile import isolate_tool_profiles
+    isolate_tool_profiles(config)
     disable_live_metadata(state)
     from hermes_cli import plugins
     from task_plugin import assert_registered
@@ -92,7 +101,7 @@ def load_guard(state):
     task = read(state / 'task.json')
     from reservation_guard import create_guard
     guard = create_guard(read(state / 'attempt.json'), task, lambda row: None)
-    for spec in task['expected']:
+    for spec in ([] if task.get('interactive') is True else task['expected']):
         if guard('write_file', {'path': str(Path(task['worktree']) / spec['path'])}):
             raise ValueError('Current task reservation is not usable')
     return config, identity
@@ -118,7 +127,7 @@ def execute(state, check=False):
         proof = {'attempt_id': read(Path(state) / 'attempt.json')['attempt_id'],
                  'agent_name': identity['agent_name'], 'guard_loaded': True,
                  'task_sha256': digest(Path(state) / 'task.json'),
-                 'profile_sha256': digest(Path(config['profile_home']) / 'config.yaml'),
+                 'profile_sha256': digest(profile_config_path(config)),
                  'source': 'installed-plugin-manager', 'checked_at': stamp()}
         save(Path(state) / 'preflight-complete.json', proof)
         return 0
@@ -126,23 +135,49 @@ def execute(state, check=False):
     install(state)
     # The same manager/callback survives profile resolution: HERMES_HOME already
     # pins this exact profile. No separate preflight marker substitutes for it.
-    profile = read(Path(config['profile_home']) / 'config.yaml')
+    profile = read(profile_config_path(config))
     sys.argv = [config['hermes_executable'], '-p', config['profile_name'], '-z',
                 (Path(state) / 'task.md').read_text(), '--provider', config['provider'], '-m', config['model'],
                 '-t', ','.join(pilot_toolsets(profile, file_task=True)),
                 '--usage-file', str(Path(state) / 'hermes-turn.json')]
+    interactive = config.get('runtime_mode') == 'interactive'
+    if interactive:
+        if not sys.stdin.isatty() or not sys.stdout.isatty():
+            raise ValueError('Interactive Hermes requires the owned pane TTY')
+        from interactive import activity, cli_arguments
+        sys.argv = cli_arguments(config, state)
+        activity(state, 'starting')
+        os.environ['HERMES_EPHEMERAL_SYSTEM_PROMPT'] = read(Path(state) / 'runtime-instructions.json')['text']
     scan = None
     if config.get('credential_mode') == 'owned-once':
         from owned_credential import install as credential
         scan = credential(state)
     try:
-        from hermes_cli import main as main_module
-        from hermes_cli import oneshot
         from task_plugin import assert_registered
         from hermes_cli import plugins
         assert_registered(plugins.get_plugin_manager(), state)
-        oneshot._write_usage_file = turn_writer(state)
-        if scan:
+        if interactive:
+            from tools.mcp_tool_discovery import register_mcp_servers
+            from tools.mcp_tool_schema import mcp_prefixed_tool_name
+            names = register_mcp_servers(profile['mcp_servers'])
+            expected = {mcp_prefixed_tool_name('orrery_mail', name) for name in read(Path(state) / 'mail-probe.json')['tools']}
+            if set(names) != expected:
+                raise ValueError('Native MCP roster differs from the authenticated product schema')
+            # Native chat accepts registered MCP toolsets; the batch parser's
+            # pre-discovery server-name spelling is a different interface.
+            selected = ['mcp-orrery_mail', 'memory', 'skills', 'session_search', 'orrery_file']
+            import cli
+            from interactive import observe_chat, constrain_native_surface
+            observe_chat(cli.HermesCLI, state)
+            constrain_native_surface(cli.HermesCLI, state)
+            return cli.main(query=(Path(state) / 'task.md').read_text() or None,
+                            provider=config['provider'], model=config['model'],
+                            toolsets=','.join(selected), oneshot=False)
+        else:
+            from hermes_cli import main as main_module
+            from hermes_cli import oneshot
+            oneshot._write_usage_file = turn_writer(state)
+        if scan and not interactive:
             from owned_credential import wrap_exit
             wrap_exit(main_module, scan)
         return main_module.main()
