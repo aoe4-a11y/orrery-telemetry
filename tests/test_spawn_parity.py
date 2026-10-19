@@ -232,13 +232,3 @@ def test_native_tools_use_shared_program_contract(preview, harness):
     default = server.do_spawn({**preview, 'provider': 'strata', 'harness': harness,
         'model': 'strata-fixture', 'tools': {}})
     assert default['argv'][default['argv'].index('--base') + 1] == 'default'
-
-
-
-
-
-
-
-
-
-
