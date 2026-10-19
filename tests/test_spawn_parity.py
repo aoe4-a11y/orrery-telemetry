@@ -20,8 +20,6 @@ def catalog(monkeypatch):
         for provider in ('deepseek', 'strata')
     ]
     monkeypatch.setattr(server, '_spawn_catalog_providers', lambda: rows)
-    monkeypatch.setattr(server, '_managed_spawn_manager',
-                        lambda: pytest.fail('standard spawn entered managed controller'))
     monkeypatch.setattr(server, '_mcp_call', lambda *a, **k: pytest.fail('unexpected registration'))
     return rows
 
@@ -375,3 +373,24 @@ def test_log_directory_failure_returns_unknown_and_preserves_handoff(preview, mo
     handoffs = list((runtime / 'spawn-tokens').glob('*.token'))
     assert len(handoffs) == 1 and handoffs[0].read_text() == 'fixture-token'
     assert Path(str(handoffs[0]) + '.binding.json').exists()
+
+
+def test_retired_attempt_request_is_rejected_before_standard_spawn(catalog):
+    result = server.do_spawn({'attempt_id': 'old-attempt', 'provider': 'deepseek',
+                              'harness': 'dsh', 'model': 'deepseek-fixture'})
+    assert result['ok'] is False
+    assert result['error_code'] == 'unsupported_attempt'
+
+
+@pytest.mark.parametrize('query', ['attempt_id=old', 'attempt_id=', 'name=Child&attempt_id=old'])
+def test_retired_attempt_status_is_rejected_without_standard_lookup(monkeypatch, query):
+    monkeypatch.setattr(server, 'GLOBAL_MODE', False)
+    monkeypatch.setattr(server, 'spawn_launch_status', lambda *a: pytest.fail('unexpected name lookup'))
+    monkeypatch.setattr(server, 'spawn_launch_statuses', lambda: pytest.fail('unexpected list lookup'))
+    responses = []
+    request = SimpleNamespace(path='/api/spawn-status?' + query,
+                              _send=lambda *args: responses.append(args))
+    server.Handler.do_GET(request)
+    code, body, _ = responses.pop()
+    assert code == 404
+    assert json.loads(body)['error_code'] == 'unsupported_attempt'

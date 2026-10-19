@@ -78,9 +78,7 @@ Telemetry 自体の操作は、header の `HELP MAP`（NETWORK では `SETTINGS`
 
 - [専用 tmux 起動・終了の受け入れ計画](r2-tb-lifecycle-plan-v3.md) — R2-Tb の確定 caller 表・schema・中断点と fixture。
 
-- [管理された子の要求・状態と lifecycle](managed-spawn-contract.md)
-- [dsh stage A-min](dsh-stage-a-min.md)
 - [dsh の標準 CLI 起動](dsh-thin.md)
 
 - [Native context と helper model](native-capabilities.md) — dsh / Hermes の context 読取とモデル別の能力。
-- [Managed catalog](managed-catalog.md)
+- [Native catalog and effort capabilities](managed-catalog.md)

@@ -65,7 +65,7 @@ curl -s http://127.0.0.1:8770/api/version
 ```
 
 ```json
-{"name":"orrery-telemetry","version":"2026.09.16.1","api":23}
+{"name":"orrery-telemetry","version":"2026.09.16.1","api":25}
 ```
 
 See [Installation](install.en.md#version) for version resolution order.
@@ -704,8 +704,5 @@ Each item returns `liveness`, nullable `act_state` / `ctx_used`, `session_count`
 
 Capabilities include `global_runtime_observation=1` and `operator_session=1`. Global `/api/quotas` and `/portrait` use the same admission and existing read helpers. Images use shared-session `apiBlob` object URLs, revoked on Lock.
 
-Managed spawn (legacy, opt-in): see [request/status contract](managed-spawn-contract.md). In API 23, only DeepSeek/Local requests explicitly carrying `attempt_id` enter the legacy managed test path and return 202 on acceptance. Normal New Agent requests omit this field and use the standard response. Existing `GET /api/spawn-status?attempt_id=<UUID>` and managed job stop remain available during migration. No separate managed POST endpoint is added.
 
-## Managed interactive sessions (API 22)
-
-Managed spawn accepts an optional parent and initial prompt. `task_mode` is `conversation` or `assignment`; `report_policy` is `pane` or `mail`. A task report does not close the session. Only close, retire or runtime exit starts cleanup. Conversations have no task success verdict. Status separates `task_evaluation`, `activity`, `latest_turn`, and the actual private `worktree` from runtime/cleanup results. All normal product Mail tools remain available without a parent. Additional instructions use the pane; automatic incoming-Mail handoff is not connected yet. See [the managed contract](managed-spawn-contract.md).
+API 25: legacy managed `attempt_id` spawn/status requests are retired and return `unsupported_attempt`. Use standard `POST /api/spawn` and `GET /api/spawn-status?name=<name>`.

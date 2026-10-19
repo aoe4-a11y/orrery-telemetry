@@ -98,7 +98,6 @@ def test_views_and_controls_agree_on_native_liveness(monkeypatch, tmp_path, aliv
         assert row.get('ctx_window') is None
     assert roster['category'] == lookup['category'] == ('finished' if alive is False else 'agent')
     assert node['state'] == ('unknown' if alive is None else 'run' if alive else 'finished')
-    monkeypatch.setattr(server, '_managed_spawn_manager', lambda: SimpleNamespace(stop=lambda _: None))
     if alive is not False:
         assert server.do_kill(name)['ok'] is False
 

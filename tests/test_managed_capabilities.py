@@ -103,15 +103,14 @@ class CapabilitiesTests(unittest.TestCase):
         if not runtime or not node:
             self.skipTest('explicit fixed Node/runtime required')
         import shutil
-        from dashboard.managed_catalog import load_catalog_inputs, catalog_providers
+        from dashboard.managed_catalog import standard_catalog
         # Runtime code stays read-only; all produced evidence is in this HOME.
         shutil.rmtree(Path(self.template['runtime']))
         Path(self.template['runtime']).symlink_to(Path(runtime).resolve(), target_is_directory=True)
         for backend in self.backends.values():
             backend.update(base_url='https://fixture.invalid', keychain={'service':'fixture-service','account':'fixture-account'})
         self.save(Path(self.template['backend_file']), {'backends':self.backends})
-        self.template.update(node=node, product_root=str(self.root/'product'),
-            patch_receipt=str(Path(runtime).resolve().parent/'evidence/tui-patch-applied.json'))
+        self.template.update(node=node, product_root=str(self.root/'product'))
         for name in ('bin/agentstack-preregister-child','hooks/child_tools.py',
                      'hooks/cleanup-child-agent.sh','integrations/codex_app/plugin/scripts/run-mcp.sh'):
             p=Path(self.template['product_root'])/name;p.parent.mkdir(parents=True,exist_ok=True)
@@ -123,9 +122,13 @@ class CapabilitiesTests(unittest.TestCase):
         with patch.dict(os.environ, {'DEEPSEEK_API_KEY':'dummy-should-not-leave-parent'}):
             result=c.refresh_dsh_capabilities(ROOT,self.template,self.manifest)
         self.assertEqual(result['extraction_status'],'known')
-        with patch('dashboard.managed_catalog.sys.platform','darwin'):
-            backends, availability, enabled=load_catalog_inputs(self.manifest,mode='legacy')
-        providers=catalog_providers(backends,availability,mode='legacy',enabled=enabled)
+        def selection(file, harness, backend, model):
+            if harness != 'dsh':
+                raise ValueError('runtime_not_prepared')
+            return {'config_file': str(self.root/'template.json')}
+        with patch('dashboard.managed_catalog.sys.platform','darwin'), patch(
+                'dashboard.managed_catalog._thin_selection', side_effect=selection):
+            providers=standard_catalog(self.manifest,mode='legacy')
         for provider in providers:
             dsh,hermes=provider['models'][0]['harnesses']
             self.assertTrue(dsh['available'])
@@ -141,7 +144,7 @@ class CapabilitiesTests(unittest.TestCase):
             p=Path(directory)
             for name in ('managed_capabilities.py','managed_catalog.py','harness_helpers.py'):
                 (p/name).write_bytes((ROOT/'dashboard'/name).read_bytes())
-            script='import sys;sys.path.insert(0,'+repr(str(p))+');import managed_catalog;print(managed_catalog.catalog_providers({}, {}, mode="legacy", enabled=True))'
+            script='import sys;sys.path.insert(0,'+repr(str(p))+');import managed_catalog;print(managed_catalog.standard_catalog(None, mode="legacy"))'
             r=subprocess.run([sys.executable,'-I','-B','-c',script],cwd='/',env={'PATH':os.defpath},text=True,capture_output=True)
             self.assertEqual(r.returncode,0,r.stderr);self.assertEqual(r.stdout.strip(),'[]')
 

@@ -44,7 +44,7 @@ import urllib.request
 from urllib.parse import urlparse, parse_qs
 
 # Public dashboard compatibility generation (docs/tests read this source).
-API_GENERATION = 23
+API_GENERATION = 25
 # Mode admission is shared with hooks and operator/service entry points.
 import runpy as _runtime_runpy
 _MODE_API = _runtime_runpy.run_path(str(Path(__file__).resolve().parents[1] / 'bin/lib/runtime_client.py'))
@@ -6980,10 +6980,6 @@ def do_kill(session: str, mode: str = "both") -> dict:
       - hard_delete は使わない (ORRERY Mail timestamp 情報を保持し
         _transcript_path() の finished-branch 探索を温存)
     """
-    managed_stop = _managed_spawn_manager().stop(session)
-    if managed_stop is not None:
-        return managed_stop
-
     if mode not in ("both", "tmux", "retire"):
         return {"ok": False, "error": "invalid mode"}
     if not _valid(session):
@@ -7335,27 +7331,6 @@ def _spawn_scientist_statuses(
     return dict(statuses)
 
 
-def _managed_spawn_module():
-    # The managed path is dormant unless the operator configures its manifest.
-    try:
-        from dashboard import managed_spawn
-    except ModuleNotFoundError:
-        import managed_spawn
-    return managed_spawn
-
-
-def _managed_spawn_manager():
-    return _managed_spawn_module().Manager(
-        os.environ.get("AGENTSTACK_MANAGED_SPAWN_CONFIG"),
-        selected_mode="global" if GLOBAL_MODE else "legacy")
-
-
-def _managed_catalog_providers():
-    return _managed_spawn_module().catalog(
-        os.environ.get("AGENTSTACK_MANAGED_SPAWN_CONFIG"),
-        selected_mode="global" if GLOBAL_MODE else "legacy")
-
-
 def _standard_catalog_module():
     # provider_server loads this core by file with no package, even when the
     # dashboard package is available. Try that root before direct-script mode.
@@ -7369,8 +7344,7 @@ def _standard_catalog_module():
 
 
 def _spawn_catalog_providers():
-    # Reuse keyless configuration checks and the I5 capability evidence, without
-    # constructing the managed controller or importing its runtime adapters.
+    # Share launcher configuration checks and the I5 capability evidence.
     return _standard_catalog_module().standard_catalog(
         os.environ.get("AGENTSTACK_MANAGED_SPAWN_CONFIG"),
         mode="global" if GLOBAL_MODE else "legacy")
@@ -8046,10 +8020,9 @@ def do_spawn(payload: dict) -> dict:
     """
     if not isinstance(payload, dict):
         return {"ok": False, "error": "spawn payload must be an object"}
-    # Only explicit legacy attempt requests enter the old test/controller path.
-    # A provider or harness alone no longer changes the response contract.
-    if "attempt_id" in payload and _managed_spawn_module().managed(payload):
-        return _managed_spawn_manager().submit(payload)
+    if "attempt_id" in payload:
+        return {"ok": False, "error": "attempt requests are no longer supported; use standard spawn",
+                "error_code": "unsupported_attempt"}
     raw_provider = payload.get("provider") or "claude"
     if not isinstance(raw_provider, str):
         return {"ok": False, "error": "provider must be a string"}
@@ -9418,10 +9391,10 @@ class Handler(BaseHTTPRequestHandler):
             if answer is not None:
                 self._send(200, answer.body(scope), "application/json; charset=utf-8")
         elif path == "/api/spawn-status":
-            q = parse_qs(urlparse(self.path).query)
+            q = parse_qs(urlparse(self.path).query, keep_blank_values=True)
             name = (q.get("name") or [""])[0]
-            attempt_id = (q.get("attempt_id") or [""])[0]
-            status = (_managed_spawn_manager().lookup(attempt_id) if attempt_id
+            status = ({"ok": False, "error": "attempt status is no longer supported; query by name",
+                       "error_code": "unsupported_attempt"} if "attempt_id" in q
                       else spawn_launch_status(name) if name else spawn_launch_statuses())
             self._send(
                 200 if status.get("ok") else 404,
