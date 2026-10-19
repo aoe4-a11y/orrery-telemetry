@@ -105,7 +105,8 @@ def main():
         tap = args.out / 'egress.tap'
         with tap.open('w') as log:
             run = subprocess.run([env['ORRERY_DSH_TEST_NODE'], '--test', '--test-reporter=tap',
-                                  str(ROOT / 'tests/test_dsh_egress.mjs'), str(ROOT / 'tests/test_dsh_capabilities.mjs')], env=env,
+                                  str(ROOT / 'tests/test_dsh_egress.mjs'), str(ROOT / 'tests/test_dsh_capabilities.mjs'),
+                                  str(ROOT / 'tests/test_dsh_provider_error.mjs')], env=env,
                                  stdout=log, stderr=subprocess.STDOUT, timeout=120)
         n, f, e, s = node_result(tap.read_text(), run.returncode)
         totals += n; failures += f; errors += e; skips += s
