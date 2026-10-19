@@ -123,7 +123,7 @@ These are not registered directly with events in `settings.template.json`. Their
 | [`record-codex-session-index.py`](../integrations/codex_app/plugin/scripts/record-codex-session-index.py) | Given the official Codex `SessionStart` payload synchronously by the plugin runner | Compare the payload `session_id` with the rollout header ID and atomically index only the current launch with the same `launch_id`; carry verified `child` / `standalone` provenance into the receipt |
 | [`resolve-agent-name.sh`](../hooks/resolve-agent-name.sh) | Sourced by reminder, reservation, and cleanup helpers that need identity | Resolve identity in the order env → exact tmux session → session index (when the caller passes `AGENTSTACK_SESSION_ID`) |
 | [`spawn_child.sh`](../hooks/spawn_child.sh) | Explicitly run by `/delegate` or dashboard NEW AGENT when starting a child | Combine identity, token, task mail, reservation, tmux, Claude / Codex, worktree, and readiness into one launch transaction |
-| [`cleanup-child-agent.sh`](../hooks/cleanup-child-agent.sh) | Immediately after the child REPL command started by `spawn_child.sh` ends | Best-effort release of reservations, retirement of remote identity, and removal of managed-list / state / credential / MCP configuration |
+| [`cleanup-child-agent.sh`](../hooks/cleanup-child-agent.sh) | Immediately after the child REPL command started by `spawn_child.sh` ends | Confirm reservation release and identity retirement before removing generated state; preserve state and credentials and return nonzero on failure |
 | [`monitor_child_agent.sh`](../hooks/monitor_child_agent.sh) | Run once per monitoring interval by a `/delegate` parent | Capture the tmux pane and report completion, session disappearance, permission prompt, stasis, and an optional danger pattern through exit codes |
 | [`watch_agent_mail_signals.sh`](../hooks/watch_agent_mail_signals.sh) | Started by launcher registration as a dedicated `mail-watcher` tmux service | Watch ORRERY Mail signals and inject notification text plus `C-m` into the exact matching agent tmux session |
 
@@ -233,7 +233,8 @@ refused, while launcher/key_cmd subprocesses do not invoke this hook.
 Inspection failures deny credential-extraction shapes only; unrelated shell
 work continues. This limits key exposure without making broken configuration
 stop every command. Diagnostics never echo commands or credential references.
-Known limits: encoded commands, arbitrary script internals and reads through
-other tools are not analyzed. This is a mistake guard, not OS isolation.
+Native dsh/Hermes adapters also pass tool names and inputs to this same decision. It accepts lowercase `bash` / `terminal` and `read` / `read_file`. `AGENTSTACK_LLM_KEY_FILES` is a JSON array of absolute provider/credential file references; ordinary shell/native reads of those paths are refused without opening their contents. Relative paths use the payload cwd.
+
+Known limits: encoded commands, arbitrary script internals and reads through tools that bypass the adapter are not analyzed. This is a mistake guard, not OS isolation.
 
 The scan finds extraction forms throughout the command, including control-flow and brace prefixes. Known limits also include conservative refusals of quoted heredoc examples and credential-looking text when the interpreter is unavailable.

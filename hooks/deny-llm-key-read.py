@@ -15,7 +15,7 @@ import shlex
 import stat
 import sys
 
-SHELL_TOOLS = {'Bash', 'exec_command', 'shell_command', 'shell'}
+SHELL_TOOLS = {'bash', 'exec_command', 'shell_command', 'shell', 'terminal'}
 MESSAGE = 'LOCAL_MODEL_KEY_READ_DENIED: do not read model credentials in the agent shell; use the managed launcher/auth runner.'
 
 
@@ -189,7 +189,7 @@ def same_key(candidate, reference):
 
 
 def command_text(payload):
-    name = payload.get('tool_name', '').rsplit('.', 1)[-1]
+    name = payload.get('tool_name', '').rsplit('.', 1)[-1].lower()
     if name not in SHELL_TOOLS:
         return None
     args = payload.get('tool_input') or {}
@@ -203,8 +203,51 @@ def command_text(payload):
     return value
 
 
+def protected_file_read(payload, text):
+    """Compare references only: never open the credential/provider files."""
+    raw = os.environ.get('AGENTSTACK_LLM_KEY_FILES')
+    if not raw:
+        return False
+    paths = json.loads(raw)
+    if not isinstance(paths, list) or not all(isinstance(p, str) and p for p in paths):
+        raise ValueError('invalid protected file references')
+    cwd = Path(payload.get('cwd') or os.getcwd())
+    def resolved(value):
+        path = Path(os.path.expandvars(value)).expanduser()
+        return (path if path.is_absolute() else cwd / path).resolve()
+    protected = {resolved(path) for path in paths}
+    args = payload.get('tool_input') or {}
+    if isinstance(args, str):
+        args = json.loads(args)
+    name = payload.get('tool_name', '').rsplit('.', 1)[-1].lower()
+    if name in {'read', 'read_file', 'view', 'file_read'}:
+        path = args.get('file_path', args.get('path'))
+        if not isinstance(path, str):
+            raise ValueError('missing read path')
+        return resolved(path) in protected
+    if text is None:
+        return False
+    # Ordinary shell file reads, including redirects and quoted path operands.
+    # Like the existing shell guard this does not interpret encoded scripts.
+    lexer = shlex.shlex(text, posix=True, punctuation_chars=';&|()<>')
+    lexer.whitespace_split = True
+    for token in lexer:
+        if token and not all(c in ';&|()<>' for c in token):
+            if resolved(token) in protected:
+                return True
+            name, separator, value = token.partition('=')
+            if separator and re.fullmatch(r'[A-Za-z_][A-Za-z0-9_]*', name):
+                # A normal FILE="$HOME/credential" assignment names the file
+                # before its later use; no shell evaluation is needed.
+                if resolved(value) in protected:
+                    return True
+    return False
+
+
 def decide(payload):
     text = command_text(payload)
+    if protected_file_read(payload, text):
+        return True
     if text is None:
         return False
     # Parsing errors must not stop unrelated shell commands.
