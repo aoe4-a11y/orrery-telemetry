@@ -274,3 +274,17 @@ def test_native_file_guard_expands_known_environment_references(tmp_path, operan
     path = str(protected) if operand == 'absolute' else operand
     assert hook('cat "' + path + '"', e, tool='bash').returncode == 2
     assert hook('cat "$HOME/ordinary.txt"', e, tool='bash').returncode == 0
+
+
+@pytest.mark.parametrize('command', [
+    'FILE="$HOME/.dsh/.credentials.yaml"; cat "$FILE"',
+    'export FILE="${HOME}/.dsh/.credentials.yaml"; cat "$FILE"',
+    'FILE="$DSH_HOME/.credentials.yaml" cat "$FILE"',
+])
+def test_native_file_guard_checks_simple_assignment_values(tmp_path, command):
+    e = env(tmp_path)
+    e['DSH_HOME'] = str(Path(e['HOME']) / '.dsh')
+    e['AGENTSTACK_LLM_KEY_FILES'] = json.dumps([str(Path(e['DSH_HOME']) / '.credentials.yaml')])
+    assert hook(command, e, tool='bash').returncode == 2
+    assert hook('FILE="$HOME/ordinary.txt"; cat "$FILE"', e, tool='bash').returncode == 0
+    assert hook('FOO=bar echo hello', e, tool='bash').returncode == 0

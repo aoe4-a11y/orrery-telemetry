@@ -74,7 +74,7 @@ def test_failed_harness_start_keeps_identity_and_handoff_when_cleanup_unconfirme
     state=Path(env['AGENTSTACK_RUNTIME_DIR'])/'child-agents/HarnessChild.json'
     assert state.exists() and json.loads(state.read_text())['harness_state_dir']
     assert 'cleanup unconfirmed' in result.stderr
-    assert 'kill-session' in Path(env['FAKE_TMUX_LOG']).read_text()
+    assert 'kill-session' not in Path(env['FAKE_TMUX_LOG']).read_text()
 
 
 @pytest.mark.parametrize('flags',[
@@ -123,7 +123,7 @@ tmux() {
    [[ "$STOP_FAILS" == false ]] || return 1
    kill "$NATIVE_PID" || return 1
    return 0 ;;
- has-session) return 1 ;;
+ has-session) [[ -f "$TRACE" ]] && return 1; return 0 ;;
  esac
 }
 trap cleanup_harness_failure EXIT
@@ -191,3 +191,37 @@ def test_native_early_exit_is_not_ready_while_cleanup_is_still_running(tmp_path)
         while not cleanup_done.exists() and time.monotonic() < deadline:
             time.sleep(0.02)
         assert cleanup_done.exists()
+
+
+@pytest.mark.parametrize('session_status', [1, 2], ids=['absent', 'unreachable'])
+def test_failure_cleanup_distinguishes_absent_session_from_unknown(tmp_path, session_status):
+    import shlex
+    text = SPAWN.read_text()
+    start = text.index('\ncleanup_harness_failure() {') + 1
+    function = text[start:text.index('\n}\n', start) + 3]
+    hooks = tmp_path / 'hooks'; hooks.mkdir()
+    trace = tmp_path / 'trace'
+    _executable(hooks / 'cleanup-child-agent.sh', '#!/bin/bash\nprintf "rpc\\n" >> "$TRACE"\n')
+    script = function + '''
+CHILD_NAME=HarnessChild
+SPAWN_TRAP_SESSION=HarnessChild
+HARNESS_START_PENDING=false
+PRE_REGISTERED_ADOPTION_PENDING=true
+finish_child_registration() { printf 'finish\n' >> "$TRACE"; }
+cleanup_worktree() { printf 'worktree\n' >> "$TRACE"; }
+tmux() {
+ [[ "$1" == has-session ]] && return "$SESSION_STATUS"
+ printf 'unexpected kill\n' >> "$TRACE"; return 1
+}
+cleanup_harness_failure
+'''
+    result = subprocess.run(['/bin/bash', '-c', script], capture_output=True, text=True,
+        timeout=10, env={**os.environ, 'TRACE': str(trace), 'HOOKS_DIR': str(hooks),
+                         'SESSION_STATUS': str(session_status)})
+    if session_status == 1:
+        assert result.returncode == 0
+        assert trace.read_text().splitlines() == ['finish', 'rpc', 'worktree']
+    else:
+        assert result.returncode != 0
+        assert not trace.exists()
+        assert 'stop unconfirmed' in result.stderr

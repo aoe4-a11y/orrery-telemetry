@@ -168,3 +168,28 @@ def test_static_validation_cache_covers_models_failure_and_file_changes(tmp_path
         with pytest.raises(ValueError,match='invalid_effort'):
             child.selection(str(manifest),'hermes','strata','main')
     assert len(calls)==6
+
+
+@pytest.mark.parametrize('cleanup_exit', [0, 7])
+def test_failed_exit_marker_write_still_runs_cleanup_and_returns_failure(tmp_path, monkeypatch, cleanup_exit):
+    import subprocess
+    product = tmp_path / 'product'; (product / 'hooks').mkdir(parents=True)
+    called = tmp_path / 'cleanup-called'
+    cleanup = product / 'hooks/cleanup-child-agent.sh'
+    cleanup.write_text('#!/bin/bash\ntouch ' + str(called) + '\nexit ' + str(cleanup_exit) + '\n')
+    state = tmp_path / 'state'; state.mkdir()
+    private(state / 'input.json', {'agent_name': 'FixtureChild', 'cwd': str(tmp_path)})
+    # Native exits successfully after making its state directory read-only.
+    # Obstructing the marker itself also makes the failure deterministic as root.
+    (state / 'native-exit.status').mkdir()
+    private(state / 'launch.json', {'argv': ['/bin/chmod', '500', str(state)],
+                                   'env': {}, 'cwd': str(tmp_path)})
+    monkeypatch.setattr(child, 'ROOT', product)
+    try:
+        result = subprocess.run(['/bin/bash', '-c', child.command(state, 'FixtureChild')],
+                                cwd=tmp_path, capture_output=True, text=True, timeout=10)
+        assert called.exists()
+        assert result.returncode == (cleanup_exit or 1)
+        assert 'native-exit.status' in result.stderr
+    finally:
+        state.chmod(0o700)

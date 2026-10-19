@@ -235,6 +235,12 @@ def protected_file_read(payload, text):
         if token and not all(c in ';&|()<>' for c in token):
             if resolved(token) in protected:
                 return True
+            name, separator, value = token.partition('=')
+            if separator and re.fullmatch(r'[A-Za-z_][A-Za-z0-9_]*', name):
+                # A normal FILE="$HOME/credential" assignment names the file
+                # before its later use; no shell evaluation is needed.
+                if resolved(value) in protected:
+                    return True
     return False
 
 
