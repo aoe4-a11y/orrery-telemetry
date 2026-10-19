@@ -62,6 +62,6 @@ No second provider or credentials are inferred. dsh projects its subagent model;
 Hermes projects auxiliary task and delegation models. Exact generator mappings
 belong to the shared thin-generator contract and their implementations.
 
-The cockpit folds the selected main ID into `Same as main` for display, so a
+The New Agent screen folds the selected main ID into `Same as main` for display, so a
 single-model backend does not gain a redundant helper control. This does not
 remove its formal ID from the backend's accepted set.

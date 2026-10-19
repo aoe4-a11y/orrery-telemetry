@@ -704,7 +704,7 @@ Each item returns `liveness`, nullable `act_state` / `ctx_used`, `session_count`
 
 Capabilities include `global_runtime_observation=1` and `operator_session=1`. Global `/api/quotas` and `/portrait` use the same admission and existing read helpers. Images use shared-session `apiBlob` object URLs, revoked on Lock.
 
-Managed spawn (legacy, opt-in): see [request/status contract](managed-spawn-contract.md). In API 23, only DeepSeek/Local requests explicitly carrying `attempt_id` enter the legacy managed test path and return 202 on acceptance. Normal cockpit requests omit this field and use the standard response. Existing `GET /api/spawn-status?attempt_id=<UUID>` and managed job stop remain available during migration. No separate managed POST endpoint is added.
+Managed spawn (legacy, opt-in): see [request/status contract](managed-spawn-contract.md). In API 23, only DeepSeek/Local requests explicitly carrying `attempt_id` enter the legacy managed test path and return 202 on acceptance. Normal New Agent requests omit this field and use the standard response. Existing `GET /api/spawn-status?attempt_id=<UUID>` and managed job stop remain available during migration. No separate managed POST endpoint is added.
 
 ## Managed interactive sessions (API 22)
 

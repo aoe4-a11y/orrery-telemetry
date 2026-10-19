@@ -706,7 +706,7 @@ curl -s 'http://127.0.0.1:8770/api/spawn-status?name=WindyFermi'
 
 `global_runtime_observation=1` と `operator_session=1` を広告します。global の `/api/quotas` と `/portrait` も同じ admission を通り、既存の読取処理を使用します。画像は共有 session の `apiBlob` で取得して object URL とし、Lock で revoke します。
 
-Managed spawn (legacy, opt-in): see [request/status contract](managed-spawn-contract.md). API 23 では明示した `attempt_id` を含む DeepSeek / Local の要求だけが従来の managed 試験経路へ入り、受理時は 202 を返します。通常の cockpit はこの項目を送らず、標準の応答を使います。`GET /api/spawn-status?attempt_id=<UUID>` と既存 job の停止は移行中も維持します。別の managed POST endpoint は追加しません。
+Managed spawn (legacy, opt-in): see [request/status contract](managed-spawn-contract.md). API 23 では明示した `attempt_id` を含む DeepSeek / Local の要求だけが従来の managed 試験経路へ入り、受理時は 202 を返します。通常の New Agent の画面はこの項目を送らず、標準の応答を使います。`GET /api/spawn-status?attempt_id=<UUID>` と既存 job の停止は移行中も維持します。別の managed POST endpoint は追加しません。
 
 ## Managed の継続対話（API 22）
 
