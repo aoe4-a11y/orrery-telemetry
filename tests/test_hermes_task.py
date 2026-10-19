@@ -260,6 +260,7 @@ class FileTask(unittest.TestCase):
         request = SimpleNamespace(method='POST', url='https://provider.invalid/v1/messages')
         for seq in range(1, 9):
             self.assertEqual(policy.before(request), seq)
+            policy.usage(seq, {'confirmed': True, 'terminal': True, 'usage': {'input': 1, 'output': 1, 'cache_read': 0}})
         with self.assertRaisesRegex(RuntimeError, 'request limit'):
             policy.before(request)
         rows = [json.loads(row) for row in (self.state / 'audit.jsonl').read_text().splitlines()]
@@ -282,6 +283,7 @@ class FileTask(unittest.TestCase):
         self.assertIsNone(policy.limit)
         for seq in range(1, 66):
             self.assertEqual(policy.before(request), seq)
+            policy.usage(seq, {'confirmed': True, 'terminal': True, 'usage': {'input': 1, 'output': 1, 'cache_read': 0}})
         self.assertNotIn('limit-reached', (self.state / 'audit.jsonl').read_text())
         inputs = {**runner.read(self.fixture.config_path), 'provider_request_limit': 100}
         path = self.root / 'larger-trial-input.json'
@@ -622,7 +624,8 @@ except PermissionError:
 assert 'ORRERY_OFFLINE_CANARY' not in os.environ
 import httpx
 async def check_async():
-    async with httpx.AsyncClient(transport=httpx.MockTransport(lambda r:httpx.Response(200,json={}))) as client:
+    async with httpx.AsyncClient(transport=httpx.MockTransport(lambda r:httpx.Response(200,
+            json={'usage':{'input_tokens':1,'output_tokens':1}}))) as client:
         await client.post('https://provider.invalid/v1/messages',json={'fixture':True})
 asyncio.run(check_async())
 import anthropic

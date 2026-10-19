@@ -35,6 +35,13 @@ def main():
         from runner import committed_python
         config = json.loads(args.config.read_text())
         python = committed_python(config)
+        if Path(sys.prefix).resolve() != Path(python).parent.parent.resolve():
+            # The stdlib launcher can resolve the pinned environment, but new
+            # HTTPX fixtures themselves require its dependencies. Re-enter once
+            # with that interpreter; never inherit provider/session credentials.
+            os.execve(python, [python, '-I', '-B', str(Path(__file__).resolve()), *sys.argv[1:]],
+                {'PATH': '/usr/bin:/bin', 'LANG': 'en_US.UTF-8', 'PYTHONDONTWRITEBYTECODE': '1',
+                 'HERMES_DISABLE_LAZY_INSTALLS': '1', 'UV_OFFLINE': '1'})
         source = Path(config['hermes_source']).resolve()
         if not (source / 'hermes_cli/oneshot.py').is_file():
             raise ValueError('Installed Hermes source unavailable')
