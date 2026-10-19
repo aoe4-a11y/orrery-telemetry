@@ -88,3 +88,18 @@ snapshotは短い通信を見逃し得ます。global fetchの置換もnode:http
 既知の限界：予約の一部だけ取れて起動しなかったattemptは、解放とretireの後もruntime-completionがpendingと出ます。後始末の証拠はabort専用の記録で確認します。
 
 終了は所有groupの停止→予約解放→canonical retire確認の順です。失敗やMail/retire応答不明ではstateを保持し、自動再登録・再送・再開・実鍵の再読取をしません。commit/pushとliveへの採用は親が行います。
+
+
+### Strata の context と `fit_max_tokens`
+
+Strata の route では、利用者が Strata のモデル設定で `"fit_max_tokens": true` を有効にしてください。Strata が実際に token 化した入力と context の残りに出力を収めます。dsh の DeepSeek adapter の既定 `max_tokens=256000` は、小さい Strata の context を超えることがあります。たとえば server が次の400を返す場合です。
+
+```text
+request exceeds the context window: prompt (...) + max tokens (256000) exceeds the context (...); requests are never truncated. Send a smaller max_tokens (...), or add "fit_max_tokens": true to the model's strata-<model>.json ...
+```
+
+この設定は Strata server の管理者が行います。ORRERY の installer/launcher は server の設定を変更しません。試しの出力上限を製品へ戻したり、context の総数をそのまま出力値に指定したりしないでください。`count_tokens` の追加通信やクライアント側の切り詰めも行いません。
+
+provider の4xx/5xxは成功扱いにせず、`provider-response` の `max_tokens` と `error.{type,code,message_prefix}` で原因を確認します。message は先頭240文字まで、鍵の実値と鍵らしい文字列をマスクします。JSON の `error` 以外の本文・モデルの出力・header は保存せず、構造化errorが読めない場合はその理由だけを記録します。
+
+根拠: [Strata source（固定commit）](https://github.com/Niko1221/Strata/blob/477ac13cbe8e582c20484871ce459d20d82df09d/serve/server.py#L4022)。配置版の対応は server 管理者が確認してください。

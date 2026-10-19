@@ -8,6 +8,7 @@ import os from 'node:os';
 import {fileURLToPath} from 'node:url';
 import {syncBuiltinESMExports} from 'node:module';
 import {assertIdle} from './strata_status.mjs';
+import {providerError} from './provider_error.mjs';
 
 const adapterRoot = path.dirname(fileURLToPath(import.meta.url));
 export function sourceCallers() {
@@ -68,12 +69,13 @@ export function createEgress({backend, limits, wireTools, offline = true, phase 
     if (offline) return reject('offline-capture', 'DSH_OFFLINE', {forwarded: 0});
     active = true;
     const number = ++seq, started = performance.now();
+    let errorDetails = {};
     let released = false, response, lastUsage = null, finalUsage = false, messageStopped = false;
     const finish = ok => {
       if (released) return;
       released = true; active = false; usageKnown = ok && finalUsage;
       if (response) audit({phase: 'provider-response', seq: number, status: response.status,
-        usage: lastUsage, duration_ms: performance.now() - started});
+        usage: lastUsage, duration_ms: performance.now() - started, ...errorDetails});
       audit({phase: 'stream-end', seq: number, ok});
     };
     try {
@@ -85,7 +87,10 @@ export function createEgress({backend, limits, wireTools, offline = true, phase 
         body: JSON.stringify({...body, tools: filtered})});
       if (response.status >= 300 && response.status < 400)
         return reject('blocked-redirect', 'DSH_REDIRECT', {from_origin: endpoint.origin});
-      if (!response.ok) throw new Error('PROVIDER_HTTP');
+      if (!response.ok) {
+        errorDetails = {max_tokens: body.max_tokens, error: await providerError(response, key)};
+        throw new Error('PROVIDER_HTTP');
+      }
       if (!response.body) { finish(true); return response; }
       const reader = response.body.getReader(), decoder = new TextDecoder();
       let pending = '', cancelled = false;
