@@ -187,7 +187,7 @@ def catalog_providers(backends, availability, *, mode, enabled):
     return providers
 
 
-def _thin_selection(manifest, harness, backend, model):
+def thin_launcher():
     # Import the product helper, never a provider runtime or its plugins.
     # An executable dashboard has only dashboard/ on sys.path. Give the
     # helpers their own package so relative imports also work in that mode.
@@ -202,7 +202,11 @@ def _thin_selection(manifest, harness, backend, model):
         module = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(module)
         sys.modules[name] = module
-    return sys.modules[name].selection(manifest, harness, backend, model)
+    return sys.modules[name]
+
+
+def _thin_selection(manifest, harness, backend, model):
+    return thin_launcher().selection(manifest, harness, backend, model)
 
 
 def load_standard_inputs(config_file, *, mode):

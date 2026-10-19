@@ -118,6 +118,22 @@ if [[ -z "$AGENTSTACK_HOME_DIR" && -d "$HOOKS_DIR/.." ]]; then
 fi
 REREGISTER_HELPER="${AGENTSTACK_HOME_DIR:+$AGENTSTACK_HOME_DIR/bin/agentstack-reregister}"
 
+# Internal foreground entry for the dashboard's already prepared gated pane.
+NATIVE_RESUME_CONTRACT=1
+if [[ "${1:-}" == --resume-native ]]; then
+    if [[ "$#" != 2 ]]; then
+        echo "Error: --resume-native requires one retained child name" >&2
+        exit 1
+    fi
+    _native_resume_command="$("${AGENTSTACK_PYTHON:-python3}" "$HOOKS_DIR/harness_child.py" resume \
+        --runtime-dir "$RUNTIME_DIR" --agent-name "$2" --project-key "$PROJECT_KEY")" || exit 1
+    # Native nonzero exit must reach the helper-provided cleanup below it.
+    set +e
+    # The product helper returns quoted argv and the normal exit cleanup.
+    eval "$_native_resume_command"
+    exit $?
+fi
+
 # Source the shared register lib early (function definitions only — no side
 # effects) so the macOS TCC access guard is available in every launch path,
 # including pre-registered mode which returns before the rest of the script.

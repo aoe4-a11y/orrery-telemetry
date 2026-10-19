@@ -4581,6 +4581,14 @@ def _native_resume_material(session, program):
     return registration, state, document
 
 
+def _native_prepare_resume(session):
+    if __package__:
+        from .managed_catalog import thin_launcher
+    else:
+        from managed_catalog import thin_launcher
+    thin_launcher().prepare_resume(Path(RUNTIME_DIR), session)
+
+
 def _do_resume_native(session, program, *, open_terminal=None, replace_husk=False):
     started = mail_changed = was_retired = False
     registration = None
@@ -4590,6 +4598,7 @@ def _do_resume_native(session, program, *, open_terminal=None, replace_husk=Fals
         module.begin_resume(Path(RUNTIME_DIR), session, agent_id=registration['agent_id'],
                             project_key=registration['project_key'], program=program)
         started = True
+        _native_prepare_resume(session)
         # Reuse existing-owner authentication; never create a replacement identity.
         registration = {**registration, 'model': document['model']}
         was_retired = _register_claude_resume(session, registration, state['registration_token'])
@@ -8018,7 +8027,7 @@ def _spawn_tools_args(payload: dict, provider: str, chrome: bool,
     approve_all = set(tools.get("approve_all", ()))
     for name in tools.get("mcp", ()):
         args += ["--tools", "mcp:" + name + (":all" if name in approve_all else "")]
-    if not args and provider in ("claude", "codex"):
+    if not args and provider in ("claude", "codex", "dsh", "hermes"):
         # An explicit empty form selection must suppress installer defaults.
         args = ["--base", "default"]
     return tuple(args), None
@@ -8105,7 +8114,7 @@ def do_spawn(payload: dict) -> dict:
     # base / tools (hooks/child_tools.py). Everything that depends on the
     # child's final directory is checked again by the launcher, which fails
     # closed before tmux starts.
-    tools_args, tools_error = _spawn_tools_args(payload, provider, chrome, chrome_device)
+    tools_args, tools_error = _spawn_tools_args(payload, harness if provider in ("deepseek", "strata") else provider, chrome, chrome_device)
     if tools_error:
         return {"ok": False, "error": tools_error}
     if provider == "claude":
@@ -8204,7 +8213,7 @@ def spawn_with_launch_spec(payload: dict, spec: SpawnLaunchSpec) -> dict:
         request, error = _spawn_request(payload)
         if error:
             return error
-        if spec.provider not in ("claude", "codex") and (
+        if spec.provider not in ("claude", "codex") and spec.program not in harness_runtime.HARNESSES and (
                 payload.get("tools") or payload.get("base") not in (None, "default")):
             return {"ok": False,
                     "error": f"base and tools are not supported for provider: {spec.provider}"}

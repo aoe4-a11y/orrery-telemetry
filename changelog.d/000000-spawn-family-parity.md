@@ -5,3 +5,5 @@ DeepSeek・Local の選択したモデルと harness を catalog の能力で照
 API generation を 22 から 23 へ更新します。標準 `/api/spawn` は DeepSeek・Local でも `child_name` / `tmux_session` を返し、managed attempt の応答を混ぜません。通常の catalog から managed 専用の表示項目を除きます。第1段階の経路の変更であり、runtime の受け入れや tool の開放の完了を示すものではありません。
 
 起動失敗後の後片付けも共通 cleanup の結果に従います。確認に失敗したときは失敗・cleanup unknown を返し、復旧に必要な state・資格・handoff を API が削除しません。
+
+dsh・Hermes の再開は本人の session 作成イベントの native ID を使い、同じ登録・state・profile を保ちます。履歴の推測や初期 task の再送はせず、config 生成に失敗した場合も復旧の資格を残します。

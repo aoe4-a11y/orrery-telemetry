@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import ast
+import importlib
 import importlib.util
 import json
 import os
@@ -12,12 +13,18 @@ import re
 import subprocess
 import sys
 import time
+import types
 
 if __package__:
     from . import child_resume, child_tools
 else:
-    import child_resume
-    import child_tools
+    # Isolated Python excludes the script directory from sys.path. Load only
+    # product siblings through a private package, independent of cwd/PYTHONPATH.
+    package = types.ModuleType('_orrery_thin_cli_hooks')
+    package.__path__ = [str(Path(__file__).resolve().parent)]
+    sys.modules[package.__name__] = package
+    child_resume = importlib.import_module(package.__name__ + '.child_resume')
+    child_tools = importlib.import_module(package.__name__ + '.child_tools')
 
 ROOT = Path(__file__).resolve().parents[1]
 HARNESSES = {'dsh', 'hermes'}
@@ -143,6 +150,109 @@ def selection(manifest, harness, backend, model, effort=None):
     return runner
 
 
+def write_instructions(state_dir, project_key):
+    spec = importlib.util.spec_from_file_location('harness_instruction_blocks', ROOT / 'bin/lib/instruction_blocks.py')
+    renderer = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(renderer)
+    instructions = state_dir / 'instructions.md'
+    child_resume._atomic_bytes(instructions, renderer.render(
+        'codex', (ROOT / 'codex/AGENTS.md').read_bytes(), str(ROOT), project_key))
+    return instructions
+
+
+def generate_plan(document, runner):
+    """One generator path for initial launch and exact-ID resume."""
+    state_dir = Path(document['state_dir'])
+    document['mcp_selection'] = child_tools.native_plan(document['tools'], cwd=document['cwd'],
+        claude_json=os.environ.get('AGENTSTACK_CLAUDE_JSON',str(Path.home()/'.claude.json')))
+    merged_mcp = read(document['mcp_config'])
+    merged_mcp['mcpServers'].update(document['mcp_selection']['servers'])
+    selected_mcp = state_dir / 'selected-mcp.json'
+    save(selected_mcp, merged_mcp)
+    document['mcp_config'] = str(selected_mcp)
+    source, output = state_dir / 'input.json', state_dir / 'launch.json'
+    save(source, document)
+    result = subprocess.run([runner['python'], '-B', str(config_generator(ROOT,document['program'])),
+        '--input', str(source), '--out', str(output)], capture_output=True, text=True)
+    if result.returncode:
+        reason = re.search(r'^(?:DSH|HERMES)_THIN_CONFIG_ERROR=([a-z_]+)$', result.stderr.strip())
+        raise ValueError(reason[1] if reason else 'thin_config_generation_failed')
+    plan = read(output)
+    validate_plan(plan, document['cwd'])
+    profile = {key: str(Path(plan['env'][key]).resolve()) for key in ('DSH_HOME', 'HERMES_HOME')
+               if key in plan.get('env', {})}
+    expected_profile = {key: str(Path(value).resolve())
+                        for key, value in document.get('native_profile_env', profile).items()}
+    if expected_profile != profile:
+        raise ValueError('native_resume_profile_changed')
+    document['native_profile_env'] = profile
+    save(source, document)
+    return state_dir
+
+
+def prepare_resume(runtime_dir, name, project_key=None):
+    if not isinstance(name, str) or not child_resume.SAFE_NAME.fullmatch(name):
+        raise ValueError('invalid_agent_name')
+    runtime = Path(runtime_dir).resolve()
+    state = child_resume._load_state(runtime / 'child-agents' / (name + '.json'))
+    child_resume._validate_identity(state, agent_name=name, project_key=project_key)
+    if not state.get('resume_in_progress_at'):
+        raise ValueError('native_resume_not_prepared')
+    document = child_resume.native_resume_input(runtime, state)
+    runner = selection(document['manifest_file'], document['program'], document['backend_id'],
+                       document['model'], document.get('effort'))
+    state_dir = Path(document['state_dir'])
+    previous = read(state_dir / 'launch.json')
+    document.setdefault('native_profile_env', {key: previous.get('env', {}).get(key)
+        for key in ('DSH_HOME', 'HERMES_HOME') if key in previous.get('env', {})})
+    prompt = state_dir / 'resume-prompt.txt'
+    child_resume._atomic_bytes(prompt, b'')
+    parent = state.get('parent_agent')
+    if parent and not child_resume.PROXY_AGENT_NAME.fullmatch(parent):
+        raise ValueError('invalid_parent_identity')
+    proxy_env = dict(AGENTSTACK_PROXY_AGENT_NAME=name,
+        AGENTSTACK_PROXY_TOKEN_FILE=str(runtime / ('agent_token_' + name)),
+        AGENTSTACK_PROXY_PROGRAM=state['program'], AGENTSTACK_PROJECT_KEY=state['project_key'],
+        AGENTSTACK_RUNTIME_DIR=str(runtime),
+        AGENTSTACK_MCP_URL=os.environ.get('AGENTSTACK_MCP_URL', 'http://127.0.0.1:18765/mcp'),
+        AGENTSTACK_MAIL_ENV=os.environ.get('AGENTSTACK_MAIL_ENV', str(Path.home()/'.agentstack/mail/.env')),
+        AGENTSTACK_MAIL_HTTP_BEARER_MODE=os.environ.get('AGENTSTACK_MAIL_HTTP_BEARER_MODE','auto'),
+        AGENTSTACK_PYTHON=os.environ.get('AGENTSTACK_PYTHON') or sys.executable)
+    if parent:
+        proxy_env['AGENTSTACK_PROXY_PARENT_AGENT'] = parent
+    proxy = dict(command=os.environ.get('AGENTSTACK_MCP_PROXY') or str(
+        ROOT / 'integrations/codex_app/plugin/scripts/run-mcp.sh'), args=[], env=proxy_env)
+    mcp = state_dir / 'resume-mail.json'
+    save(mcp, child_tools.claude_config(proxy, claude_json=os.environ.get(
+        'AGENTSTACK_CLAUDE_JSON', str(Path.home()/'.claude.json'))))
+    document['env'].update(AGENT_NAME=name, AGENTSTACK_HOME=str(ROOT),
+        AGENTSTACK_RUNTIME_DIR=str(runtime), AGENTSTACK_PROJECT_KEY=state['project_key'])
+    document.update(product_root=str(ROOT), parent_agent=parent, mcp_config=str(mcp),
+                    prompt_file=str(prompt), instructions_file=str(write_instructions(state_dir,state['project_key'])),
+                    resume_attempt_at=state['resume_in_progress_at'])
+    generate_plan(document, runner)
+    (state_dir / 'native-exit.status').unlink(missing_ok=True)
+    return state_dir
+
+
+def resume_command(runtime_dir, name, project_key=None):
+    if not isinstance(name, str) or not child_resume.SAFE_NAME.fullmatch(name):
+        raise ValueError('invalid_agent_name')
+    runtime = Path(runtime_dir).resolve()
+    state = child_resume._load_state(runtime / 'child-agents' / (name + '.json'))
+    child_resume._validate_identity(state, agent_name=name, project_key=project_key)
+    document = child_resume.native_resume_input(runtime, state)
+    source = read(Path(document['state_dir']) / 'input.json')
+    if (not state.get('resume_in_progress_at')
+            or source.get('resume_attempt_at') != state['resume_in_progress_at']
+            or source.get('resume_session_id') != document['resume_session_id']):
+        raise ValueError('native_resume_not_prepared')
+    invocation = command(document['state_dir'], name)
+    child_resume.prepare_active_state(runtime, name, project_key=state['project_key'],
+                                     program=state['program'])
+    return invocation
+
+
 def prepare(args):
     if not re.fullmatch(r'[0-9a-f]{32}', args.generation):
         raise ValueError('invalid_registration_generation')
@@ -160,12 +270,7 @@ def prepare(args):
     os.chmod(state_dir, 0o700)
     prompt = state_dir / 'initial-prompt.txt'
     child_resume._atomic_bytes(prompt, Path(args.prompt_file).read_bytes())
-    spec = importlib.util.spec_from_file_location('harness_instruction_blocks', ROOT / 'bin/lib/instruction_blocks.py')
-    renderer = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(renderer)
-    instructions = state_dir / 'instructions.md'
-    child_resume._atomic_bytes(instructions, renderer.render(
-        'codex', (ROOT / 'codex/AGENTS.md').read_bytes(), str(ROOT), args.project_key))
+    instructions = write_instructions(state_dir, args.project_key)
     document = dict(agent_name=args.agent_name, program=args.harness, backend_id=args.backend,
         model=args.model, project_key=args.project_key, cwd=str(Path(args.cwd).resolve()),
         parent_agent=args.parent_agent or None, product_root=str(ROOT), runtime_dir=str(runtime),
@@ -174,26 +279,11 @@ def prepare(args):
         manifest_file=str(Path(args.manifest).resolve()), tools=json.loads(args.tools),
         env=dict(AGENT_NAME=args.agent_name, AGENTSTACK_HOME=str(ROOT),
                  AGENTSTACK_RUNTIME_DIR=str(runtime), AGENTSTACK_PROJECT_KEY=args.project_key))
-    document['mcp_selection'] = child_tools.native_plan(document['tools'], cwd=document['cwd'],
-        claude_json=os.environ.get('AGENTSTACK_CLAUDE_JSON',str(Path.home()/'.claude.json')))
-    merged_mcp = read(document['mcp_config'])
-    merged_mcp['mcpServers'].update(document['mcp_selection']['servers'])
-    selected_mcp = state_dir / 'selected-mcp.json'
-    save(selected_mcp, merged_mcp)
-    document['mcp_config'] = str(selected_mcp)
     if getattr(args,'helper_model',None) not in (None,'','same'):
         document['helper_model'] = args.helper_model
     if args.effort is not None:
         document['effort'] = args.effort
-    source, output = state_dir / 'input.json', state_dir / 'launch.json'
-    save(source, document)
-    result = subprocess.run([runner['python'], '-B', str(config_generator(ROOT,args.harness)),
-        '--input', str(source), '--out', str(output)], capture_output=True, text=True)
-    if result.returncode:
-        reason = re.search(r'^(?:DSH|HERMES)_THIN_CONFIG_ERROR=([a-z_]+)$', result.stderr.strip())
-        raise ValueError(reason[1] if reason else 'thin_config_generation_failed')
-    plan = read(output)
-    validate_plan(plan, document['cwd'])
+    generate_plan(document, runner)
     state.update(harness=args.harness, harness_backend=args.backend, harness_state_dir=str(state_dir))
     save(child_file, state)
     return state_dir
@@ -233,7 +323,7 @@ def command(state_dir, name):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('action', choices=('validate', 'prepare', 'command'))
+    parser.add_argument('action', choices=('validate', 'prepare', 'command', 'resume-prepare', 'resume'))
     for key in ('harness', 'backend', 'model', 'effort', 'manifest', 'runtime-dir', 'agent-name',
                 'project-key', 'generation', 'cwd', 'parent-agent', 'mcp-config', 'prompt-file', 'state', 'helper-model'):
         parser.add_argument('--' + key)
@@ -244,6 +334,10 @@ def main():
             selection(args.manifest, args.harness, args.backend, args.model, args.effort)
         elif args.action == 'prepare':
             print(prepare(args))
+        elif args.action == 'resume-prepare':
+            print(prepare_resume(args.runtime_dir, args.agent_name, args.project_key))
+        elif args.action == 'resume':
+            print(resume_command(args.runtime_dir, args.agent_name, args.project_key))
         else:
             print(command(args.state, args.agent_name))
     except (OSError, ValueError, KeyError, TypeError, subprocess.SubprocessError) as error:

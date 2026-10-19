@@ -70,7 +70,7 @@ def test_parent_task_and_explicit_effort_are_standard(preview):
     {'model': 'different-fixture'}, {'model': ''}, {'model': []},
     {'effort': 'invented'}, {'effort': []}, {'harness': 'hermes', 'effort': 'high'},
     {'helper_model': 'another-model'},
-    {'allowed_paths': ['result.txt']}, {'tools': {'mcp': ['fixture']}},
+    {'allowed_paths': ['result.txt']}, {'tools': {'mcp': 1}},
     {'claude_chrome': True},
 ])
 def test_invalid_or_unavailable_capabilities_never_register(preview, changes):
@@ -219,6 +219,19 @@ def test_cleanup_helper_uses_only_launcher_sibling_and_fixed_timeout(monkeypatch
         return SimpleNamespace(returncode=1)
     monkeypatch.setattr(server.subprocess, 'run', run)
     assert not server._failed_spawn_cleanup(str(launcher), 'FixtureAgent', {'FIXTURE': '1'})
+
+
+@pytest.mark.parametrize('harness', ['dsh', 'hermes'])
+def test_native_tools_use_shared_program_contract(preview, harness):
+    result = server.do_spawn({**preview, 'provider': 'strata', 'harness': harness,
+        'model': 'strata-fixture', 'base': 'mail-only', 'tools': {'mcp': ['fixture']}})
+    assert result['ok']
+    argv = result['argv']
+    assert argv[argv.index('--base') + 1] == 'mail-only'
+    assert argv[argv.index('--tools') + 1] == 'mcp:fixture'
+    default = server.do_spawn({**preview, 'provider': 'strata', 'harness': harness,
+        'model': 'strata-fixture', 'tools': {}})
+    assert default['argv'][default['argv'].index('--base') + 1] == 'default'
 
 
 

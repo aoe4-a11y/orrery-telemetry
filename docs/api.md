@@ -482,11 +482,13 @@ request:
 {"session":"WindyFermi"}
 ```
 
-`open` は任意の boolean です。`false` は OS の窓を開かず detached tmux で resume、`true` は窓を開きます。省略時、Claude / Codex resume は `AGENTSTACK_AUTO_OPEN_CHILD` に従います（`0` は detached、未設定 / `1` は窓を開く）。明示した `open` が設定より優先します。稼働中の session に `open: false` を渡すと attach せず、そのままにします。環境設定は resume 時の自動表示だけに適用され、手動の Open tmux は使えます。detached resume には terminal adapter は不要です。この field は API 世代3から使えます。
+`open` は任意の boolean です。`false` は OS の窓を開かず detached tmux で resume、`true` は窓を開きます。省略時、Claude / Codex / dsh / Hermes resume は `AGENTSTACK_AUTO_OPEN_CHILD` に従います（`0` は detached、未設定 / `1` は窓を開く）。明示した `open` が設定より優先します。稼働中の session に `open: false` を渡すと attach せず、そのままにします。環境設定は resume 時の自動表示だけに適用され、手動の Open tmux は使えます。detached resume には terminal adapter は不要です。この field は API 世代3から使えます。
 
 response は `{ok, session, actions}` です。既存 tmux session は configured terminal で open / focus します。session が無い場合と finished husk を transcript から復元する場合は、GET row と同じ判定を server が再検査します。表示が `verification_required` だった Claude row も、この1回の request 内で full 検証して `ready` になれば、そのまま resume します。Codex child は fresh home を生成し、credential 付き再登録と fresh binding expectation を作成した後、Codex exec の直前に unretire します。拒否時は HTTP 400 で `{"ok":false,"error":"...","resume_capability":"provenance_missing"}` のように確定した固定 reason code を返し、husk の kill や terminal 起動は行いません。bootstrap / unretire が失敗した場合も Codex は起動せず、生成した home / config だけを片付けます。
 
 Claude は保存済み owner credential で同じ project・数値 ID・name・program の登録を検証し、credential 付き再登録と unretire が成功してから端末を起動します。Claude child の state / credential も既定30日保持し、resume 時は子専用 Mail proxy config を再生成します。top-level Claude は既存 owner token を使います。旧 cleanup で credential が消えた場合は `credential_missing`、期限切れは `retention_expired`、明示 purge 後は `purged` で起動を拒否します。認証・unretire の失敗でも端末を開きません。credential を自動発行したり別名で登録したりはしません。Codex top-level resume も unretire の対象です。
+
+dsh / Hermes の子は、本人の session 作成イベントで保存した native ID だけで再開します。最新の履歴を探すことはせず、ID が無ければ `no_history` です。同じ登録・保持期限・owner credential を検査し、元の `harness_state_dir` と native profile を維持します。元の task は再送しません。Mail の再開と tmux の起動ゲートの解放より先に config / MCP を生成し、profile の変更や生成失敗では元の husk・state・資格を残します。内部の `--resume-native` は既存 pane の foreground で実行し、新しい tmux や登録は作りません。
 
 Claude の起動準備が失敗した場合、元の husk を残し、元が retired だった Mail を再 retire します。元から active の identity は retire しません。復元にも失敗した場合は `rollback_errors` を返し、成功したようには報告しません。CLI は tmux と窓の準備が成功するまで待機します。
 
@@ -599,10 +601,12 @@ request:
 | `worktree_base` | no | base revision。既定 `HEAD` |
 | `claude_chrome` | Claude only | boolean。`true` で child に `--chrome` を付ける。省略・`false` は inherit（利用者の Claude 設定に従う）。launcher の env 既定は使わない。[Claude in Chrome](delegation.md#claude-child-とブラウザ操作claude-in-chrome) |
 | `claude_chrome_device` | Claude only | 使うブラウザの deviceId（`[A-Za-z0-9._:-]{1,128}`）。指定すると `claude_chrome: true` と同じ。`claude_chrome: false` との併用は拒否 |
-| `base` | Claude / Codex | `"default"`（明示すると installer の道具の既定を適用しない）または `"mail-only"`（ORRERY Mail と `tools` で選んだものだけ）。api 7 から |
-| `tools` | Claude / Codex | object。`browser`（`true` は Claude/Codex、`{"device": "<deviceId>"}` の deviceId は Claude only）、`screen`（`"read"` / `"operate"` または `{"access": ..., "server": "<name>"}`。server を省くと Mac の computer use で Claude only）、`mcp`（server 名の配列。tool は承認しない）、`approve_all`（`mcp` のうち全 tool を承認する server。表に無い版は拒否）。`claude_chrome_device` と deviceId が食い違えば拒否。api 7 から。[子に渡す道具を選ぶ](delegation.md#子に渡す道具を選ぶ--base----tools) |
+| `base` | Claude / Codex / dsh / Hermes | `"default"`（明示すると installer の道具の既定を適用しない）または `"mail-only"`（ORRERY Mail と `tools` で選んだものだけ）。api 7 から |
+| `tools` | Claude / Codex / dsh / Hermes | object。`browser`（`true` は Claude/Codex、`{"device": "<deviceId>"}` の deviceId は Claude only）、`screen`（`"read"` / `"operate"` または `{"access": ..., "server": "<name>"}`。server を省くと Mac の computer use で Claude only）、`mcp`（server 名の配列。tool は承認しない）、`approve_all`（`mcp` のうち全 tool を承認する server。表に無い版は拒否）。`claude_chrome_device` と deviceId が食い違えば拒否。api 7 から。[子に渡す道具を選ぶ](delegation.md#子に渡す道具を選ぶ--base----tools) |
 
 DeepSeek / Local の通常 catalog は、plain 世代の識別と generator の静的検査を launcher と共用します。旧 managed 世代を自動で利用可能にはしません。effort は選択した model × harness の検証済み cache を使用し、不明は不明のまま返します。生存判定は pane の子プロセスに native CLI があるかを確認し、確認不能を終了済みにはしません。provider は子の明示的な harness_backend から読み、モデル名から推測しません。
+
+dsh / Hermes では、選択を native config で表せる場合だけ `base` / `tools` を受け付けます。stdio / HTTP の MCP server を写し、内蔵 computer use・Chrome device・表せない tool 単位の承認やフィルターは理由つきで拒否します。起動できたことを、それらの承認が有効になった意味にはしません。
 
 API 8 では、`tools: {}` または `base: "default"` を明示すると `--base default` を渡します。dashboard/API はフォームの選択を正とし、installer の `AGENTSTACK_CHILD_DEFAULT_TOOLS` を launcher の env から外して、選択から外した道具を追加しません。明示した道具が使えなければ起動を止めます。CLI で base/tools/MCP profile を省略したときだけ、使えない既定の項目を通知して外す経路を使います。
 

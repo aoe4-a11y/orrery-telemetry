@@ -1,10 +1,15 @@
 """Native resume reads only the exact child's callback and retained identity."""
 import json
+from pathlib import Path
+import shlex
+import subprocess
+import sys
 
 import pytest
 
 from hooks import child_resume as resume
 from dashboard import server
+from hooks import harness_child as native
 
 
 def child(tmp_path, name, harness='dsh', native_id='session-one'):
@@ -94,6 +99,7 @@ def test_native_dashboard_dispatch_and_failed_startup_rollback(tmp_path, monkeyp
     monkeypatch.setattr(server, '_agent_program', lambda _: harness)
     monkeypatch.setattr(server, '_resume_registration', lambda *a: registration)
     monkeypatch.setattr(server, '_native_resume_launcher_ready', lambda: True)
+    monkeypatch.setattr(server, '_native_prepare_resume', lambda *a: None)
     monkeypatch.setattr(server, '_register_claude_resume', lambda *a, **k: True)
     mail, launches = [], []
     monkeypatch.setattr(server, '_set_claude_mail_retired', lambda *a, **k: mail.append(k['retired']))
@@ -122,3 +128,106 @@ def test_native_missing_id_is_unavailable_before_mail_or_tmux(tmp_path, monkeypa
     monkeypatch.setattr(server, '_launch_claude_resume_tmux', lambda *a, **k: pytest.fail('tmux called'))
     assert server._resume_capability('FirstAgent', 'dsh', category='retired', open_terminal=False) == 'no_history'
     assert server._do_resume_native('FirstAgent', 'dsh')['resume_capability'] == 'no_history'
+
+
+def prepared_native(tmp_path, monkeypatch, harness='dsh'):
+    runtime, state, document, _ = child(tmp_path, 'FirstAgent', harness, 'owned-session')
+    directory = Path(state['harness_state_dir'])
+    profile_key = 'DSH_HOME' if harness == 'dsh' else 'HERMES_HOME'
+    profile = str(tmp_path / 'owned-profile')
+    document.update(env={}, tools={'base': 'default', 'tools': {}},
+                    manifest_file=str(tmp_path / 'manifest.json'))
+    resume._atomic_json(directory / 'input.json', document)
+    resume._atomic_json(directory / 'launch.json', {
+        'argv': ['/bin/true'], 'env': {profile_key: profile}, 'cwd': str(tmp_path)})
+    (directory / 'native-exit.status').write_text('0\n')
+    generator = tmp_path / 'generator.py'
+    generator.write_text('''import argparse,json,sys,os
+p=argparse.ArgumentParser();p.add_argument('--input');p.add_argument('--out');a=p.parse_args()
+s=json.load(open(a.input))
+plan={'argv':[sys.executable,'-c','import sys; print(sys.argv[1])',s['resume_session_id']],
+      'env':{PROFILE_KEY:PROFILE},'cwd':s['cwd']}
+with open(a.out,'w') as f:json.dump(plan,f)
+os.chmod(a.out,0o600)
+'''.replace('PROFILE_KEY', repr(profile_key)).replace('PROFILE', repr(profile)))
+    monkeypatch.setenv('AGENTSTACK_CLAUDE_JSON', str(tmp_path / 'no-settings.json'))
+    monkeypatch.setenv('AGENTSTACK_MCP_URL', 'http://127.0.0.1:9/mcp')
+    monkeypatch.setattr(native, 'selection', lambda *a: {'python': sys.executable})
+    monkeypatch.setattr(native, 'config_generator', lambda *a: generator)
+    resume.begin_resume(runtime, 'FirstAgent', agent_id=73,
+                        project_key=state['project_key'], program=harness)
+    return runtime, state, directory, generator
+
+
+@pytest.mark.parametrize('harness', ['dsh', 'hermes'])
+def test_prepare_and_foreground_resume_keep_exact_id_and_profile(tmp_path, monkeypatch, harness):
+    runtime, state, directory, _ = prepared_native(tmp_path, monkeypatch, harness)
+    assert native.prepare_resume(runtime, 'FirstAgent') == directory
+    source = native.read(directory / 'input.json')
+    assert source['resume_session_id'] == 'owned-session'
+    assert Path(source['prompt_file']).read_text() == ''
+    assert not (directory / 'native-exit.status').exists()
+    proxy = native.read(source['mcp_config'])['mcpServers']['orrery-mail']['env']
+    assert proxy['AGENTSTACK_PROXY_PROGRAM'] == harness
+    assert proxy['AGENTSTACK_PROXY_TOKEN_FILE'] == str(runtime / 'agent_token_FirstAgent')
+    invocation = native.resume_command(runtime, 'FirstAgent').split('; native_rc=$?', 1)[0]
+    assert shlex.split(invocation)[-1] == 'owned-session'
+    current = resume._load_state(runtime / 'child-agents/FirstAgent.json')
+    assert current['retired_at'] is None and 'resume_in_progress_at' not in current
+    assert current['harness_state_dir'] == str(directory)
+
+
+def test_foreground_refuses_unprepared_or_canceled_attempt(tmp_path, monkeypatch):
+    runtime, state, directory, _ = prepared_native(tmp_path, monkeypatch)
+    with pytest.raises(ValueError, match='native_resume_not_prepared'):
+        native.resume_command(runtime, 'FirstAgent')
+    native.prepare_resume(runtime, 'FirstAgent')
+    resume.cancel_resume(runtime, 'FirstAgent', agent_id=73, project_key=state['project_key'])
+    with pytest.raises(ValueError, match='native_resume_not_prepared'):
+        native.resume_command(runtime, 'FirstAgent')
+
+
+def test_changed_profile_cannot_be_adopted_on_a_second_attempt(tmp_path, monkeypatch):
+    runtime, state, directory, generator = prepared_native(tmp_path, monkeypatch)
+    text = generator.read_text().replace('owned-profile', 'foreign-profile')
+    generator.write_text(text)
+    for _ in range(2):
+        with pytest.raises(ValueError, match='native_resume_profile_changed'):
+            native.prepare_resume(runtime, 'FirstAgent')
+    assert resume._load_state(runtime / 'child-agents/FirstAgent.json')['retired_at'] is not None
+
+
+def test_generation_failure_preserves_husk_and_retained_identity(tmp_path, monkeypatch):
+    runtime, state, _, _ = child(tmp_path, 'FirstAgent')
+    monkeypatch.setattr(server, 'RUNTIME_DIR', str(runtime))
+    monkeypatch.setattr(server, '_child_resume_module', lambda: resume)
+    monkeypatch.setattr(server, '_resume_registration', lambda *a: state)
+    monkeypatch.setattr(server, '_native_resume_launcher_ready', lambda: True)
+    def fail(*args):
+        raise ValueError('generator_unavailable')
+    monkeypatch.setattr(server, '_native_prepare_resume', fail)
+    monkeypatch.setattr(server, '_register_claude_resume', lambda *a: pytest.fail('Mail called'))
+    monkeypatch.setattr(server, '_launch_claude_resume_tmux', lambda *a, **k: pytest.fail('husk touched'))
+    result = server._do_resume_native('FirstAgent', 'dsh', replace_husk=True)
+    assert not result['ok']
+    current = resume._load_state(runtime / 'child-agents/FirstAgent.json')
+    assert current['retired_at'] == state['retired_at'] and 'resume_in_progress_at' not in current
+    assert (runtime / 'agent_token_FirstAgent').read_text() == state['registration_token']
+
+
+@pytest.mark.parametrize('harness', ['dsh', 'hermes'])
+def test_prepared_resume_cli_in_isolated_minimal_environment(tmp_path, monkeypatch, harness):
+    runtime, state, directory, _ = prepared_native(tmp_path, monkeypatch, harness)
+    native.prepare_resume(runtime, 'FirstAgent')
+    script = Path(native.__file__).resolve()
+    result = subprocess.run([sys.executable, '-I', str(script), 'resume',
+        '--runtime-dir', str(runtime), '--agent-name', 'FirstAgent',
+        '--project-key', state['project_key']],
+        env={'HOME': str(tmp_path), 'PATH': '/usr/bin:/bin'}, cwd='/',
+        stdin=subprocess.DEVNULL, capture_output=True, text=True, timeout=10)
+    assert result.returncode == 0, result.stderr
+    assert shlex.split(result.stdout.split('; native_rc=$?', 1)[0])[-1] == 'owned-session'
+    assert state['registration_token'] not in result.stdout + result.stderr
+    current = resume._load_state(runtime / 'child-agents/FirstAgent.json')
+    assert current['retired_at'] is None and 'resume_in_progress_at' not in current
+    assert current['harness_state_dir'] == str(directory)
