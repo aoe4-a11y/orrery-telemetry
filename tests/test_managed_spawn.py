@@ -233,12 +233,46 @@ class ServerRoutingTests(unittest.TestCase):
 class ProfileBusyTests(unittest.TestCase):
     setUp = ManagedTests.setUp
     payload = ManagedTests.payload
+    def set_hermes_interactive(self, value):
+        for provider in self.providers:
+            for entry in provider['models'][0]['harnesses']:
+                if entry['id'] == 'hermes':
+                    entry['interactive'] = value
     def test_hermes_same_profile_refused_but_other_backend_and_dsh_allowed(self):
+        self.set_hermes_interactive(False)
         request = self.payload(harness='hermes'); self.assertTrue(self.manager.submit(request)['ok'])
         self.assertEqual(self.manager.submit(self.payload(harness='hermes'))['error_code'], 'profile_busy')
         self.assertTrue(self.manager.submit(self.payload(provider='deepseek', harness='hermes'))['ok'])
         self.assertTrue(self.manager.submit(self.payload(harness='dsh'))['ok'])
         self.assertEqual(self.manager.submit(request)['attempt_id'], request['attempt_id'])
+
+    def test_interactive_hermes_attempts_share_profile_with_separate_jobs(self):
+        requests = [self.payload(harness='hermes') for _ in range(2)]
+        for request in requests:
+            result = self.manager.submit(request)
+            self.assertTrue(result['ok'], result)
+            self.assertIs(result['capabilities']['interactive'], True)
+            self.assertFalse(result['finished'])
+        self.assertEqual(len(self.spawn_calls), 2)
+        self.assertNotEqual(requests[0]['attempt_id'], requests[1]['attempt_id'])
+
+    def test_mixed_legacy_and_interactive_profiles_are_refused_in_both_orders(self):
+        for provider, first_interactive in (('strata', True), ('deepseek', False)):
+            self.set_hermes_interactive(first_interactive)
+            first = self.payload(provider=provider, harness='hermes')
+            self.assertTrue(self.manager.submit(first)['ok'])
+            self.set_hermes_interactive(not first_interactive)
+            second = self.payload(provider=provider, harness='hermes')
+            self.assertEqual(self.manager.submit(second)['error_code'], 'profile_busy')
+            self.assertFalse((self.root / 'jobs' / second['attempt_id']).exists())
+        self.assertEqual(len(self.spawn_calls), 2)
+
+    def test_attempt_without_saved_overlay_capability_is_not_assumed_interactive(self):
+        first = self.payload(harness='hermes'); self.assertTrue(self.manager.submit(first)['ok'])
+        path = self.root / 'jobs' / first['attempt_id'] / 'status.json'
+        old = m.read(path); old.pop('capabilities'); m.save(path, old)
+        self.assertEqual(self.manager.submit(self.payload(harness='hermes'))['error_code'], 'profile_busy')
+        self.assertEqual(len(self.spawn_calls), 1)
 
 class ManagedHttpTests(unittest.TestCase):
     def test_post_202_and_uuid_lookup_share_existing_routes(self):

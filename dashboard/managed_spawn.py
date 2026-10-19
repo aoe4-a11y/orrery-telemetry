@@ -319,6 +319,10 @@ class Manager:
                         old = read(previous / 'request.json', {}).get('request', {})
                         status = read(previous / 'status.json', {})
                         if old.get('harness') == 'hermes' and old.get('provider') == request['provider']:
+                            # Both adapters use attempt-owned config overlays.
+                            # A legacy attempt still writes shared profile config.
+                            if interactive and status.get('capabilities', {}).get('interactive') is True:
+                                continue
                             if (status.get('finished') is not True
                                     or ((previous / 'state/registration-intent.json').exists()
                                         and status.get('runtime_success') is not True)):
