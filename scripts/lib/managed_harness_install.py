@@ -199,7 +199,8 @@ def install_hermes(repo, root, python, cache=None):
     if not generation.is_relative_to((install / 'environments').resolve()) or not executable.is_file():
         raise ValueError('Hermes PM did not publish a committed runtime')
     print('Hermes: existing manual homes/logins are untouched; no credentials were installed.')
-    return {'hermes_source': str(source), 'managed_root': str(root), 'hermes_executable': str(executable), **stamp}
+    return {'hermes_source': str(source), 'managed_root': str(root), 'hermes_executable': str(executable),
+            'variant': 'plain', 'thin_config_contract': 1, **stamp}
 
 
 def generation_id(repo, harness, *, plain=True, datadir=True):
@@ -291,6 +292,19 @@ def provision(repo, install, harness, choice='keep', node='', python=sys.executa
             raise ValueError('Runtime generation exists without installer ownership')
         receipt = read(root / OWNER)
         validate(repo, harness, receipt)
+        if harness == 'hermes' and root.name == HERMES_COMMIT[:16] + '-v2' and 'variant' not in receipt:
+            # v2's source is upstream-native already. Adopt only a validated,
+            # pristine owned tree; a failed stamp/runtime/source check leaves
+            # its receipt byte-for-byte unchanged. Never migrate v1.
+            details = receipt['details']
+            try:
+                run(['git', 'diff', '--quiet', HERMES_COMMIT, '--', '.'],
+                    cwd=Path(details['hermes_source']), env=environment(root))
+            except subprocess.CalledProcessError:
+                raise ValueError('Hermes v2 source changed; plain metadata was not updated') from None
+            receipt = {**receipt, 'variant': 'plain', 'thin_config_contract': 1,
+                       'details': {**details, 'variant': 'plain', 'thin_config_contract': 1}}
+            save(root / OWNER, receipt)
     else:
         root.mkdir(parents=True, mode=0o700)
         try:
