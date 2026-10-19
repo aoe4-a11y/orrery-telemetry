@@ -1,6 +1,6 @@
 # dsh の標準 CLI 起動
 
-薄い起動は upstream の dsh CLI をそのまま使い、ORRERY は子ごとの profile と provider/model/MCP/指示/skill の設定を生成します。旧 managed の entry、egress preload、要求回数・出力の試し用上限、usage 必須、専用の task 寿命は持ち込みません。
+薄い起動は upstream の dsh CLI をそのまま使い、ORRERY は子ごとの profile と provider/model/MCP/指示/skill の設定を生成します。通常の native tool と session の機能を使います。
 
 `integrations/dsh/thin_config.py --input INPUT.json --out PLAN.json` は鍵を読まず、native argv・追加 env・cwd と guard の設定参照を返します。CLI の失敗は固定 reason の一行です。共有の標準 launcher が製品の Mail proxy を生成し、追加 MCP を合流してから入力します。stdio/http はコピーし、tool 単位の承認や filter を表現できない選択は拒否します。選択されていない MCP を空 map で止めたとは扱いません。dsh 用の明示 profile は固定 base/TUI bundles と生成した client 行だけをロードし、親の profile/plugin MCP はコピーしません。
 

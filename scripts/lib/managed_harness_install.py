@@ -70,7 +70,7 @@ def environment(root):
             'GIT_CONFIG_NOSYSTEM': '1', 'GIT_TERMINAL_PROMPT': '0'}
 
 
-def install_dsh(repo, root, node, cache=None, *, plain=False, datadir=False):
+def install_dsh(repo, root, node, cache=None, *, datadir=True):
     node = Path(node).expanduser()
     if not node.is_absolute() or not node.is_file() or not os.access(node, os.X_OK):
         raise ValueError('dsh requires --dsh-node with an absolute Node executable (>=24.2)')
@@ -135,40 +135,25 @@ def install_dsh(repo, root, node, cache=None, *, plain=False, datadir=False):
         if read(package / 'package.json')['version'] != item['version']:
             raise ValueError('Installed dsh/TUI version mismatch')
     save(evidence / 'node-runtime.json', proof)
-    if plain:
-        # Isolate only the TUI data root; keep the rest of upstream untouched.
-        variant, recipe_sha = 'plain', None
-        if datadir:
-            recipe_file = repo / 'integrations/dsh/tui-datadir.patch.json'
-            recipe = read(recipe_file)
-            target = tui / recipe['file']
-            text = target.read_text()
-            if text.count(recipe['old']) != 1:
-                raise ValueError('Pinned TUI data-dir patch preimage mismatch')
-            target.write_text(text.replace(recipe['old'], recipe['new'], 1))
-            variant = 'plain-datadir'
-            recipe_sha = hashlib.sha256(recipe_file.read_bytes()).hexdigest()
-        receipt = evidence / 'upstream-runtime.json'
-        save(receipt, {'variant': variant, 'source_patch': 'tui-datadir-v1' if datadir else None,
-             'recipe_sha256': recipe_sha,
-             'files': [{'file': name, 'sha256': hashlib.sha256((tui / name).read_bytes()).hexdigest()}
-                       for name in UPSTREAM_PROOF_FILES]})
-        return {'node': str(node), 'runtime': str(runtime), 'runtime_receipt': str(receipt),
-                'variant': variant, 'thin_config_contract': 1}
-    recipe_file = repo / 'integrations/dsh/tui-managed.patch'
-    changes = {}
-    for row in read(recipe_file)['replacements']:
-        target = tui / row['file']
+    # Isolate only the TUI data root; keep the rest of upstream untouched.
+    variant, recipe_sha = 'plain', None
+    if datadir:
+        recipe_file = repo / 'integrations/dsh/tui-datadir.patch.json'
+        recipe = read(recipe_file)
+        target = tui / recipe['file']
         text = target.read_text()
-        if text.count(row['old']) != 1:
-            raise ValueError('Pinned TUI patch preimage mismatch')
-        target.write_text(text.replace(row['old'], row['new'], 1))
-        changes[row['file']] = hashlib.sha256(target.read_bytes()).hexdigest()
-    save(evidence / 'tui-patch-applied.json', {
-        'recipe_sha256': hashlib.sha256(recipe_file.read_bytes()).hexdigest(),
-        'changes': [{'file': name, 'after': digest} for name, digest in changes.items()]})
-    save(evidence / 'node-runtime.json', proof)
-    return {'node': str(node), 'runtime': str(runtime), 'patch_receipt': str(evidence / 'tui-patch-applied.json')}
+        if text.count(recipe['old']) != 1:
+            raise ValueError('Pinned TUI data-dir patch preimage mismatch')
+        target.write_text(text.replace(recipe['old'], recipe['new'], 1))
+        variant = 'plain-datadir'
+        recipe_sha = hashlib.sha256(recipe_file.read_bytes()).hexdigest()
+    receipt = evidence / 'upstream-runtime.json'
+    save(receipt, {'variant': variant, 'source_patch': 'tui-datadir-v1' if datadir else None,
+         'recipe_sha256': recipe_sha,
+         'files': [{'file': name, 'sha256': hashlib.sha256((tui / name).read_bytes()).hexdigest()}
+                   for name in UPSTREAM_PROOF_FILES]})
+    return {'node': str(node), 'runtime': str(runtime), 'runtime_receipt': str(receipt),
+            'variant': variant, 'thin_config_contract': 1}
 
 
 def install_hermes(repo, root, python, cache=None):
@@ -203,16 +188,14 @@ def install_hermes(repo, root, python, cache=None):
             'variant': 'plain', 'thin_config_contract': 1, **stamp}
 
 
-def generation_id(repo, harness, *, plain=True, datadir=True):
+def generation_id(repo, harness, *, datadir=True):
     if harness == 'hermes':
         return HERMES_COMMIT[:16] + '-v2'
     inputs = ['runtime-pins.json', 'runtime-package-lock.json', 'ui-package.json', 'ui-package-lock.json']
-    if not plain:
-        inputs.append('tui-managed.patch')
-    elif datadir:
+    if datadir:
         inputs.append('tui-datadir.patch.json')
     digest = hashlib.sha256(b''.join((repo / 'integrations/dsh' / name).read_bytes() for name in inputs)).hexdigest()[:16]
-    return 'dsh-0.2.1-rc.2-tui-0.16.1-' + digest + ('-plain-datadir1' if plain and datadir else '-plain1' if plain else '')
+    return 'dsh-0.2.1-rc.2-tui-0.16.1-' + digest + ('-plain-datadir1' if datadir else '-plain1')
 
 
 def validate(repo, harness, receipt):
@@ -220,6 +203,8 @@ def validate(repo, harness, receipt):
         raise ValueError('Managed installation receipt is incomplete')
     details = receipt['details']
     if harness == 'dsh':
+        if receipt.get('variant') not in ('plain', 'plain-datadir'):
+            raise ValueError('Legacy managed dsh runtime is unsupported; existing files were retained')
         runtime = Path(details['runtime'])
         proof = read(runtime.parent / 'evidence/node-runtime.json')
         node = Path(details['node'])
@@ -228,32 +213,21 @@ def validate(repo, harness, receipt):
         for item in read(repo / 'integrations/dsh/runtime-pins.json'):
             if read(runtime / 'node_modules' / item['name'] / 'package.json')['version'] != item['version']:
                 raise ValueError('Installed dsh/TUI version mismatch')
-        if receipt.get('variant') in ('plain', 'plain-datadir'):
-            source = read(details['runtime_receipt'])
-            if (receipt.get('thin_config_contract') != 1 or source.get('variant') != receipt['variant']
-                    or source.get('source_patch') != ('tui-datadir-v1' if receipt['variant'] == 'plain-datadir' else None) or not source.get('files')):
-                raise ValueError('Plain runtime receipt is incomplete')
-            if receipt['variant'] == 'plain-datadir' and source.get('recipe_sha256') != hashlib.sha256(
-                    (repo / 'integrations/dsh/tui-datadir.patch.json').read_bytes()).hexdigest():
-                raise ValueError('TUI data-dir patch receipt mismatch')
-            for row in source['files']:
-                relative = Path(row['file'])
-                if relative.is_absolute() or '..' in relative.parts:
-                    raise ValueError('Plain runtime path is invalid')
-                target = runtime / 'node_modules/@deepseek-harness-tui/dsh-tui' / relative
-                if hashlib.sha256(target.read_bytes()).hexdigest() != row['sha256']:
-                    raise ValueError('Plain upstream runtime changed')
-            return
-        patch = read(details['patch_receipt'])
-        recipe_file = repo / 'integrations/dsh/tui-managed.patch'
-        files = {row['file'] for row in read(recipe_file)['replacements']}
-        if (patch['recipe_sha256'] != hashlib.sha256(recipe_file.read_bytes()).hexdigest()
-                or sorted(row['file'] for row in patch['changes']) != sorted(files)):
-            raise ValueError('Managed TUI patch receipt mismatch')
-        for row in patch['changes']:
-            target = runtime / 'node_modules/@deepseek-harness-tui/dsh-tui' / row['file']
-            if hashlib.sha256(target.read_bytes()).hexdigest() != row['after']:
-                raise ValueError('Managed TUI patch changed')
+        source = read(details['runtime_receipt'])
+        if (receipt.get('thin_config_contract') != 1 or source.get('variant') != receipt['variant']
+                or source.get('source_patch') != ('tui-datadir-v1' if receipt['variant'] == 'plain-datadir' else None) or not source.get('files')):
+            raise ValueError('Plain runtime receipt is incomplete')
+        if receipt['variant'] == 'plain-datadir' and source.get('recipe_sha256') != hashlib.sha256(
+                (repo / 'integrations/dsh/tui-datadir.patch.json').read_bytes()).hexdigest():
+            raise ValueError('TUI data-dir patch receipt mismatch')
+        for row in source['files']:
+            relative = Path(row['file'])
+            if relative.is_absolute() or '..' in relative.parts:
+                raise ValueError('Plain runtime path is invalid')
+            target = runtime / 'node_modules/@deepseek-harness-tui/dsh-tui' / relative
+            if hashlib.sha256(target.read_bytes()).hexdigest() != row['sha256']:
+                raise ValueError('Plain upstream runtime changed')
+        return
     else:
         root = Path(details['managed_root'])
         source = Path(details['hermes_source'])
@@ -313,7 +287,7 @@ def provision(repo, install, harness, choice='keep', node='', python=sys.executa
             # User data is outside the owned runtime generation. PM/runner still
             # see the expected HERMES_HOME/profiles path.
             (root / 'profiles').symlink_to(profiles, target_is_directory=True)
-            details = (install_dsh(repo, root, node, cache, plain=True, datadir=True) if harness == 'dsh'
+            details = (install_dsh(repo, root, node, cache, datadir=True) if harness == 'dsh'
                        else install_hermes(repo, root, python, cache))
             details['generation_receipt'] = str(root / OWNER)
             receipt = {'harness': harness, 'complete': True, 'details': details,
