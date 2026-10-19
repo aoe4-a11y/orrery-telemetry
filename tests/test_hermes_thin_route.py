@@ -34,7 +34,8 @@ try:
     fixture.profile_spec.update(base_url=selected_url, key_cmd=command)
     fixture.save(fixture.template, fixture.template_data)
     profile = fixture.runtime / 'profiles/deepseek'
-    old = {'memory': {'memory_enabled': True}}
+    old = {'memory': {'memory_enabled': True},
+           'telemetry': {'shared_metrics': {'enabled': False, 'send': False, 'offer_version': 2}}}
     entry = {'base_url': selected_url}
     if case in ('api', 'url'):
         entry = {case: 'https://old-endpoint.invalid/v1'}

@@ -58,14 +58,14 @@ class ThinGuard(unittest.TestCase):
                 with self.subTest(tool=tool):
                     result = guard.before(tool, args)
                     self.assertEqual(result['action'], 'block')
-                    self.assertEqual(result['message'], 'ORRERY hook denied: deny-llm-key-read.py')
+                    self.assertTrue(result['message'].startswith('ORRERY hook denied: deny-llm-key-read.py\nLOCAL_MODEL_KEY_READ_DENIED:'))
                     self.assertNotIn('fixture-provider-canary', result['message'])
 
     def test_registration_veto_precedes_reservation_and_tool(self):
         (self.core / 'hooks/check-agent-registered.sh').write_text('echo unresolved >&2\nexit 2\n')
         (self.core / 'hooks/check-file-reservation.sh').write_text('touch ' + str(self.base / 'reservation-called') + '\n')
         result = guard.before('write_file', {'path': 'file.txt', 'content': 'never'})
-        self.assertEqual(result, {'action': 'block', 'message': 'ORRERY hook denied: check-agent-registered.sh'})
+        self.assertEqual(result, {'action': 'block', 'message': 'ORRERY hook denied: check-agent-registered.sh\nunresolved'})
         self.assertFalse((self.base / 'reservation-called').exists())
         self.assertFalse((self.base / 'file.txt').exists())
 
@@ -75,7 +75,7 @@ class ThinGuard(unittest.TestCase):
             payload = json.loads(kwargs['input'])
             events.append((Path(argv[-1]).name, payload))
             denied = Path(argv[-1]).name == 'check-file-reservation.sh' and payload['tool_input']['file_path'].endswith('/destination')
-            return SimpleNamespace(returncode=2 if denied else 0, stderr='reservation conflict' if denied else '')
+            return SimpleNamespace(returncode=2 if denied else 0, stdout='', stderr='reservation conflict' if denied else '')
         with patch.object(guard.subprocess, 'run', side_effect=run):
             result = guard.before('patch', {'mode': 'patch', 'patch': '*** Move File: source -> destination\n'}, session_id='own-session')
         self.assertEqual(result['action'], 'block')
@@ -83,10 +83,47 @@ class ThinGuard(unittest.TestCase):
         self.assertEqual(checked, [str(self.base / 'source'), str(self.base / 'destination')])
         self.assertTrue(all(payload['session_id'] == 'own-session' for _, payload in events))
 
-    def test_hook_failure_blocks_without_exposing_output(self):
-        (self.core / 'hooks/check-agent-registered.sh').write_text('echo private-output >&2\nexit 1\n')
+    def test_blocking_stderr_reason_reaches_caller_without_raw_stdout(self):
+        (self.core / 'hooks/check-agent-registered.sh').write_text('echo private-stdout\necho registration-required >&2\nexit 2\n')
         self.assertEqual(guard.before('terminal', {'command': 'echo harmless'}),
-                         {'action': 'block', 'message': 'ORRERY hook denied: check-agent-registered.sh'})
+                         {'action': 'block', 'message': 'ORRERY hook denied: check-agent-registered.sh\nregistration-required'})
+
+    def test_structured_denial_precedes_stderr_and_is_bounded(self):
+        cases = [({'reason': 'reserve-before-edit'}, 'reserve-before-edit'),
+                 ({'hookSpecificOutput': {'permissionDecisionReason': 'identity-required'}}, 'identity-required'),
+                 ({'reason': 7}, 'stderr-reason'),
+                 ({'reason': '\x1b[31m' + 'x' * 2500 + '\x1b[0m'}, 'x' * 2000)]
+        for public, reason in cases:
+            with self.subTest(public=public), patch.object(guard.subprocess, 'run', return_value=SimpleNamespace(
+                    returncode=2, stdout=json.dumps(public), stderr='stderr-reason')):
+                result = guard.before('write_file', {'path': 'file', 'content': 'never'})
+                self.assertEqual(result, {'action': 'block', 'message': 'ORRERY hook denied: deny-llm-key-read.py\n' + reason})
+
+    def test_internal_errors_and_nonblocking_exit_codes_do_not_become_public_reasons(self):
+        for code, stderr in [(1, 'private internal failure'),
+                             (2, 'Traceback (most recent call last):\nsecret diagnostic'),
+                             (2, '  File "private/path.py", line 5\nprivate diagnostic'),
+                             (2, 'RuntimeError: private diagnostic'),
+                             (2, '/private/hook.sh: line 3: private diagnostic')]:
+            with self.subTest(code=code, stderr=stderr), patch.object(guard.subprocess, 'run',
+                    return_value=SimpleNamespace(returncode=code, stdout='', stderr=stderr)):
+                self.assertEqual(guard.before('terminal', {'command': 'true'}),
+                    {'action': 'block', 'message': 'ORRERY hook denied: deny-llm-key-read.py'})
+
+    def test_denial_codepoint_boundary_controls_and_invalid_utf8(self):
+        boundary = '拒😀' * 1000
+        cases = [(2, '', 'short denial', 'short denial'), (2, '', boundary, boundary),
+                 (2, '', boundary + 'x', boundary), (2, '', '', ''),
+                 (2, 'not JSON', '', ''),
+                 (2, '', '\x1b[31m公開拒否\x1b[0m\x07', '公開拒否'),
+                 (1, '', 'not an exit-two refusal', '')]
+        for code, stdout, stderr, expected in cases:
+            with self.subTest(code=code, length=len(stderr)), patch.object(guard.subprocess, 'run',
+                    return_value=SimpleNamespace(returncode=code, stdout=stdout, stderr=stderr)):
+                self.assertEqual(guard.call_hook('check-file-reservation.sh', {'cwd': str(self.base)}).reason, expected)
+        (self.core / 'hooks/check-agent-registered.sh').write_text("printf '\\377A' >&2\nexit 2\n")
+        result = guard.before('terminal', {'command': 'true'})
+        self.assertEqual(result['message'], 'ORRERY hook denied: check-agent-registered.sh\n\ufffdA')
 
     def test_only_allowed_public_structured_warning_is_displayed(self):
         cases = [(0, '{"systemMessage":"reservation is unconfirmed"}', 'reservation is unconfirmed\n'),
@@ -98,7 +135,7 @@ class ThinGuard(unittest.TestCase):
                 visible = io.StringIO()
                 with patch.object(guard.subprocess, 'run', return_value=SimpleNamespace(
                         returncode=code, stdout=stdout, stderr='private stderr')), patch('sys.stderr', visible):
-                    self.assertEqual(guard.call_hook('check-file-reservation.sh', {'cwd': str(self.base)}), code == 0)
+                    self.assertEqual(bool(guard.call_hook('check-file-reservation.sh', {'cwd': str(self.base)})), code == 0)
                 self.assertEqual(visible.getvalue(), expected)
 
     def test_credential_guard_precedes_registration(self):
@@ -179,6 +216,9 @@ class ThinGuard(unittest.TestCase):
                 if result is None:
                     target.write_text(state)  # native handler is reached only after pre-tool approval
                 self.assertEqual(result is None, state == 'allowed', result)
+                if state != 'allowed':
+                    self.assertIn('FILE RESERVATION REQUIRED:', result['message'])
+                    self.assertIn('before editing', result['message'])
                 self.assertEqual(target.exists(), state == 'allowed')
                 self.assertTrue(server.requests)
         self.assertEqual((self.base / 'native.txt').read_text(), 'allowed')

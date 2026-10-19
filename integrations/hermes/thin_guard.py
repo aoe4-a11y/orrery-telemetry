@@ -12,6 +12,37 @@ from pathlib import Path
 import re
 import subprocess
 import sys
+from typing import NamedTuple
+
+
+class HookResult(NamedTuple):
+    allowed: bool
+    reason: str = ''
+
+    def __bool__(self):
+        return self.allowed
+
+
+def _denial_reason(result):
+    if result.returncode != 2:
+        return ''
+    # Accept the public hook reason schema; arbitrary stdout is not a reason.
+    try:
+        public = json.loads(result.stdout or '{}')
+    except json.JSONDecodeError:
+        public = None
+    reason = public.get('reason') if isinstance(public, dict) else None
+    if not isinstance(reason, str) or not reason.strip():
+        specific = public.get('hookSpecificOutput') if isinstance(public, dict) else None
+        reason = specific.get('permissionDecisionReason') if isinstance(specific, dict) else None
+    if not isinstance(reason, str) or not reason.strip():
+        reason = getattr(result, 'stderr', '') or ''
+    if re.search(r'(?m)^\s*(?:Traceback \(|File ".*", line \d+|\w*(?:Error|Exception):)|: line \d+:', reason):
+        return ''
+    # Like Claude's blocking hook stderr, this is intended for the caller.
+    # Bound the message and remove terminal control sequences from tool output.
+    reason = re.sub(r'\x1b\[[0-?]*[ -/]*[@-~]', '', reason)
+    return ''.join(char for char in reason.strip() if char.isprintable() or char in '\n\t')[:2000]
 
 
 def payloads(tool_name, args, *, cwd, session_id=''):
@@ -50,17 +81,17 @@ def call_hook(name, payload):
     interpreter = sys.executable if name.endswith('.py') else '/bin/bash'
     result = subprocess.run([interpreter, str(root / 'hooks' / name)],
                             input=json.dumps(payload), text=True, capture_output=True,
-                            cwd=payload['cwd'], timeout=60)
+                            cwd=payload['cwd'], timeout=60, errors='replace')
     if result.returncode == 0:
         # Only the common hook's public warning schema is visible. Raw stdout
-        # and stderr can contain private diagnostics and are never forwarded.
+        # and stderr are not forwarded for successful hooks.
         try:
             public = json.loads(getattr(result, 'stdout', '') or '{}')
         except json.JSONDecodeError:
             public = None
         if isinstance(public, dict) and isinstance(public.get('systemMessage'), str) and public['systemMessage']:
             print(public['systemMessage'], file=sys.stderr)
-    return result.returncode == 0
+    return HookResult(result.returncode == 0, _denial_reason(result) if result.returncode else '')
 
 
 def before(tool_name, args, session_id='', task_id='', **_):
@@ -72,8 +103,11 @@ def before(tool_name, args, session_id='', task_id='', **_):
         if payload['tool_name'] in ('Write', 'Edit'):
             checks.append('check-file-reservation.sh')
         for name in checks:
-            if not call_hook(name, payload):
-                return {'action': 'block', 'message': 'ORRERY hook denied: ' + name}
+            decision = call_hook(name, payload)
+            if not decision:
+                reason = getattr(decision, 'reason', '')
+                return {'action': 'block', 'message': 'ORRERY hook denied: ' + name +
+                        ('\n' + reason if reason else '')}
     return None
 
 

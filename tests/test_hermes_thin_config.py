@@ -177,6 +177,57 @@ class ThinConfig(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, '^inherited_mcp_conflict$'):
             self.generate(mcp_selection={'inherit': False})
 
+    def test_selected_mcp_servers_replace_inheritance_without_rewriting_profile(self):
+        profile = self.runtime / 'profiles/deepseek'
+        old = {'telemetry': {'shared_metrics': {'enabled': False, 'send': False, 'offer_version': 2}},
+               'mcp_servers': {'orrery-mail': {'command': '/stale/retired-child-proxy'},
+                               'chosen': {'command': '/stale/selected-server'},
+                               'unrelated': {'command': '/keep/native-server'}}}
+        self.save(profile / 'config.yaml', old)
+        self.save(self.base / 'mcp.json', {'mcpServers': {
+            'orrery_mail': {'command': '/fixture/proxy'}, 'chosen': {'command': '/selected/native-server'}}})
+        before = (profile / 'config.yaml').read_bytes()
+        plan = self.generate()
+        overlay = config.read(Path(plan['config_dir']) / 'config.yaml')
+        self.assertEqual(overlay['mcp_servers']['orrery-mail'], {'enabled': False})
+        self.assertEqual(overlay['mcp_servers']['orrery_mail']['command'], '/fixture/proxy')
+        self.assertEqual(overlay['mcp_servers']['unrelated'], {'enabled': False})
+        self.assertEqual(overlay['mcp_servers']['chosen'], {'command': '/selected/native-server'})
+        self.assertEqual((profile / 'config.yaml').read_bytes(), before)
+
+    def test_packaging_locale_reference_is_from_selected_source(self):
+        plan = self.generate()
+        self.assertEqual(plan['env']['HERMES_BUNDLED_LOCALES'], str(self.source / 'locales'))
+
+    def test_same_named_mcp_transport_conflict_has_named_diagnostic_without_profile_writes(self):
+        profile = self.runtime / 'profiles/deepseek'
+        old = {'mcp_servers': {'orrery_mail': {'url': 'https://stale.invalid/mcp'}}}
+        self.save(profile / 'config.yaml', old)
+        before = (profile / 'config.yaml').read_bytes()
+        with self.assertRaisesRegex(ValueError, '^inherited_mcp_conflict$'):
+            self.generate()
+        log = self.base / 'child/config-generation.log'
+        self.assertEqual(json.loads(log.read_text()), {'event': 'inherited_mcp_conflict', 'mcp_server': 'orrery_mail'})
+        source, output = self.base / 'conflict-input.json', self.base / 'conflict-plan.json'
+        self.save(source, self.document)
+        stderr = io.StringIO()
+        with patch('sys.argv', ['thin_config.py', '--input', str(source), '--out', str(output)]), \
+                patch('sys.stderr', stderr), self.assertRaises(SystemExit) as stopped:
+            config.main()
+        self.assertEqual(stopped.exception.code, 1)
+        lines = stderr.getvalue().splitlines()
+        self.assertEqual(lines, ['HERMES_THIN_CONFIG_ERROR=inherited_mcp_conflict'])
+        self.assertFalse(output.exists())
+        self.assertEqual((profile / 'config.yaml').read_bytes(), before)
+
+    def test_same_named_mcp_command_and_args_are_replaced_by_selection(self):
+        profile = self.runtime / 'profiles/deepseek'
+        self.save(profile / 'config.yaml', {'mcp_servers': {'orrery_mail': {
+            'command': '/old/proxy', 'args': ['old-reference']}}})
+        plan = self.generate()
+        overlay = config.read(Path(plan['config_dir']) / 'config.yaml')
+        self.assertEqual(overlay['mcp_servers']['orrery_mail'], config.read(self.base / 'mcp.json')['mcpServers']['orrery_mail'])
+
     def test_unowned_skill_is_not_replaced(self):
         path = self.runtime / 'profiles/deepseek/skills/delegate'
         path.mkdir(parents=True)
@@ -248,17 +299,27 @@ try:
     plugins.discover_plugins()
     if not broken:
         result = plugins.get_pre_tool_call_block_message('write_file', {'path': str(fixture.base / 'no-write'), 'content': 'denied'}, task_id='fixture', session_id='fixture')
-        assert result == 'ORRERY hook denied: check-agent-registered.sh', 'native plugin did not reach common hook: ' + str(result)
+        assert result == 'ORRERY hook denied: check-agent-registered.sh\nthin-fixture-registration-denied', 'native plugin did not reach common hook: ' + str(result)
         assert not (fixture.base / 'no-write').exists()
         for name in ('check-agent-registered.sh', 'check-file-reservation.sh'):
             (hooks / name).write_text('exit 0\n')
         (hooks / 'deny-llm-key-read.py').unlink()
         (hooks / 'deny-llm-key-read.py').symlink_to(Path(os.environ['FIXTURE_PRODUCT']) / 'hooks/deny-llm-key-read.py')
         denied = plugins.get_pre_tool_call_block_message('terminal', {'command': '/fixture/key-helper --selector fixture-key'}, task_id='fixture', session_id='fixture')
-        assert denied == 'ORRERY hook denied: deny-llm-key-read.py'
+        import ast
+        guard_tree = ast.parse((Path(os.environ['FIXTURE_PRODUCT']) / 'hooks/deny-llm-key-read.py').read_text())
+        public_message = next(ast.literal_eval(node.value) for node in guard_tree.body if isinstance(node, ast.Assign)
+            and any(isinstance(target, ast.Name) and target.id == 'MESSAGE' for target in node.targets))
+        expected_denial = 'ORRERY hook denied: deny-llm-key-read.py\n' + public_message
+        assert denied == expected_denial
         protected = Path(plan['config_dir']) / 'config.yaml'
+        protected_config = json.loads(protected.read_text())
+        protected_config['fixture_secret'] = 'fixture-provider-key-canary'
+        protected.write_text(json.dumps(protected_config))
         denied_read = plugins.get_pre_tool_call_block_message('read_file', {'path': str(protected)}, task_id='fixture', session_id='fixture')
-        assert denied_read == 'ORRERY hook denied: deny-llm-key-read.py'
+        assert denied_read == expected_denial
+        for value in ('/fixture/key-helper --selector fixture-key', str(protected), 'fixture-provider-key-canary'):
+            assert value not in denied and value not in denied_read
         from agent.delegation_context import delegated_child_context
         plugins.invoke_hook('on_session_start', session_id='owned-native-session')
         native_session = Path(plan['env']['AGENTSTACK_NATIVE_SESSION_FILE'])
