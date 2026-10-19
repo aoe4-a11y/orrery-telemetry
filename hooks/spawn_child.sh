@@ -3037,16 +3037,22 @@ cleanup_harness_failure() {
     if [[ "${SPAWN_TRAP_SESSION:-}" == "$CHILD_NAME" ]]; then
         # Never release reservations while this attempt's pane is still live.
         # A failed stop is unknown; it cannot authorize remote/local cleanup.
-        local stop_status=0
-        tmux has-session -t "=$CHILD_NAME" >/dev/null 2>&1 || stop_status=$?
+        local stop_status=0 stop_output="" stop_confirmed=false
+        stop_output="$(tmux has-session -t "=$CHILD_NAME" 2>&1)" || stop_status=$?
         if [[ "$stop_status" == 0 ]]; then
             if ! tmux kill-session -t "=$CHILD_NAME" >/dev/null 2>&1; then
                 echo "Harness stop unconfirmed; recovery state retained" >&2
                 return 1
             fi
             tmux has-session -t "=$CHILD_NAME" >/dev/null 2>&1 || stop_status=$?
+            [[ "$stop_status" != 1 ]] || stop_confirmed=true
+        elif [[ "$stop_status" == 1 && "$stop_output" == *"can't find session"* ]] \
+            || [[ -n "${HARNESS_STATE:-}" && -f "$HARNESS_STATE/native-exit.status" ]]; then
+            # Exit 1 alone also covers socket/permission failures. Only a
+            # server reply or this generation's native exit proves absence.
+            stop_confirmed=true
         fi
-        if [[ "$stop_status" != 1 ]]; then
+        if [[ "$stop_confirmed" != true ]]; then
             echo "Harness stop unconfirmed; recovery state retained" >&2
             return 1
         fi

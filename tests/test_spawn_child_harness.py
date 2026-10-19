@@ -29,7 +29,7 @@ def fixture(tmp_path, *, gone=False):
     env['AGENTSTACK_MANAGED_SPAWN_CONFIG']=str(manifest)
     tmux=tmp_path/'bin/tmux';text=tmux.read_text()
     if gone:
-        text=text.replace('has-session) [[ -f "$FAKE_TMUX_ALIVE" ]]', 'has-session) exit 1')
+        text=text.replace('has-session) [[ -f "$FAKE_TMUX_ALIVE" ]]', "has-session) printf \"can't find session: HarnessChild\\n\" >&2; exit 1")
     tmux.write_text(text)
     for program in ('claude','codex'):
         _executable(tmp_path/'bin'/program,'#!/bin/sh\nprintf called > '+str(tmp_path/'forbidden-native-probe')+'\nexit 91\n')
@@ -162,8 +162,11 @@ def test_native_early_exit_is_not_ready_while_cleanup_is_still_running(tmp_path)
     generator.write_text(generator.read_text().replace("['/usr/bin/true']", "['/bin/sh','-c','exit 17']"))
     product = tmp_path / 'pane-product'; (product / 'hooks').mkdir(parents=True)
     cleanup_started = tmp_path / 'cleanup-started'; cleanup_done = tmp_path / 'cleanup-done'
+    cleanup_release = tmp_path / 'cleanup-release'
     _executable(product / 'hooks/cleanup-child-agent.sh',
-        '#!/bin/bash\ntouch ' + str(cleanup_started) + '\n/bin/sleep 2\ntouch ' + str(cleanup_done) + '\nexit 1\n')
+        '#!/bin/bash\ntouch ' + str(cleanup_started) + '\n'
+        'for ((i=0; i<3000; i++)); do [[ -f \"' + str(cleanup_release) + '\" ]] && break; /bin/sleep 0.01; done\n'
+        'touch ' + str(cleanup_done) + '\nexit 1\n')
     helper = tmp_path / 'harness-fixture.py'
     helper.write_text(helper.read_text().replace('raise SystemExit(m["main"]())',
         'if sys.argv[1]=="command":g["ROOT"]=Path(' + repr(str(product)) + ')\nraise SystemExit(m["main"]())'))
@@ -176,25 +179,26 @@ def test_native_early_exit_is_not_ready_while_cleanup_is_still_running(tmp_path)
         ' for ((i=0; i<200; i++)); do [[ -e ' + str(cleanup_started) + ' ]] && break; /bin/sleep 0.01; done\n'
         'fi\ncase "${1:-}" in\n', 1)
     tmux.write_text(text)
-    result = subprocess.run(['/bin/bash', str(SPAWN), '--pre-registered', 'HarnessChild',
-        '--child-token-file', str(token), '--harness', 'dsh', '--backend', 'strata',
-        '--model', 'formal-model', '--standalone', '', str(work)],
-        env=env, cwd=ROOT, capture_output=True, text=True, timeout=15)
     try:
+        result = subprocess.run(['/bin/bash', str(SPAWN), '--pre-registered', 'HarnessChild',
+            '--child-token-file', str(token), '--harness', 'dsh', '--backend', 'strata',
+            '--model', 'formal-model', '--standalone', '', str(work)],
+            env=env, cwd=ROOT, capture_output=True, text=True, timeout=15)
         assert result.returncode != 0 and 'native exited during startup' in result.stderr
         state = json.loads((Path(env['AGENTSTACK_RUNTIME_DIR']) / 'child-agents/HarnessChild.json').read_text())
         assert (Path(state['harness_state_dir']) / 'native-exit.status').read_text().strip() == '17'
         assert cleanup_started.exists() and not cleanup_done.exists()
         assert token.exists()
     finally:
+        cleanup_release.touch()
         deadline = time.monotonic() + 5
         while not cleanup_done.exists() and time.monotonic() < deadline:
             time.sleep(0.02)
         assert cleanup_done.exists()
 
 
-@pytest.mark.parametrize('session_status', [1, 2], ids=['absent', 'unreachable'])
-def test_failure_cleanup_distinguishes_absent_session_from_unknown(tmp_path, session_status):
+@pytest.mark.parametrize('case', ['connection-denied', 'session-absent', 'native-ended', 'other-error'])
+def test_failure_cleanup_distinguishes_absent_session_from_unknown(tmp_path, case):
     import shlex
     text = SPAWN.read_text()
     start = text.index('\ncleanup_harness_failure() {') + 1
@@ -202,6 +206,9 @@ def test_failure_cleanup_distinguishes_absent_session_from_unknown(tmp_path, ses
     hooks = tmp_path / 'hooks'; hooks.mkdir()
     trace = tmp_path / 'trace'
     _executable(hooks / 'cleanup-child-agent.sh', '#!/bin/bash\nprintf "rpc\\n" >> "$TRACE"\n')
+    state = tmp_path / 'native-state'; state.mkdir()
+    if case == 'native-ended':
+        (state / 'native-exit.status').write_text('17\n')
     script = function + '''
 CHILD_NAME=HarnessChild
 SPAWN_TRAP_SESSION=HarnessChild
@@ -210,15 +217,20 @@ PRE_REGISTERED_ADOPTION_PENDING=true
 finish_child_registration() { printf 'finish\n' >> "$TRACE"; }
 cleanup_worktree() { printf 'worktree\n' >> "$TRACE"; }
 tmux() {
- [[ "$1" == has-session ]] && return "$SESSION_STATUS"
+ if [[ "$1" == has-session ]]; then
+   if [[ "$CASE" == session-absent ]]; then printf "can't find session: HarnessChild\n" >&2
+   else printf 'error connecting to /fixture/tmux.sock (Permission denied)\n' >&2; fi
+   [[ "$CASE" != other-error ]] || return 2
+   return 1
+ fi
  printf 'unexpected kill\n' >> "$TRACE"; return 1
 }
 cleanup_harness_failure
 '''
     result = subprocess.run(['/bin/bash', '-c', script], capture_output=True, text=True,
         timeout=10, env={**os.environ, 'TRACE': str(trace), 'HOOKS_DIR': str(hooks),
-                         'SESSION_STATUS': str(session_status)})
-    if session_status == 1:
+                         'CASE': case, 'HARNESS_STATE': str(state)})
+    if case in ('session-absent', 'native-ended'):
         assert result.returncode == 0
         assert trace.read_text().splitlines() == ['finish', 'rpc', 'worktree']
     else:
