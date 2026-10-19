@@ -16,6 +16,9 @@ old endpoint aliases, inline keys and named credential pools in the persistent
 profile cannot override the selected route. The profile and its auth store are
 not rewritten or copied. Legacy model credential pointers are cleared only in
 the child overlay; memory and skills remain in the fixed backend profile.
+Auxiliary tasks and delegation use that same private provider, with old direct
+endpoint and credential pointers cleared in the overlay. Existing helper
+settings cannot pair the selected credential with a previous endpoint.
 Optional model and helper selections must belong to the selected backend's
 configured formal model IDs. An omitted effort leaves the native default intact.
 The helper model applies to auxiliary tasks and delegation on that same provider.

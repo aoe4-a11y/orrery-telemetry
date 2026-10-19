@@ -176,6 +176,13 @@ def _auxiliary_tasks(source):
             if isinstance(key, ast.Constant) and isinstance(value, (ast.Dict, ast.Call))]
 
 
+def _helper_route(provider, model):
+    # Empty strings are native "unset" values. Omitted leaves would survive
+    # the managed scope's deep merge and beat the selected named provider.
+    return {'provider': provider, 'model': model, 'base_url': '', 'api': '',
+            'api_key': '', 'key_env': '', 'api_key_env': '', 'api_mode': ''}
+
+
 def _personality_prompt(existing, source):
     """Read native personality data without importing the CLI or executing code."""
     name = str(existing.get('display', {}).get('personality') or '').strip().lower()
@@ -252,6 +259,10 @@ def generate(document):
         skills = Path(document.get('skills_root') or product / 'skills').resolve()
         for source in skills.glob('*/SKILL.md'):
             _link(profile / 'skills' / source.parent.name, source.parent)
+        auxiliary = existing.get('auxiliary')
+        auxiliary = auxiliary if isinstance(auxiliary, dict) else {}
+        tasks = list(dict.fromkeys([*_auxiliary_tasks(Path(facts['source'])),
+                    *[name for name, value in auxiliary.items() if isinstance(value, dict)]]))
         overlay = {
             'providers': {native_provider: {'api': facts['route']['base_url'], **facts['route']}},
             # The native legacy pool seeder also consults model.api_key/api.
@@ -265,9 +276,9 @@ def generate(document):
             'auth': {'adopt_external_logins': False},
             'mcp_servers': mcp,
             'plugins': {'enabled': list(dict.fromkeys([*enabled, PLUGIN]))},
-            'auxiliary': {task: {'provider': 'main', 'model': facts['helper_model'], 'fallback_chain': []}
-                          for task in _auxiliary_tasks(Path(facts['source']))},
-            'delegation': {'provider': native_provider, 'model': facts['helper_model']},
+            'auxiliary': {task: {**_helper_route(native_provider, facts['helper_model']), 'fallback_chain': []}
+                          for task in tasks},
+            'delegation': _helper_route(native_provider, facts['helper_model']),
         }
         personality = _personality_prompt(existing, Path(facts['source']))
         _save(state / 'overlay/config.yaml', overlay)

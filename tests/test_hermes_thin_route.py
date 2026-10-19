@@ -21,6 +21,7 @@ try:
     selected_url = 'https://api.deepseek.com/v1'
     selected_key = 'synthetic-selected-command-token'
     case, failure = sys.argv[1:3]
+    helper_case = case.startswith(('helper_', 'delegation_', 'aux_'))
     helper = fixture.base / 'fake_helper.py'
     called = fixture.base / 'helper-calls'
     helper.write_text(chr(10).join([
@@ -39,8 +40,24 @@ try:
         entry = {case: 'https://old-endpoint.invalid/v1'}
     if case == 'config_key':
         entry.update(api_key='synthetic-config-canary', key_env='OLD_PROVIDER_KEY')
-    if case != 'fresh':
+    if case not in ('fresh', 'helper_fresh'):
         old['providers'] = {'fixture-api': entry}
+    if helper_case:
+        fixture.document['helper_model'] = 'fixture-helper'
+    if case in ('delegation_url', 'delegation_key'):
+        old['delegation'] = {'base_url': 'https://old-helper.invalid/v1'}
+        if case == 'delegation_key':
+            old['delegation'].update(api_key='synthetic-old-helper-key', api_mode='codex_responses')
+    if case.startswith('aux_'):
+        task = 'fixture_plugin_task' if case == 'aux_custom' else 'vision'
+        row = {'base_url': 'https://old-helper.invalid/v1'}
+        if case in ('aux_key', 'aux_custom'):
+            row['api_key'] = 'synthetic-old-helper-key'
+        if case in ('aux_key_env', 'aux_api_key_env'):
+            row['key_env' if case == 'aux_key_env' else 'api_key_env'] = 'OLD_PROVIDER_KEY'
+        if case == 'aux_api_mode':
+            row = {'api_mode': 'codex_responses'}
+        old['auxiliary'] = {task: row}
     if case == 'model_key':
         old['model'] = {'provider': 'custom', 'base_url': selected_url,
                         'api_key': 'synthetic-model-key-canary', 'api': 'synthetic-model-api-canary',
@@ -101,6 +118,36 @@ try:
         else:
             raise AssertionError('credential failure fell back to a canary')
         assert called.read_text().splitlines() == ['called']
+    if helper_case:
+        from types import SimpleNamespace
+        from tools.delegate_tool_config import _resolve_delegation_credentials, _resolve_child_runtime
+        from agent.auxiliary_client import _resolve_task_provider_model, _normalize_aux_provider, _named_custom_api_key
+        from hermes_cli.runtime_provider_custom import _get_named_custom_provider
+        parent = SimpleNamespace(model='fixture-main', provider=runtime['provider'], requested_provider=provider,
+                                 base_url=runtime['base_url'], api_key=runtime['api_key'], api_mode=runtime['api_mode'])
+        cfg = loaded['delegation']
+        bundle = _resolve_delegation_credentials(cfg, parent)
+        child = _resolve_child_runtime(parent, cfg, parent.api_key, model=bundle['model'],
+            override_provider=bundle['provider'], override_base_url=bundle['base_url'],
+            override_api_key=bundle['api_key'], override_api_mode=bundle['api_mode'],
+            override_acp_command=bundle.get('command'), override_acp_args=bundle.get('args'))
+        assert child['base_url'] == selected_url, 'delegation inherited a stale endpoint'
+        assert child['requested_provider'] == provider and child['model'] == 'fixture-helper'
+        assert child['api_mode'] == runtime['api_mode']
+        assert callable(child['api_key']) and child['api_key'].cache_identity == 'cmd:' + command
+        assert child['api_key']() == selected_key
+        tasks = [name for name, row in loaded['auxiliary'].items() if isinstance(row, dict)]
+        for task in tasks:
+            aux_provider, aux_model, aux_url, aux_key, aux_mode = _resolve_task_provider_model(task)
+            aux_provider = _normalize_aux_provider(aux_provider)
+            assert aux_provider == provider and aux_model == 'fixture-helper', 'wrong auxiliary model/provider: ' + task
+            assert not aux_url and not aux_key, 'auxiliary inherited direct endpoint/auth: ' + task
+            assert not aux_mode, 'auxiliary inherited a stale protocol: ' + task
+            named = _get_named_custom_provider(aux_provider)
+            assert named['base_url'] == selected_url and named['api_mode'] == runtime['api_mode']
+            key = _named_custom_api_key(named, aux_provider, named['base_url'])
+            assert callable(key) and key.cache_identity == 'cmd:' + command
+            assert key() == selected_key
     assert all(path.read_bytes() == original for path, original in preserved.items()), 'persistent profile was rewritten'
     print(json.dumps({'case': case, 'helper': failure, 'endpoint': 'selected', 'credential': 'selected-key-cmd',
                       'profile_preserved': True, 'provider_requests': 0}))
@@ -134,6 +181,12 @@ class NativeProviderRoute(unittest.TestCase):
             for failure in ('nonzero', 'blank'):
                 with self.subTest(case=case, failure=failure):
                     self.route(case, failure)
+
+    def test_actual_delegation_and_auxiliary_resolvers_ignore_stale_direct_routes(self):
+        for case in ('helper_fresh', 'delegation_url', 'delegation_key', 'aux_url', 'aux_key',
+                     'aux_key_env', 'aux_api_key_env', 'aux_api_mode', 'aux_custom'):
+            with self.subTest(case=case):
+                self.route(case)
 
 
 if __name__ == '__main__':

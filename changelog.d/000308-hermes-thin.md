@@ -7,3 +7,5 @@
   編集成功後は予約を解放する。既存の owned な Hermes v2 は再検証して plain の識別を付ける。
 - 子専用の provider 設定で、永続 profile に残る旧宛先や保存済み認証が選択した
   route・key_cmd に混ざるのを防ぐ。既存 profile と記憶は書き換えない。
+- 補助処理と delegation に残る旧宛先・認証の参照も子の overlay 内だけで空にし、
+  選択した provider の鍵を旧宛先へ継承しない。

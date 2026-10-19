@@ -116,7 +116,8 @@ class ThinConfig(unittest.TestCase):
     def test_helper_and_main_only_same_backend_ids_and_effort_explicit(self):
         plan = self.generate(model='fixture-helper', helper_model='fixture-main', effort='high')
         overlay = config.read(Path(plan['config_dir']) / 'config.yaml')
-        self.assertEqual(overlay['delegation'], {'provider': plan['argv'][3], 'model': 'fixture-main'})
+        self.assertEqual(overlay['delegation']['provider'], plan['argv'][3])
+        self.assertEqual(overlay['delegation']['model'], 'fixture-main')
         self.assertEqual(plan['argv'][-4:-2], ['--reasoning', 'high'])
         for changes, reason in [({'helper_model': 'foreign/model'}, 'invalid_helper_model'),
                                 ({'model': 'foreign/model'}, 'model_mismatch'),
