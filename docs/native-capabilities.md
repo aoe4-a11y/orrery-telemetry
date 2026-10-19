@@ -6,11 +6,28 @@ no additional provider endpoint or credential lookup in these readers.
 
 ## Activity classification boundary
 
-This stage implements native context and process liveness observations only.
-Native working / waiting for a question / waiting for approval classification
-is not implemented: `act_state: null` means unknown. It is not evidence that the
-agent is idle, finished or ready. Activity classification belongs to a later
-change and is not inferred by the context parser.
+API 24 observes native activity from the same captured pane as context.
+`dashboard.harness_activity.parse_activity(text, program)` returns `work`,
+`question` or `ask` only from supported current controls. A question or approval
+needs both its panel title and operation hint near the bottom. These modals
+take priority over a busy hint because native turns can remain working while
+waiting for the user. The context parser itself does not infer activity.
+
+Supported formats are dsh-tui 0.16.1's English/Chinese approval and question
+panels (including folded questions), its interrupt footer, and Hermes
+d923a5eb's bundled English/Japanese approval, clarify and busy-composer hints.
+Missing, hidden, incomplete, offscreen or unsupported localized controls stay
+`act_state: null`. Each new capture replaces the previous observation; a missing
+control does not preserve the old activity. Display text is not authenticated
+telemetry and can be imitated by terminal output.
+
+Idle is not inferred from absence. Hermes chooses a localized random empty
+composer placeholder; dsh's idle hint changes with selection, help, hover and
+minimal UI. A generated config alone does not make either an unconditional idle
+marker. Thus native `wait` remains unsupported: null means unknown, not idle,
+finished or ready. Activity never changes process liveness or stop eligibility.
+The existing Claude/Codex classification is unchanged. No new watcher, native
+patch, status file or provider call is introduced.
 
 ## Context
 
