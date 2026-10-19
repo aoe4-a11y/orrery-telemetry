@@ -20,6 +20,7 @@ import urllib.request
 HERMES_COMMIT = 'd923a5eb487a17c0a68801bba9ef0f56c81040a8'
 HERMES_URL = 'https://github.com/NousResearch/hermes-agent.git'
 OWNER = '.orrery-managed-install.json'
+UPSTREAM_PROOF_FILES = ('lib/types/utils/paths.js', 'lib/types/screens/Chat.js')
 HERMES_STAMP_SCRIPT = '''import sys
 from hermes_cli.version_info import get_version_info
 from scripts.write_install_stamp import write_stamp
@@ -69,7 +70,7 @@ def environment(root):
             'GIT_CONFIG_NOSYSTEM': '1', 'GIT_TERMINAL_PROMPT': '0'}
 
 
-def install_dsh(repo, root, node, cache=None):
+def install_dsh(repo, root, node, cache=None, *, plain=False):
     node = Path(node).expanduser()
     if not node.is_absolute() or not node.is_file() or not os.access(node, os.X_OK):
         raise ValueError('dsh requires --dsh-node with an absolute Node executable (>=24.2)')
@@ -133,6 +134,16 @@ def install_dsh(repo, root, node, cache=None):
         package = runtime / 'node_modules' / item['name']
         if read(package / 'package.json')['version'] != item['version']:
             raise ValueError('Installed dsh/TUI version mismatch')
+    save(evidence / 'node-runtime.json', proof)
+    if plain:
+        # Preserve the verified upstream bytes. A distinct receipt/generation
+        # prevents an old patched runtime being advertised as a native CLI.
+        receipt = evidence / 'upstream-runtime.json'
+        save(receipt, {'variant': 'plain', 'source_patch': None,
+             'files': [{'file': name, 'sha256': hashlib.sha256((tui / name).read_bytes()).hexdigest()}
+                       for name in UPSTREAM_PROOF_FILES]})
+        return {'node': str(node), 'runtime': str(runtime), 'runtime_receipt': str(receipt),
+                'variant': 'plain', 'thin_config_contract': 1}
     recipe_file = repo / 'integrations/dsh/tui-managed.patch'
     changes = {}
     for row in read(recipe_file)['replacements']:
@@ -181,13 +192,14 @@ def install_hermes(repo, root, python, cache=None):
             'variant': 'plain', 'thin_config_contract': 1, **stamp}
 
 
-def generation_id(repo, harness):
+def generation_id(repo, harness, *, plain=True):
     if harness == 'hermes':
         return HERMES_COMMIT[:16] + '-v2'
-    inputs = ['runtime-pins.json', 'runtime-package-lock.json', 'ui-package.json',
-              'ui-package-lock.json', 'tui-managed.patch']
+    inputs = ['runtime-pins.json', 'runtime-package-lock.json', 'ui-package.json', 'ui-package-lock.json']
+    if not plain:
+        inputs.append('tui-managed.patch')
     digest = hashlib.sha256(b''.join((repo / 'integrations/dsh' / name).read_bytes() for name in inputs)).hexdigest()[:16]
-    return 'dsh-0.2.1-rc.2-tui-0.16.1-' + digest
+    return 'dsh-0.2.1-rc.2-tui-0.16.1-' + digest + ('-plain1' if plain else '')
 
 
 def validate(repo, harness, receipt):
@@ -203,6 +215,19 @@ def validate(repo, harness, receipt):
         for item in read(repo / 'integrations/dsh/runtime-pins.json'):
             if read(runtime / 'node_modules' / item['name'] / 'package.json')['version'] != item['version']:
                 raise ValueError('Installed dsh/TUI version mismatch')
+        if receipt.get('variant') == 'plain':
+            source = read(details['runtime_receipt'])
+            if (receipt.get('thin_config_contract') != 1 or source.get('variant') != 'plain'
+                    or source.get('source_patch') is not None or not source.get('files')):
+                raise ValueError('Plain runtime receipt is incomplete')
+            for row in source['files']:
+                relative = Path(row['file'])
+                if relative.is_absolute() or '..' in relative.parts:
+                    raise ValueError('Plain runtime path is invalid')
+                target = runtime / 'node_modules/@deepseek-harness-tui/dsh-tui' / relative
+                if hashlib.sha256(target.read_bytes()).hexdigest() != row['sha256']:
+                    raise ValueError('Plain upstream runtime changed')
+            return
         patch = read(details['patch_receipt'])
         recipe_file = repo / 'integrations/dsh/tui-managed.patch'
         files = {row['file'] for row in read(recipe_file)['replacements']}
@@ -272,9 +297,11 @@ def provision(repo, install, harness, choice='keep', node='', python=sys.executa
             # User data is outside the owned runtime generation. PM/runner still
             # see the expected HERMES_HOME/profiles path.
             (root / 'profiles').symlink_to(profiles, target_is_directory=True)
-            details = (install_dsh(repo, root, node, cache) if harness == 'dsh'
+            details = (install_dsh(repo, root, node, cache, plain=True) if harness == 'dsh'
                        else install_hermes(repo, root, python, cache))
+            details['generation_receipt'] = str(root / OWNER)
             receipt = {'harness': harness, 'complete': True, 'details': details,
+                       **{key: details[key] for key in ('variant', 'thin_config_contract') if key in details},
                        'hermes_commit': HERMES_COMMIT if harness == 'hermes' else None}
             validate(repo, harness, receipt)
             save(root / OWNER, receipt)
