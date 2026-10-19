@@ -136,6 +136,10 @@ test('only exit 2 carries the bounded public denial into the native tool result'
       [2, '', '  File "private.py", line 9\nPRIVATE_INTERNAL', ''],
       [2, '', 'TypeError: PRIVATE_INTERNAL', ''],
       [2, '', 'hook.sh: line 9: PRIVATE_INTERNAL', ''],
+      ...['Traceback (most recent call last):', 'RuntimeError: PRIVATE_INTERNAL'].flatMap(diagnostic => {
+        const colored = '\x1b[31m' + diagnostic + '\x1b[0m';
+        return [[2, '', colored, ''], [2, JSON.stringify({reason: colored}), '', '']];
+      }),
       [1, '{"reason":"PRIVATE_NON_BLOCKING"}', 'PRIVATE_STDERR', ''],
       [2, '', '拒😀'.repeat(1000), '拒😀'.repeat(1000)],
       [2, '', '拒😀'.repeat(1000) + 'x', '拒😀'.repeat(1000)],

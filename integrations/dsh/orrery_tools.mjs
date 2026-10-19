@@ -38,8 +38,9 @@ export function callHook(file, payload, env = process.env) {
         if (typeof detail !== 'string' || !detail.trim())
           detail = publicOutput?.hookSpecificOutput?.permissionDecisionReason;
         if (typeof detail !== 'string' || !detail.trim()) detail = stderr || '';
+        detail = detail.replace(/\x1b\[[0-?]*[ -/]*[@-~]/g, '');
         if (!/^\s*(?:Traceback \(|File ".*", line \d+|\w*(?:Error|Exception):)|: line \d+:/m.test(detail)) {
-          detail = detail.replace(/\x1b\[[0-?]*[ -/]*[@-~]/g, '').trim();
+          detail = detail.trim();
           detail = Array.from(detail).filter(c => !/[\p{C}\p{Z}]/u.test(c) || ' \n\t'.includes(c)).slice(0, 2000).join('');
           if (detail) reason += '\n' + detail;
         }
