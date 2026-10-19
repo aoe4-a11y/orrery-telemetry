@@ -89,6 +89,20 @@ def _no_inherited_agentstack_env():
 
 
 @pytest.fixture(autouse=True)
+def _dashboard_quotas_are_offline_by_default(monkeypatch):
+    """HTTP/browser fixtures must not read host credentials or start providers.
+
+    HOME isolation does not cover Keychain. The optional provider entry loads a
+    separate dashboard core, so bind both before any per-test HTTP fixture.
+    Quota-specific tests may then install their own synthetic service.
+    """
+    from dashboard import server, provider_server
+    from _dashboard_http_fixture import install_offline_quotas
+    for dashboard in (server, provider_server):
+        install_offline_quotas(dashboard, monkeypatch=monkeypatch)
+
+
+@pytest.fixture(autouse=True)
 def _checkout_dashboard_helpers(monkeypatch):
     """Workers must load this checkout's helpers, never an installed old copy."""
     from pathlib import Path
