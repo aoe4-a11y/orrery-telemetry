@@ -213,7 +213,7 @@ def protected_file_read(payload, text):
         raise ValueError('invalid protected file references')
     cwd = Path(payload.get('cwd') or os.getcwd())
     def resolved(value):
-        path = Path(value).expanduser()
+        path = Path(os.path.expandvars(value)).expanduser()
         return (path if path.is_absolute() else cwd / path).resolve()
     protected = {resolved(path) for path in paths}
     args = payload.get('tool_input') or {}

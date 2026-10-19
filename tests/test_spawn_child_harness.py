@@ -39,6 +39,7 @@ def fixture(tmp_path, *, gone=False):
 @pytest.mark.parametrize('standalone',[False,True])
 def test_standard_preregistered_harness_reuses_binding_proxy_and_real_workdir(tmp_path,standalone):
     env,work,token=fixture(tmp_path)
+    env['AGENTSTACK_CHILD_RESUME_RETENTION_DAYS']='0'
     args=['/bin/bash',str(SPAWN),'--pre-registered','HarnessChild','--child-token-file',str(token),
           '--harness','dsh','--backend','strata','--model','formal-model']
     if standalone:args+=['--standalone','',str(work)]
@@ -60,6 +61,7 @@ def test_standard_preregistered_harness_reuses_binding_proxy_and_real_workdir(tm
     assert not token.exists() and not Path(str(token)+'.binding.json').exists()
     assert not (Path(env['AGENTSTACK_RUNTIME_DIR'])/'child-agents/.HarnessChild.registration-pending.json').exists()
     assert '/usr/bin/true' in Path(env['FAKE_TMUX_LOG']).read_text()
+    assert 'AGENTSTACK_CHILD_RESUME_RETENTION_DAYS=0' in Path(env['FAKE_TMUX_LOG']).read_text()
 
 
 def test_failed_harness_start_keeps_identity_and_handoff_when_cleanup_unconfirmed(tmp_path):
@@ -72,7 +74,7 @@ def test_failed_harness_start_keeps_identity_and_handoff_when_cleanup_unconfirme
     state=Path(env['AGENTSTACK_RUNTIME_DIR'])/'child-agents/HarnessChild.json'
     assert state.exists() and json.loads(state.read_text())['harness_state_dir']
     assert 'cleanup unconfirmed' in result.stderr
-    assert 'kill-session' not in Path(env['FAKE_TMUX_LOG']).read_text()
+    assert 'kill-session' in Path(env['FAKE_TMUX_LOG']).read_text()
 
 
 @pytest.mark.parametrize('flags',[
@@ -97,3 +99,95 @@ def test_harness_does_not_silently_drop_installed_default_tools(tmp_path):
         text=True,capture_output=True,timeout=10)
     assert result.returncode!=0 and 'native_default_tools_unsupported' in result.stderr
     assert token.exists() and not Path(env['FAKE_TMUX_LOG']).exists()
+
+
+@pytest.mark.parametrize('stop_fails,start_pending', [(False, False), (True, False), (False, True)])
+def test_interrupted_native_stops_before_remote_cleanup_and_keeps_unknown(tmp_path, stop_fails, start_pending):
+    import shlex
+    text = SPAWN.read_text()
+    start = text.index('\ncleanup_harness_failure() {') + 1
+    function = text[start:text.index('\n}\n', start) + 3]
+    hooks = tmp_path / 'hooks'; hooks.mkdir()
+    trace = tmp_path / 'trace'
+    _executable(hooks / 'cleanup-child-agent.sh', '#!/bin/bash\nprintf "rpc\\n" >> "$TRACE"\nexit 1\n')
+    native = subprocess.Popen(['/bin/sleep', '30'])
+    script = function + '''
+CHILD_NAME=HarnessChild
+SPAWN_TRAP_SESSION=HarnessChild
+PRE_REGISTERED_ADOPTION_PENDING=false
+cleanup_worktree() { printf 'worktree\n' >> "$TRACE"; }
+tmux() {
+ case "$1" in
+ kill-session)
+   printf 'stop\n' >> "$TRACE"
+   [[ "$STOP_FAILS" == false ]] || return 1
+   kill "$NATIVE_PID" || return 1
+   return 0 ;;
+ has-session) return 1 ;;
+ esac
+}
+trap cleanup_harness_failure EXIT
+trap 'exit 143' TERM
+kill -TERM $$
+'''
+    environment = {**os.environ, 'TRACE': str(trace), 'HOOKS_DIR': str(hooks),
+                   'NATIVE_PID': str(native.pid), 'STOP_FAILS': str(stop_fails).lower(),
+                   'HARNESS_START_PENDING': str(start_pending).lower()}
+    try:
+        result = subprocess.run(['/bin/bash', '-c', script], env=environment,
+                                capture_output=True, text=True, timeout=10)
+        assert result.returncode == 143
+        if start_pending:
+            assert not trace.exists()
+            assert native.poll() is None
+            assert 'start/stop unconfirmed' in result.stderr
+        elif stop_fails:
+            assert trace.read_text().splitlines() == ['stop']
+            assert native.poll() is None
+            assert 'stop unconfirmed' in result.stderr
+        else:
+            assert native.wait(timeout=5) != 0
+            assert trace.read_text().splitlines() == ['stop', 'rpc']
+        assert not trace.exists() or 'worktree' not in trace.read_text()
+    finally:
+        if native.poll() is None:
+            native.terminate()
+        native.wait(timeout=5)
+
+
+def test_native_early_exit_is_not_ready_while_cleanup_is_still_running(tmp_path):
+    import time
+    env, work, token = fixture(tmp_path)
+    generator = tmp_path / 'generator.py'
+    generator.write_text(generator.read_text().replace("['/usr/bin/true']", "['/bin/sh','-c','exit 17']"))
+    product = tmp_path / 'pane-product'; (product / 'hooks').mkdir(parents=True)
+    cleanup_started = tmp_path / 'cleanup-started'; cleanup_done = tmp_path / 'cleanup-done'
+    _executable(product / 'hooks/cleanup-child-agent.sh',
+        '#!/bin/bash\ntouch ' + str(cleanup_started) + '\n/bin/sleep 2\ntouch ' + str(cleanup_done) + '\nexit 1\n')
+    helper = tmp_path / 'harness-fixture.py'
+    helper.write_text(helper.read_text().replace('raise SystemExit(m["main"]())',
+        'if sys.argv[1]=="command":g["ROOT"]=Path(' + repr(str(product)) + ')\nraise SystemExit(m["main"]())'))
+    tmux = tmp_path / 'bin/tmux'; text = tmux.read_text()
+    # Execute the real generated pane command, including its early-exit marker
+    # and deliberately slow cleanup; this remains a fake tmux, not a server.
+    text = text.replace('case "${1:-}" in\n',
+        'if [[ "${1:-}" == new-session ]]; then\n'
+        ' /bin/bash -c "${!#}" >/dev/null 2>&1 &\n'
+        ' for ((i=0; i<200; i++)); do [[ -e ' + str(cleanup_started) + ' ]] && break; /bin/sleep 0.01; done\n'
+        'fi\ncase "${1:-}" in\n', 1)
+    tmux.write_text(text)
+    result = subprocess.run(['/bin/bash', str(SPAWN), '--pre-registered', 'HarnessChild',
+        '--child-token-file', str(token), '--harness', 'dsh', '--backend', 'strata',
+        '--model', 'formal-model', '--standalone', '', str(work)],
+        env=env, cwd=ROOT, capture_output=True, text=True, timeout=15)
+    try:
+        assert result.returncode != 0 and 'native exited during startup' in result.stderr
+        state = json.loads((Path(env['AGENTSTACK_RUNTIME_DIR']) / 'child-agents/HarnessChild.json').read_text())
+        assert (Path(state['harness_state_dir']) / 'native-exit.status').read_text().strip() == '17'
+        assert cleanup_started.exists() and not cleanup_done.exists()
+        assert token.exists()
+    finally:
+        deadline = time.monotonic() + 5
+        while not cleanup_done.exists() and time.monotonic() < deadline:
+            time.sleep(0.02)
+        assert cleanup_done.exists()

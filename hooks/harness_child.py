@@ -223,7 +223,11 @@ def command(state_dir, name):
     invocation = shlex.join(['env', *[k+'='+v for k,v in plan.get('env', {}).items()], *plan['argv']])
     cleanup = shlex.join(['/bin/bash', str(ROOT / 'hooks/cleanup-child-agent.sh'), name])
     # Same lifetime and exit cleanup as native Codex; no ORRERY runtime wrapper.
-    return invocation + '; native_rc=$?; ' + cleanup + ' || exit $?; exit "$native_rc"'
+    # Record native termination before slow/unreachable Mail cleanup can keep
+    # its pane shell alive. This is not a task or turn completion receipt.
+    marker = shlex.quote(str(Path(state_dir) / 'native-exit.status'))
+    return (invocation + '; native_rc=$?; printf "%s\\n" "$native_rc" > ' + marker +
+            ' || exit 1; ' + cleanup + ' || exit $?; exit "$native_rc"')
 
 
 def main():

@@ -258,3 +258,19 @@ def test_provider_file_read_is_blocked_without_opening_file(tmp_path, tool, args
     result = subprocess.run([sys.executable, str(ROOT / 'hooks/deny-llm-key-read.py')],
                             input=json.dumps(payload), env=e, capture_output=True, text=True)
     assert result.returncode == 0
+
+
+@pytest.mark.parametrize('operand', [
+    '$HOME/.dsh/.credentials.yaml', '${HOME}/.dsh/.credentials.yaml',
+    '$DSH_HOME/.credentials.yaml', '${DSH_HOME}/.credentials.yaml',
+    '~/.dsh/.credentials.yaml', 'absolute',
+])
+def test_native_file_guard_expands_known_environment_references(tmp_path, operand):
+    e = env(tmp_path)
+    e['DSH_HOME'] = str(Path(e['HOME']) / '.dsh')
+    protected = Path(e['DSH_HOME']) / '.credentials.yaml'
+    # This file does not exist; resolving a reference never reads its contents.
+    e['AGENTSTACK_LLM_KEY_FILES'] = json.dumps([str(protected)])
+    path = str(protected) if operand == 'absolute' else operand
+    assert hook('cat "' + path + '"', e, tool='bash').returncode == 2
+    assert hook('cat "$HOME/ordinary.txt"', e, tool='bash').returncode == 0

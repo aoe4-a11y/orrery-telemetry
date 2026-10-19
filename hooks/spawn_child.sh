@@ -3010,12 +3010,18 @@ start_harness_child() {
     rm -f "$prompt_file"
     command="$("${AGENTSTACK_PYTHON:-python3}" "$HARNESS_HELPER" command \
         --state "$HARNESS_STATE" --agent-name "$CHILD_NAME")" || return 1
+    HARNESS_START_PENDING=true
     tmux new-session -d -s "$CHILD_NAME" -c "$WORK_DIR" \
         "${TMUX_ENV_ARGS[@]}" "$command" || return 1
     SPAWN_TRAP_SESSION="$CHILD_NAME"
+    HARNESS_START_PENDING=false
     [[ -z "$PRE_REGISTERED" ]] || PRE_REGISTERED_SESSION_STARTED=true
     sleep 1
     tmux has-session -t "=$CHILD_NAME" 2>/dev/null || return 1
+    if [[ -e "$HARNESS_STATE/native-exit.status" ]]; then
+        echo "Error: native exited during startup" >&2
+        return 1
+    fi
     INJECTION_VERIFIED=true
     return 0
 }
@@ -3023,12 +3029,31 @@ start_harness_child() {
 # A normal close and failed startup share the standard cleanup entry.
 # A failed confirmation must preserve the credential and private recovery state.
 cleanup_harness_failure() {
+    if [[ "${HARNESS_START_PENDING:-false}" == true ]]; then
+        # Interrupted creation has not acknowledged ownership or absence.
+        echo "Harness start/stop unconfirmed; recovery state retained" >&2
+        return 1
+    fi
+    if [[ "${SPAWN_TRAP_SESSION:-}" == "$CHILD_NAME" ]]; then
+        # Never release reservations while this attempt's pane is still live.
+        # A failed stop is unknown; it cannot authorize remote/local cleanup.
+        if ! tmux kill-session -t "=$CHILD_NAME" >/dev/null 2>&1; then
+            echo "Harness stop unconfirmed; recovery state retained" >&2
+            return 1
+        fi
+        local stop_status=0
+        tmux has-session -t "=$CHILD_NAME" >/dev/null 2>&1 || stop_status=$?
+        if [[ "$stop_status" != 1 ]]; then
+            echo "Harness stop unconfirmed; recovery state retained" >&2
+            return 1
+        fi
+        SPAWN_TRAP_SESSION=""
+    fi
     if [[ "${PRE_REGISTERED_ADOPTION_PENDING:-false}" == true ]]; then
         finish_child_registration "$CHILD_NAME" || return 1
         PRE_REGISTERED_ADOPTION_PENDING=false
     fi
     /bin/bash "$HOOKS_DIR/cleanup-child-agent.sh" "$CHILD_NAME" || return 1
-    tmux kill-session -t "=$CHILD_NAME" >/dev/null 2>&1 || true
     cleanup_worktree
 }
 
@@ -3302,7 +3327,7 @@ PY
     # tmux server. Requires tmux >= 3.0.
     if [[ -z "$HARNESS" ]]; then prime_codex_bin; fi
     if [[ -n "$HARNESS" ]]; then
-        TMUX_ENV_ARGS=(-e "AGENT_NAME=$CHILD_NAME" -e "CLAUDECODE=1" -e "AGENTSTACK_RESERVED_IDENTITY=1" -e "PROJECT_KEY=$PROJECT_KEY" -e "AGENTSTACK_PROJECT_KEY=$PROJECT_KEY" -e "AGENTSTACK_HOOKS_DIR=$HOOKS_DIR" -e "AGENTSTACK_RUNTIME_DIR=$RUNTIME_DIR" -e "AGENTSTACK_MCP_URL=$MCP_URL" -e "AGENTSTACK_MAIL_ENV=$MAIL_ENV" -e "AGENTSTACK_MAIL_HTTP_BEARER_MODE=$HTTP_BEARER_MODE")
+        TMUX_ENV_ARGS=(-e "AGENT_NAME=$CHILD_NAME" -e "CLAUDECODE=1" -e "AGENTSTACK_RESERVED_IDENTITY=1" -e "PROJECT_KEY=$PROJECT_KEY" -e "AGENTSTACK_PROJECT_KEY=$PROJECT_KEY" -e "AGENTSTACK_HOOKS_DIR=$HOOKS_DIR" -e "AGENTSTACK_RUNTIME_DIR=$RUNTIME_DIR" -e "AGENTSTACK_MCP_URL=$MCP_URL" -e "AGENTSTACK_MAIL_ENV=$MAIL_ENV" -e "AGENTSTACK_MAIL_HTTP_BEARER_MODE=$HTTP_BEARER_MODE" -e "AGENTSTACK_CHILD_RESUME_RETENTION_DAYS=$CHILD_RESUME_RETENTION_DAYS")
     else
     TMUX_ENV_ARGS=(-e "CLAUDECODE=1" -e "AGENTSTACK_RESERVED_IDENTITY=1" -e "AGENT_NAME=$CHILD_NAME" -e "PROJECT_KEY=$PROJECT_KEY" -e "AGENTSTACK_PROJECT_KEY=$PROJECT_KEY" -e "AGENTSTACK_HOOKS_DIR=$HOOKS_DIR" -e "AGENTSTACK_RUNTIME_DIR=$RUNTIME_DIR" -e "AGENTSTACK_MCP_URL=$MCP_URL" -e "AGENTSTACK_MAIL_ENV=$MAIL_ENV" -e "AGENTSTACK_MAIL_HTTP_BEARER_MODE=$HTTP_BEARER_MODE" -e "AGENTSTACK_CHILD_RESUME_RETENTION_DAYS=$CHILD_RESUME_RETENTION_DAYS" -e "AGENTSTACK_TERMINAL=$TERMINAL_SETTING" -e "AGENTSTACK_AUTO_OPEN_CHILD=$AUTO_OPEN_CHILD" -e "AGENTSTACK_CODEX_APPROVAL=$(codex_approval_flags)" -e "AGENTSTACK_CODEX_NETWORK_FLAGS=$(codex_network_flags)")
     fi
@@ -4194,7 +4219,7 @@ declare -F ags_warn_tcc_access >/dev/null 2>&1 && ags_warn_tcc_access "$WORK_DIR
 # server. Requires tmux >= 3.0.
 if [[ -z "$HARNESS" ]]; then prime_codex_bin; fi
 if [[ -n "$HARNESS" ]]; then
-    TMUX_ENV_ARGS=(-e "AGENT_NAME=$CHILD_NAME" -e "CLAUDECODE=1" -e "AGENTSTACK_RESERVED_IDENTITY=1" -e "PROJECT_KEY=$PROJECT_KEY" -e "AGENTSTACK_PROJECT_KEY=$PROJECT_KEY" -e "AGENTSTACK_HOOKS_DIR=$HOOKS_DIR" -e "AGENTSTACK_RUNTIME_DIR=$RUNTIME_DIR" -e "AGENTSTACK_MCP_URL=$MCP_URL" -e "AGENTSTACK_MAIL_ENV=$MAIL_ENV" -e "AGENTSTACK_MAIL_HTTP_BEARER_MODE=$HTTP_BEARER_MODE")
+    TMUX_ENV_ARGS=(-e "AGENT_NAME=$CHILD_NAME" -e "CLAUDECODE=1" -e "AGENTSTACK_RESERVED_IDENTITY=1" -e "PROJECT_KEY=$PROJECT_KEY" -e "AGENTSTACK_PROJECT_KEY=$PROJECT_KEY" -e "AGENTSTACK_HOOKS_DIR=$HOOKS_DIR" -e "AGENTSTACK_RUNTIME_DIR=$RUNTIME_DIR" -e "AGENTSTACK_MCP_URL=$MCP_URL" -e "AGENTSTACK_MAIL_ENV=$MAIL_ENV" -e "AGENTSTACK_MAIL_HTTP_BEARER_MODE=$HTTP_BEARER_MODE" -e "AGENTSTACK_CHILD_RESUME_RETENTION_DAYS=$CHILD_RESUME_RETENTION_DAYS")
 else
 TMUX_ENV_ARGS=(-e "CLAUDECODE=1" -e "AGENTSTACK_RESERVED_IDENTITY=1" -e "AGENT_NAME=$CHILD_NAME" -e "PARENT_AGENT=$PARENT_NAME" -e "PROJECT_KEY=$PROJECT_KEY" -e "AGENTSTACK_PROJECT_KEY=$PROJECT_KEY" -e "AGENTSTACK_HOOKS_DIR=$HOOKS_DIR" -e "AGENTSTACK_RUNTIME_DIR=$RUNTIME_DIR" -e "AGENTSTACK_MCP_URL=$MCP_URL" -e "AGENTSTACK_MAIL_ENV=$MAIL_ENV" -e "AGENTSTACK_MAIL_HTTP_BEARER_MODE=$HTTP_BEARER_MODE" -e "AGENTSTACK_CHILD_RESUME_RETENTION_DAYS=$CHILD_RESUME_RETENTION_DAYS" -e "AGENTSTACK_TERMINAL=$TERMINAL_SETTING" -e "AGENTSTACK_AUTO_OPEN_CHILD=$AUTO_OPEN_CHILD" -e "AGENTSTACK_CODEX_APPROVAL=$(codex_approval_flags)" -e "AGENTSTACK_CODEX_NETWORK_FLAGS=$(codex_network_flags)")
 fi
