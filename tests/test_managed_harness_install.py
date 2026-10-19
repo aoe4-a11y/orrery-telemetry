@@ -55,7 +55,7 @@ class InstallTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
         return installer.read(self.install / 'install-state.json')
 
-    def fake_acquire(self, repo, root, *args):
+    def fake_acquire(self, repo, root, *args, **kwargs):
         if root.parent.name == 'dsh':
             node = self.home / 'node'
             node.write_text('synthetic pinned executable')
@@ -64,6 +64,17 @@ class InstallTests(unittest.TestCase):
             installer.save(root / 'evidence/node-runtime.json', {'sha256': hashlib.sha256(node.read_bytes()).hexdigest()})
             for item in installer.read(ROOT / 'integrations/dsh/runtime-pins.json'):
                 installer.save(runtime / 'node_modules' / item['name'] / 'package.json', {'version': item['version']})
+            if kwargs.get('plain'):
+                files = []
+                for name in installer.UPSTREAM_PROOF_FILES:
+                    file = runtime / 'node_modules/@deepseek-harness-tui/dsh-tui' / name
+                    file.parent.mkdir(parents=True, exist_ok=True)
+                    file.write_text('synthetic original upstream')
+                    files.append({'file': name, 'sha256': hashlib.sha256(file.read_bytes()).hexdigest()})
+                receipt = root / 'evidence/upstream-runtime.json'
+                installer.save(receipt, {'variant': 'plain', 'source_patch': None, 'files': files})
+                return {'node': str(node), 'runtime': str(runtime), 'runtime_receipt': str(receipt),
+                        'variant': 'plain', 'thin_config_contract': 1}
             recipe = ROOT / 'integrations/dsh/tui-managed.patch'
             changes = []
             for name in {r['file'] for r in installer.read(recipe)['replacements']}:
@@ -97,6 +108,21 @@ class InstallTests(unittest.TestCase):
             self.assertFalse(self.install.exists())
             dsh.assert_not_called()
             hermes.assert_not_called()
+
+    def test_plain_dsh_generation_keeps_existing_managed_generation(self):
+        old = self.install / 'harnesses/dsh' / installer.generation_id(ROOT, 'dsh', plain=False)
+        old.mkdir(parents=True)
+        sentinel = old / 'keep.txt'
+        sentinel.write_text('existing managed runtime')
+        with patch.object(installer, 'install_dsh', side_effect=self.fake_acquire):
+            installer.provision(ROOT, self.install, 'dsh', choice='enable')
+        self.assertEqual(sentinel.read_text(), 'existing managed runtime')
+        current = installer.read(self.install / 'harnesses/dsh/current.json')
+        receipt = installer.read(current['generation_receipt'])
+        self.assertEqual(receipt['variant'], 'plain')
+        self.assertEqual(receipt['thin_config_contract'], 1)
+        self.assertEqual(receipt['details']['generation_receipt'], current['generation_receipt'])
+        self.assertNotEqual(Path(current['runtime']).parent, old)
 
     def test_stamped_v2_keeps_legacy_v1_and_persistent_profiles_unchanged(self):
         base = self.install / 'harnesses/hermes'
@@ -249,6 +275,7 @@ class AcquisitionTests(unittest.TestCase):
                     files = {'package/package.json': json.dumps({'version': item['version']}),
                              'package/lib/probe.js': 'old-one\nold-two\n',
                              'package/node_modules/bundled/package.json': '{"version":"bundled-original"}'}
+                    files.update({'package/' + name: 'native original ' + name for name in installer.UPSTREAM_PROOF_FILES})
                     for name, content in files.items():
                         member = tarfile.TarInfo(name)
                         member.size = len(content.encode())
@@ -339,6 +366,22 @@ class AcquisitionTests(unittest.TestCase):
         (tui / 'lib/probe.js').write_text('ordinary damaged patch')
         with self.assertRaisesRegex(ValueError, 'patch changed'):
             installer.validate(self.repo, 'dsh', {'harness': 'dsh', 'complete': True, 'details': details})
+
+    def test_plain_acquisition_preserves_upstream_and_uses_separate_receipt(self):
+        with patch.object(installer, 'run', side_effect=self.fake_run), patch.object(installer.urllib.request, 'urlopen', side_effect=AssertionError('network not allowed')):
+            details = installer.install_dsh(self.repo, self.root, str(self.node), self.cache, plain=True)
+        receipt = {'harness': 'dsh', 'complete': True, 'variant': 'plain', 'thin_config_contract': 1, 'details': details}
+        installer.validate(self.repo, 'dsh', receipt)
+        tui = self.root / 'runtime/node_modules/@deepseek-harness-tui/dsh-tui'
+        self.assertEqual((tui / 'lib/probe.js').read_text(), 'old-one\nold-two\n')
+        self.assertFalse((self.root / 'evidence/tui-patch-applied.json').exists())
+        self.assertNotIn('patch_receipt', details)
+        self.assertIsNone(installer.read(details['runtime_receipt'])['source_patch'])
+        self.assertNotEqual(installer.generation_id(self.repo, 'dsh'), installer.generation_id(self.repo, 'dsh', plain=False))
+        # Losing or modifying an ordinary source file must not look ready.
+        (tui / installer.UPSTREAM_PROOF_FILES[0]).write_text('changed')
+        with self.assertRaisesRegex(ValueError, 'upstream runtime changed'):
+            installer.validate(self.repo, 'dsh', receipt)
 
     def test_sha512_mismatch_stops_before_npm(self):
         (self.cache / 'package-0.tgz').write_bytes(b'wrong tarball')
