@@ -90,6 +90,9 @@ snapshotは短い通信を見逃し得ます。global fetchの置換もnode:http
 終了は所有groupの停止→予約解放→canonical retire確認の順です。失敗やMail/retire応答不明ではstateを保持し、自動再登録・再送・再開・実鍵の再読取をしません。commit/pushとliveへの採用は親が行います。
 
 
+Strata の status は観測のみです。busy・認証不能・timeout・redirect は `status-check` に記録し、モデルへの要求を止めません。status の redirect は追従せず、モデル要求の許可先と beta 互換の検査は従来どおりです。
+`launch.py` の失敗は stderr の `ORRERY_DSH_CLI_ERROR` 1行（段・例外型・固定の要約）に残り、controller は `cli-last.json` と `worker-failure.json` に同じ診断を保持します。例外本文・鍵・本文・argv・生の stderr は保存しません。
+
 ### Strata の context と `fit_max_tokens`
 
 Strata の route では、利用者が Strata のモデル設定で `"fit_max_tokens": true` を有効にしてください。Strata が実際に token 化した入力と context の残りに出力を収めます。dsh の DeepSeek adapter の既定 `max_tokens=256000` は、小さい Strata の context を超えることがあります。たとえば server が次の400を返す場合です。

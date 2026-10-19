@@ -7,7 +7,7 @@ import path from 'node:path';
 import os from 'node:os';
 import {fileURLToPath} from 'node:url';
 import {syncBuiltinESMExports} from 'node:module';
-import {assertIdle} from './strata_status.mjs';
+import {observeStatus} from './strata_status.mjs';
 import {providerError} from './provider_error.mjs';
 
 const adapterRoot = path.dirname(fileURLToPath(import.meta.url));
@@ -79,7 +79,7 @@ export function createEgress({backend, limits, wireTools, offline = true, phase 
       audit({phase: 'stream-end', seq: number, ok});
     };
     try {
-      if (backend.idle_check) await assertIdle(fetchImpl, backend.base_url, key, audit, limits.status_ms, sourceCallers);
+      if (backend.idle_check) await observeStatus(fetchImpl, backend.base_url, key, audit, limits.status_ms, sourceCallers);
       audit({phase: 'provider-request-start', seq: number});
       const timeout = AbortSignal.timeout(limits.max_request_ms);
       const signal = init.signal ? AbortSignal.any([init.signal, timeout]) : timeout;

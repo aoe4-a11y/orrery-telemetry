@@ -117,7 +117,7 @@ assert value['state']=='failed' and value['finished'] is True
 ''')
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(len(result.stderr.splitlines()), 1)
-        self.assertIn('managed worker failed during queued (ModuleNotFoundError)', result.stderr)
+        self.assertIn('managed worker failed during queued: step=unknown reason=step_failed (ModuleNotFoundError)', result.stderr)
 
 
 if __name__ == '__main__':

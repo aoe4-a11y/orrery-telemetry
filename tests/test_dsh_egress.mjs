@@ -23,7 +23,7 @@ fs.writeFileSync(path.join(root, 'attempt.json'), JSON.stringify({attempt_id: 'f
 let spawned;
 cp.spawn = (command, args, options) => { spawned = {command, args, options}; return {fixture: true}; };
 const {createEgress} = await import('../integrations/dsh/egress.mjs');
-const {assertIdle} = await import('../integrations/dsh/strata_status.mjs');
+const {observeStatus} = await import('../integrations/dsh/strata_status.mjs');
 after(() => fs.rmSync(root, {recursive: true, force: true}));
 const encode = value => new TextEncoder().encode(value);
 const usage = 'data: {"type":"message_delta","usage":{"input_tokens":10,"cache_read_input_tokens":2,"output_tokens":1}}\n\n';
@@ -122,19 +122,19 @@ test('unknown model, unsupported beta, structural tool_addition and extra tools 
 test('Strata busy, unknown, auth and 404 health fallback are handled without polling', async () => {
   for (const body of ['{"in_flight":1}', '{"status":"ok"}', '{"in_flight":0,"queued":1}']) {
     let count = 0;
-    await assert.rejects(assertIdle(async () => { count++; return new Response(body); },
-      'https://fixture.invalid', dummy, () => {}));
+    await observeStatus(async () => { count++; return new Response(body); },
+      'https://fixture.invalid', dummy, () => {});
     assert.equal(count, 1);
   }
   let calls = [];
-  await assertIdle(async (url, init) => { calls.push({url, init}); return calls.length === 1
+  await observeStatus(async (url, init) => { calls.push({url, init}); return calls.length === 1
     ? new Response('', {status: 401}) : new Response('{"in_flight":0}'); },
   'https://fixture.invalid', dummy, () => {});
   assert.equal(calls.length, 2);
   assert.equal(calls[0].init.headers, undefined);
   assert.equal(calls[1].init.headers.Authorization, 'Bearer ' + dummy);
   calls = [];
-  await assertIdle(async url => { calls.push(String(url)); return calls.length === 1
+  await observeStatus(async url => { calls.push(String(url)); return calls.length === 1
     ? new Response('', {status: 404}) : new Response('{"in_flight":0}'); },
   'https://fixture.invalid', dummy, () => {});
   assert.equal(calls.at(-1), 'https://fixture.invalid/health');
@@ -145,15 +145,12 @@ test('redirect responses are not followed by provider or status', async () => {
   await assert.rejects(h.fetch(endpoint(h.backend), request(h.backend)), error => error.dshExitCode === 78);
   assert.ok(h.events.some(row => row.phase === 'blocked-redirect'));
   const events = [];
-  await assert.rejects(assertIdle(async () => new Response('', {status: 302}),
-    'https://fixture.invalid', dummy, row => events.push(row)), error => error.dshExitCode === 78);
-  assert.ok(events.some(row => row.phase === 'blocked-redirect'));
-  const blocked = events.find(row => row.phase === 'blocked-redirect');
-  assert.equal(blocked.method, 'GET');
-  assert.equal(blocked.host, 'fixture.invalid');
-  assert.equal(blocked.port, 443);
-  assert.equal(blocked.path, '/v1/status');
-  assert.deepEqual(blocked.callers, []);
+  assert.equal(await observeStatus(async () => new Response('', {status: 302}),
+    'https://fixture.invalid', dummy, row => events.push(row)), null);
+  assert.equal(events.length, 1);
+  assert.equal(events[0].phase, 'status-check');
+  assert.equal(events[0].reason, 'STATUS_REDIRECT');
+
 });
 
 test('one in-flight request is held through body EOF, then request cap stops the next', async () => {
@@ -352,4 +349,29 @@ test('native startup diagnostic is redacted before disk write', () => {
   fs.writeFileSync(log, 'fixture header value ' + dummy);
   assert.ok(!fs.readFileSync(log, 'utf8').includes(dummy));
   assert.ok(fs.readFileSync(log, 'utf8').includes('[REDACTED]'));
+});
+
+
+test('busy, unknown, auth, timeout and redirect status never prevent inference', async () => {
+  for (const status of ['busy', 'unknown', 'auth', 'timeout', 'redirect']) {
+    const calls = [];
+    const h = harness('strata', {fetchImpl: async (url, init) => {
+      calls.push(String(url));
+      assert.equal(init.redirect, 'manual');
+      if (String(url).endsWith('/v1/status')) {
+        if (status === 'timeout') throw new DOMException('private failure', 'TimeoutError');
+        if (status === 'auth') return new Response('', {status: 401});
+        if (status === 'redirect') return new Response('', {status: 302, headers: {location: 'https://other.invalid'}});
+        return new Response(status === 'busy' ? '{"in_flight":1}' : '{}');
+      }
+      return new Response(usage);
+    }});
+    await (await h.fetch(endpoint(h.backend), request(h.backend))).text();
+    assert.equal(calls.filter(url => url.endsWith('/v1/messages')).length, 1);
+    assert.ok(!calls.some(url => url.includes('other.invalid')));
+    const observed = h.events.find(row => row.phase === 'status-check');
+    assert.equal(observed.busy, status === 'busy' ? true : null);
+    assert.equal(h.events.at(-1).ok, true);
+    assert.ok(!h.events.some(row => row.phase.startsWith('blocked-')));
+  }
 });
