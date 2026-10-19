@@ -4,7 +4,7 @@
 
 `integrations/dsh/thin_config.py --input INPUT.json --out PLAN.json` は鍵を読まず、native argv・追加 env・cwd と guard の設定参照を返します。CLI の失敗は固定 reason の一行です。共有の標準 launcher が製品の Mail proxy を生成し、追加 MCP を合流してから入力します。stdio/http はコピーし、tool 単位の承認や filter を表現できない選択は拒否します。選択されていない MCP を空 map で止めたとは扱いません。dsh 用の明示 profile は固定 base/TUI bundles と生成した client 行だけをロードし、親の profile/plugin MCP はコピーしません。
 
-install の opt-in は従来どおり `--enable-dsh`。同じ固定版でも新しい `-plain1` 世代を作り、検証済み tarball/lock を使って TUI の source patch は行いません。owner receipt は `variant: plain` と `thin_config_contract: 1`、template は `generation_receipt` を参照します。旧 managed 世代は移行中も残し、古い receipt を薄い起動へ自動昇格させません。operator の template/manifest の配置は別作業です。
+install の opt-in は従来どおり `--enable-dsh`。同じ固定版でも新しい `-plain-datadir1` 世代を作り、検証済み tarball/lock を使って TUI の source は DATA_DIR を `DSH_TUI_DATA_DIR` で替える1行だけ変更します。旧 managed patch は使いません。owner receipt は `variant: plain-datadir` と `thin_config_contract: 1`、template は `generation_receipt` を参照します。旧 managed 世代は移行中も残し、古い receipt を薄い起動へ自動昇格させません。operator の template/manifest の配置は別作業です。
 
 鍵は native credentials plugin が Keychain から一度だけ取得して memory に保持します。OS の入口は macOS の `/usr/bin/security`、他 OS は未対応です。取得失敗は固定 error、再取得 loop はありません。選択 ref は env/file に fallback せず、native の set/unset からも disk へ保存しません。標準 API-key adapter は credentials service を必須の依存として設定します。plugin の欠落を generator が静的に検出しますが、実登録を起動前に検査する preflight は作りません。
 
@@ -14,4 +14,6 @@ install の opt-in は従来どおり `--enable-dsh`。同じ固定版でも新�
 
 native session 作成イベントから本人の `harness_state_dir/native-session.json` に ID を保存します。subagent の ID で上書きせず、保存失敗で起動は止めません。再開は `resume_session_id` を native `--resume` へ渡し、その子の profile/履歴を再利用します。MRU で本人の ID を推測しません。指示は共有 renderer の出力を読み、skill は共通の元へ link します。
 
-現時点の制限: TUI の upstream は共有 `~/.dsh-tui/model.json` を deployment 設定より優先します。子の起動 model と状態の分離（T22）は別の小さい PR で扱い、この plain 世代だけで解決済みとはしません。利用者の file や HOME は変更しません。
+TUI の状態は本人の `harness_state_dir/tui` に保存し、起動時に選択した provider/model をその中の `model.json` へ設定します。native `/model` が変更するのもこの子の file だけです。他の子と利用者の `~/.dsh-tui` は共有せず、HOME は変更しません。resume は同じ state dir を再利用します。env 未指定の通常の upstream TUI は従来どおり `~/.dsh-tui` を使います。
+
+この最小 patch は固定版の preimage と適用後 hash を別世代の receipt に記録します。旧い `plain` と旧 managed の世代は書き換えずに残し、現在の generator は明示の `plain-datadir` を要求します。upstream に同等の設定が入ったら patch を外します。

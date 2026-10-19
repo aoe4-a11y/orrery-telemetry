@@ -93,7 +93,7 @@ def validate_input(document):
             raise ValueError('invalid_helper_model')
         template = read(absolute(manifest['harnesses']['dsh']['config_file']))
         owner = read(absolute(template['generation_receipt']))
-        if (owner.get('variant') != 'plain' or owner.get('thin_config_contract') != 1
+        if (owner.get('variant') != 'plain-datadir' or owner.get('thin_config_contract') != 1
                 or owner.get('harness') != 'dsh' or owner.get('complete') is not True
                 or template.get('patch_receipt')):
             raise ValueError('plain_runtime_required')
@@ -113,8 +113,11 @@ def validate_input(document):
                 raise ValueError('runtime_version_mismatch')
         entry = absolute(str(runtime / 'node_modules/@deepseek-ai/dsh/lib/bin.js'))
         source = read(details['runtime_receipt'])
-        if source.get('variant') != 'plain' or source.get('source_patch') is not None:
+        if source.get('variant') != 'plain-datadir' or source.get('source_patch') != 'tui-datadir-v1':
             raise ValueError('plain_runtime_required')
+        if source.get('recipe_sha256') != hashlib.sha256(
+                (root / 'integrations/dsh/tui-datadir.patch.json').read_bytes()).hexdigest():
+            raise ValueError('invalid_runtime')
         for row in source['files']:
             file = runtime / 'node_modules/@deepseek-harness-tui/dsh-tui' / row['file']
             if hashlib.sha256(file.read_bytes()).hexdigest() != row['sha256']:
@@ -217,6 +220,8 @@ def generate(document):
     if facts['helper'] != 'same':
         rows.append({'id': 'tool-subagent', 'config': {'agentOptions': {
             'provider': 'deepseek-official', 'model': facts['helper']}}})
+    tui_data = state / 'tui'
+    save(tui_data / 'model.json', {'provider': 'deepseek-official', 'model': document['model']})
     overlay = config_dir / 'native.patch.json'
     save(overlay, rows)
     argv = [str(facts['node']), str(facts['entry']), '--profile', 'orrery', '--patch', str(overlay)]
@@ -230,7 +235,7 @@ def generate(document):
         argv += ['--', prompt]
     protected = [str(overlay), str(home / '.credentials.yaml'), str(facts['backend_file'])]
     return {'argv': argv, 'cwd': str(cwd), 'config_dir': str(config_dir),
-            'env': {'DSH_HOME': str(home), 'AGENTSTACK_LLM_KEY_FILES': json.dumps(protected),
+            'env': {'DSH_HOME': str(home), 'DSH_TUI_DATA_DIR': str(tui_data), 'AGENTSTACK_LLM_KEY_FILES': json.dumps(protected),
                     'AGENTSTACK_LLM_KEY_DEFINITIONS': str(facts['backend_file'])},
             'guard': {'plugin': str(facts['plugin']), 'contract': 1}}
 
