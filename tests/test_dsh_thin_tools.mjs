@@ -85,7 +85,7 @@ test('real subprocess hook exit is observed without exposing stderr', async () =
   const f = fixture(async () => ({ok: true}));
   try {
     const file = path.join(f.root, 'fake-hook.sh');
-    fs.writeFileSync(file, '#!/bin/sh\ncat >/dev/null\necho PRIVATE_KEY_LIKE_TEXT >&2\nexit 2\n', {mode: 0o700});
+    fs.writeFileSync(file, '#!/bin/sh\ncat >/dev/null\necho PRIVATE_KEY_LIKE_TEXT >&2\nexit 1\n', {mode: 0o700});
     const result = await callHook(file, {tool_name: 'Read'});
     assert.equal(result.ok, false);
     assert.equal(result.reason, 'ORRERY hook denied: fake-hook.sh');
@@ -111,13 +111,54 @@ test('only a successful public systemMessage is visible; other hook output stays
     ]) {
       visible = '';
       fs.writeFileSync(file, '#!/bin/sh\ncat >/dev/null\nprintf "%s" "$FIXTURE_STDOUT"\n' +
-        'echo PRIVATE_STDERR >&2\nexit "$FIXTURE_STATUS"\n', {mode: 0o700});
+        '[ "$FIXTURE_STATUS" = 0 ] && echo PRIVATE_STDERR >&2\nexit "$FIXTURE_STATUS"\n', {mode: 0o700});
       const result = await callHook(file, {tool_name: 'Read', cwd: f.root},
         {...process.env, FIXTURE_STDOUT: stdout, FIXTURE_STATUS: String(status)});
       assert.equal(result.ok, status === 0);
       assert.equal(visible, expected);
       assert.equal(JSON.stringify(result).includes('PRIVATE_'), false);
     }
+  } finally {f.clean();}
+});
+
+test('only exit 2 carries the bounded public denial into the native tool result', async () => {
+  const f = fixture();
+  try {
+    const file = path.join(f.root, 'deny.sh');
+    fs.writeFileSync(file, '#!/bin/sh\ncat >/dev/null\nprintf "%s" "$FIXTURE_STDOUT"\nprintf "%s" "$FIXTURE_STDERR" >&2\nexit "$FIXTURE_STATUS"\n', {mode: 0o700});
+    for (const [status, stdout, stderr, expected] of [
+      [2, '', 'FILE RESERVATION REQUIRED: work.txt\nAcquire a reservation before editing.', 'FILE RESERVATION REQUIRED: work.txt\nAcquire a reservation before editing.'],
+      [2, '{"reason":"Public JSON reason"}', 'PRIVATE_STDERR', 'Public JSON reason'],
+      [2, '{"hookSpecificOutput":{"permissionDecisionReason":"Public hook reason"}}', '', 'Public hook reason'],
+      [2, 'PRIVATE_NON_JSON', '', ''],
+      [2, '{"private":"PRIVATE_JSON"}', '', ''],
+      [2, '', 'Traceback (most recent call last):\nPRIVATE_INTERNAL', ''],
+      [2, '', '  File "private.py", line 9\nPRIVATE_INTERNAL', ''],
+      [2, '', 'TypeError: PRIVATE_INTERNAL', ''],
+      [2, '', 'hook.sh: line 9: PRIVATE_INTERNAL', ''],
+      [1, '{"reason":"PRIVATE_NON_BLOCKING"}', 'PRIVATE_STDERR', ''],
+      [2, '', '拒😀'.repeat(1000), '拒😀'.repeat(1000)],
+      [2, '', '拒😀'.repeat(1000) + 'x', '拒😀'.repeat(1000)],
+      [2, '', '\x1b[31m公開拒否\x1b[0m\x07', '公開拒否'],
+    ]) {
+      const result = await callHook(file, {cwd: f.root}, {...process.env, FIXTURE_STATUS: String(status),
+        FIXTURE_STDOUT: stdout, FIXTURE_STDERR: stderr});
+      assert.equal(result.ok, false);
+      assert.equal(result.reason, 'ORRERY hook denied: deny.sh' + (expected ? '\n' + expected : ''));
+      assert.equal(result.reason.includes('PRIVATE_'), false);
+    }
+    fs.writeFileSync(file, '#!/bin/sh\ncat >/dev/null\nprintf "\\377A" >&2\nexit 2\n', {mode: 0o700});
+    assert.equal((await callHook(file, {cwd: f.root})).reason, 'ORRERY hook denied: deny.sh\n\ufffdA');
+    fs.writeFileSync(file, '#!/bin/sh\ncat >/dev/null\nprintf "%s" "$FIXTURE_STDERR" >&2\nexit 2\n', {mode: 0o700});
+    // The adapter returns the same denial to the native tool middleware.
+    const g = fixture((_, payload, env) => callHook(file, {...payload, cwd: f.root}, {...env,
+      FIXTURE_STATUS: '2', FIXTURE_STDOUT: '', FIXTURE_STDERR: 'Reserve before editing'}));
+    try {
+      let ran = false;
+      const decision = await g.handlers.get('tools/pre-execute')(exec, () => {ran = true;});
+      assert.equal(ran, false); assert.equal(decision.kind, 'deny');
+      assert.match(decision.reason, /Reserve before editing/);
+    } finally {g.clean();}
   } finally {f.clean();}
 });
 
@@ -206,7 +247,7 @@ test('native CLI tool dispatch invokes common hooks; broken adapter leaves nativ
       fs.chmodSync(path.join(hooks, 'deny-llm-key-read.py'), 0o700);
       save('hooks/check-agent-registered.sh', '#!/bin/sh\ncat >/dev/null\nprintf \'%s\\n\' \'{"systemMessage":"ORRERY_PUBLIC_HOOK_WARNING"}\'\nexit 0\n', 0o700);
       save('hooks/release-file-reservation.sh', '#!/bin/sh\ncat >/dev/null\nexit 0\n', 0o700);
-      save('hooks/check-file-reservation.sh', '#!/bin/sh\ninput=$(cat)\ncase "$input" in *allowed.txt*) exit 0;; *) exit 2;; esac\n', 0o700);
+      save('hooks/check-file-reservation.sh', '#!/bin/sh\ninput=$(cat)\ncase "$input" in *allowed.txt*) exit 0;; *) echo "FILE RESERVATION REQUIRED: reserve before editing" >&2; exit 2;; esac\n', 0o700);
       const secretHelper = save('security', '#!/bin/sh\necho CALLED >>"' + path.join(root, 'helper-calls') + '"\necho SYNTHETIC\n', 0o700);
       const definitions = save('backends.json', JSON.stringify({backends: {strata: {keychain: {service: 'fake-service', account: 'fake-account'}}}}));
       const protectedFile = save('provider-config.json', '{"not_a_real_key":true}');
@@ -217,7 +258,7 @@ try {
 const handle=await ctx.agents.create({sessionId:'native-own-session',meta:{cwd:config.root}});
 const child=await ctx.agents.create({sessionId:'native-delegated-session',meta:{cwd:config.root,parentSession:'native-own-session',origin:'subagent'},parentAgent:handle.agent});
 const call=(name,args)=>handle.agent.ctx.tools.execute({callId:'probe-'+rows.length,name,agent:handle.agent,arguments:args,signal:new AbortController().signal});
- for(const file of ['unreserved.txt','expired.txt','conflict.txt','allowed.txt']) { const r=await call('write',{file_path:config.root+'/'+file,content:'native write'});rows.push({file,error:r.isError}); }
+ for(const file of ['unreserved.txt','expired.txt','conflict.txt','allowed.txt']) { const r=await call('write',{file_path:config.root+'/'+file,content:'native write'});rows.push({file,error:r.isError,denial_visible:JSON.stringify(r).includes('FILE RESERVATION REQUIRED: reserve before editing')}); }
  if(config.mode==='loaded') {const read=await call('read',{file_path:config.protected});rows.push({file:'protected-read',error:read.isError});
  const shell=await call('bash',{command:config.helper+' find-generic-password -s fake-service -a fake-account -w',description:'synthetic guard probe'});rows.push({file:'key-helper',error:shell.isError});}
  fs.writeFileSync(config.root+'/result.json',JSON.stringify({rows,binding:fs.existsSync(config.root+'/native-session.json')?JSON.parse(fs.readFileSync(config.root+'/native-session.json')):null,tools:ctx.tools.schemas().map(r=>r.name)}));
@@ -248,6 +289,8 @@ ctx.get('appExit')(0);});}`);
         assert.equal(fs.existsSync(path.join(root, 'helper-calls')), false);
         assert.equal(evidence.rows.find(row => row.file === 'protected-read').error, true);
         assert.equal(evidence.rows.find(row => row.file === 'key-helper').error, true);
+        for (const file of ['unreserved.txt', 'expired.txt', 'conflict.txt'])
+          assert.equal(evidence.rows.find(row => row.file === file).denial_visible, true);
       }
       console.log(JSON.stringify({mode, native_tool_dispatch: true, ...evidence}));
     } finally {fs.rmSync(root, {recursive: true, force: true});}
