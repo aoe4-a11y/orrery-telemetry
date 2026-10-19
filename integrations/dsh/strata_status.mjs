@@ -1,5 +1,5 @@
-// Ordinary busy/timeouts can affect the shared live server. No polling or lease.
-export async function assertIdle(fetchImpl, baseURL, key, audit, timeoutMs = 5000, callers = () => []) {
+// Shared-server busy/auth/timeout states are observations, never admission gates.
+export async function observeStatus(fetchImpl, baseURL, key, audit, timeoutMs = 5000, callers = () => []) {
   try {
     for (const endpoint of ['/v1/status', '/health']) {
       const url = new URL(endpoint, baseURL);
@@ -10,10 +10,10 @@ export async function assertIdle(fetchImpl, baseURL, key, audit, timeoutMs = 500
           headers: {Authorization: 'Bearer ' + key}, signal: AbortSignal.timeout(timeoutMs)});
       }
       if (response.status >= 300 && response.status < 400) {
-        audit({phase: 'blocked-redirect', reason: 'DSH_REDIRECT', from_origin: url.origin,
+        audit({phase: 'status-check', busy: null, reason: 'STATUS_REDIRECT', from_origin: url.origin,
           method: 'GET', host: url.hostname, port: Number(url.port || (url.protocol === 'https:' ? 443 : 80)),
           path: url.pathname, callers: callers()});
-        throw new Error('STATUS_REDIRECT');
+        return null;
       }
       if (response.status === 404) continue;
       if (!response.ok) throw new Error('STATUS_UNAVAILABLE');
@@ -23,14 +23,11 @@ export async function assertIdle(fetchImpl, baseURL, key, audit, timeoutMs = 500
       const known = typeof n === 'number' && (q === undefined || typeof q === 'number');
       const busy = known ? n !== 0 || (q !== undefined && q !== 0) : null;
       audit({phase: 'status-check', busy});
-      if (busy !== false) throw new Error('STATUS_NOT_IDLE');
-      return;
+      return busy;
     }
     throw new Error('STATUS_MISSING');
-  } catch (error) {
-    if (error.message !== 'STATUS_NOT_IDLE') audit({phase: 'status-check', busy: null});
-    if (error.message === 'STATUS_REDIRECT')
-      throw Object.assign(new Error('DSH_REDIRECT'), {dshExitCode: 78});
-    throw new Error('DSH_STATUS_UNAVAILABLE');
+  } catch {
+    audit({phase: 'status-check', busy: null, reason: 'STATUS_UNAVAILABLE'});
+    return null;
   }
 }
