@@ -52,7 +52,7 @@ def config_generator(root, harness):
 def static_check(receipt, config, *, harness):
     """Shared catalog/launcher check; no provider imports, key reads or RPC."""
     try:
-        if (receipt.get('variant') != 'plain' or type(receipt.get('thin_config_contract')) is not int or receipt['thin_config_contract'] != 1
+        if (receipt.get('variant') not in (('plain', 'plain-datadir') if harness == 'dsh' else ('plain',)) or type(receipt.get('thin_config_contract')) is not int or receipt['thin_config_contract'] != 1
                 or receipt.get('harness') != harness or receipt.get('complete') is not True):
             return dict(available=False, reason='plain_generation_required')
         config_generator(ROOT, harness)
