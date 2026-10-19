@@ -288,3 +288,66 @@ def test_real_dsh_generator_round_trip_preserves_owned_native_session(tmp_path, 
     assert shlex.split(invocation)[-2:] == ['--resume', 'exact-owned-id']
     # The synthetic node is deliberately invalid: this test generates a plan,
     # never executes a runtime, provider plugin, credential helper or Mail RPC.
+
+
+@pytest.mark.parametrize('changed_profile', [False, True])
+def test_real_hermes_generator_round_trip_preserves_owned_native_session(tmp_path, monkeypatch, request, changed_profile):
+    from unittest.mock import patch
+    from test_hermes_thin_config import ThinConfig, config
+    from test_harness_child import staged
+    original_popen = subprocess.Popen
+    fixture = ThinConfig()
+    fixture.setUp()
+    request.addfinalizer(fixture.doCleanups)
+    receipt = fixture.base / 'plain-receipt.json'
+    fixture.save(receipt, {'variant': 'plain', 'thin_config_contract': 1,
+        'harness': 'hermes', 'complete': True, 'details': fixture.template_data})
+    fixture.save(fixture.template, {**fixture.template_data, 'generation_receipt': str(receipt)})
+    manifest = {**fixture.manifest_data, 'enabled': True}
+    manifest['harnesses']['hermes']['python'] = sys.executable
+    fixture.save(fixture.manifest, manifest)
+    args = staged(tmp_path, 'hermes')
+    args.manifest, args.model, args.backend = str(fixture.manifest), 'fixture-main', 'deepseek'
+    args.helper_model = 'fixture-helper'
+    mcp = native.read(args.mcp_config)
+    mcp['mcpServers']['orrery-mail'].update(command='/fixture/proxy', args=[])
+    native.save(args.mcp_config, mcp)
+    monkeypatch.setenv('AGENTSTACK_CLAUDE_JSON', str(tmp_path / 'absent-settings.json'))
+    monkeypatch.setenv('AGENTSTACK_MCP_URL', 'http://127.0.0.1:9/mcp')
+    # Permit the product validation/generator subprocesses. The native Hermes
+    # executable remains invalid synthetic text and is never invoked.
+    with patch.object(subprocess, 'Popen', original_popen):
+        directory = native.prepare(args)
+        first = native.read(directory / 'launch.json')
+        runtime = Path(args.runtime_dir)
+        resume.finish_registration(runtime, args.agent_name, generation=args.generation, rollback=False)
+        resume._atomic_json(directory / 'native-session.json', {
+            'harness': 'hermes', 'native_session_id': 'exact-hermes-id',
+            'created_at': '2026-10-19T00:00:00Z', 'agent_name': args.agent_name})
+        assert resume.mark_retired(runtime, args.agent_name, retention_days=30)
+        resume.begin_resume(runtime, args.agent_name, agent_id=7,
+                            project_key=args.project_key, program='hermes')
+        if changed_profile:
+            source = native.read(directory / 'input.json')
+            source['native_profile_env'] = {'HERMES_HOME': str(tmp_path / 'foreign-profile')}
+            native.save(directory / 'input.json', source)
+            original = (directory / 'overlay/config.yaml').read_bytes()
+            with pytest.raises(ValueError, match='native_resume_profile_changed'):
+                native.prepare_resume(runtime, args.agent_name)
+            assert (directory / 'overlay/config.yaml').read_bytes() == original
+            assert not (tmp_path / 'foreign-profile').exists()
+            assert resume._load_state(runtime / 'child-agents' / (args.agent_name + '.json'))['retired_at']
+            return
+        assert native.prepare_resume(runtime, args.agent_name) == directory
+        resumed = native.read(directory / 'launch.json')
+        assert resumed['env']['HERMES_HOME'] == first['env']['HERMES_HOME']
+        assert resumed['argv'][-2:] == ['--resume', 'exact-hermes-id']
+        source = native.read(directory / 'input.json')
+        assert Path(source['prompt_file']).read_text() == ''
+        overlay = config.read(directory / 'overlay/config.yaml')
+        assert overlay['delegation']['model'] == 'fixture-helper'
+        proxy = overlay['mcp_servers']['orrery-mail']['env']
+        assert proxy['AGENTSTACK_PROXY_PROGRAM'] == 'hermes'
+        assert proxy['AGENTSTACK_PROXY_TOKEN_FILE'] == str(runtime / ('agent_token_' + args.agent_name))
+        invocation = native.resume_command(runtime, args.agent_name).split('; native_rc=$?', 1)[0]
+        assert shlex.split(invocation)[-2:] == ['--resume', 'exact-hermes-id']
