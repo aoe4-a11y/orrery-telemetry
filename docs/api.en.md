@@ -65,7 +65,7 @@ curl -s http://127.0.0.1:8770/api/version
 ```
 
 ```json
-{"name":"orrery-telemetry","version":"2026.09.16.1","api":21}
+{"name":"orrery-telemetry","version":"2026.09.16.1","api":22}
 ```
 
 See [Installation](install.en.md#version) for version resolution order.
@@ -693,3 +693,7 @@ Each item returns `liveness`, nullable `act_state` / `ctx_used`, `session_count`
 Capabilities include `global_runtime_observation=1` and `operator_session=1`. Global `/api/quotas` and `/portrait` use the same admission and existing read helpers. Images use shared-session `apiBlob` object URLs, revoked on Lock.
 
 Managed spawn (legacy, opt-in): see [request/status contract](managed-spawn-contract.md). `POST /api/spawn` returns 202 for accepted managed jobs; `GET /api/spawn-status?attempt_id=<UUID>` reads persistent status. API generation 21.
+
+## Managed interactive sessions (API 22)
+
+Managed spawn accepts an optional parent and initial prompt. `task_mode` is `conversation` or `assignment`; `report_policy` is `pane` or `mail`. A task report does not close the session. Only close, retire or runtime exit starts cleanup. Conversations have no task success verdict. Status separates `task_evaluation`, `activity`, `latest_turn`, and the actual private `worktree` from runtime/cleanup results. All normal product Mail tools remain available without a parent. Additional instructions use the pane; automatic incoming-Mail handoff is not connected yet. See [the managed contract](managed-spawn-contract.md).

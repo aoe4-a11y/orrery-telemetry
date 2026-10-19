@@ -19,7 +19,7 @@ class LaunchdImportTests(unittest.TestCase):
         self.product = self.home / '.agentstack'
         self.dashboard = self.product / 'dashboard'
         self.dashboard.mkdir(parents=True)
-        for file in ('managed_spawn.py', 'managed_catalog.py'):
+        for file in ('managed_spawn.py', 'managed_catalog.py', 'managed_capabilities.py'):
             shutil.copyfile(ROOT / 'dashboard' / file, self.dashboard / file)
         for harness in ('dsh', 'hermes'):
             target = self.product / 'integrations' / harness
@@ -87,11 +87,15 @@ config={'project_key':str(home/'project'),'connection':{'mcp_url':'http://127.0.
 m.trusted_selection=lambda *args: ({},config)
 for harness in m.HARNESSES:
     job=home/harness;job.mkdir()
-    request={'harness':harness,'provider':'strata','parent':'FixtureParent','task':'fixture',
+    request={'harness':harness,'provider':'strata','model':'fixture-strata','parent':'FixtureParent','task':'fixture',
              'dir':str(source),'allowed_paths':['result.txt'],'expected':[{'path':'result.txt','contains':'done'}]}
     m.save(job/'request.json',{'request':request,'config_file':sys.argv[3],'selected_mode':'legacy'})
     m.save(job/'status.json',{'phase':'queued','state':'pending','task_success':None,'runtime_success':None})
-    result=m.run_job(job,run=object(),provider_loader=lambda *args,**kwargs: [])
+    # Admission metadata is supplied just as it is for a saved real request;
+    # only external lifecycle responses are synthetic.
+    providers=[{'id':'strata','models':[{'id':'fixture-strata','harnesses':[
+        {'id':harness,'available':True,'interactive':harness=='dsh'}]}]}]
+    result=m.run_job(job,run=object(),provider_loader=lambda *args,**kwargs: providers)
     assert result['phase']=='cleaned' and result['task_success'] is True,result
 assert loaded==['integrations.dsh.managed_lifecycle','dashboard.server','integrations.hermes.managed_lifecycle','dashboard.server'],loaded
 print('installed imports resolved')
@@ -109,10 +113,11 @@ print('installed imports resolved')
     def test_worker_import_failure_is_failed_and_diagnosed(self):
         result = self.child('''
 job=Path(sys.argv[3]).parent/'job';job.mkdir()
-m.save(job/'request.json',{'request':{'harness':'absent'},'config_file':sys.argv[3],'selected_mode':'legacy'})
+m.save(job/'request.json',{'request':{'harness':'absent','provider':'strata','model':'fixture-strata'},'config_file':sys.argv[3],'selected_mode':'legacy'})
 m.save(job/'status.json',{'phase':'queued','task_success':None,'runtime_success':None})
 m.trusted_selection=lambda *args: ({},{})
-value=m.run_job(job)
+providers=[{'id':'strata','models':[{'id':'fixture-strata','harnesses':[{'id':'absent','available':True}]}]}]
+value=m.run_job(job,provider_loader=lambda *args,**kwargs: providers)
 assert value['state']=='failed' and value['finished'] is True
 ''')
         self.assertEqual(result.returncode, 0, result.stderr)

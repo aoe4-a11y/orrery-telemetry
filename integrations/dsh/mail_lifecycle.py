@@ -88,7 +88,7 @@ def register(state, run=subprocess.run):
          '--token-file', str(token), '--mcp-url', connection['mcp_url'],
          '--mail-env', connection['mail_env'], '--runtime-dir', connection['runtime_dir'],
          '--bearer-mode', connection['bearer_mode'], '--python-bin', config['proxy_python'],
-         '--parent-agent', config['parent'], '--claude-json', str(empty), '--chrome', '0'],
+         '--parent-agent', config['parent'] or '', '--claude-json', str(empty), '--chrome', '0'],
         env=env, cwd=state, capture_output=True, text=True, check=True, timeout=30)
     proxy = read(state / 'mcp.json')['mcpServers']['orrery-mail']
     if proxy['command'] != str(runner) or proxy.get('args') != []:
@@ -187,8 +187,10 @@ def confirm_retire(state, input_file):
     if receipt.get('attempt_id') != attempt['attempt_id'] or receipt.get('agent_name') != attempt['agent_name'] or type(receipt.get('cleanup_exit_code')) is not int:
         raise ValueError('Cleanup receipt is missing or belongs to another attempt')
     datetime.fromisoformat(who['retired_at'].replace('Z', '+00:00'))
+    config = read(state / 'run-config.json')
+    source = 'dashboard-bound-whois' if config.get('task', {}).get('task_mode') else 'parent-bound-whois'
     receipt.update(retired_at=who['retired_at'], confirmed=True,
-                   source='parent-bound-whois', checked_at=stamp())
+                   source=source, checked_at=stamp())
     save(state / 'retire-receipt.json', receipt)
     return receipt
 

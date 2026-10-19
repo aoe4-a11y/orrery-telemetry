@@ -1,4 +1,4 @@
-"""Offline TUI spike runner. No identity registration or credential lookup.
+"""Managed interactive TUI launch and explicit offline verification.
 
 Ordinary inherited configuration can touch live files or leak credentials;
 use an explicit profile, private state and only the dummy key in this phase.
@@ -119,12 +119,12 @@ def prepare(args):
     (profile / 'cordis.patch.yml').write_text('[]\n')
     patch = [
         {'id': 'llm-deepseek', 'config': {'apiKeyEnv': 'DEEPSEEK_API_KEY', 'baseURL': backend['base_url'],
-          'reasoningEffort': backend['effort'],
+          **({'reasoningEffort': backend['effort']} if 'effort' in backend else {}),
           **({'maxTokens': backend['max_output_tokens']} if 'max_output_tokens' in backend else {}),
           'retryPolicy': {'mode': 'normal', 'maxRetries': 0},
           **({'models': [backend['model_definition']]} if backend.get('model_definition') else {})}},
         {'id': 'agent-default-model', 'config': {'provider': 'deepseek-official', 'model': backend['model'],
-                                               'reasoningEffort': backend['effort']}},
+                                               **({'reasoningEffort': backend['effort']} if 'effort' in backend else {})}},
         {'id': 'dsh-tui-auth', 'disabled': True},
         {'id': 'dsh-tui-webserver', 'disabled': True},
         {'id': 'dsh-tui-cordis-host-runner', 'disabled': True},
@@ -135,7 +135,8 @@ def prepare(args):
             {'id': 'preset-orrery-managed', 'name': '@deepseek-ai/dsh-agent-preset',
              'config': {'id': 'orrery-managed', 'plugins': []}}]},
         {'id': 'dsh-tui', 'config': {'provider': 'deepseek-official', 'model': backend['model'],
-          'cwd': plan['cwd'], 'preset': 'orrery-managed', 'effort': backend['effort'], 'launchpad': False,
+          'cwd': plan['cwd'], 'preset': 'orrery-managed',
+          **({'effort': backend['effort']} if 'effort' in backend else {}), 'launchpad': False,
           'fullscreen': True, 'terminalImages': False, 'activity': False, 'recapOnOpen': False}},
     ]
     write_json(state / 'selected.patch.json', patch)
@@ -162,15 +163,28 @@ def init_run(config_file, state):
     if work.is_relative_to(Path(config['project_key']).resolve()):
         raise ValueError('Use a dedicated worktree outside the live project')
     task = config['task']
-    if set(task) != {'prompt', 'allowed_paths', 'expected'} or not isinstance(task['prompt'], str) or not task['prompt'].strip():
-        raise ValueError('One explicit task with expected artifacts required')
-    if not task['allowed_paths'] or not task['expected']:
-        raise ValueError('Narrow file scope and expected artifact required')
+    if (set(task) - {'prompt', 'allowed_paths', 'expected', 'task_mode', 'report_policy'}
+            or not isinstance(task.get('prompt'), str)):
+        raise ValueError('Explicit task manifest required')
+    task.setdefault('task_mode', 'assignment')
+    task.setdefault('report_policy', 'mail' if config['parent'] else 'pane')
+    if task['task_mode'] not in ('assignment', 'conversation') or task['report_policy'] not in ('mail', 'pane'):
+        raise ValueError('Unknown task or report policy')
+    if task['report_policy'] == 'mail' and not config['parent']:
+        raise ValueError('Mail completion requires an explicit recipient')
+    if not isinstance(task.get('allowed_paths'), list) or not isinstance(task.get('expected'), list):
+        raise ValueError('Explicit scope and optional artifact arrays required')
+    if task['task_mode'] == 'assignment' and not task['prompt'].strip():
+        raise ValueError('Assignment prompt required')
     for relative in task['allowed_paths']:
         if not isinstance(relative, str) or Path(relative).is_absolute() or any(c in relative for c in '*?[]') or any(part in ('..', '.git') for part in Path(relative).parts):
             raise ValueError('First run accepts literal relative file paths only')
     for expected in task['expected']:
-        if expected.get('path') not in task['allowed_paths'] or not ('contains' in expected or 'sha256' in expected):
+        relative = expected.get('path')
+        if (not isinstance(relative, str) or Path(relative).is_absolute() or
+                any(part in ('..', '.git') for part in Path(relative).parts) or
+                (task['allowed_paths'] and relative not in task['allowed_paths']) or
+                not ('contains' in expected or 'sha256' in expected)):
             raise ValueError('Expected artifact must be in the reserved scope')
     args = argparse.Namespace(node=config['node'], runtime=config['runtime'], state=str(state),
         worktree=config['worktree'], backend_file=config['backend_file'], backend=config['backend_id'],
@@ -183,8 +197,11 @@ def init_run(config_file, state):
     attempt.update(phase='run', agent_name=None)
     write_json(state / 'attempt.json', attempt)
     manifest = json.loads((state / 'task.json').read_text())
-    manifest.update(**task, report_to=config['parent'], reservation_source='product-bound-proxy', reservation_receipts=[])
+    manifest.update(**task, report_to=config['parent'], reservation_source='product-bound-proxy', reservation_receipts=[],
+                    scope_mode='files' if task['task_mode'] == 'assignment' and task['allowed_paths'] else 'worktree')
     write_json(state / 'task.json', manifest)
+    write_json(state / 'reservation-ledger.json', {'attempt_id': attempt['attempt_id'], 'agent_name': None,
+               'receipts': [], 'released_ids': []})
 
 
 def bind_run(state, require_reservations=True):
@@ -198,11 +215,20 @@ def bind_run(state, require_reservations=True):
         raise ValueError('Attempt identity already differs')
     attempt['agent_name'] = identity['agent_name']
     write_json(state / 'attempt.json', attempt)
+    ledger_file = state / 'reservation-ledger.json'
+    if ledger_file.exists():
+        ledger = json.loads(ledger_file.read_text())
+        if ledger['attempt_id'] != attempt['attempt_id'] or ledger['agent_name'] not in (None, identity['agent_name']):
+            raise ValueError('Reservation ledger identity mismatch')
+        ledger['agent_name'] = identity['agent_name']
+        write_json(ledger_file, ledger)
     task = json.loads((state / 'task.json').read_text())
     if require_reservations:
         reservation = json.loads((state / 'reservations.json').read_text())
         receipts = reservation['receipts']
-        if reservation.get('complete') is not True or reservation['agent_name'] != identity['agent_name'] or reservation['attempt_id'] != attempt['attempt_id'] or not receipts:
+        if (reservation.get('complete') is not True or reservation['agent_name'] != identity['agent_name']
+                or reservation['attempt_id'] != attempt['attempt_id']
+                or (task.get('scope_mode', 'files') != 'worktree' and not receipts)):
             raise ValueError('Real reservation binding missing')
         task['reservation_receipts'] = receipts
         write_json(state / 'task.json', task)
@@ -297,7 +323,7 @@ def execute_run(state, *, assemble=False):
         try:
             plan['env']['DEEPSEEK_API_KEY'] = credential(run_config(state))
         except (OSError, ValueError, subprocess.SubprocessError):
-            write_json(state / 'runtime-exit.json', {'exit_code': None, 'signal': None,
+            write_json(state / 'runtime-exit.json', {'attempt_id': plan['env']['ORRERY_DSH_ATTEMPT_ID'], 'exit_code': None, 'signal': None,
                 'group_absent': True, 'group_check': 'observed', 'runtime_not_started': True,
                 'stopped_by': 'failure'})
             raise
@@ -315,13 +341,13 @@ def execute_run(state, *, assemble=False):
     original_int = signal.getsignal(signal.SIGINT)
     originals = {sig: signal.signal(sig, stop) for sig in (signal.SIGTERM, signal.SIGHUP)}
     reason, seen_turns = 'failure', 0
-    deadline = time.monotonic() + (45 if assemble else 600)
+    deadline = time.monotonic() + 90 if assemble else None
     try:
         write_json(state / 'runtime-process.json', {'pid': child.pid, 'pgid': child.pid,
                    'supervisor_pid': os.getpid(), 'supervisor_started': supervisor_started,
                    'attempt_id': plan['env']['ORRERY_DSH_ATTEMPT_ID']})
         while child.poll() is None:
-            if time.monotonic() >= deadline:
+            if deadline is not None and time.monotonic() >= deadline:
                 reason = 'limit'
                 break
             try:
@@ -341,7 +367,7 @@ def execute_run(state, *, assemble=False):
         for sig in (*originals, signal.SIGINT):
             signal.signal(sig, signal.SIG_IGN)
         absent = stop_owned_group(child)
-        write_json(state / 'runtime-exit.json', {'exit_code': child.returncode,
+        write_json(state / 'runtime-exit.json', {'attempt_id': plan['env']['ORRERY_DSH_ATTEMPT_ID'], 'exit_code': child.returncode,
             'signal': -child.returncode if child.returncode is not None and child.returncode < 0 else None,
             'group_absent': absent is True, 'group_check': 'unknown' if absent is None else 'observed',
             'stopped_by': reason})
@@ -393,7 +419,8 @@ def clean_run(state):
         if name == 'release-receipt.json' and not (state / name).exists() and exit_receipt.get('runtime_not_started') is True and not (state / 'reservation-intent.json').exists():
             continue
         receipt = json.loads((state / name).read_text())
-        if receipt.get('attempt_id') != attempt['attempt_id'] or receipt.get('agent_name') != attempt['agent_name'] or receipt.get('confirmed') is not True or receipt.get('source') != source:
+        sources = (source, 'dashboard-bound-whois') if name == 'retire-receipt.json' else (source,)
+        if receipt.get('attempt_id') != attempt['attempt_id'] or receipt.get('agent_name') != attempt['agent_name'] or receipt.get('confirmed') is not True or receipt.get('source') not in sources:
             raise ValueError('Remote release/retire proof missing; retain local state')
         if name == 'retire-receipt.json' and not receipt.get('retired_at'):
             raise ValueError('Canonical whois retirement timestamp required')

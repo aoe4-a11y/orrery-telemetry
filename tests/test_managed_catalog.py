@@ -77,6 +77,20 @@ class CatalogTests(unittest.TestCase):
         for private in ['131072', 'private.invalid', 'private-account', '/private/runtime', 'dummy-private-token']:
             self.assertNotIn(private, text)
 
+    def test_harness_cache_is_the_only_source_of_effort_choices_and_default(self):
+        self.availability['deepseek']['dsh'].update(
+            efforts=['off', 'low', 'high', 'max'], default_effort='high', effort_source='harness')
+        result = self.build()
+        self.assertEqual(result[0]['efforts'], ['off', 'low', 'high', 'max'])
+        self.assertEqual(result[0]['effort_default'], 'high')
+        dsh, hermes = result[0]['models'][0]['harnesses']
+        self.assertEqual(dsh['effort_source'], 'harness')
+        self.assertIsNone(hermes['efforts'])
+        self.assertIsNone(hermes['default_effort'])
+        self.assertEqual(hermes['effort_source'], 'unknown')
+        self.assertEqual(result[1]['efforts'], [])  # Handwritten low/high is ignored.
+        self.assertNotIn('effort_default', result[1])
+
     def test_inputs_are_unchanged(self):
         before = copy.deepcopy((self.backends, self.availability))
         self.build()
