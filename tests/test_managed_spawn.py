@@ -96,6 +96,25 @@ class ManagedTests(unittest.TestCase):
         self.assertEqual(len(self.spawn_calls), 1)
         request['task'] = 'different'
         self.assertEqual(again.submit(request)['error_code'], 'attempt_conflict')
+
+    def test_trial_template_timeout_is_not_projected_to_either_interactive_harness(self):
+        source = m.read(self.template)
+        source['task_timeout_seconds'] = 300
+        m.save(self.template, source)
+        for harness in ('dsh', 'hermes'):
+            for mode in ('assignment', 'conversation'):
+                with self.subTest(harness=harness, mode=mode):
+                    request = self.payload(harness=harness)
+                    request['task_mode'] = mode
+                    if mode == 'conversation':
+                        request.update(parent=None, task='', allowed_paths=[], expected=[])
+                    self.assertTrue(self.manager.submit(request)['ok'])
+                    job = self.root / 'jobs' / request['attempt_id']
+                    result = m.run_job(job, adapter=Adapter(job), parent_call=self.parent_call,
+                        run=object(), sleep=lambda _: None, provider_loader=self.loader)
+                    self.assertTrue(result['cleanup_success'])
+                    self.assertNotIn('task_timeout_seconds', m.read(job / 'run-template.json'))
+        self.assertEqual(m.read(self.template)['task_timeout_seconds'], 300)
     def test_default_off_global_and_unavailable_do_not_spawn(self):
         self.assertEqual(m.catalog(None, selected_mode='legacy'), [])
         self.assertFalse(m.Manager(None).submit(self.payload())['ok'])

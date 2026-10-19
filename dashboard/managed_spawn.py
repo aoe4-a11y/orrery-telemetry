@@ -495,8 +495,9 @@ def run_job(job, *, adapter=None, parent_call=None, run=None, sleep=time.sleep, 
                 shutil.copyfile(src, dest)
         projected = dict(source)
         projected.pop('startup_timeout_seconds', None)
-        if request['harness'] == 'dsh':
-            projected.pop('task_timeout_seconds', None)
+        # Template trial deadlines do not define a managed runtime's lifetime.
+        # Explicit runtime run-config deadlines remain supported by the CLI.
+        projected.pop('task_timeout_seconds', None)
         if request.get('effort') is not None:
             if request['harness'] == 'dsh':
                 backend = read(projected['backend_file'])
