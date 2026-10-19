@@ -4029,49 +4029,40 @@ cleanup_on_failure() {
     if [[ "$CHILD_SESSION_STARTED" == true && -n "${CHILD_NAME:-}" ]]; then
         if [[ "$USE_CODEX" == true ]] && codex_self_update_on_screen "$CHILD_NAME"; then
             leave_updating_codex_child "$CHILD_NAME"
-        else
-            tmux kill-session -t "=$CHILD_NAME" >/dev/null 2>&1 || true
+            # The updater still owns its identity and working directory.
+            return 1
+        fi
+        local stop_status=0 stop_output="" stop_confirmed=false
+        stop_output="$(tmux has-session -t "=$CHILD_NAME" 2>&1)" || stop_status=$?
+        if [[ "$stop_status" == 0 ]]; then
+            if ! tmux kill-session -t "=$CHILD_NAME" >/dev/null 2>&1; then
+                echo "[spawn_child] stop unconfirmed; recovery state and worktree retained" >&2
+                return 1
+            fi
+            tmux has-session -t "=$CHILD_NAME" >/dev/null 2>&1 || stop_status=$?
+            [[ "$stop_status" != 1 ]] || stop_confirmed=true
+        elif [[ "$stop_status" == 1 && "$stop_output" == *"can't find session"* ]]; then
+            stop_confirmed=true
+        fi
+        if [[ "$stop_confirmed" != true ]]; then
+            echo "[spawn_child] stop unconfirmed; recovery state and worktree retained" >&2
+            return 1
         fi
     fi
     if [[ -n "${CHILD_NAME:-}" ]]; then
-        echo "[spawn_child] cleanup: retiring $CHILD_NAME and releasing reservations" >&2
-        # 予約解放
-        if [[ -n "${RESOURCES:-}" ]]; then
-            local release_args
-            release_args=$(python3 -c "
-import json, sys
-print(json.dumps({'project_key': sys.argv[1], 'agent_name': sys.argv[2]}))
-" "$PROJECT_KEY" "$CHILD_NAME") 2>/dev/null || true
-            call_mcp "release_file_reservations" "$release_args" > /dev/null 2>&1 || true
-        fi
-        # エージェント retire
-        if [[ -s "${CHILD_TOKEN_FILE:-}" ]]; then
-            retire_agent_with_token_file "$CHILD_NAME" "$CHILD_TOKEN_FILE" > /dev/null 2>&1 || true
+        echo "[spawn_child] cleanup: confirming reservation release and retirement for $CHILD_NAME" >&2
+        if ! /bin/bash "$HOOKS_DIR/cleanup-child-agent.sh" "$CHILD_NAME"; then
+            echo "[spawn_child] cleanup unconfirmed; recovery state and worktree retained" >&2
+            return 1
         fi
     fi
-    # worktree も作っていれば撤去
+    # Only confirmed cleanup may remove the isolated working directory or
+    # pending launch record. The helper owns credential/registry retention.
     cleanup_worktree
     discard_claude_launch_record
-    rm -f "${CHILD_TOKEN_FILE:-}" "$CHILD_STATE_DIR/${CHILD_NAME:-}.json"
-    if [[ -n "${CHILD_NAME:-}" && -f "$MANAGED_FILE" ]]; then
-        python3 - "$MANAGED_FILE" "$CHILD_NAME" <<'PY' 2>/dev/null || true
-import pathlib
-import sys
-
-path = pathlib.Path(sys.argv[1])
-name = sys.argv[2]
-try:
-    lines = path.read_text(encoding="utf-8").splitlines()
-except OSError:
-    raise SystemExit(0)
-path.write_text(
-    "\n".join(line for line in lines if line != name) + "\n",
-    encoding="utf-8",
-)
-PY
-    fi
 }
-trap cleanup_on_failure EXIT
+# Keep the original startup error even if recovery itself is incomplete.
+trap 'cleanup_on_failure || :' EXIT
 if [[ -n "$HARNESS" ]]; then
     trap 'exit 143' TERM; trap 'exit 129' HUP; trap 'exit 130' INT
     CHILD_REGISTRATION_GENERATION="$("${AGENTSTACK_PYTHON:-python3}" -c 'import secrets;print(secrets.token_hex(16))')"
