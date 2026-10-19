@@ -5,7 +5,9 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import {pathToFileURL} from 'node:url';
-import {spawnSync} from 'node:child_process';
+import {spawn, spawnSync} from 'node:child_process';
+import http from 'node:http';
+import {once} from 'node:events';
 import {providerClass} from '../integrations/dsh/keychain_credentials.mjs';
 
 const INIT = Symbol('init');
@@ -104,5 +106,100 @@ test('native CLI loads memory credentials; absent/disabled/import/lookup cannot 
   for (const mode of ['ok', 'missing', 'disabled', 'import-failure', 'lookup-failure']) {
     const row = nativeCase(mode);
     console.log(JSON.stringify(row));
+  }
+});
+
+for (const mode of ['ok', 'missing', 'lookup-failure']) test(`generated base profile HTTP credential path: ${mode}`, {skip: nativeSkip}, async () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'dsh-generated-key-'));
+  const save = (name, data) => {
+    const file = path.join(root, name); fs.mkdirSync(path.dirname(file), {recursive: true});
+    fs.writeFileSync(file, typeof data === 'string' ? data : JSON.stringify(data), {mode: 0o600}); return file;
+  };
+  const sse = [
+    {type: 'message_start', message: {id: 'fixture', type: 'message', role: 'assistant', content: [], model: 'deepseek-flash', usage: {input_tokens: 1, output_tokens: 0}}},
+    {type: 'content_block_start', index: 0, content_block: {type: 'text', text: ''}},
+    {type: 'content_block_delta', index: 0, delta: {type: 'text_delta', text: 'fixture-ok'}},
+    {type: 'content_block_stop', index: 0},
+    {type: 'message_delta', delta: {stop_reason: 'end_turn', stop_sequence: null}, usage: {output_tokens: 1}},
+    {type: 'message_stop'},
+  ].map(row => `event: ${row.type}\ndata: ${JSON.stringify(row)}\n\n`).join('');
+  let received = [];
+  const server = http.createServer(async (req, res) => {
+    let body = ''; for await (const chunk of req) body += chunk;
+    received.push({method: req.method, url: req.url, key: req.headers['x-api-key'], body: JSON.parse(body)});
+    res.writeHead(200, {'content-type': 'text/event-stream'}); res.end(sse);
+  });
+  try {
+    server.listen(0, '127.0.0.1'); await once(server, 'listening');
+    const baseURL = `http://127.0.0.1:${server.address().port}/anthropic`;
+    const state = path.join(root, 'state'); fs.mkdirSync(state);
+    const receipt = save('owner.json', {harness: 'dsh', complete: true, variant: 'plain-datadir', thin_config_contract: 1,
+      details: {node, runtime, runtime_receipt: path.join(runtime, '../evidence/upstream-runtime.json')}});
+    const backends = save('backends.json', {backends: {deepseek: {base_url: baseURL, model: 'deepseek-flash', keychain: {service: 'fake-service', account: 'fake-account'}}}});
+    const template = save('template.json', {node, runtime, generation_receipt: receipt, backend_file: backends});
+    const manifest = save('manifest.json', {enabled: true, backends: {deepseek: {model: 'deepseek-flash'}}, harnesses: {dsh: {config_file: template}}});
+    const document = {product_root: process.cwd(), manifest_file: manifest, backend_id: 'deepseek', model: 'deepseek-flash',
+      agent_name: 'FixtureChild', cwd: root, state_dir: state, runtime_dir: root,
+      prompt_file: save('prompt.txt', ''), instructions_file: save('instructions.md', 'fixture instructions'),
+      mcp_config: save('mcp.json', {mcpServers: {}}), mcp_selection: {servers: {}, inherit: false, approved: {}, enabled_tools: {}}};
+    const input = save('input.json', document), planFile = path.join(root, 'plan.json');
+    const generated = spawnSync(process.env.ORRERY_DSH_TEST_PYTHON ?? 'python3',
+      [process.env.ORRERY_DSH_TEST_GENERATOR ?? path.resolve('integrations/dsh/thin_config.py'), '--input', input, '--out', planFile], {encoding: 'utf8'});
+    assert.equal(generated.status, 0, generated.stderr);
+    const plan = JSON.parse(fs.readFileSync(planFile, 'utf8'));
+    const home = plan.env.DSH_HOME, selected = 'ORRERY_DSH_PROVIDER_KEY';
+    const credentials = save(path.relative(root, path.join(home, '.credentials.yaml')), `version: 1\nrefs:\n  ${selected}: "FILE_CANARY"\n`);
+    const initialCredentials = fs.readFileSync(credentials, 'utf8');
+    const fakeSecurity = save('security.mjs', `import fs from 'node:fs';fs.appendFileSync(${JSON.stringify(path.join(root, 'lookups'))},'lookup\\n');${mode === 'lookup-failure' ? 'process.exit(1);' : "process.stdout.write('MEMORY_FIXTURE_KEY');"}`);
+    const wrapper = save('credential-wrapper.mjs', `import {execFile} from 'node:child_process';import {install} from ${JSON.stringify(plugin)};
+export async function apply(ctx, config) {await install(ctx,config,()=>new Promise((resolve,reject)=>execFile(${JSON.stringify(node)},[${JSON.stringify(fakeSecurity)}],{encoding:'utf8'},(e,out)=>e?reject(e):resolve(out))));}`);
+    const rows = JSON.parse(fs.readFileSync(path.join(plan.config_dir, 'native.patch.json'), 'utf8'));
+    // Only replace the lookup seam; preserve every generated patch operation.
+    const entries = rows.flatMap(row => row.insert ?? [row]);
+    const keyRow = entries.find(row => row.name === path.resolve('integrations/dsh/keychain_credentials.mjs'));
+    assert.ok(keyRow); keyRow.name = mode === 'missing' ? path.join(root, 'missing.mjs') : wrapper;
+    save('generated.patch.json', rows);
+    const tuiModules = path.join(runtime, 'node_modules/@deepseek-harness-tui/dsh-tui/lib/types');
+    const probe = save('http-probe.mjs', `import fs from 'node:fs';
+import {resolveStartupLang} from ${JSON.stringify(pathToFileURL(path.join(tuiModules, 'i18n.js')).href)};
+import {shouldOfferOnboarding} from ${JSON.stringify(pathToFileURL(path.join(tuiModules, 'onboardingPrefs.js')).href)};
+export function apply(ctx) {ctx.get('appReady').onReady(async()=>{
+ const out={credentials_loaded:!!ctx.get('credentials'),finished:false,language:resolveStartupLang(),wizard:shouldOfferOnboarding()};
+ try {const adapter=ctx.get('llm').adapters.get('deepseek-official').adapter;
+ for await(const event of adapter.stream({provider:'deepseek-official',model:'deepseek-flash',maxTokens:8,messages:[{role:'user',content:[{type:'text',text:'fixture'}]}]})) {}
+ out.finished=true;
+ } catch(error) {out.error=error.message;}
+ fs.writeFileSync(${JSON.stringify(path.join(root, 'http-result.json'))},JSON.stringify(out));ctx.get('appExit')(0);
+});}`);
+    const extra = save('probe.patch.json', [{id: 'dsh-tui', disabled: true}, {insert: [{id: 'http-probe', name: probe, inject: ['llm']}]}]);
+    const guard = save('local-only.mjs', `const fetch0=globalThis.fetch;globalThis.fetch=(url,opts)=>{
+ if(!String(url).startsWith(${JSON.stringify(baseURL + '/')}))throw new Error('EXTERNAL_NETWORK_FORBIDDEN');return fetch0(url,opts);};`);
+    const argv = [...plan.argv]; argv[argv.indexOf('--patch') + 1] = path.join(root, 'generated.patch.json');
+    const child = spawn(node, ['--import', guard, ...argv.slice(1), '--patch', extra], {cwd: root,
+      env: {HOME: root, PATH: path.dirname(node) + ':/usr/bin:/bin', LC_CTYPE: 'ja_JP.UTF-8', ...plan.env,
+        DEEPSEEK_API_KEY: 'ENV_CANARY', ORRERY_DSH_PROVIDER_KEY: 'SELECTED_ENV_CANARY', DSH_TELEMETRY_DISABLED: '1'}, timeout: 30000});
+    let output = ''; child.stdout.on('data', x => {output += x;}); child.stderr.on('data', x => {output += x;});
+    const [exit] = await once(child, 'close');
+    assert.equal(exit, 0, output);
+    const evidence = JSON.parse(fs.readFileSync(path.join(root, 'http-result.json'), 'utf8'));
+    assert.equal(evidence.language, 'en'); assert.equal(evidence.wizard, false);
+    if (mode === 'ok') {
+      assert.equal(evidence.finished, true, JSON.stringify(evidence) + output);
+      assert.equal(received.length, 1);
+      assert.equal(received[0].method, 'POST'); assert.equal(received[0].url, '/anthropic/v1/messages');
+      assert.equal(received[0].key, 'MEMORY_FIXTURE_KEY');
+      assert.equal(received[0].body.model, 'deepseek-flash');
+    } else {
+      assert.equal(evidence.finished, false); assert.equal(received.length, 0);
+      assert.equal(evidence.credentials_loaded, false);
+    }
+    assert.equal(fs.existsSync(path.join(root, 'lookups')) ? fs.readFileSync(path.join(root, 'lookups'), 'utf8') : '', mode === 'missing' ? '' : 'lookup\n');
+    assert.equal(fs.readFileSync(credentials, 'utf8'), initialCredentials);
+    assert.equal(/MEMORY_FIXTURE_KEY|SELECTED_ENV_CANARY|FILE_CANARY/.test(output), false);
+    console.log(JSON.stringify({mode, generated_profile: true, native_base: true, local_http_requests: received.length,
+      memory_header: mode === 'ok', lookup_count: mode === 'missing' ? 0 : 1, language: evidence.language, wizard: evidence.wizard}));
+  } finally {
+    server.closeAllConnections(); await new Promise(resolve => server.close(resolve));
+    fs.rmSync(root, {recursive: true, force: true});
   }
 });
