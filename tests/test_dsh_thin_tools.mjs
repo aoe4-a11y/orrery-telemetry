@@ -92,6 +92,68 @@ test('real subprocess hook exit is observed without exposing stderr', async () =
   } finally { f.clean(); }
 });
 
+test('hook subprocess follows native cwd for relative reservation checks and release', async () => {
+  const f = fixture();
+  const originalCwd = process.cwd();
+  try {
+    const root = fs.realpathSync(f.root);
+    const a = path.join(root, 'A'), b = path.join(root, 'B');
+    fs.mkdirSync(a); fs.mkdirSync(b);
+    for (const dir of [a, b]) fs.writeFileSync(path.join(dir, 'work.txt'), 'unchanged');
+    const common = path.resolve('hooks/reservation-common.sh');
+    const grant = path.join(root, 'grant'), seen = path.join(root, 'seen');
+    const env = {HOME: root, PATH: '/usr/bin:/bin', AGENTSTACK_HOME: path.join(root, 'install'),
+      AGENTSTACK_RUNTIME_DIR: path.join(root, 'runtime'), AGENTSTACK_HOOKS_DIR: root,
+      AGENTSTACK_PROJECT_KEY: root, AGENTSTACK_PROTECTED_ROOTS: root, AGENTSTACK_PYTHON: '/usr/bin/python3',
+      FIXTURE_COMMON: common, FIXTURE_GRANT: grant, FIXTURE_SEEN: seen};
+    for (const file of ['deny-llm-key-read.py', 'check-agent-registered.sh'])
+      fs.writeFileSync(path.join(root, file), '#!/bin/sh\ncat >/dev/null\nexit 0\n', {mode: 0o700});
+    // Exercise the actual product path/project resolver, replacing only the
+    // reservation lookup/release transport with a fixture grant and log.
+    const resolver = '#!/bin/bash\n. "$FIXTURE_COMMON"\n' +
+      'input=$(cat)\nreservation_resolve_tool_context "$input" || exit 2\n' +
+      'printf "%s|%s|%s\\n" "$FILE_PATH" "$MATCHED_ROOT" "$PWD" >> "$FIXTURE_SEEN"\n';
+    fs.writeFileSync(path.join(root, 'check-file-reservation.sh'), resolver +
+      '[ "$FILE_PATH" = "$(cat "$FIXTURE_GRANT")" ] || exit 2\n', {mode: 0o700});
+    fs.writeFileSync(path.join(root, 'release-file-reservation.sh'), resolver, {mode: 0o700});
+    const handlers = new Map();
+    let nativeCwd = a;
+    apply({on: (name, fn) => handlers.set(name, fn), workingDirectory: {ensure: async () => nativeCwd}},
+      {hooks_dir: root, cwd: a, state_dir: root, env});
+    process.chdir(a); // Native working_directory changes its service, not this process cwd.
+    nativeCwd = b;
+    const edit = {...exec, arguments: {file_path: 'work.txt', content: 'native write'}};
+    const write = () => {fs.writeFileSync(path.join(nativeCwd, edit.arguments.file_path), edit.arguments.content); return 'written';};
+    fs.writeFileSync(grant, path.join(a, 'work.txt'));
+    assert.equal((await handlers.get('tools/pre-execute')(edit, write)).kind, 'deny');
+    assert.equal(fs.readFileSync(path.join(b, 'work.txt'), 'utf8'), 'unchanged');
+    fs.writeFileSync(grant, path.join(b, 'work.txt'));
+    assert.equal(await handlers.get('tools/pre-execute')(edit, write), 'written');
+    assert.equal(fs.readFileSync(path.join(a, 'work.txt'), 'utf8'), 'unchanged');
+    assert.equal(fs.readFileSync(path.join(b, 'work.txt'), 'utf8'), 'native write');
+    await handlers.get('tools/result')(edit, {isError: false});
+    assert.deepEqual(fs.readFileSync(seen, 'utf8').trim().split('\n'),
+      Array(3).fill([path.join(b, 'work.txt'), root, b].join('|')));
+  } finally {process.chdir(originalCwd); f.clean();}
+});
+
+test('bash workdir becomes the real hook process cwd after native directory changes', async () => {
+  const f = fixture();
+  try {
+    const root = fs.realpathSync(f.root), changed = path.join(root, 'changed'), nested = path.join(changed, 'nested');
+    fs.mkdirSync(nested, {recursive: true});
+    const seen = path.join(root, 'bash-cwd');
+    for (const file of ['deny-llm-key-read.py', 'check-agent-registered.sh'])
+      fs.writeFileSync(path.join(root, file), '#!/bin/sh\ncat >/dev/null\npwd -P >> "$FIXTURE_SEEN"\n', {mode: 0o700});
+    const handlers = new Map();
+    apply({on: (name, fn) => handlers.set(name, fn), workingDirectory: {ensure: async () => changed}},
+      {hooks_dir: root, cwd: root, state_dir: root, env: {FIXTURE_SEEN: seen}});
+    assert.equal(await handlers.get('tools/pre-execute')({...exec, name: 'bash', arguments: {command: 'true', workdir: 'nested'}},
+      () => 'native body'), 'native body');
+    assert.deepEqual(fs.readFileSync(seen, 'utf8').trim().split('\n'), [nested, nested]);
+  } finally {f.clean();}
+});
+
 const nativeRuntime = process.env.ORRERY_DSH_TEST_RUNTIME;
 const nativeNode = process.env.ORRERY_DSH_TEST_NODE;
 const skipNative = !nativeRuntime || !nativeNode ? 'explicit pinned native runtime and Node required' : false;

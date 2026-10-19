@@ -18,7 +18,7 @@ export function payloadFor(exec, config) {
 
 export function callHook(file, payload, env = process.env) {
   return new Promise(resolve => {
-    const child = execFile(file, [], {env, maxBuffer: 1024 * 1024}, error => {
+    const child = execFile(file, [], {env, cwd: payload.cwd, maxBuffer: 1024 * 1024}, error => {
       resolve(error ? {ok: false, reason: 'ORRERY hook denied: ' + path.basename(file)} : {ok: true});
     });
     child.stdin.on('error', () => {});
