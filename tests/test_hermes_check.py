@@ -1,5 +1,7 @@
 """Native offline-check setup and skip acceptance, without installed dependencies."""
 import hashlib
+import contextlib
+import io
 import importlib.util
 import json
 import os
@@ -8,6 +10,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
+from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parents[1]
 _spec = importlib.util.spec_from_file_location('hermes_check', ROOT / 'integrations/hermes/check.py')
@@ -16,6 +19,27 @@ _spec.loader.exec_module(check)
 
 
 class NativeCheck(unittest.TestCase):
+    def test_explicit_installed_source_and_python_pass_valid_setup(self):
+        source = os.environ.get('ORRERY_HERMES_TEST_SOURCE')
+        python = os.environ.get('ORRERY_HERMES_TEST_PYTHON')
+        if not source or not python:
+            self.skipTest('Explicit installed dependency interpreter/source required')
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary).resolve()
+            template, output = root / 'runtime.json', root / 'result.json'
+            template.write_text(json.dumps({'hermes_source': source, 'managed_root': str(Path(source).parent)}))
+            self.assertEqual(Path(check.committed_python(json.loads(template.read_text()))).resolve(), Path(python).resolve())
+            suite = unittest.TestSuite([unittest.FunctionTestCase(lambda: None)])
+            with patch.object(sys, 'argv', ['check.py', '--config', str(template), '--out', str(output)]), \
+                    patch.object(check.os, 'execve', side_effect=AssertionError('already in committed interpreter')), \
+                    patch.object(check.unittest.defaultTestLoader, 'discover', return_value=suite), \
+                    contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
+                self.assertEqual(check.main(), 0)
+            report = json.loads(output.read_text())
+            self.assertTrue(report['success'])
+            self.assertEqual(report['tests_run'], 1)
+            self.assertEqual(report['skips'], [])
+
     def test_skip_reasons_require_explicit_approval(self):
         class Skipped(unittest.TestCase):
             def runTest(self):

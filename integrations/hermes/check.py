@@ -56,7 +56,7 @@ def main():
                 {'PATH': '/usr/bin:/bin', 'LANG': 'en_US.UTF-8', 'PYTHONDONTWRITEBYTECODE': '1',
                  'HERMES_DISABLE_LAZY_INSTALLS': '1', 'UV_OFFLINE': '1'})
         source = Path(config['hermes_source']).resolve()
-        if not (source / 'hermes_cli/cli.py').is_file():
+        if not (source / 'cli.py').is_file():
             raise ValueError('Installed Hermes source unavailable')
         allowed = json.loads(args.allowed_skips.read_text())
         with tempfile.TemporaryDirectory(prefix='hermes-check-', dir=output.parent) as temporary:
