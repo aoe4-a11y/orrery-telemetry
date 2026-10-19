@@ -1,6 +1,8 @@
 """Pinned native UI vocabulary, active-footer boundaries and one-capture wiring."""
 from types import SimpleNamespace
 from pathlib import Path
+import json
+import textwrap
 
 import pytest
 
@@ -36,6 +38,9 @@ def test_pinned_current_controls(program, text, state):
     if program == 'hermes' and state == 'work':
         prompt = text.splitlines()[0]
         text = '─' * 80 + '\n' + prompt + '\n' + '─' * 80
+    elif program == 'hermes':
+        prompt = '⚠ ❯' if state == 'ask' else '? ❯'
+        text += '\n' + '─' * 80 + '\n' + prompt + '\n' + '─' * 80
     assert parse_activity(text, program) == state
     styled = '\x1b[38;2;1;2;3m' + text.replace('\n', '\x1b[0m\n\x1b[1m') + '\x1b[0m'
     assert parse_activity(styled, program) == state
@@ -154,13 +159,29 @@ def test_wait_requires_a_complete_current_input_frame(program, file):
         assert parse_activity(text.replace('ctx 2.8% (28k/1.0m)', 'ctx 2.8% (28k/'), program) is None
 
 
-def test_modal_controls_override_the_idle_input_shape():
+def test_modal_controls_need_the_actual_modal_prompt():
     frame = (_CAPTURES / 'hermes-idle.txt').read_text()
     ask = '⚠️  Dangerous Command\nfixture\n↑/↓ to select, Enter to confirm\n'
     question = 'ExampleAgent needs your input\nfixture\ntype your answer and press Enter\n'
-    assert parse_activity(ask + frame, 'hermes') == 'ask'
-    assert parse_activity(question + frame, 'hermes') == 'question'
-    assert parse_activity('⚠️  Dangerous Command\n' + frame, 'hermes') is None
+    assert parse_activity(ask + frame.replace('deepseek ❯', '⚠ ❯'), 'hermes') == 'ask'
+    for symbol in ('? ❯', '✎ ❯'):
+        assert parse_activity(question + frame.replace('deepseek ❯', symbol), 'hermes') == 'question'
+    assert parse_activity(ask + frame.replace('deepseek ❯', '? ❯'), 'hermes') is None
+
+
+@pytest.mark.parametrize('program', ['hermes', 'dsh'])
+@pytest.mark.parametrize('state', ['wait', 'work'])
+def test_panel_examples_in_output_do_not_override_current_input(program, state):
+    file = program + ('-idle.txt' if state == 'wait' else '-work.txt')
+    frame = (_CAPTURES / file).read_text()
+    examples = [
+        '⚠️  Dangerous Command\n↑/↓ to select, Enter to confirm\n',
+        'ExampleAgent needs your input\ntype your answer and press Enter\n',
+        'Awaiting approval · fixture\n↑/↓ select · Enter confirm · Esc reject\n',
+        '▾  📋 Question 1/2\n↑/↓ select · Enter submit · Esc cancel · Ctrl+Q to fold / click the header\n',
+    ]
+    for example in examples:
+        assert parse_activity(example + frame, program) == state
 
 
 @pytest.mark.parametrize('program', ['dsh', 'hermes'])
@@ -169,3 +190,32 @@ def test_wait_and_work_transition_does_not_retain_a_previous_state(program):
     work = (_CAPTURES / (program + '-work.txt')).read_text()
     assert [parse_activity(text, program) for text in (idle, work, idle, 'hidden')] == [
         'wait', 'work', 'wait', None]
+
+
+_DSH_PANELS = json.loads((_CAPTURES / 'dsh-panels.json').read_text())['cases']
+
+
+@pytest.mark.parametrize('case', _DSH_PANELS, ids=lambda case: case['id'])
+def test_upstream_rendered_divider_and_panel_hint(case):
+    # The fixture generator evaluates native Divider and source-extracted
+    # title/hint expressions, including expanded ▾ and folded ▸ prefixes.
+    assert parse_activity(case['text'], 'dsh') == case['state']
+    styled = '\x1b[36m' + case['text'].replace('\n', '\x1b[0m\n\u3000\x1b[36m')
+    assert parse_activity(styled, 'dsh') == case['state']
+    lines = case['text'].splitlines()
+    # Native Text widgets wrap long operation hints; word-boundary wrapping
+    # must keep the observed operation and suppress the generic busy hint.
+    lines[-2:-1] = textwrap.wrap(lines[-2], width=60)
+    assert parse_activity('\n'.join(lines), 'dsh') == case['state']
+
+
+@pytest.mark.parametrize('case', [case for case in _DSH_PANELS if 'approval' in case['id']], ids=lambda case: case['id'])
+def test_long_approval_with_only_its_operation_footer_is_unknown(case):
+    assert parse_activity(case['text'], 'dsh') == 'ask'
+    long_panel = case['text'].replace('Fixture operation', '\n'.join(['wrapped command'] * 38))
+    assert parse_activity(long_panel, 'dsh') is None
+    clipped = long_panel.replace(' · Esc reject', '').replace(' · Esc 拒绝', '')
+    assert parse_activity(clipped, 'dsh') is None
+    # The same partial evidence must suppress work even after the title has
+    # disappeared from the capture itself, not merely from the title window.
+    assert parse_activity('\n'.join(long_panel.splitlines()[1:]), 'dsh') is None

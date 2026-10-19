@@ -12,14 +12,17 @@ except ImportError:  # executable dashboard/server.py
     from harness_context import parse_context
 
 _ANSI = re.compile(r'\x1b\[[0-?]*[ -/]*[@-~]|\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)')
-_EDGES = ' \t\xa0│┃╭╮╰╯┌┐└┘─━┏┓┗┛'
+_EDGES = ' \t\xa0\u3000│┃╭╮╰╯┌┐└┘─━┏┓┗┛'
 _DSH_APPROVAL = re.compile(r'(?:Awaiting approval · .+|⏳ 等待审批 · .+)')
-_DSH_QUESTION = re.compile(r'(?:▸\s+)?📋 (?:Question \d+/\d+.*|提问 · 第 \d+/\d+ 题.*)')
+_DSH_QUESTION = re.compile(r'(?:[▸▾]\s*)?📋 (?:Question \d+/\d+.*|提问 · 第 \d+/\d+ 题.*)')
 _DSH_CONFIRM = re.compile(
     r'↑/↓(?:/Tab)? (?:select · Enter confirm · (?:on No, type a reason · )?Esc reject'
     r'|选择 · Enter 确认 · (?:选中拒绝后可输入理由 · )?Esc 拒绝)')
 _DSH_ANSWER = re.compile(r'(?:Type answer|输入回答|↑/↓ (?:select|选择)) · .*Enter (?:submit|提交) · .*Esc (?:cancel|previous question|中断|上一题).*')
 _DSH_FOLDED = re.compile(r'(?:⏸\s+)?(?:Waiting for your answer|正在等你回答) — .+ (?:to expand|展开)')
+_DSH_OPERATION_START = re.compile(
+    r'(?:↑/↓(?:/Tab)? (?:select|选择) ·|(?:Type answer|输入回答) ·'
+    r'|(?:⏸\s+)?(?:Waiting for your answer|正在等你回答) —)')
 _HERMES_APPROVAL = re.compile(r'⚠\ufe0f?\s+(?:Dangerous Command|危険なコマンド)')
 _HERMES_QUESTION = re.compile(r'.+(?: needs your input| が入力を求めています)')
 _COUNTDOWN = r'(?:\s+\(\d+s\))?'
@@ -30,6 +33,17 @@ _HERMES_ANSWER = re.compile(
     r'|回答を入力して Enter を押してください|↑/↓ で選択、Enter で確定、Tab で次の質問)' + _COUNTDOWN)
 _HERMES_BUSY = re.compile(r'☤(?:\s+❯)?(?:\s.*)?')
 _HERMES_IDLE = re.compile(r'(?:[\w.-]+\s+)?❯(?:\s.*)?')
+_HERMES_APPROVAL_PROMPT = re.compile(r'⚠\ufe0f?(?:\s+❯)?(?:\s.*)?')
+_HERMES_QUESTION_PROMPT = re.compile(r'[?✎](?:\s+❯)?(?:\s.*)?')
+
+
+def _hermes_prompt(lines):
+    rows = [line.strip() for line in lines if line.strip()]
+    if len(rows) >= 3:
+        top, prompt, bottom = rows[-3:]
+        if top == bottom and re.fullmatch(r'─{8,}', top):
+            return prompt
+    return None
 
 
 def _input_activity(lines, program):
@@ -40,13 +54,15 @@ def _input_activity(lines, program):
     StatusLine:370–376: same input box, extra interrupt hint only while busy.
     """
     rows = [line.strip() for line in lines if line.strip()]
-    if program == 'hermes' and len(rows) >= 3:
-        top, prompt, bottom = rows[-3:]
-        if top == bottom and re.fullmatch(r'─{8,}', top):
-            if _HERMES_BUSY.fullmatch(prompt):
-                return 'work'
-            if _HERMES_IDLE.fullmatch(prompt):
-                return 'wait'
+    if program == 'hermes':
+        prompt = _hermes_prompt(lines)
+        if prompt is not None and _HERMES_BUSY.fullmatch(prompt):
+            return 'work'
+        if prompt is not None and _HERMES_IDLE.fullmatch(prompt):
+            return 'wait'
+    interrupt = program == 'dsh' and rows and rows[-1] in ('esc to interrupt', 'esc 中断')
+    if interrupt:
+        rows = rows[:-1]
     if program == 'dsh' and rows and parse_context(rows[-1], 'dsh')['ctx_used'] is not None:
         # Footer has a context status and optionally the compact occupancy bar.
         for index in range(max(0, len(rows) - 5), len(rows) - 2):
@@ -55,7 +71,7 @@ def _input_activity(lines, program):
                     and bottom == '╰' + top[1:-1] + '╯'
                     and re.fullmatch(r'⌸\s+❯.*\s+⛶', prompt)
                     and 1 <= len(rows) - index - 3 <= 2):
-                return 'wait'
+                return 'work' if interrupt else 'wait'
     return None
 
 
@@ -64,7 +80,8 @@ def parse_activity(text, program):
 
     A modal needs both its title and a current operation footer. The footer
     must be near the bottom, not just anywhere in the captured transcript.
-    Native turns remain working while awaiting a modal, so modals take priority.
+    Native turns remain working while awaiting a modal. A visible ordinary
+    composer contradicts a modal: dsh hides it; Hermes changes its prompt icon.
     """
     if program not in ('dsh', 'hermes') or not isinstance(text, str):
         return None
@@ -73,15 +90,26 @@ def parse_activity(text, program):
     rows = [row for row in rows if row]
     if not rows:
         return None
+    current_input = _input_activity(lines, program)
+    if current_input is not None:
+        # Panel-like text above an ordinary current input is transcript output.
+        return current_input
     footer = rows[-6:]
     titles = rows[-36:]
+
+    def operations(hint):
+        # Text widgets can wrap their operation hints at word boundaries.
+        for index in range(len(footer)):
+            for end in range(index + 1, len(footer) + 1):
+                if hint.fullmatch(' '.join(footer[index:end])):
+                    yield index
 
     def modal(title, hint):
         # Require the title before the matching operation, not a later quoted
         # title after an old footer. Wide/long panels outside this window are unknown.
-        return any(hint.fullmatch(row) and any(title.fullmatch(previous)
+        return any(any(title.fullmatch(previous)
                    for previous in titles[:len(titles) - len(footer) + index])
-                   for index, row in enumerate(footer))
+                   for index in operations(hint))
 
     if program == 'dsh':
         if modal(_DSH_APPROVAL, _DSH_CONFIRM):
@@ -90,13 +118,16 @@ def parse_activity(text, program):
             return 'question'
         if any(_DSH_APPROVAL.fullmatch(row) or _DSH_QUESTION.fullmatch(row) for row in titles):
             return None
+        if any(_DSH_OPERATION_START.match(row) for row in footer):
+            return None
         if rows[-1] in ('esc to interrupt', 'esc 中断'):
             return 'work'
     else:
-        if modal(_HERMES_APPROVAL, _HERMES_CONFIRM):
+        prompt = _hermes_prompt(lines) or ''
+        if _HERMES_APPROVAL_PROMPT.fullmatch(prompt) and modal(_HERMES_APPROVAL, _HERMES_CONFIRM):
             return 'ask'
-        if modal(_HERMES_QUESTION, _HERMES_ANSWER):
+        if _HERMES_QUESTION_PROMPT.fullmatch(prompt) and modal(_HERMES_QUESTION, _HERMES_ANSWER):
             return 'question'
         if any(_HERMES_APPROVAL.fullmatch(row) or _HERMES_QUESTION.fullmatch(row) for row in titles):
             return None
-    return _input_activity(lines, program)
+    return None

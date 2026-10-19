@@ -9,9 +9,13 @@ no additional provider endpoint or credential lookup in these readers.
 API 24 observes native activity from the same captured pane as context.
 `dashboard.harness_activity.parse_activity(text, program)` returns `work`,
 `question`, `ask` or `wait` only from supported current controls. A question or approval
-needs both its panel title and operation hint near the bottom. These modals
-take priority over a busy hint because native turns can remain working while
-waiting for the user. The context parser itself does not infer activity.
+needs both its panel title and operation hint near the bottom. Hermes also
+requires the current modal prompt (`⚠` for approval, `?`/`✎` for questions).
+dsh hides the ordinary composer during a modal. A visible ordinary input frame
+therefore identifies panel-like text above it as transcript, not a current
+modal. Without that contradictory frame, a modal takes priority over the generic
+interrupt hint. A readable operation hint with a missing title stays unknown.
+The context parser itself does not infer activity.
 
 Supported formats are dsh-tui 0.16.1's English/Chinese approval and question
 panels (including folded questions), its interrupt footer, and Hermes
@@ -29,10 +33,13 @@ the input and a normal `❯` prompt (with an optional profile name); working use
 the `☤` state icon instead. dsh uses its complete `⌸ ❯ … ⛶` input box and current
 context footer, without the interrupt hint. Broken/truncated frames, startup
 consent screens, hidden chrome and unsupported custom prompt shapes stay null.
+Multiline/wrapped input outside these complete shapes also stays unknown.
 Null means unknown, not idle, finished or ready. Activity never changes process
 liveness or stop eligibility.
 The existing Claude/Codex classification is unchanged. No new watcher, native
 patch, status file or provider call is introduced.
+These additions apply to legacy agent rows and graph nodes; the global runtime
+observation route is unchanged.
 
 The input shapes are observed in real idle/work/resume pane captures and
 defined by Hermes `cli_tui_mixin.py:272–346,2143–2161` and dsh
