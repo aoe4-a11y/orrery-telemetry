@@ -198,6 +198,11 @@ def _personality_prompt(existing, source):
 def generate(document):
     facts = validate_input(document)
     product, profile = Path(document['product_root']).resolve(), Path(facts['profile'])
+    pin = document.get('native_profile_env')
+    if pin is not None and (not isinstance(pin, dict) or set(pin) != {'HERMES_HOME'}
+                            or not isinstance(pin['HERMES_HOME'], str)
+                            or Path(pin['HERMES_HOME']).resolve() != profile.resolve()):
+        raise ValueError('native_resume_profile_changed')
     state, cwd = Path(document['state_dir']).resolve(), Path(document['cwd']).resolve()
     if not re.fullmatch(r'[A-Za-z][A-Za-z0-9_-]*', document['agent_name']) or not cwd.is_dir():
         raise ValueError('invalid_input')
@@ -227,7 +232,7 @@ def generate(document):
         plugin = profile / 'plugins' / PLUGIN
         plugin.mkdir(parents=True, exist_ok=True, mode=0o700)
         manifest = {'name': PLUGIN, 'version': '1.0.0', 'description': 'Common ORRERY native tool guards',
-                    'provides_hooks': ['pre_tool_call', 'on_session_start']}
+                    'provides_hooks': ['pre_tool_call', 'post_tool_call', 'on_session_start']}
         if (plugin / 'plugin.yaml').exists() and read(plugin / 'plugin.yaml') != manifest:
             raise ValueError('owned_link_conflict')
         _save(plugin / 'plugin.yaml', manifest)
@@ -283,8 +288,9 @@ def main():
         allowed = {'unknown_backend', 'model_mismatch', 'invalid_effort', 'builtin_provider_collision',
                    'invalid_runtime', 'invalid_route', 'invalid_input', 'unsupported_mcp_selection',
                    'inherited_mcp_conflict', 'owned_link_conflict', 'invalid_helper_model',
-                   'invalid_resume_session_id'}
-        print(str(error) if str(error) in allowed else 'invalid_input', file=sys.stderr)
+                   'invalid_resume_session_id', 'native_resume_profile_changed'}
+        reason = str(error) if str(error) in allowed else 'invalid_input'
+        print('HERMES_THIN_CONFIG_ERROR=' + reason, file=sys.stderr)
         raise SystemExit(1)
 
 

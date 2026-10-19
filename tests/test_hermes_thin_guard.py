@@ -1,8 +1,9 @@
 """Native hook adaptation with real common key guard and synthetic tool bodies."""
 import json
+import importlib.util
+import io
 import os
 from pathlib import Path
-import shutil
 import subprocess
 import sys
 import shlex
@@ -11,9 +12,10 @@ from types import ModuleType, SimpleNamespace
 import unittest
 from unittest.mock import patch
 
-from integrations.hermes import thin_guard as guard
-
 ROOT = Path(__file__).resolve().parents[1]
+_spec = importlib.util.spec_from_file_location('hermes_thin_guard', ROOT / 'integrations/hermes/thin_guard.py')
+guard = importlib.util.module_from_spec(_spec)
+_spec.loader.exec_module(guard)
 
 
 class ThinGuard(unittest.TestCase):
@@ -25,7 +27,7 @@ class ThinGuard(unittest.TestCase):
         (self.core / 'hooks').mkdir(parents=True)
         for name in ('check-agent-registered.sh', 'check-file-reservation.sh'):
             (self.core / 'hooks' / name).write_text('#!/bin/sh\nexit 0\n')
-        shutil.copyfile(ROOT / 'hooks/deny-llm-key-read.py', self.core / 'hooks/deny-llm-key-read.py')
+        (self.core / 'hooks/deny-llm-key-read.py').symlink_to(ROOT / 'hooks/deny-llm-key-read.py')
         definitions = self.base / 'definitions.json'
         self.helper = self.base / 'key-helper'
         self.helper.write_text('#!/bin/sh\ntouch ' + str(self.base / 'helper-was-called') + '\n')
@@ -34,6 +36,7 @@ class ThinGuard(unittest.TestCase):
         self.enterContext(patch.dict(os.environ, {'HOME': str(self.base), 'PATH': os.defpath,
             'AGENTSTACK_HOME': str(self.core), 'AGENTSTACK_LLM_KEY_DEFINITIONS': str(definitions),
             'AGENTSTACK_NATIVE_SESSION_FILE': str(self.base / 'native-session.json')}, clear=True))
+        self.native_cwd = guard._cwd
         self.enterContext(patch.object(guard, '_cwd', return_value=str(self.base)))
 
     def test_native_credential_tool_denied_before_real_helper_execution(self):
@@ -45,11 +48,23 @@ class ThinGuard(unittest.TestCase):
         self.assertFalse((self.base / 'helper-was-called').exists())
         self.assertNotIn(command, result['message'])
 
+    def test_repo_guard_blocks_native_and_shell_provider_file_reads(self):
+        provider = self.base / 'provider.json'
+        provider.write_text('fixture-provider-canary')
+        with patch.dict(os.environ, {'AGENTSTACK_LLM_KEY_FILES': json.dumps([str(provider)])}):
+            for tool, args in [('read_file', {'path': str(provider)}),
+                               ('terminal', {'command': 'cat ' + shlex.quote(str(provider))})]:
+                with self.subTest(tool=tool):
+                    result = guard.before(tool, args)
+                    self.assertEqual(result['action'], 'block')
+                    self.assertEqual(result['message'], 'ORRERY hook denied: deny-llm-key-read.py')
+                    self.assertNotIn('fixture-provider-canary', result['message'])
+
     def test_registration_veto_precedes_reservation_and_tool(self):
         (self.core / 'hooks/check-agent-registered.sh').write_text('echo unresolved >&2\nexit 2\n')
         (self.core / 'hooks/check-file-reservation.sh').write_text('touch ' + str(self.base / 'reservation-called') + '\n')
         result = guard.before('write_file', {'path': 'file.txt', 'content': 'never'})
-        self.assertEqual(result, {'action': 'block', 'message': 'unresolved'})
+        self.assertEqual(result, {'action': 'block', 'message': 'ORRERY hook denied: check-agent-registered.sh'})
         self.assertFalse((self.base / 'reservation-called').exists())
         self.assertFalse((self.base / 'file.txt').exists())
 
@@ -67,9 +82,78 @@ class ThinGuard(unittest.TestCase):
         self.assertEqual(checked, [str(self.base / 'source'), str(self.base / 'destination')])
         self.assertTrue(all(payload['session_id'] == 'own-session' for _, payload in events))
 
-    def test_non_veto_error_matches_normal_hook_contract(self):
-        (self.core / 'hooks/check-agent-registered.sh').write_text('exit 1\n')
-        self.assertIsNone(guard.before('terminal', {'command': 'echo harmless'}))
+    def test_hook_failure_blocks_without_exposing_output(self):
+        (self.core / 'hooks/check-agent-registered.sh').write_text('echo private-output >&2\nexit 1\n')
+        self.assertEqual(guard.before('terminal', {'command': 'echo harmless'}),
+                         {'action': 'block', 'message': 'ORRERY hook denied: check-agent-registered.sh'})
+
+    def test_only_allowed_public_structured_warning_is_displayed(self):
+        cases = [(0, '{"systemMessage":"reservation is unconfirmed"}', 'reservation is unconfirmed\n'),
+                 (0, '', ''), (0, 'private stdout', ''),
+                 (0, '{"other":"private field"}', ''), (0, '{"systemMessage":3}', ''),
+                 (2, '{"systemMessage":"not an allowed warning"}', '')]
+        for code, stdout, expected in cases:
+            with self.subTest(stdout=stdout, code=code):
+                visible = io.StringIO()
+                with patch.object(guard.subprocess, 'run', return_value=SimpleNamespace(
+                        returncode=code, stdout=stdout, stderr='private stderr')), patch('sys.stderr', visible):
+                    self.assertEqual(guard.call_hook('check-file-reservation.sh', {'cwd': str(self.base)}), code == 0)
+                self.assertEqual(visible.getvalue(), expected)
+
+    def test_credential_guard_precedes_registration(self):
+        (self.core / 'hooks/check-agent-registered.sh').write_text('touch ' + str(self.base / 'registration-called') + '\n')
+        result = guard.before('terminal', {'command': str(self.helper) + ' --fixture'})
+        self.assertEqual(result['action'], 'block')
+        self.assertFalse((self.base / 'registration-called').exists())
+
+    def test_successful_edits_release_without_passing_output(self):
+        calls = []
+        with patch.object(guard, 'call_hook', side_effect=lambda name, payload: calls.append((name, payload))):
+            for status in ('error', 'blocked', 'cancelled', None):
+                guard.after('write_file', 'private-output', {'path': 'file'}, status=status)
+            guard.after('read_file', 'private-output', {'path': 'file'}, status='ok')
+            self.assertEqual(calls, [])
+            guard.after('write_file', 'private-output', {'path': 'file', 'content': 'body'}, status='ok', session_id='own')
+        self.assertEqual(len(calls), 1)
+        name, payload = calls[0]
+        self.assertEqual(name, 'release-file-reservation.sh')
+        self.assertEqual(payload['tool_result'], {'success': True})
+        self.assertNotIn('private-output', json.dumps(payload))
+        self.assertEqual(payload['cwd'], str(self.base))
+
+    def test_real_resolver_uses_native_cwd_for_relative_checks_and_release(self):
+        a, b = self.base / 'A', self.base / 'B'
+        a.mkdir(); b.mkdir()
+        for directory in (a, b):
+            (directory / 'work.txt').write_text('unchanged')
+        grant, seen = self.base / 'grant', self.base / 'seen'
+        resolver = ('#!/bin/bash\n. "$FIXTURE_COMMON"\ninput=$(cat)\n'
+                    'reservation_resolve_tool_context "$input" || exit 2\n'
+                    'printf "%s|%s|%s\\n" "$FILE_PATH" "$MATCHED_ROOT" "$PWD" >> "$FIXTURE_SEEN"\n')
+        (self.core / 'hooks/check-file-reservation.sh').write_text(
+            resolver + '[ "$FILE_PATH" = "$(cat "$FIXTURE_GRANT")" ] || exit 2\n')
+        (self.core / 'hooks/release-file-reservation.sh').write_text(resolver)
+        env = {'AGENTSTACK_PROJECT_KEY': str(self.base), 'AGENTSTACK_PROTECTED_ROOTS': str(self.base),
+               'AGENTSTACK_HOOKS_DIR': str(self.core / 'hooks'), 'AGENTSTACK_PYTHON': sys.executable,
+               'FIXTURE_COMMON': str(ROOT / 'hooks/reservation-common.sh'),
+               'FIXTURE_GRANT': str(grant), 'FIXTURE_SEEN': str(seen)}
+        original = Path.cwd()
+        try:
+            os.chdir(a)
+            with patch.dict(os.environ, env), patch.object(guard, '_cwd', return_value=str(b)):
+                args = {'path': 'work.txt', 'content': 'native write'}
+                grant.write_text(str(a / 'work.txt'))
+                self.assertEqual(guard.before('write_file', args)['action'], 'block')
+                self.assertEqual((b / 'work.txt').read_text(), 'unchanged')
+                grant.write_text(str(b / 'work.txt'))
+                self.assertIsNone(guard.before('write_file', args))
+                (b / 'work.txt').write_text(args['content'])
+                guard.after('write_file', 'private-result', args, status='ok')
+        finally:
+            os.chdir(original)
+        self.assertEqual((a / 'work.txt').read_text(), 'unchanged')
+        self.assertEqual((b / 'work.txt').read_text(), 'native write')
+        self.assertEqual(seen.read_text().splitlines(), ['|'.join(map(str, (b / 'work.txt', self.base, b)))] * 3)
 
     def test_real_common_reservation_hook_missing_expired_conflict_and_allowed(self):
         from test_check_file_reservation import _Server, _mcp_result
@@ -108,6 +192,19 @@ class ThinGuard(unittest.TestCase):
         self.assertEqual(payload['tool_input']['file_path'], str(self.base / 'changed/provider.json'))
         self.assertEqual(payload['tool_name'], 'Read')
 
+    def test_terminal_workdir_is_hook_process_directory(self):
+        paths = ModuleType('tools.file_tools_paths')
+        paths._resolve_base_dir = lambda task: self.base / 'changed'
+        (self.base / 'changed/nested').mkdir(parents=True)
+        with patch.dict(sys.modules, {'tools.file_tools_paths': paths}):
+            native = self.native_cwd('terminal', {'workdir': 'nested'}, 'own-task')
+        calls = []
+        with patch.object(guard, '_cwd', return_value=native), \
+                patch.object(guard.subprocess, 'run', side_effect=lambda argv, **kwargs:
+                             calls.append(kwargs['cwd']) or SimpleNamespace(returncode=0)):
+            guard.before('terminal', {'command': 'true', 'workdir': 'nested'})
+        self.assertEqual(calls, [str(self.base / 'changed/nested')] * 2)
+
     def test_session_event_is_own_id_not_delegation_or_mru(self):
         context = ModuleType('agent.delegation_context')
         context.is_delegated_child_context = lambda: False
@@ -126,7 +223,7 @@ class ThinGuard(unittest.TestCase):
     def test_register_only_adds_native_hooks_no_preflight(self):
         hooks = {}
         guard.register(SimpleNamespace(register_hook=lambda name, fn: hooks.setdefault(name, fn)))
-        self.assertEqual(set(hooks), {'pre_tool_call', 'on_session_start'})
+        self.assertEqual(set(hooks), {'pre_tool_call', 'post_tool_call', 'on_session_start'})
 
 
 if __name__ == '__main__':

@@ -24,9 +24,14 @@ The native input queue uses `busy_input_mode=queue`. The initial prompt uses
 output-token or session-lifetime limit, native-command ban, egress preload or
 usage evaluator is added by this entry.
 
-`thin_guard.py` adapts native pre-tool events to the common registration,
-credential-read and acquired-reservation hooks. Only their exit 2 is a veto,
-matching the ordinary hook contract. Generation checks the plugin file and
+`thin_guard.py` adapts native pre-tool events to the common credential-read,
+registration and acquired-reservation hooks, in that order. A failed check
+blocks the tool with a fixed diagnostic, without exposing hook output.
+An allowed hook's structured `systemMessage` warning remains visible; raw
+stdout/stderr are not forwarded.
+Successful native edits call the common reservation release hook. Both
+checks and release run in the native tool's current directory.
+Generation checks the plugin file and
 configuration statically; it does not import or verify runtime registration.
 Explicit MCP selections that cannot be represented are rejected. Turning off
 MCP inheritance disables unselected configured servers; profiles with enabled
@@ -36,6 +41,8 @@ append servers after configuration loading.
 The plugin saves the native session-start event in `native-session.json` under
 the child's existing state directory. Delegated sessions cannot overwrite it.
 An explicit `resume_session_id` becomes native `--resume`; no shared MRU is used.
+An optional `native_profile_env` pin is checked using canonical paths before
+creating files or links; a changed profile is rejected.
 Missing resume metadata does not prevent startup. Standard launcher cleanup,
 Mail delivery and process observation own the lifecycle.
 

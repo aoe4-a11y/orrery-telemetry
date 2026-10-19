@@ -45,25 +45,47 @@ def _cwd(tool_name, args, task_id):
     return cwd
 
 
-def before(tool_name, args, session_id='', task_id='', **_):
+def call_hook(name, payload):
     root = Path(os.environ['AGENTSTACK_HOME'])
+    interpreter = sys.executable if name.endswith('.py') else '/bin/bash'
+    result = subprocess.run([interpreter, str(root / 'hooks' / name)],
+                            input=json.dumps(payload), text=True, capture_output=True,
+                            cwd=payload['cwd'], timeout=60)
+    if result.returncode == 0:
+        # Only the common hook's public warning schema is visible. Raw stdout
+        # and stderr can contain private diagnostics and are never forwarded.
+        try:
+            public = json.loads(getattr(result, 'stdout', '') or '{}')
+        except json.JSONDecodeError:
+            public = None
+        if isinstance(public, dict) and isinstance(public.get('systemMessage'), str) and public['systemMessage']:
+            print(public['systemMessage'], file=sys.stderr)
+    return result.returncode == 0
+
+
+def before(tool_name, args, session_id='', task_id='', **_):
     cwd = _cwd(tool_name, args, task_id)
     for payload in payloads(tool_name, args, cwd=cwd, session_id=session_id):
-        checks = []
+        checks = ['deny-llm-key-read.py']
         if payload['tool_name'] in ('Bash', 'Write', 'Edit'):
-            checks.append(['/bin/bash', str(root / 'hooks/check-agent-registered.sh')])
-        checks.append([sys.executable, str(root / 'hooks/deny-llm-key-read.py')])
+            checks.append('check-agent-registered.sh')
         if payload['tool_name'] in ('Write', 'Edit'):
-            checks.append(['/bin/bash', str(root / 'hooks/check-file-reservation.sh')])
-        for argv in checks:
-            result = subprocess.run(argv, input=json.dumps(payload), text=True,
-                                    capture_output=True, cwd=cwd, timeout=60)
-            if result.returncode == 2:
-                return {'action': 'block', 'message': result.stderr.strip() or 'ORRERY tool guard denied this call'}
-            if result.returncode:
-                # Match the normal hook contract: only exit 2 is a veto.
-                print('ORRERY hook returned a non-veto error', file=sys.stderr)
+            checks.append('check-file-reservation.sh')
+        for name in checks:
+            if not call_hook(name, payload):
+                return {'action': 'block', 'message': 'ORRERY hook denied: ' + name}
     return None
+
+
+def after(tool_name, result, args=None, status=None, session_id='', task_id='', **_):
+    # Hermes derives ok/error from the native result before emitting this hook.
+    # Never pass tool output (which can contain credentials) to release hooks.
+    if status != 'ok' or tool_name not in ('write_file', 'patch'):
+        return
+    args = args or {}
+    cwd = _cwd(tool_name, args, task_id)
+    for payload in payloads(tool_name, args, cwd=cwd, session_id=session_id):
+        call_hook('release-file-reservation.sh', {**payload, 'tool_result': {'success': True}})
 
 
 def session_started(session_id, **_):
@@ -90,4 +112,5 @@ def session_started(session_id, **_):
 
 def register(ctx):
     ctx.register_hook('pre_tool_call', before)
+    ctx.register_hook('post_tool_call', after)
     ctx.register_hook('on_session_start', session_started)

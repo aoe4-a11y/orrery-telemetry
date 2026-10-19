@@ -1,5 +1,7 @@
 """Thin generation: private synthetic trees, no upstream import or credential call."""
 import hashlib
+import importlib.util
+import io
 import json
 import os
 from pathlib import Path
@@ -9,9 +11,10 @@ import tempfile
 import unittest
 from unittest.mock import patch
 
-from integrations.hermes import thin_config as config
-
 ROOT = Path(__file__).resolve().parents[1]
+_spec = importlib.util.spec_from_file_location('hermes_thin_config', ROOT / 'integrations/hermes/thin_config.py')
+config = importlib.util.module_from_spec(_spec)
+_spec.loader.exec_module(config)
 
 
 class ThinConfig(unittest.TestCase):
@@ -119,6 +122,30 @@ class ThinConfig(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, '^invalid_resume_session_id$'):
                 self.generate(resume_session_id=value)
 
+    def test_resume_profile_pin_is_canonical_and_checked_before_writes(self):
+        with self.assertRaisesRegex(ValueError, '^native_resume_profile_changed$'):
+            self.generate(native_profile_env={'HERMES_HOME': str(self.base / 'other-profile')})
+        self.assertFalse((self.runtime / 'profiles').exists())
+        self.assertFalse((self.base / 'child').exists())
+        persistent = self.base / 'persistent'
+        persistent.mkdir()
+        (self.runtime / 'profiles').symlink_to(persistent, target_is_directory=True)
+        profile = persistent / 'deepseek'
+        plan = self.generate(native_profile_env={'HERMES_HOME': str(profile)})
+        self.assertEqual(Path(plan['env']['HERMES_HOME']).resolve(), profile)
+
+    def test_cli_error_has_common_launcher_marker_and_no_output_plan(self):
+        source, output = self.base / 'input.json', self.base / 'plan.json'
+        self.save(source, {**self.document, 'native_profile_env': {'HERMES_HOME': str(self.base / 'other')}})
+        stderr = io.StringIO()
+        with patch('sys.argv', ['thin_config.py', '--input', str(source), '--out', str(output)]), \
+                patch('sys.stderr', stderr), self.assertRaises(SystemExit) as exit:
+            config.main()
+        self.assertEqual(exit.exception.code, 1)
+        self.assertEqual(stderr.getvalue(), 'HERMES_THIN_CONFIG_ERROR=native_resume_profile_changed\n')
+        self.assertFalse(output.exists())
+        self.assertFalse((self.runtime / 'profiles').exists())
+
     def test_builtin_provider_rejected_before_any_files_created(self):
         for provider in ('deepseek', ' DeepSeek ', 'auto', 'main'):
             self.profile_spec['provider'] = provider
@@ -178,6 +205,8 @@ try:
     hooks.mkdir(parents=True)
     for name in ('check-agent-registered.sh', 'check-file-reservation.sh'):
         (hooks / name).write_text('echo thin-fixture-registration-denied >&2\nexit 2\n')
+    release_log = fixture.base / 'released.json'
+    (hooks / 'release-file-reservation.sh').write_text('cat >> ' + str(release_log) + '\n')
     (hooks / 'deny-llm-key-read.py').write_text('raise SystemExit(0)\n')
     subprocess.Popen, socket.socket = real_popen, real_socket
     def audit(name, args):
@@ -206,13 +235,17 @@ try:
     plugins.discover_plugins()
     if not broken:
         result = plugins.get_pre_tool_call_block_message('write_file', {'path': str(fixture.base / 'no-write'), 'content': 'denied'}, task_id='fixture', session_id='fixture')
-        assert result == 'thin-fixture-registration-denied', 'native plugin did not reach common hook: ' + str(result)
+        assert result == 'ORRERY hook denied: check-agent-registered.sh', 'native plugin did not reach common hook: ' + str(result)
         assert not (fixture.base / 'no-write').exists()
         for name in ('check-agent-registered.sh', 'check-file-reservation.sh'):
             (hooks / name).write_text('exit 0\n')
-        shutil.copyfile(Path(os.environ['FIXTURE_PRODUCT']) / 'hooks/deny-llm-key-read.py', hooks / 'deny-llm-key-read.py')
+        (hooks / 'deny-llm-key-read.py').unlink()
+        (hooks / 'deny-llm-key-read.py').symlink_to(Path(os.environ['FIXTURE_PRODUCT']) / 'hooks/deny-llm-key-read.py')
         denied = plugins.get_pre_tool_call_block_message('terminal', {'command': '/fixture/key-helper --selector fixture-key'}, task_id='fixture', session_id='fixture')
-        assert denied and 'LOCAL_MODEL_KEY_READ_DENIED' in denied
+        assert denied == 'ORRERY hook denied: deny-llm-key-read.py'
+        protected = Path(plan['config_dir']) / 'config.yaml'
+        denied_read = plugins.get_pre_tool_call_block_message('read_file', {'path': str(protected)}, task_id='fixture', session_id='fixture')
+        assert denied_read == 'ORRERY hook denied: deny-llm-key-read.py'
         from agent.delegation_context import delegated_child_context
         plugins.invoke_hook('on_session_start', session_id='owned-native-session')
         native_session = Path(plan['env']['AGENTSTACK_NATIVE_SESSION_FILE'])
@@ -222,10 +255,24 @@ try:
         assert json.loads(native_session.read_text())['native_session_id'] == 'owned-native-session'
     target = fixture.base / 'allowed.txt'
     args = {'path': str(target), 'content': 'native-write-ok'}
+    if not broken:
+        (hooks / 'check-file-reservation.sh').write_text("printf '%s\\n' '{\"systemMessage\":\"fixture public reservation warning\"}'\n")
     assert plugins.get_pre_tool_call_block_message('write_file', args, task_id='fixture', session_id='fixture') is None
     from tools.file_tools import _handle_write_file
     output = _handle_write_file(args, task_id='fixture', session_id='fixture')
     assert target.read_text() == 'native-write-ok', output
+    if not broken:
+        from model_tools import _emit_post_tool_call_hook
+        _emit_post_tool_call_hook(function_name='write_file', function_args=args, result=output,
+                                  task_id='fixture', session_id='fixture')
+        released = json.loads(release_log.read_text())
+        assert released['tool_input']['file_path'] == str(target)
+        assert released['tool_result'] == {'success': True}
+        assert 'native-write-ok' not in str(released['tool_result'])
+        release_log.unlink()
+        _emit_post_tool_call_hook(function_name='write_file', function_args=args,
+                                  result='{"error":"fixture failure"}', task_id='fixture')
+        assert not release_log.exists()
     print(json.dumps({'config':'loaded','native_pre_tool':'blocked','native_write':'allowed','key_helper_calls':0,'network':0,'guard_mode':'broken' if broken else 'loaded'}))
 finally:
     if 'tools.terminal_tool_lifecycle' in sys.modules:
@@ -252,6 +299,8 @@ class NativeThinConfig(unittest.TestCase):
             self.assertEqual(json.loads(result.stdout)['guard_mode'], 'broken' if broken else 'loaded')
             if broken:
                 self.assertIn('fixture guard import failed', result.stderr)
+            else:
+                self.assertIn('fixture public reservation warning', result.stderr)
 
 
     def test_pinned_native_loader_dispatcher_and_file_handler_offline(self):
