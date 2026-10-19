@@ -129,7 +129,7 @@ service が応答しているなら登録は可能なので、既定は**要求�
 | [`record-codex-session-index.py`](../integrations/codex_app/plugin/scripts/record-codex-session-index.py) | 公式 Codex `SessionStart` payload を plugin runner が同期入力 | payload の `session_id` と rollout header ID を照合し、同じ `launch_id` の current launch だけを Codex session index として atomic write。検証済み `child` / `standalone` provenance も receipt へ引き継ぐ |
 | [`resolve-agent-name.sh`](../hooks/resolve-agent-name.sh) | identity が必要な reminder、reservation、cleanup helper が source | env → exact tmux session → session index（caller が `AGENTSTACK_SESSION_ID` を渡した場合）の順で identity を解決 |
 | [`spawn_child.sh`](../hooks/spawn_child.sh) | `/delegate` または dashboard の NEW AGENT が child 起動時に明示実行 | identity、token、task mail、reservation、tmux、Claude / Codex、worktree、readiness を一つの launch transaction にまとめる |
-| [`cleanup-child-agent.sh`](../hooks/cleanup-child-agent.sh) | `spawn_child.sh` が起動した child の REPL command が終了した直後 | reservation release、remote identity retire、managed list / state / credential / MCP config の削除を best-effort 実行 |
+| [`cleanup-child-agent.sh`](../hooks/cleanup-child-agent.sh) | `spawn_child.sh` が起動した child の REPL command が終了した直後 | reservation release と remote identity retire を確認後、managed list / state / credential / MCP config を整理。失敗時は state と資格を保持し非0 |
 | [`monitor_child_agent.sh`](../hooks/monitor_child_agent.sh) | `/delegate` の親が監視頻度ごとに一回ずつ実行 | tmux pane を採取し、完了、session 消失、permission prompt、stasis、任意の danger pattern を判定して exit code で返す |
 | [`watch_agent_mail_signals.sh`](../hooks/watch_agent_mail_signals.sh) | launcher の登録処理が dedicated `mail-watcher` tmux service として起動 | ORRERY Mail signal を監視し、対象と完全一致する agent tmux session へ通知文と `C-m` を注入 |
 
@@ -240,6 +240,8 @@ modelのshell toolなら拒否しますが、launcher/key_cmd内部のsubprocess
 失敗時は鍵の取出し形を含むcommandだけを拒否し、通常のshellは通します。
 鍵の漏れを止めつつ、壊れた設定1つで全shell作業を止めないためです。commandや鍵参照を
 理由にechoせず、固定の理由だけを返します。専用ユーザーやOS sandboxの代わりではありません。
-既知の限界: base64等で組み立てるcommand、任意scriptの内部、別toolによる読取りは解析しません。
+native dsh/Hermes の adapter も同じ判定へ tool 名と入力を渡します。小文字の `bash` / `terminal` と `read` / `read_file` を扱い、`AGENTSTACK_LLM_KEY_FILES`（絶対pathのJSON配列）にある provider・credential file の通常の shell / native read を拒否します。判定は参照pathを比較するだけで、保護対象fileの内容を読みません。相対pathはpayloadのcwdから解決します。
+
+既知の限界: base64等で組み立てるcommand、任意scriptの内部、adapterを通らない別toolの読取りは解析しません。
 
 取り出し形はcommand全文から照合し、if/then・brace等の前置にも適用します。既知の限界として、quoted heredocの例示やinterpreter欠落時の鍵読取りに似た文字列は、保守的に誤拒否することがあります。
