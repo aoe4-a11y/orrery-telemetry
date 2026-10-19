@@ -8,26 +8,38 @@ no additional provider endpoint or credential lookup in these readers.
 
 API 24 observes native activity from the same captured pane as context.
 `dashboard.harness_activity.parse_activity(text, program)` returns `work`,
-`question` or `ask` only from supported current controls. A question or approval
+`question`, `ask` or `wait` only from supported current controls. A question or approval
 needs both its panel title and operation hint near the bottom. These modals
 take priority over a busy hint because native turns can remain working while
 waiting for the user. The context parser itself does not infer activity.
 
 Supported formats are dsh-tui 0.16.1's English/Chinese approval and question
 panels (including folded questions), its interrupt footer, and Hermes
-d923a5eb's bundled English/Japanese approval, clarify and busy-composer hints.
+d923a5eb's bundled English/Japanese approval and clarify panels. Hermes busy
+and idle classification uses the input frame and prompt symbols, independent
+of the profile/model name and translated placeholder text.
 Missing, hidden, incomplete, offscreen or unsupported localized controls stay
 `act_state: null`. Each new capture replaces the previous observation; a missing
 control does not preserve the old activity. Display text is not authenticated
 telemetry and can be imitated by terminal output.
 
-Idle is not inferred from absence. Hermes chooses a localized random empty
-composer placeholder; dsh's idle hint changes with selection, help, hover and
-minimal UI. A generated config alone does not make either an unconditional idle
-marker. Thus native `wait` remains unsupported: null means unknown, not idle,
-finished or ready. Activity never changes process liveness or stop eligibility.
+Idle is not inferred from absence alone. `wait` needs a complete current input
+frame and no work/question/approval evidence. Hermes uses matching rules around
+the input and a normal `❯` prompt (with an optional profile name); working uses
+the `☤` state icon instead. dsh uses its complete `⌸ ❯ … ⛶` input box and current
+context footer, without the interrupt hint. Broken/truncated frames, startup
+consent screens, hidden chrome and unsupported custom prompt shapes stay null.
+Null means unknown, not idle, finished or ready. Activity never changes process
+liveness or stop eligibility.
 The existing Claude/Codex classification is unchanged. No new watcher, native
 patch, status file or provider call is introduced.
+
+The input shapes are observed in real idle/work/resume pane captures and
+defined by Hermes `cli_tui_mixin.py:272–346,2143–2161` and dsh
+`components/PromptInput.js:59,3826–3841` / `screens/StatusLine.js:370–376`.
+Tests keep unmodified footer excerpts, excluding the surrounding private
+transcript. Question/approval controls are checked against pinned source
+formatters; live question/approval captures are not part of this evidence.
 
 ## Context
 

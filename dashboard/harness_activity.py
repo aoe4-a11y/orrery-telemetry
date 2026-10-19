@@ -6,6 +6,11 @@ observations, not authenticated events. Missing evidence stays unknown.
 """
 import re
 
+try:
+    from .harness_context import parse_context
+except ImportError:  # executable dashboard/server.py
+    from harness_context import parse_context
+
 _ANSI = re.compile(r'\x1b\[[0-?]*[ -/]*[@-~]|\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)')
 _EDGES = ' \t\xa0│┃╭╮╰╯┌┐└┘─━┏┓┗┛'
 _DSH_APPROVAL = re.compile(r'(?:Awaiting approval · .+|⏳ 等待审批 · .+)')
@@ -23,13 +28,39 @@ _HERMES_CONFIRM = re.compile(
 _HERMES_ANSWER = re.compile(
     r'(?:type your answer and press Enter|↑/↓ to select, Enter to lock, Tab next question'
     r'|回答を入力して Enter を押してください|↑/↓ で選択、Enter で確定、Tab で次の質問)' + _COUNTDOWN)
-_HERMES_BUSY = re.compile(
-    r'☤\s+(?:[❯>$#›»→]\s+)?(?:msg=interrupt · /queue · /bg · /steer · Ctrl\+C cancel'
-    r'|メッセージ=中断 · /queue · /bg · /steer · Ctrl\+C でキャンセル)')
+_HERMES_BUSY = re.compile(r'☤(?:\s+❯)?(?:\s.*)?')
+_HERMES_IDLE = re.compile(r'(?:[\w.-]+\s+)?❯(?:\s.*)?')
+
+
+def _input_activity(lines, program):
+    """Recognize complete current input chrome, never arbitrary transcript text.
+
+    Hermes cli_tui_mixin:272–346,2143–2161: state icon replaces profile
+    prompt; rules surround the input. dsh PromptInput:59,3810–3841 and
+    StatusLine:370–376: same input box, extra interrupt hint only while busy.
+    """
+    rows = [line.strip() for line in lines if line.strip()]
+    if program == 'hermes' and len(rows) >= 3:
+        top, prompt, bottom = rows[-3:]
+        if top == bottom and re.fullmatch(r'─{8,}', top):
+            if _HERMES_BUSY.fullmatch(prompt):
+                return 'work'
+            if _HERMES_IDLE.fullmatch(prompt):
+                return 'wait'
+    if program == 'dsh' and rows and parse_context(rows[-1], 'dsh')['ctx_used'] is not None:
+        # Footer has a context status and optionally the compact occupancy bar.
+        for index in range(max(0, len(rows) - 5), len(rows) - 2):
+            top, prompt, bottom = rows[index:index + 3]
+            if (re.fullmatch(r'╭─{8,}╮', top)
+                    and bottom == '╰' + top[1:-1] + '╯'
+                    and re.fullmatch(r'⌸\s+❯.*\s+⛶', prompt)
+                    and 1 <= len(rows) - index - 3 <= 2):
+                return 'wait'
+    return None
 
 
 def parse_activity(text, program):
-    """Return work/question/ask or None; absence never implies idle or death.
+    """Return work/question/ask/wait or None; absence never implies idle or death.
 
     A modal needs both its title and a current operation footer. The footer
     must be near the bottom, not just anywhere in the captured transcript.
@@ -37,7 +68,8 @@ def parse_activity(text, program):
     """
     if program not in ('dsh', 'hermes') or not isinstance(text, str):
         return None
-    rows = [row.strip(_EDGES) for row in _ANSI.sub('', text).replace('\r', '').splitlines()[-45:]]
+    lines = _ANSI.sub('', text).replace('\r', '').splitlines()[-45:]
+    rows = [row.strip(_EDGES) for row in lines]
     rows = [row for row in rows if row]
     if not rows:
         return None
@@ -67,6 +99,4 @@ def parse_activity(text, program):
             return 'question'
         if any(_HERMES_APPROVAL.fullmatch(row) or _HERMES_QUESTION.fullmatch(row) for row in titles):
             return None
-        if any(_HERMES_BUSY.fullmatch(row) for row in rows[-4:]):
-            return 'work'
-    return None
+    return _input_activity(lines, program)

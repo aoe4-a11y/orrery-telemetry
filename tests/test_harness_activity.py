@@ -1,5 +1,6 @@
 """Pinned native UI vocabulary, active-footer boundaries and one-capture wiring."""
 from types import SimpleNamespace
+from pathlib import Path
 
 import pytest
 
@@ -32,6 +33,9 @@ from dashboard import server
     ('hermes', 'ExampleAgent が入力を求めています\n選択\n↑/↓ で選択、Enter で確定、Tab で次の質問', 'question'),
 ])
 def test_pinned_current_controls(program, text, state):
+    if program == 'hermes' and state == 'work':
+        prompt = text.splitlines()[0]
+        text = '─' * 80 + '\n' + prompt + '\n' + '─' * 80
     assert parse_activity(text, program) == state
     styled = '\x1b[38;2;1;2;3m' + text.replace('\n', '\x1b[0m\n\x1b[1m') + '\x1b[0m'
     assert parse_activity(styled, program) == state
@@ -69,6 +73,9 @@ def test_missing_quoted_old_or_incomplete_evidence_stays_unknown(program, text):
     ('hermes', '☤ ❯ msg=interrupt · /queue · /bg · /steer · Ctrl+C cancel\n☤ model │ 24k/128K │ 19%'),
 ])
 def test_one_capture_cache_generation_and_unknown_transition(monkeypatch, program, working):
+    if program == 'hermes':
+        prompt, status = working.splitlines()
+        working = '\n'.join([status, '─' * 80, prompt, '─' * 80])
     server._NATIVE_CONTEXT_CACHE.clear()
     clock, text, calls = [100.0], [working], []
     monkeypatch.setattr(server.time, 'monotonic', lambda: clock[0])
@@ -104,3 +111,61 @@ def test_one_capture_cache_generation_and_unknown_transition(monkeypatch, progra
 ])
 def test_existing_claude_codex_classification_is_unchanged(text, state):
     assert server._parse_runtime(text)['act_state'] == state
+
+
+_CAPTURES = Path(__file__).parent / 'fixtures/native_activity'
+
+
+@pytest.mark.parametrize('program,file,state', [
+    ('hermes', 'hermes-idle.txt', 'wait'),
+    ('hermes', 'hermes-work.txt', 'work'),
+    ('hermes', 'hermes-consent.txt', None),
+    ('dsh', 'dsh-idle.txt', 'wait'),
+    ('dsh', 'dsh-work.txt', 'work'),
+    ('dsh', 'dsh-resume-idle.txt', 'wait'),
+])
+def test_real_acceptance_capture_footers(program, file, state):
+    # Exact unmodified excerpts; the surrounding transcript is deliberately
+    # excluded to keep private paths and agent identities out of public tests.
+    text = (_CAPTURES / file).read_text()
+    assert parse_activity(text, program) == state
+    assert parse_activity(text + '\nnew transcript' * 46, program) is None
+
+
+@pytest.mark.parametrize('profile', ['fixture-profile', 'custom', 'model-123', ''])
+def test_hermes_prompt_shape_survives_profile_and_translation_changes(profile):
+    idle = (_CAPTURES / 'hermes-idle.txt').read_text().replace('deepseek ❯', (profile + ' ❯').strip())
+    assert parse_activity(idle, 'hermes') == 'wait'
+    busy = (_CAPTURES / 'hermes-work.txt').read_text()
+    for placeholder in ('cli.tui.placeholder_busy', 'msg=interrupt', '翻訳した入力の案内', ''):
+        assert parse_activity(busy.replace('cli.tui.placeholder_busy', placeholder), 'hermes') == 'work'
+
+
+@pytest.mark.parametrize('program,file', [('hermes', 'hermes-idle.txt'), ('dsh', 'dsh-idle.txt')])
+def test_wait_requires_a_complete_current_input_frame(program, file):
+    text = (_CAPTURES / file).read_text()
+    frame = next(row for row in text.splitlines() if row.strip().startswith(('╭─', '────────')))
+    # The active control can disappear, be clipped, or leave a stale frame above
+    # new output. None of these is proof of waiting for input.
+    for broken in (text.replace('❯', ''), text.replace(frame, frame.replace('─', '', 1), 1),
+                   text + '\nnew output', '❯', '─' * 80):
+        assert parse_activity(broken, program) is None
+    if program == 'dsh':
+        assert parse_activity(text.replace('ctx 2.8% (28k/1.0m)', 'ctx 2.8% (28k/'), program) is None
+
+
+def test_modal_controls_override_the_idle_input_shape():
+    frame = (_CAPTURES / 'hermes-idle.txt').read_text()
+    ask = '⚠️  Dangerous Command\nfixture\n↑/↓ to select, Enter to confirm\n'
+    question = 'ExampleAgent needs your input\nfixture\ntype your answer and press Enter\n'
+    assert parse_activity(ask + frame, 'hermes') == 'ask'
+    assert parse_activity(question + frame, 'hermes') == 'question'
+    assert parse_activity('⚠️  Dangerous Command\n' + frame, 'hermes') is None
+
+
+@pytest.mark.parametrize('program', ['dsh', 'hermes'])
+def test_wait_and_work_transition_does_not_retain_a_previous_state(program):
+    idle = (_CAPTURES / (program + '-idle.txt')).read_text()
+    work = (_CAPTURES / (program + '-work.txt')).read_text()
+    assert [parse_activity(text, program) for text in (idle, work, idle, 'hidden')] == [
+        'wait', 'work', 'wait', None]
