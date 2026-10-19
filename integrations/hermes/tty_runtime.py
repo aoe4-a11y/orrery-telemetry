@@ -19,6 +19,17 @@ def _write(fd, data):
         data = data[count:]
 
 
+def signal_owned_group(child, signum):
+    try:
+        os.killpg(child.pid, signum)
+    except PermissionError:
+        # macOS may report EPERM for a zombie-only group. poll() reaps our
+        # child; a genuinely live child's permission failure must propagate.
+        if child.poll() is None:
+            raise
+        raise ProcessLookupError('Owned child has exited') from None
+
+
 def run(command, *, cwd, env, log, started, stdin=0, stdout=1, deadline=None):
     """No default lifetime. deadline is an explicitly requested test bound.
 
@@ -82,17 +93,22 @@ def run(command, *, cwd, env, log, started, stdin=0, stdout=1, deadline=None):
                     break
         return child.wait()
     finally:
-        termios.tcsetattr(stdin, termios.TCSADRAIN, previous)
-        signal.signal(signal.SIGWINCH, prior_resize)
-        for fd in (master, slave):
-            if fd is not None:
-                os.close(fd)
-        if child is not None and child.poll() is None:
-            try:
-                os.killpg(child.pid, signal.SIGTERM)
-                child.wait(timeout=5)
-            except subprocess.TimeoutExpired:
-                os.killpg(child.pid, signal.SIGKILL)
-                child.wait()
-            except ProcessLookupError:
-                child.wait()
+        try:
+            # Keep the controlling PTY open until the owned child is reaped.
+            # Closing master first sends SIGHUP; macOS can then return EPERM
+            # for killpg on the resulting zombie-only process group.
+            if child is not None and child.poll() is None:
+                try:
+                    signal_owned_group(child, signal.SIGTERM)
+                    child.wait(timeout=5)
+                except subprocess.TimeoutExpired:
+                    signal_owned_group(child, signal.SIGKILL)
+                    child.wait()
+                except ProcessLookupError:
+                    child.wait()
+        finally:
+            termios.tcsetattr(stdin, termios.TCSADRAIN, previous)
+            signal.signal(signal.SIGWINCH, prior_resize)
+            for fd in (master, slave):
+                if fd is not None:
+                    os.close(fd)

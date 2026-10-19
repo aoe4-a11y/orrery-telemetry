@@ -447,6 +447,99 @@ raise SystemExit(tty_runtime.run([sys.executable,'-B',sys.argv[2],sys.argv[3]],c
             child.stderr.close()
             os.close(master)
 
+    def test_owned_pane_real_pty_has_no_default_deadline_and_honors_explicit_trial_deadline(self):
+        # The controller owns removal of a stale template deadline. This boundary
+        # accepts its deadline-free run-config and preserves explicit CLI trials.
+        idle = self.root / 'deadline_idle.py'
+        idle.write_text("import os\nassert os.isatty(0) and os.isatty(1)\nprint('IDLE_READY',flush=True)\ninput()\n")
+        supervisor = self.root / 'deadline_supervisor.py'
+        supervisor.write_text('''import sys,json
+from pathlib import Path
+sys.path.insert(0,sys.argv[1])
+import pane_entry,tty_runtime
+original=tty_runtime.run
+def fixture_child(command,**kwargs):
+ assert Path(command[3]).name=='managed_entry.py'
+ print('PTY_DEADLINE='+json.dumps(kwargs['deadline']),flush=True)
+ return original([command[0],'-I','-B',sys.argv[3]],**kwargs)
+tty_runtime.run=fixture_child
+raise SystemExit(pane_entry.execute(Path(sys.argv[2])))
+''')
+        for label, deadline in (('unlimited', None), ('trial', 1)):
+            with self.subTest(label=label):
+                state = self.root / ('deadline-' + label)
+                runner.initialize(self.fixture.config_path, state, 'strata', self.fixture.product.run,
+                    file_task=True, task_spec={'task_mode': 'conversation'})
+                mail_lifecycle.register(state, self.fixture.product.run, generate_config=False)
+                runner.configure(state, self.fixture.product.run)
+                config = read(state / 'run-config.json')
+                self.assertNotIn('task_timeout_seconds', config)
+                if deadline is not None:
+                    config['task_timeout_seconds'] = deadline
+                    save(state / 'run-config.json', config)
+                save(state / 'start-intent.json', {'agent_name': 'FixtureChild'})
+                master, slave = pty.openpty()
+                child = subprocess.Popen([sys.executable, '-I', '-B', str(supervisor), str(ADAPTER), str(state), str(idle)],
+                    stdin=slave, stdout=slave, stderr=slave, cwd='/', env=runner.base_env(config), start_new_session=True)
+                os.close(slave)
+                output = b''
+                def drain(seconds, marker=None):
+                    nonlocal output
+                    end = time.monotonic() + seconds
+                    while time.monotonic() < end and (marker is None or marker not in output):
+                        if select.select([master], [], [], .05)[0]:
+                            try:
+                                data = os.read(master, 65536)
+                            except OSError:
+                                break
+                            if not data:
+                                break
+                            output += data
+                try:
+                    drain(5, b'IDLE_READY')
+                    self.assertIn(b'IDLE_READY', output)
+                    self.assertIn(b'PTY_DEADLINE=' + json.dumps(deadline).encode(), output)
+                    if deadline is None:
+                        # Stay alive beyond the other case's explicit one-second
+                        # deadline, then close through the same real input relay.
+                        drain(1.25)
+                        self.assertIsNone(child.poll())
+                        self.assertFalse((state / 'runtime-exit.json').exists())
+                        os.write(master, b'close\r')
+                    drain(5)
+                    code = child.wait(timeout=5)
+                    self.assertTrue((state / 'runtime-exit.json').exists(), output.decode(errors='replace'))
+                    receipt = read(state / 'runtime-exit.json')
+                    self.assertTrue(receipt['group_absent'])
+                    self.assertEqual(receipt['group_check'], 'observed')
+                    self.assertEqual(receipt['stopped_by'], 'native-exit' if deadline is None else 'limit')
+                    self.assertEqual(code, 0 if deadline is None else 1)
+                    self.assertIn(b'IDLE_READY', (state / 'stdout.log').read_bytes())
+                finally:
+                    if child.poll() is None:
+                        child.terminate()
+                        try:
+                            child.wait(timeout=8)
+                        except subprocess.TimeoutExpired:
+                            child.kill()
+                            child.wait()
+                    os.close(master)
+
+    def test_signal_permission_failure_is_not_accepted_for_a_live_owned_child(self):
+        import signal
+        import tty_runtime
+        import pane_entry
+        exited = SimpleNamespace(pid=42, poll=lambda: -signal.SIGHUP, wait=lambda **kwargs: -signal.SIGHUP)
+        live = SimpleNamespace(pid=42, poll=lambda: None, wait=lambda **kwargs: self.fail('live EPERM was ignored'))
+        with patch.object(tty_runtime.os, 'killpg', side_effect=PermissionError('denied')):
+            with self.assertRaises(ProcessLookupError):
+                tty_runtime.signal_owned_group(exited, signal.SIGTERM)
+            pane_entry.terminate(exited)
+            with self.assertRaises(PermissionError):
+                tty_runtime.signal_owned_group(live, signal.SIGTERM)
+            with self.assertRaises(PermissionError):
+                pane_entry.terminate(live)
+
     def test_pinned_config_loader_and_guard_use_attempt_overlay_offline(self):
         source = os.environ.get('ORRERY_HERMES_TEST_SOURCE')
         python = os.environ.get('ORRERY_HERMES_TEST_PYTHON')

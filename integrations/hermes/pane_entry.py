@@ -23,9 +23,10 @@ def group_absent(pgid):
 
 
 def terminate(child):
+    from tty_runtime import signal_owned_group
     for sig, timeout in ((signal.SIGTERM, 5), (signal.SIGKILL, 5)):
         try:
-            os.killpg(child.pid, sig)
+            signal_owned_group(child, sig)
         except ProcessLookupError:
             break
         try:
