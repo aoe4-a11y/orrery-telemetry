@@ -143,6 +143,12 @@ Private machine config, absolute runtime paths and credential references stay ou
 the repository. Only canonical product preregistration, `child_tools.py` generation
 and its bound stdio proxy are used. Do not retry partial identity creation.
 
+Installer generation v2 writes the pinned upstream install stamp with external
+update ownership and validates its receipt/hash. Runtime version import then
+needs no git process. Existing v1 generations are retained; after installation,
+the operator must point the private template's runtime roots to the new generation.
+The installer does not rewrite that template automatically.
+
 ## Offline checks
 
 With separately prepared dependencies, run all Hermes fixtures serially:

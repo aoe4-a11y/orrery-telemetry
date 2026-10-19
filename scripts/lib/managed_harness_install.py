@@ -20,6 +20,27 @@ import urllib.request
 HERMES_COMMIT = 'd923a5eb487a17c0a68801bba9ef0f56c81040a8'
 HERMES_URL = 'https://github.com/NousResearch/hermes-agent.git'
 OWNER = '.orrery-managed-install.json'
+HERMES_STAMP_SCRIPT = '''import sys
+from hermes_cli.version_info import get_version_info
+from scripts.write_install_stamp import write_stamp
+info = get_version_info()
+if info.commit != sys.argv[1]:
+    raise ValueError('Hermes version provenance does not match the pinned commit')
+write_stamp('install-stamp.json', update_mechanism='external', commit=info.commit,
+    branch=info.branch, dirty=info.dirty, commit_date=info.commit_date,
+    base_version=None if info.base_version == 'unknown' else info.base_version,
+    display_version=info.derived_version, distance=info.distance, source='local')
+'''
+
+
+def hermes_stamp_details(source):
+    path = Path(source) / 'install-stamp.json'
+    stamp = read(path)
+    if (stamp.get('commit') != HERMES_COMMIT or stamp.get('source') != 'local'
+            or stamp.get('updateMechanism') != 'external' or stamp.get('payload') != 'bootstrap'
+            or stamp.get('runtimeDir') is not None):
+        raise ValueError('Hermes install stamp does not match the owned source layout')
+    return {'install_stamp': str(path), 'install_stamp_sha256': hashlib.sha256(path.read_bytes()).hexdigest()}
 
 
 def read(path):
@@ -137,6 +158,11 @@ def install_hermes(repo, root, python, cache=None):
     run(['git', 'checkout', '--detach', HERMES_COMMIT], cwd=source, env=env)
     if run(['git', 'rev-parse', 'HEAD'], cwd=source, env=env) != HERMES_COMMIT:
         raise ValueError('Hermes commit mismatch')
+    # Resolve provenance only at install time using the pinned upstream writer.
+    # source=local avoids its git-stamp live-HEAD probe during runtime import;
+    # external keeps updates owned by this installer, without changing PM paths.
+    run([python, '-c', HERMES_STAMP_SCRIPT, HERMES_COMMIT], cwd=source, env=env)
+    stamp = hermes_stamp_details(source)
     # Existing PM owns its own fixed runtime/dependency graph; no general setup,
     # login import, browser, or computer-use installer is invoked.
     # PM rejects --without combined with --extra. First prepare its default
@@ -151,12 +177,12 @@ def install_hermes(repo, root, python, cache=None):
     if not generation.is_relative_to((install / 'environments').resolve()) or not executable.is_file():
         raise ValueError('Hermes PM did not publish a committed runtime')
     print('Hermes: existing manual homes/logins are untouched; no credentials were installed.')
-    return {'hermes_source': str(source), 'managed_root': str(root), 'hermes_executable': str(executable)}
+    return {'hermes_source': str(source), 'managed_root': str(root), 'hermes_executable': str(executable), **stamp}
 
 
 def generation_id(repo, harness):
     if harness == 'hermes':
-        return HERMES_COMMIT[:16] + '-v1'
+        return HERMES_COMMIT[:16] + '-v2'
     inputs = ['runtime-pins.json', 'runtime-package-lock.json', 'ui-package.json',
               'ui-package-lock.json', 'tui-managed.patch']
     digest = hashlib.sha256(b''.join((repo / 'integrations/dsh' / name).read_bytes() for name in inputs)).hexdigest()[:16]
@@ -192,6 +218,8 @@ def validate(repo, harness, receipt):
         env = environment(root)
         if run(['git', 'rev-parse', 'HEAD'], cwd=source, env=env) != HERMES_COMMIT:
             raise ValueError('Hermes commit mismatch')
+        if any(details.get(key) != value for key, value in hermes_stamp_details(source).items()):
+            raise ValueError('Hermes install stamp receipt changed')
         key = hashlib.sha256(str(source.resolve()).encode()).hexdigest()[:16]
         install = root / 'installs' / key
         generation = Path(read(install / 'facts.json')['packages']['venv']['environment']).resolve()
