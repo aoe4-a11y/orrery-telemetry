@@ -139,7 +139,7 @@ class CapabilitiesTests(unittest.TestCase):
         # The same fallback import used by direct launchd execution (cwd=/).
         with tempfile.TemporaryDirectory() as directory:
             p=Path(directory)
-            for name in ('managed_capabilities.py','managed_catalog.py'):
+            for name in ('managed_capabilities.py','managed_catalog.py','harness_helpers.py'):
                 (p/name).write_bytes((ROOT/'dashboard'/name).read_bytes())
             script='import sys;sys.path.insert(0,'+repr(str(p))+');import managed_catalog;print(managed_catalog.catalog_providers({}, {}, mode="legacy", enabled=True))'
             r=subprocess.run([sys.executable,'-I','-B','-c',script],cwd='/',env={'PATH':os.defpath},text=True,capture_output=True)

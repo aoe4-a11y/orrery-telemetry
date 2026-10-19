@@ -82,4 +82,5 @@ Documents without a translation are labelled with their original language. Image
 - [dsh stage A-min](dsh-stage-a-min.md)
 - [dsh thin launch (Japanese)](dsh-thin.md)
 
+- [Native context and helper models](native-capabilities.md) — dsh / Hermes context observations and per-model capabilities.
 - [Managed catalog](managed-catalog.md)

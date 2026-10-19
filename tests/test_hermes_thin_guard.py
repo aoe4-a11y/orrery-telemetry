@@ -34,7 +34,8 @@ class ThinGuard(unittest.TestCase):
         self.helper.chmod(0o700)
         definitions.write_text(json.dumps({'backends': {'fixture': {'auth_command': [str(self.helper), '--fixture']}}}))
         self.enterContext(patch.dict(os.environ, {'HOME': str(self.base), 'PATH': os.defpath,
-            'AGENTSTACK_HOME': str(self.core), 'AGENTSTACK_LLM_KEY_DEFINITIONS': str(definitions),
+            'AGENTSTACK_HOME': str(self.core), 'AGENTSTACK_LABEL_PREFIX': 'org.agentstack.test-hermes-thin-guard',
+            'AGENTSTACK_LLM_KEY_DEFINITIONS': str(definitions),
             'AGENTSTACK_NATIVE_SESSION_FILE': str(self.base / 'native-session.json')}, clear=True))
         self.native_cwd = guard._cwd
         self.enterContext(patch.object(guard, '_cwd', return_value=str(self.base)))

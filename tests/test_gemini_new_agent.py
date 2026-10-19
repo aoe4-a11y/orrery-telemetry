@@ -931,8 +931,9 @@ def test_concurrent_gemini_and_native_spawns_do_not_cross_contaminate(gemini_env
     assert not hasattr(gemini_runtime, "_PATCH_LOCK")
 
 
+@pytest.mark.parametrize("cleanup_confirmed", [False, True])
 def test_readiness_timeout_signals_gemini_process_group_and_cleans_handoff(
-        gemini_env, monkeypatch):
+        gemini_env, monkeypatch, cleanup_confirmed):
     signals = []
 
     class SlowProc:
@@ -964,11 +965,15 @@ def test_readiness_timeout_signals_gemini_process_group_and_cleans_handoff(
     monkeypatch.setattr(server.subprocess, "Popen", popen)
     monkeypatch.setattr(server.os, "killpg", lambda pid, signum: signals.append((pid, signum)))
 
+    # Model the common cleanup verdict without touching installed services.
+    monkeypatch.setattr(server, "_failed_spawn_cleanup", lambda *args: cleanup_confirmed)
     result = server.do_spawn(_gemini_payload(gemini_env))
     assert result["ok"] is False
     assert "did not finish readiness checks within 120s" in result["error"]
     assert signals == [(31337, signal.SIGTERM)]
-    assert not pathlib.Path(launched[0][1]["env"]["AGENTSTACK_GEMINI_TASK_FILE"]).exists()
+    assert pathlib.Path(launched[0][1]["env"]["AGENTSTACK_GEMINI_TASK_FILE"]).exists() is (not cleanup_confirmed)
+    if not cleanup_confirmed:
+        assert result["cleanup_incomplete"] and result["cleanup_state"] == "unknown"
 
     signals.clear()
     server.do_spawn({"parent": "Parent", "name": "Zesty-Bohr", "task": "work",

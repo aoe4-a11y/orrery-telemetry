@@ -1,6 +1,7 @@
 """Offline API/job boundaries; fake adapters never invoke a product or provider."""
 import copy
 import json
+import os
 from pathlib import Path
 import subprocess
 import tempfile
@@ -209,12 +210,11 @@ class ServerRoutingTests(unittest.TestCase):
     def setUp(self):
         from dashboard import server
         self.server = server
-    def test_managed_dispatch_precedes_old_registration_path(self):
-        response = {'ok': True, 'managed': True, 'pending': True, 'attempt_id': 'request'}
-        manager = SimpleNamespace(submit=lambda payload: response)
-        with patch.object(self.server, '_managed_spawn_manager', return_value=manager), \
-             patch.object(self.server, '_spawn_request', side_effect=AssertionError('old path')):
-            self.assertEqual(self.server.do_spawn({'provider': 'strata', 'harness': 'dsh'}), response)
+    def test_standard_spawn_does_not_dispatch_by_managed_provider(self):
+        with patch.object(self.server, '_managed_spawn_manager', side_effect=AssertionError('managed path')):
+            result = self.server.do_spawn({'provider': 'strata', 'harness': 'dsh'})
+        self.assertFalse(result['ok'])
+        self.assertNotIn('managed', result)
     def test_native_harness_metadata_preserves_old_payload(self):
         for provider, harness in [('claude', 'claudecode'), ('codex', 'codex'), ('gemini', 'gemini')]:
             request = {'provider': provider, 'task': 'old task', 'parent': 'Parent'}
@@ -226,11 +226,7 @@ class ServerRoutingTests(unittest.TestCase):
         with patch.object(self.server, '_spawn_request', side_effect=AssertionError('fallback')):
             self.assertFalse(self.server.do_spawn({'provider': 'claude', 'harness': 'unknown'})['ok'])
     def test_catalog_same_consumer_off_on_off(self):
-        import types
-        module = types.ModuleType('dashboard.managed_catalog')
-        module.load_catalog_inputs = lambda *a, **k: ({}, {}, True)
-        added = [{'id': 'strata', 'managed': True}]
-        module.catalog_providers = lambda *a, **k: added
+        added = [{'id': 'strata', 'locality': 'local'}]
         fake_models = SimpleNamespace(models=('sonnet',), source='fixture', error=None, overflow=())
         with patch.object(self.server.subprocess, 'run', return_value=SimpleNamespace(stdout='Bright\n\x1eCurie\n')), \
              patch.object(self.server, '_claude_catalog', return_value=fake_models), \
@@ -238,7 +234,8 @@ class ServerRoutingTests(unittest.TestCase):
              patch.object(self.server, '_spawn_scientist_statuses', return_value={}), \
              patch.object(self.server, '_portrait_file', return_value=None), \
              patch.object(self.server.codex_models, 'provider_catalog', return_value={'id': 'codex'}), \
-             patch.dict('sys.modules', {'dashboard.managed_catalog': module}), \
+             patch.object(self.server, '_spawn_catalog_providers', side_effect=lambda:
+                          added if os.environ.get('AGENTSTACK_MANAGED_SPAWN_CONFIG') else []), \
              patch.dict('os.environ', {'AGENTSTACK_MANAGED_SPAWN_CONFIG': ''}):
             old = self.server.spawn_names_payload()
             with patch.dict('os.environ', {'AGENTSTACK_MANAGED_SPAWN_CONFIG': '/fixture/manifest'}):
@@ -308,7 +305,7 @@ class ManagedHttpTests(unittest.TestCase):
             with patch.object(server, '_managed_spawn_manager', return_value=manager):
                 base = 'http://127.0.0.1:' + str(httpd.server_port)
                 request = urllib.request.Request(base + '/api/spawn',
-                    data=json.dumps({'provider': 'strata', 'harness': 'dsh'}).encode(),
+                    data=json.dumps({'provider': 'strata', 'harness': 'dsh', 'attempt_id': aid}).encode(),
                     headers={'Content-Type': 'application/json'}, method='POST')
                 with urllib.request.urlopen(request) as response:
                     self.assertEqual(response.status, 202)
