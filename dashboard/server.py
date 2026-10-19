@@ -4582,11 +4582,7 @@ def _native_resume_material(session, program):
 
 
 def _native_prepare_resume(session):
-    if __package__:
-        from .managed_catalog import thin_launcher
-    else:
-        from managed_catalog import thin_launcher
-    thin_launcher().prepare_resume(Path(RUNTIME_DIR), session)
+    _standard_catalog_module().thin_launcher().prepare_resume(Path(RUNTIME_DIR), session)
 
 
 def _do_resume_native(session, program, *, open_terminal=None, replace_husk=False):
@@ -7360,14 +7356,22 @@ def _managed_catalog_providers():
         selected_mode="global" if GLOBAL_MODE else "legacy")
 
 
+def _standard_catalog_module():
+    # provider_server loads this core by file with no package, even when the
+    # dashboard package is available. Try that root before direct-script mode.
+    try:
+        from dashboard import managed_catalog
+    except ModuleNotFoundError as error:
+        if error.name not in ('dashboard', 'dashboard.managed_catalog'):
+            raise
+        import managed_catalog
+    return managed_catalog
+
+
 def _spawn_catalog_providers():
     # Reuse keyless configuration checks and the I5 capability evidence, without
     # constructing the managed controller or importing its runtime adapters.
-    if __package__:
-        from .managed_catalog import standard_catalog
-    else:
-        from managed_catalog import standard_catalog
-    return standard_catalog(
+    return _standard_catalog_module().standard_catalog(
         os.environ.get("AGENTSTACK_MANAGED_SPAWN_CONFIG"),
         mode="global" if GLOBAL_MODE else "legacy")
 

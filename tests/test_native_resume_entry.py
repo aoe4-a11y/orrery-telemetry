@@ -29,6 +29,7 @@ def test_foreground_resume_runs_cleanup_after_nonzero_native_exit(tmp_path):
         'AGENTSTACK_RUNTIME_DIR': str(tmp_path / 'runtime'),
         'AGENTSTACK_PROJECT_KEY': '/fixture/project', 'AGENTSTACK_PYTHON': sys.executable,
         'AGENTSTACK_RUNTIME_MODE': 'legacy',
+        'AGENTSTACK_LABEL_PREFIX': 'org.agentstack.test-native-resume',
     }
     result = subprocess.run(['/bin/bash', str(ROOT / 'hooks/spawn_child.sh'),
                              '--resume-native', 'FixtureAgent'],

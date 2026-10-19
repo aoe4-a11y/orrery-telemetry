@@ -231,3 +231,60 @@ def test_prepared_resume_cli_in_isolated_minimal_environment(tmp_path, monkeypat
     current = resume._load_state(runtime / 'child-agents/FirstAgent.json')
     assert current['retired_at'] is None and 'resume_in_progress_at' not in current
     assert current['harness_state_dir'] == str(directory)
+
+
+@pytest.mark.parametrize('changed_profile', [False, True])
+def test_real_dsh_generator_round_trip_preserves_owned_native_session(tmp_path, monkeypatch, request, changed_profile):
+    from test_dsh_thin_config import ThinTests
+    from test_harness_child import staged
+    fixture = ThinTests()
+    fixture.setUp()
+    request.addfinalizer(fixture.doCleanups)
+    manifest = native.read(fixture.manifest)
+    manifest['harnesses']['dsh']['python'] = sys.executable
+    native.save(fixture.manifest, manifest)
+    args = staged(tmp_path, 'dsh')
+    args.manifest, args.model = str(fixture.manifest), 'a'
+    args.helper_model = 'b'
+    mcp = native.read(args.mcp_config)
+    mcp['mcpServers']['orrery-mail'].update(command='/fixture/proxy', args=[])
+    native.save(args.mcp_config, mcp)
+    monkeypatch.setenv('AGENTSTACK_CLAUDE_JSON', str(tmp_path / 'absent-settings.json'))
+    monkeypatch.setenv('AGENTSTACK_MCP_URL', 'http://127.0.0.1:9/mcp')
+    directory = native.prepare(args)
+    first = native.read(directory / 'launch.json')
+    runtime = Path(args.runtime_dir)
+    resume.finish_registration(runtime, args.agent_name, generation=args.generation, rollback=False)
+    resume._atomic_json(directory / 'native-session.json', {
+        'harness': 'dsh', 'native_session_id': 'exact-owned-id',
+        'created_at': '2026-10-19T00:00:00Z', 'agent_name': args.agent_name})
+    assert resume.mark_retired(runtime, args.agent_name, retention_days=30)
+    resume.begin_resume(runtime, args.agent_name, agent_id=7,
+                        project_key=args.project_key, program='dsh')
+    if changed_profile:
+        source = native.read(directory / 'input.json')
+        source['native_profile_env'] = {'DSH_HOME': str(tmp_path / 'foreign-profile')}
+        native.save(directory / 'input.json', source)
+        original = (directory / 'dsh-config/native.patch.json').read_bytes()
+        with pytest.raises(ValueError, match='native_resume_profile_changed'):
+            native.prepare_resume(runtime, args.agent_name)
+        assert (directory / 'dsh-config/native.patch.json').read_bytes() == original
+        assert not (tmp_path / 'foreign-profile').exists()
+        assert resume._load_state(runtime / 'child-agents' / (args.agent_name + '.json'))['retired_at']
+        return
+    assert native.prepare_resume(runtime, args.agent_name) == directory
+    resumed = native.read(directory / 'launch.json')
+    assert resumed['env']['DSH_HOME'] == first['env']['DSH_HOME']
+    assert resumed['argv'][-2:] == ['--resume', 'exact-owned-id']
+    source = native.read(directory / 'input.json')
+    assert Path(source['prompt_file']).read_text() == ''
+    blocks = native.read(directory / 'dsh-config/native.patch.json')
+    proxy = next(row for block in blocks for row in block.get('insert', [])
+                 if row['id'] == 'orrery-mcp-orrery-mail')
+    assert proxy['config']['env']['AGENTSTACK_PROXY_PROGRAM'] == 'dsh'
+    assert proxy['config']['env']['AGENTSTACK_PROXY_TOKEN_FILE'] == str(runtime / ('agent_token_' + args.agent_name))
+    assert next(row for row in blocks if row.get('id') == 'tool-subagent')['config']['agentOptions']['model'] == 'b'
+    invocation = native.resume_command(runtime, args.agent_name).split('; native_rc=$?', 1)[0]
+    assert shlex.split(invocation)[-2:] == ['--resume', 'exact-owned-id']
+    # The synthetic node is deliberately invalid: this test generates a plan,
+    # never executes a runtime, provider plugin, credential helper or Mail RPC.

@@ -19,7 +19,7 @@ class LaunchdImportTests(unittest.TestCase):
         self.product = self.home / '.agentstack'
         self.dashboard = self.product / 'dashboard'
         self.dashboard.mkdir(parents=True)
-        for file in ('managed_spawn.py', 'managed_catalog.py', 'managed_capabilities.py'):
+        for file in ('managed_spawn.py', 'managed_catalog.py', 'managed_capabilities.py', 'harness_helpers.py'):
             shutil.copyfile(ROOT / 'dashboard' / file, self.dashboard / file)
         for harness in ('dsh', 'hermes'):
             target = self.product / 'integrations' / harness
