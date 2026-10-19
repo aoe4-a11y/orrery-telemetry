@@ -104,6 +104,15 @@ class ManagedTests(unittest.TestCase):
         self.providers[1]['models'][0]['harnesses'][0]['available'] = False
         self.assertFalse(self.manager.submit(self.payload())['ok'])
         self.assertEqual(self.spawn_calls, [])
+
+    def test_empty_catalog_rejects_before_worker_or_identity_creation(self):
+        self.providers.clear()
+        request = self.payload()
+        result = self.manager.submit(request)
+        self.assertFalse(result['ok'])
+        self.assertEqual(result['error_code'], 'managed_pair_unavailable')
+        self.assertEqual(self.spawn_calls, [])
+        self.assertFalse((self.root / 'jobs' / request['attempt_id']).exists())
     def test_client_cannot_supply_commands_scope_escape_or_context(self):
         for extra in ({'node': '/tmp/node'}, {'context': 2}, {'standalone': True},
                       {'allowed_paths': ['../outside']}, {'allowed_paths': ['.git/config']},
