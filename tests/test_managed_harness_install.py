@@ -13,7 +13,6 @@ import tempfile
 import tarfile
 import unittest
 import sys
-from types import SimpleNamespace
 from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -64,29 +63,18 @@ class InstallTests(unittest.TestCase):
             installer.save(root / 'evidence/node-runtime.json', {'sha256': hashlib.sha256(node.read_bytes()).hexdigest()})
             for item in installer.read(ROOT / 'integrations/dsh/runtime-pins.json'):
                 installer.save(runtime / 'node_modules' / item['name'] / 'package.json', {'version': item['version']})
-            if kwargs.get('plain'):
-                files = []
-                for name in installer.UPSTREAM_PROOF_FILES:
-                    file = runtime / 'node_modules/@deepseek-harness-tui/dsh-tui' / name
-                    file.parent.mkdir(parents=True, exist_ok=True)
-                    file.write_text('synthetic original upstream')
-                    files.append({'file': name, 'sha256': hashlib.sha256(file.read_bytes()).hexdigest()})
-                receipt = root / 'evidence/upstream-runtime.json'
-                variant = 'plain-datadir' if kwargs.get('datadir') else 'plain'
-                installer.save(receipt, {'variant': variant, 'source_patch': 'tui-datadir-v1' if kwargs.get('datadir') else None,
-                    'recipe_sha256': hashlib.sha256((ROOT / 'integrations/dsh/tui-datadir.patch.json').read_bytes()).hexdigest(), 'files': files})
-                return {'node': str(node), 'runtime': str(runtime), 'runtime_receipt': str(receipt),
-                        'variant': variant, 'thin_config_contract': 1}
-            recipe = ROOT / 'integrations/dsh/tui-managed.patch'
-            changes = []
-            for name in {r['file'] for r in installer.read(recipe)['replacements']}:
+            files = []
+            for name in installer.UPSTREAM_PROOF_FILES:
                 file = runtime / 'node_modules/@deepseek-harness-tui/dsh-tui' / name
                 file.parent.mkdir(parents=True, exist_ok=True)
-                file.write_text('synthetic patched file')
-                changes.append({'file': name, 'after': hashlib.sha256(file.read_bytes()).hexdigest()})
-            receipt = root / 'evidence/tui-patch-applied.json'
-            installer.save(receipt, {'recipe_sha256': hashlib.sha256(recipe.read_bytes()).hexdigest(), 'changes': changes})
-            return {'node': str(node), 'runtime': str(runtime), 'patch_receipt': str(receipt)}
+                file.write_text('synthetic original upstream')
+                files.append({'file': name, 'sha256': hashlib.sha256(file.read_bytes()).hexdigest()})
+            receipt = root / 'evidence/upstream-runtime.json'
+            variant = 'plain-datadir' if kwargs.get('datadir') else 'plain'
+            installer.save(receipt, {'variant': variant, 'source_patch': 'tui-datadir-v1' if kwargs.get('datadir') else None,
+                'recipe_sha256': hashlib.sha256((ROOT / 'integrations/dsh/tui-datadir.patch.json').read_bytes()).hexdigest(), 'files': files})
+            return {'node': str(node), 'runtime': str(runtime), 'runtime_receipt': str(receipt),
+                    'variant': variant, 'thin_config_contract': 1}
         source = root / 'source'
         source.mkdir()
         key = hashlib.sha256(str(source.resolve()).encode()).hexdigest()[:16]
@@ -112,7 +100,7 @@ class InstallTests(unittest.TestCase):
             hermes.assert_not_called()
 
     def test_plain_dsh_generation_keeps_existing_managed_generation(self):
-        old = self.install / 'harnesses/dsh' / installer.generation_id(ROOT, 'dsh', plain=False)
+        old = self.install / 'harnesses/dsh' / 'legacy-managed-generation'
         old.mkdir(parents=True)
         sentinel = old / 'keep.txt'
         sentinel.write_text('existing managed runtime')
@@ -125,6 +113,12 @@ class InstallTests(unittest.TestCase):
         self.assertEqual(receipt['thin_config_contract'], 1)
         self.assertEqual(receipt['details']['generation_receipt'], current['generation_receipt'])
         self.assertNotEqual(Path(current['runtime']).parent, old)
+
+    def test_legacy_dsh_receipt_is_rejected_without_opening_or_modifying_runtime(self):
+        receipt = {'harness': 'dsh', 'complete': True, 'details': {'patch_receipt': 'legacy-receipt'}}
+        with patch.object(installer, 'read', side_effect=AssertionError('legacy runtime must remain untouched')):
+            with self.assertRaisesRegex(ValueError, 'Legacy managed dsh runtime is unsupported'):
+                installer.validate(ROOT, 'dsh', receipt)
 
     def test_stamped_v2_keeps_legacy_v1_and_persistent_profiles_unchanged(self):
         base = self.install / 'harnesses/hermes'
@@ -290,9 +284,7 @@ class AcquisitionTests(unittest.TestCase):
         installer.save(self.repo / 'integrations/dsh/ui-package.json', {'dependencies': {'bundled': '1.0.0', 'missing': '1.0.0'}})
         installer.save(self.repo / 'integrations/dsh/ui-package-lock.json', {'lockfileVersion': 3})
         installer.save(self.repo / 'integrations/dsh/tui-datadir.patch.json', installer.read(ROOT / 'integrations/dsh/tui-datadir.patch.json'))
-        installer.save(self.repo / 'integrations/dsh/tui-managed.patch', {'replacements': [
-            {'file': 'lib/probe.js', 'old': 'old-one', 'new': 'new-one'},
-            {'file': 'lib/probe.js', 'old': 'old-two', 'new': 'new-two'}]})
+
 
     def fake_run(self, argv, *, cwd, env):
         self.calls.append((argv, Path(cwd), dict(env)))
@@ -310,9 +302,9 @@ class AcquisitionTests(unittest.TestCase):
                         continue
                     installer.save(Path(cwd) / 'node_modules' / item['name'] / 'package.json', {'version': item['version']})
                 if self.bad_patch:
-                    recipe = self.repo / 'integrations/dsh/tui-managed.patch'
+                    recipe = self.repo / 'integrations/dsh/tui-datadir.patch.json'
                     rows = installer.read(recipe)
-                    rows['replacements'][0]['old'] = 'wrong preimage'
+                    rows['old'] = 'wrong preimage'
                     installer.save(recipe, rows)
             else:
                 for name in ('bundled', 'missing'):
@@ -358,21 +350,23 @@ class AcquisitionTests(unittest.TestCase):
         with patch.object(installer, 'run', side_effect=self.fake_run), patch.object(installer.urllib.request, 'urlopen', side_effect=AssertionError('network not allowed')):
             return installer.install_dsh(self.repo, self.root, str(self.node), self.cache)
 
-    def test_dsh_cached_integrity_node_npm_bundle_patch_and_revalidation(self):
+    def test_dsh_cached_integrity_node_npm_bundle_datadir_and_revalidation(self):
         details = self.dsh()
-        installer.validate(self.repo, 'dsh', {'harness': 'dsh', 'complete': True, 'details': details})
+        receipt = {'harness': 'dsh', 'complete': True, 'variant': details['variant'],
+                   'thin_config_contract': 1, 'details': details}
+        installer.validate(self.repo, 'dsh', receipt)
         tui = self.root / 'runtime/node_modules/@deepseek-harness-tui/dsh-tui'
         self.assertEqual(installer.read(tui / 'node_modules/bundled/package.json')['version'], 'bundled-original')
         self.assertTrue((tui / 'node_modules/missing').is_symlink())
-        self.assertEqual((tui / 'lib/probe.js').read_text(), 'new-one\nnew-two\n')
-        self.assertEqual(len(installer.read(details['patch_receipt'])['changes']), 1)
-        (tui / 'lib/probe.js').write_text('ordinary damaged patch')
-        with self.assertRaisesRegex(ValueError, 'patch changed'):
-            installer.validate(self.repo, 'dsh', {'harness': 'dsh', 'complete': True, 'details': details})
+        self.assertEqual((tui / 'lib/probe.js').read_text(), 'old-one\nold-two\n')
+        self.assertEqual(installer.read(details['runtime_receipt'])['source_patch'], 'tui-datadir-v1')
+        (tui / installer.UPSTREAM_PROOF_FILES[0]).write_text('ordinary damaged source')
+        with self.assertRaisesRegex(ValueError, 'upstream runtime changed'):
+            installer.validate(self.repo, 'dsh', receipt)
 
     def test_plain_acquisition_preserves_upstream_and_uses_separate_receipt(self):
         with patch.object(installer, 'run', side_effect=self.fake_run), patch.object(installer.urllib.request, 'urlopen', side_effect=AssertionError('network not allowed')):
-            details = installer.install_dsh(self.repo, self.root, str(self.node), self.cache, plain=True)
+            details = installer.install_dsh(self.repo, self.root, str(self.node), self.cache, datadir=False)
         receipt = {'harness': 'dsh', 'complete': True, 'variant': 'plain', 'thin_config_contract': 1, 'details': details}
         installer.validate(self.repo, 'dsh', receipt)
         tui = self.root / 'runtime/node_modules/@deepseek-harness-tui/dsh-tui'
@@ -380,7 +374,7 @@ class AcquisitionTests(unittest.TestCase):
         self.assertFalse((self.root / 'evidence/tui-patch-applied.json').exists())
         self.assertNotIn('patch_receipt', details)
         self.assertIsNone(installer.read(details['runtime_receipt'])['source_patch'])
-        self.assertNotEqual(installer.generation_id(self.repo, 'dsh'), installer.generation_id(self.repo, 'dsh', plain=False))
+        self.assertNotEqual(installer.generation_id(self.repo, 'dsh'), installer.generation_id(self.repo, 'dsh', datadir=False))
         # Losing or modifying an ordinary source file must not look ready.
         (tui / installer.UPSTREAM_PROOF_FILES[0]).write_text('changed')
         with self.assertRaisesRegex(ValueError, 'upstream runtime changed'):
@@ -388,7 +382,7 @@ class AcquisitionTests(unittest.TestCase):
 
     def test_datadir_acquisition_is_one_line_and_preimage_is_required(self):
         with patch.object(installer, 'run', side_effect=self.fake_run):
-            details = installer.install_dsh(self.repo, self.root, str(self.node), self.cache, plain=True, datadir=True)
+            details = installer.install_dsh(self.repo, self.root, str(self.node), self.cache, datadir=True)
         receipt = {'harness': 'dsh', 'complete': True, 'variant': 'plain-datadir', 'thin_config_contract': 1, 'details': details}
         installer.validate(self.repo, 'dsh', receipt)
         recipe = installer.read(self.repo / 'integrations/dsh/tui-datadir.patch.json')
@@ -401,7 +395,7 @@ class AcquisitionTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'preimage mismatch'), patch.object(installer, 'run', side_effect=self.fake_run):
             second = self.base / 'second-generation'
             second.mkdir()
-            installer.install_dsh(self.repo, second, str(self.node), self.cache, plain=True, datadir=True)
+            installer.install_dsh(self.repo, second, str(self.node), self.cache, datadir=True)
 
     def test_sha512_mismatch_stops_before_npm(self):
         (self.cache / 'package-0.tgz').write_bytes(b'wrong tarball')
@@ -420,7 +414,7 @@ class AcquisitionTests(unittest.TestCase):
         self.bad_patch = True
         with self.assertRaisesRegex(ValueError, 'preimage mismatch'):
             self.dsh()
-        self.assertFalse((self.root / 'evidence/tui-patch-applied.json').exists())
+        self.assertFalse((self.root / 'evidence/upstream-runtime.json').exists())
 
     def test_hermes_pin_pm_arguments_settings_and_runtime(self):
         with patch.object(installer, 'run', side_effect=self.fake_run):
@@ -509,9 +503,13 @@ class DiagnosticTests(unittest.TestCase):
 
 class CatalogGateTests(unittest.TestCase):
     def test_independent_harness_opt_in_and_legacy_manifest(self):
-        from dashboard import managed_spawn, managed_catalog
+        from dashboard import managed_catalog
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
+            template, manifest = root / 'template.json', root / 'manifest.json'
+            installer.save(template, {})
+            installer.save(manifest, {'enabled': True, 'backends': {
+                backend: {'model': 'fixture'} for backend in ('strata', 'deepseek')}})
             for selected in ('dsh', 'hermes', 'neither', 'legacy'):
                 for harness in ('dsh', 'hermes'):
                     file = root / 'dashboard' / (harness + '-provider.json')
@@ -519,13 +517,11 @@ class CatalogGateTests(unittest.TestCase):
                         file.unlink(missing_ok=True)
                     else:
                         installer.save(file, {'enabled': harness == selected})
-                metadata = {backend: {'model': 'fixture'} for backend in ('strata', 'deepseek')}
-                readiness = {backend: {h: {'available': True} for h in ('dsh', 'hermes')} for backend in metadata}
-                module = SimpleNamespace(load_catalog_inputs=lambda *args, **kw: (metadata, readiness, True),
-                                         catalog_providers=managed_catalog.catalog_providers)
-                with patch.object(managed_spawn, 'ROOT', root), patch.object(managed_spawn.importlib, 'import_module', return_value=module):
-                    self.assertEqual(managed_spawn.catalog(None, selected_mode='legacy'), [])
-                    rows = managed_spawn.catalog('explicit-private-manifest', selected_mode='legacy')
+                with patch.object(managed_catalog, '__file__', str(root / 'dashboard/managed_catalog.py')), \
+                     patch.object(managed_catalog.sys, 'platform', 'darwin'), \
+                     patch.object(managed_catalog, '_thin_selection', return_value={'config_file': str(template)}):
+                    self.assertEqual(managed_catalog.standard_catalog(None, mode='legacy'), [])
+                    rows = managed_catalog.standard_catalog(str(manifest), mode='legacy')
                 for provider in rows:
                     statuses = {h['id']: h for h in provider['models'][0]['harnesses']}
                     for harness in ('dsh', 'hermes'):
