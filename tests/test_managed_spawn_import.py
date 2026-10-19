@@ -19,7 +19,7 @@ class LaunchdImportTests(unittest.TestCase):
         self.product = self.home / '.agentstack'
         self.dashboard = self.product / 'dashboard'
         self.dashboard.mkdir(parents=True)
-        for file in ('managed_spawn.py', 'managed_catalog.py'):
+        for file in ('managed_spawn.py', 'managed_catalog.py', 'managed_capabilities.py'):
             shutil.copyfile(ROOT / 'dashboard' / file, self.dashboard / file)
         for harness in ('dsh', 'hermes'):
             target = self.product / 'integrations' / harness
@@ -117,7 +117,7 @@ assert value['state']=='failed' and value['finished'] is True
 ''')
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(len(result.stderr.splitlines()), 1)
-        self.assertIn('managed worker failed during queued (ModuleNotFoundError)', result.stderr)
+        self.assertIn('managed worker failed during queued: step=unknown reason=step_failed (ModuleNotFoundError)', result.stderr)
 
 
 if __name__ == '__main__':

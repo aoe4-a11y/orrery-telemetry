@@ -12,6 +12,7 @@ from urllib.parse import urlsplit
 
 from mail_lifecycle import read
 from task_evidence import audit, callers
+from usage_guard import wrap_response
 
 _permitted = ContextVar('orrery_http_transport', default=False)
 
@@ -23,14 +24,18 @@ class Policy:
         limit = config.get('provider_request_limit') if limit is None else limit
         if (limit is not None or 'provider_request_limit' in config) and (type(limit) is not int or limit < 1):
             raise ValueError('Provider request limit must be a positive integer when specified')
-        profile = read(Path(config['profile_home']) / 'config.yaml')
+        profile = read(Path(config.get('runtime_config') or Path(config['profile_home']) / 'config.yaml'))
         route = profile['providers'][config['provider']]
+        self.api_mode = route['api_mode']
         base = urlsplit(route['base_url'])
         path = base.path.rstrip('/')
         # Hermes strips trailing /v1 for Anthropic; the SDK appends /v1/messages.
         path = path.removesuffix('/v1') + '/v1/messages' if route['api_mode'] == 'anthropic_messages' else path + '/chat/completions'
         self.endpoint = (base.scheme, base.netloc, path)
         self.limit, self.seq, self.lock = limit, 0, threading.Lock()
+        self.active = None
+        self.usage_known = True
+        self.bindings = {}
 
     def before(self, request):
         url = urlsplit(str(request.url))
@@ -41,13 +46,30 @@ class Policy:
                   path=url.path, callers=callers(self.state))
             raise RuntimeError('Managed provider endpoint denied')
         with self.lock:
+            if self.active is not None or not self.usage_known:
+                audit(self.state, 'limit-reached', reason='usage-unknown' if not self.usage_known else 'request-in-flight')
+                raise RuntimeError('Managed provider usage is unconfirmed')
+            if self.limit is not None and self.seq >= self.limit:
+                audit(self.state, 'limit-reached', limit=self.limit)
+                raise RuntimeError('Managed provider request limit reached')
             self.seq += 1
             seq = self.seq
-        if self.limit is not None and seq > self.limit:
-            audit(self.state, 'limit-reached', limit=self.limit)
-            raise RuntimeError('Managed provider request limit reached')
-        audit(self.state, 'provider-request-start', seq=seq)
+            self.active = seq
+            self.usage_known = False
+            active = read(self.state / 'activity.json') if (self.state / 'activity.json').is_file() else {}
+            self.bindings[seq] = {'task_id': active.get('task_id'), 'turn_id': active.get('turn_id')}
+        audit(self.state, 'provider-request-start', seq=seq, **self.bindings[seq])
         return seq
+
+    def usage(self, seq, row):
+        audit(self.state, 'provider-usage', seq=seq, **self.bindings[seq], **row)
+        with self.lock:
+            if self.active == seq:
+                self.active = None
+            self.usage_known = row['confirmed'] is True
+
+    def failed(self, seq):
+        self.usage(seq, {'confirmed': False, 'terminal': False, 'usage': None})
 
     def response(self, seq, status):
         audit(self.state, 'provider-response', seq=seq, status=status)
@@ -65,7 +87,14 @@ def install(state):
         try:
             result = original_sync(client, request)
             policy.response(seq, result.status_code)
+            if not result.is_success:
+                policy.failed(seq)
+            else:
+                wrap_response(result, policy.api_mode, lambda row: policy.usage(seq, row), _permitted)
             return result
+        except BaseException:
+            policy.failed(seq)
+            raise
         finally:
             _permitted.reset(token)
 
@@ -75,7 +104,14 @@ def install(state):
         try:
             result = await original_async(client, request)
             policy.response(seq, result.status_code)
+            if not result.is_success:
+                policy.failed(seq)
+            else:
+                wrap_response(result, policy.api_mode, lambda row: policy.usage(seq, row), _permitted)
             return result
+        except BaseException:
+            policy.failed(seq)
+            raise
         finally:
             _permitted.reset(token)
 
