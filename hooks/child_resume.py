@@ -37,6 +37,7 @@ SAFE_NAME = re.compile(r"^[A-Za-z0-9_.-]+$")
 PROXY_AGENT_NAME = re.compile(r"[A-Za-z][A-Za-z0-9-]{0,127}")
 CODEX_PROGRAMS = {"codex", "codex-cli"}
 CLAUDE_PROGRAMS = {"claude", "claude-code"}
+HARNESS_PROGRAMS = {"dsh", "hermes"}
 MCP_PROFILES = {"inherit", "orrery-only"}
 MAX_STATE_BYTES = 65536
 MAX_TOKEN_BYTES = 4096
@@ -48,6 +49,8 @@ def _provider(program: object) -> str | None:
             return "codex"
         if program in CLAUDE_PROGRAMS:
             return "claude"
+        if program in HARNESS_PROGRAMS:
+            return program
     return None
 
 
@@ -1990,14 +1993,14 @@ def main() -> int:
     active.add_argument("--agent-name", required=True)
     active.add_argument("--project-key", required=True)
     active.add_argument("--mcp-profile", choices=sorted(MCP_PROFILES), default="inherit")
-    active.add_argument("--program", choices=sorted(CODEX_PROGRAMS | CLAUDE_PROGRAMS))
+    active.add_argument("--program", choices=sorted(CODEX_PROGRAMS | CLAUDE_PROGRAMS | HARNESS_PROGRAMS))
     active.add_argument("--generation")
     active.add_argument("--parent-agent")
     stage = sub.add_parser("stage-registration")
     stage.add_argument("--runtime-dir", required=True)
     stage.add_argument("--agent-name", required=True)
     stage.add_argument("--project-key", required=True)
-    stage.add_argument("--program", required=True, choices=sorted(CODEX_PROGRAMS | CLAUDE_PROGRAMS))
+    stage.add_argument("--program", required=True, choices=sorted(CODEX_PROGRAMS | CLAUDE_PROGRAMS | HARNESS_PROGRAMS))
     stage.add_argument("--generation", required=True)
     stage.add_argument("--source")
     stage.add_argument("--binding")
