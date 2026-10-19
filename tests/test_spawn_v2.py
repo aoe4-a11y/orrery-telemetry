@@ -761,7 +761,7 @@ cleanup() {
   : > "$TEST_MARK.cleanup-started"
   # Stands in for a mail release/retire or worktree removal still in progress.
   sleep "$TEST_CLEANUP_SECONDS"
-  rm -f "$TEST_RUNTIME/agent_token_$name"
+  # The fixture common cleanup owns credential deletion after stop proof.
   : > "$TEST_MARK.cleanup-done"
 }
 trap cleanup EXIT
@@ -800,7 +800,7 @@ def _prepare_real_spawn(monkeypatch, tmp_path, script=_CLEANUP_LAUNCHER):
     monkeypatch.setattr(server, "_project_key", lambda: "/project")
     monkeypatch.setattr(server, "_spawn_name_status", lambda _: "available")
     monkeypatch.setattr(server, "_mcp_call", mcp)
-    monkeypatch.setattr(server.subprocess, "run", lambda *a, **k: type("R", (), {"returncode": 1})())
+    monkeypatch.setattr(server.subprocess, "run", lambda *a, **k: type("R", (), {"returncode": 1, "stderr": "can't find session: QuietCurie"})())
     real_popen = server.subprocess.Popen
     pid_mark = tmp_path / "mark.pid"
 
@@ -947,7 +947,7 @@ def test_canonical_launcher_timeout_keeps_5s_grace_and_removes_credentials(monke
     runtime = tmp_path / "runtime"
     runtime.mkdir()
     _successful_fake_cleanup(monkeypatch, tmp_path)
-    (runtime / "agent_token_QuietCurie").write_text("child-owner-token")
+    (runtime / "agent_token_QuietCurie").write_text("tok")
     events = []
 
     class StuckProc:
@@ -975,7 +975,7 @@ def test_canonical_launcher_timeout_keeps_5s_grace_and_removes_credentials(monke
 
     for payload in ({"provider": "claude"}, {"provider": "codex", "model": server._codex_models()[0]}):
         events.clear()
-        (runtime / "agent_token_QuietCurie").write_text("child-owner-token")
+        (runtime / "agent_token_QuietCurie").write_text("tok")
         result = server.do_spawn({"standalone": True, "name": "QuietCurie", "task": "work",
                                   "dir": str(tmp_path), **payload})
         assert result["ok"] is False

@@ -232,3 +232,118 @@ def test_native_tools_use_shared_program_contract(preview, harness):
     default = server.do_spawn({**preview, 'provider': 'strata', 'harness': harness,
         'model': 'strata-fixture', 'tools': {}})
     assert default['argv'][default['argv'].index('--base') + 1] == 'default'
+
+
+@pytest.mark.parametrize('mode', ['kill_failed', 'update', 'creation_pending',
+    'probe_unknown', 'promote_failed', 'confirmed', 'confirmed_absent', 'retire_failed'])
+def test_failed_spawn_uses_real_cleanup_only_after_stop_and_owner_confirmation(
+        preview, monkeypatch, tmp_path, mode):
+    import os
+    import subprocess
+    import sys
+    import threading
+    from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+    root = Path(__file__).resolve().parents[1]
+    runtime = tmp_path / 'runtime'
+    home = tmp_path / 'home'
+    home.mkdir()
+    monkeypatch.setenv('HOME', str(home))
+    monkeypatch.setenv('AGENTSTACK_HOME', str(root))
+    monkeypatch.setenv('AGENTSTACK_RUNTIME_MODE', 'legacy')
+    monkeypatch.setenv('AGENTSTACK_LABEL_PREFIX', 'org.agentstack.test-spawn-review')
+    monkeypatch.setenv('AGENTSTACK_MAIL_HTTP_BEARER_MODE', 'disabled')
+    monkeypatch.setenv('AGENTSTACK_CHILD_RESUME_RETENTION_DAYS', '0')
+    monkeypatch.setenv('AGENTSTACK_PYTHON', sys.executable)
+    monkeypatch.setenv('PATH', str(Path(sys.executable).parent) + os.pathsep + '/usr/bin:/bin')
+    monkeypatch.setattr(server, 'RUNTIME_DIR', str(runtime))
+    monkeypatch.setattr(server, 'HERE', str(tmp_path))
+    monkeypatch.setattr(server, '_spawn_name_status', lambda _: 'available')
+    monkeypatch.setattr(server, '_mcp_call', lambda *a, **k: {'ok': True, 'data': {
+        'id': 73, 'name': 'FixtureAgent', 'registration_token': 'fixture-token'}})
+    owner = runtime / 'agent_token_FixtureAgent'
+    state = runtime / 'child-agents/FixtureAgent.json'
+    calls, cleanup_calls, killed = [], [], []
+    class Handler(BaseHTTPRequestHandler):
+        def do_POST(self):
+            request = json.loads(self.rfile.read(int(self.headers['Content-Length'])))
+            method = request['params']['name']
+            calls.append(method)
+            if method == 'release_file_reservations':
+                result = {'released': 0}
+            elif method == 'retire_agent':
+                assert request['params']['arguments']['registration_token'] == 'fixture-token'
+                result = ({'isError': True} if mode == 'retire_failed' else {
+                    'status': 'retired', 'agent_name': 'FixtureAgent', 'project_key': '/fixture/project'})
+            else:
+                assert method == 'whois'
+                result = {'name': 'FixtureAgent', 'retired_at': '2026-10-20T00:00:00Z'}
+            self.send_response(200)
+            self.end_headers()
+            self.wfile.write(json.dumps({'result': result}).encode())
+        def log_message(self, *args):
+            pass
+    mail = ThreadingHTTPServer(('127.0.0.1', 0), Handler)
+    thread = threading.Thread(target=mail.serve_forever, daemon=True)
+    thread.start()
+    monkeypatch.setenv('AGENTSTACK_MCP_URL', 'http://127.0.0.1:' + str(mail.server_port) + '/mcp')
+    launcher = str(root / 'hooks/spawn_child.sh')
+    real_popen = subprocess.Popen
+    class Proc:
+        def wait(self, timeout=None):
+            return 2
+    def popen(argv, **kwargs):
+        if argv[0] != launcher:
+            return real_popen(argv, **kwargs)
+        if mode in ('kill_failed', 'update', 'creation_pending', 'probe_unknown'):
+            owner.write_text('fixture-token')
+            state.parent.mkdir(parents=True, exist_ok=True)
+            state.write_text(json.dumps({'project_key': '/fixture/project', 'registration_token': 'fixture-token'}))
+        if mode == 'creation_pending':
+            kwargs['stderr'].write(b'Harness start/stop unconfirmed; recovery state retained\n')
+            kwargs['stderr'].flush()
+        return Proc()
+    monkeypatch.setattr(server.subprocess, 'Popen', popen)
+    def tmux(argv, **kwargs):
+        if argv[0] == 'has-session':
+            if mode == 'probe_unknown':
+                return SimpleNamespace(returncode=1, stderr='socket permission denied')
+            if mode == 'confirmed_absent':
+                return SimpleNamespace(returncode=1, stderr="can't find session: FixtureAgent")
+            return SimpleNamespace(returncode=0, stderr='')
+        assert argv[0] == 'kill-session'
+        killed.append(argv)
+        return SimpleNamespace(returncode=1 if mode == 'kill_failed' else 0)
+    monkeypatch.setattr(server, '_tmux_run', tmux)
+    monkeypatch.setattr(server, '_codex_self_update_on_screen', lambda _: mode == 'update')
+    real_cleanup = server._failed_spawn_cleanup
+    def cleanup(*args):
+        cleanup_calls.append(args[1])
+        return real_cleanup(*args)
+    monkeypatch.setattr(server, '_failed_spawn_cleanup', cleanup)
+    if mode == 'promote_failed':
+        monkeypatch.setattr(server, '_promote_spawn_credential', lambda *a: False)
+    spec = server.SpawnLaunchSpec(provider='codex', program='codex-cli',
+        model='fixture-model', script=launcher)
+    try:
+        result = server.spawn_with_launch_spec({**preview, 'dry_run': False,
+            'provider': 'codex', 'name': 'FixtureAgent'}, spec)
+    finally:
+        mail.shutdown()
+        mail.server_close()
+        thread.join(timeout=5)
+    assert not result['ok']
+    handoffs = list((runtime / 'spawn-tokens').glob('*.token'))
+    if mode in ('confirmed', 'confirmed_absent', 'retire_failed'):
+        assert cleanup_calls == ['FixtureAgent']
+        assert calls == (['release_file_reservations', 'retire_agent'] if mode == 'retire_failed'
+                         else ['release_file_reservations', 'retire_agent', 'whois'])
+        assert bool(handoffs) is (mode == 'retire_failed')
+    else:
+        assert not cleanup_calls and not calls
+        assert result['cleanup_state'] == 'unknown'
+        assert len(handoffs) == 1 and handoffs[0].read_text() == 'fixture-token'
+        assert Path(str(handoffs[0]) + '.binding.json').exists()
+        if mode != 'promote_failed':
+            assert owner.read_text() == 'fixture-token' and state.exists()
+    if mode in ('update', 'creation_pending', 'probe_unknown', 'confirmed_absent'):
+        assert not killed

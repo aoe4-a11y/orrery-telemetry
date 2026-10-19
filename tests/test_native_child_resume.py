@@ -351,3 +351,25 @@ def test_real_hermes_generator_round_trip_preserves_owned_native_session(tmp_pat
         assert proxy['AGENTSTACK_PROXY_TOKEN_FILE'] == str(runtime / ('agent_token_' + args.agent_name))
         invocation = native.resume_command(runtime, args.agent_name).split('; native_rc=$?', 1)[0]
         assert shlex.split(invocation)[-2:] == ['--resume', 'exact-hermes-id']
+
+
+@pytest.mark.parametrize('harness', ['dsh', 'hermes'])
+def test_jump_preserves_finished_native_husk_when_generation_fails(tmp_path, monkeypatch, harness):
+    runtime, state, _, _ = child(tmp_path, 'FirstAgent', harness)
+    monkeypatch.setattr(server, 'RUNTIME_DIR', str(runtime))
+    monkeypatch.setattr(server, '_agent_program', lambda _: harness)
+    monkeypatch.setattr(server, '_has_session', lambda _: True)
+    monkeypatch.setattr(server, 'lookup_agent', lambda _: {'category': 'finished'})
+    monkeypatch.setattr(server, '_child_resume_module', lambda: resume)
+    monkeypatch.setattr(server, '_resume_registration', lambda *a: state)
+    monkeypatch.setattr(server, '_native_resume_launcher_ready', lambda: True)
+    def fail(*args):
+        raise ValueError('native_resume_profile_changed')
+    monkeypatch.setattr(server, '_native_prepare_resume', fail)
+    monkeypatch.setattr(server, '_tmux_run', lambda *a, **k: pytest.fail('husk changed before config generation'))
+    monkeypatch.setattr(server, '_register_claude_resume', lambda *a: pytest.fail('Mail called'))
+    result = server.do_jump('FirstAgent', open_terminal=False)
+    assert not result['ok']
+    current = resume._load_state(runtime / 'child-agents/FirstAgent.json')
+    assert current['retired_at'] == state['retired_at'] and 'resume_in_progress_at' not in current
+    assert (runtime / 'agent_token_FirstAgent').read_text() == state['registration_token']

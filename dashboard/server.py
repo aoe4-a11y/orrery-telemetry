@@ -6931,7 +6931,7 @@ def _do_jump(session: str, *, open_terminal: bool | None = None) -> dict:
         capability = _resume_capability(session, program, category="finished", **preference)
         if capability != "ready":
             return _resume_unavailable(capability)
-        if program.startswith("claude"):
+        if program.startswith("claude") or program in harness_runtime.HARNESSES:
             return do_resume(session, replace_husk=True, **preference)
         _tmux_run(['kill-session', '-t', f'={session}'], capture_output=True)
         return do_resume(session, **preference)
@@ -8550,21 +8550,46 @@ def _spawn_launch(payload: dict, request: dict, spec: SpawnLaunchSpec,
             {"recovery_credential": None,
              "cleanup_child_agent_can_recover": False})
 
-    def kill_spawn_session() -> None:
+    spawn_stop_confirmed = False
+
+    def kill_spawn_session() -> bool:
+        nonlocal spawn_stop_confirmed
+        spawn_stop_confirmed = False
+        tail, _ = _spawn_log_tail_and_reason(log_path, log_start_offset)
+        if any(marker in tail for marker in (
+                "Harness start/stop unconfirmed; recovery state retained",
+                "[spawn_child] creation unconfirmed; recovery state and worktree retained")):
+            # The launcher never acknowledged ownership of this session.
+            return False
         if provider == "codex" and _codex_self_update_on_screen(child_name):
             print(f"spawn {child_name}: Codex is updating itself; session left running (#60)", file=sys.stderr)
-            return
+            return False
         try:
-            _tmux_run(['kill-session', '-t', f'={child_name}'], capture_output=True, text=True)
-        except OSError:
+            probe = _tmux_run(['has-session', '-t', f'={child_name}'], capture_output=True, text=True)
+            if probe.returncode:
+                # A transport refusal (also exit 1) is not proof of absence.
+                spawn_stop_confirmed = "can't find session" in (getattr(probe, 'stderr', '') or '')
+            else:
+                killed = _tmux_run(['kill-session', '-t', f'={child_name}'], capture_output=True, text=True)
+                spawn_stop_confirmed = killed.returncode == 0
+        except (OSError, subprocess.SubprocessError):
             pass
+        return spawn_stop_confirmed
 
     def failed_spawn_result(error, **fields):
         nonlocal token_created
         cleanup_env = {**env, 'AGENTSTACK_RUNTIME_DIR': RUNTIME_DIR,
                        'AGENTSTACK_HOOKS_DIR': str(Path(spec.script).parent),
                        'AGENTSTACK_PROJECT_KEY': project_key}
-        if _failed_spawn_cleanup(spec.script, child_name, cleanup_env):
+        owner_ready = False
+        if spawn_stop_confirmed:
+            owner_state = _spawn_credential_state(owner_credential, effective_child_token)
+            if (owner_state in _SPAWN_CREDENTIAL_REPLACEABLE and token_created and token_file
+                    and _spawn_credential_state(token_file, effective_child_token) == "complete"):
+                _promote_spawn_credential(owner_credential, effective_child_token, owner_state)
+                owner_state = _spawn_credential_state(owner_credential, effective_child_token)
+            owner_ready = owner_state == "complete"
+        if owner_ready and _failed_spawn_cleanup(spec.script, child_name, cleanup_env):
             # A successful cleanup may intentionally retain a resumable child.
             # Only the consumed one-shot handoff is ours to discard here.
             remove_spawn_credentials(keep_owner_credential=True)

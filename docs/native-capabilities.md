@@ -4,6 +4,14 @@ Thin dsh/Hermes launch uses the existing agent `ctx_used` / `ctx_window` fields
 and existing spawn catalog `models[].harnesses[].helper_models` shape. There is
 no additional provider endpoint or credential lookup in these readers.
 
+## Activity classification boundary
+
+This stage implements native context and process liveness observations only.
+Native working / waiting for a question / waiting for approval classification
+is not implemented: `act_state: null` means unknown. It is not evidence that the
+agent is idle, finished or ready. Activity classification belongs to a later
+change and is not inferred by the context parser.
+
 ## Context
 
 `dashboard.harness_context.parse_context(text, program)` receives an already
