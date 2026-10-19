@@ -394,10 +394,34 @@ def command_runner(config, log_path):
         if background:
             with Path(log_path).open('ab') as log:
                 return subprocess.Popen(argv, env=env, stdout=log, stderr=log, start_new_session=True)
-        result = subprocess.run(argv, env=env, capture_output=True, text=True, timeout=timeout)
+        try:
+            result = subprocess.run(argv, env=env, capture_output=True, text=True, timeout=timeout)
+        except (OSError, subprocess.SubprocessError) as cause:
+            info = read(checkpoint)
+            if info.get('script') != 'launch.py':
+                raise
+            diagnostics = _product_module('integrations.dsh.cli_diagnostics')
+            row = diagnostics.diagnostic(info.get('action'), cause)
+            save(checkpoint, {**info, 'phase': 'failed', 'diagnostic': row})
+            exc = RuntimeError('managed_cli_failed')
+            exc.managed_step, exc.managed_reason = row['step'], row['reason']
+            exc.managed_diagnostic = row
+            raise exc from None
         save(checkpoint, {**read(checkpoint), 'phase': 'exited', 'exit_code': result.returncode})
         if check and result.returncode:
-            raise RuntimeError('managed_cli_failed')
+            exc = RuntimeError('managed_cli_failed')
+            info = read(checkpoint)
+            action = info.get('action')
+            if info.get('script') == 'launch.py':
+                diagnostics = _product_module('integrations.dsh.cli_diagnostics')
+                row = diagnostics.parse(result.stderr, action)
+                if action in diagnostics.STEPS:
+                    exc.managed_step = action
+                if row:
+                    save(checkpoint, {**info, 'diagnostic': row})
+                    exc.managed_reason = row['reason']
+                    exc.managed_diagnostic = row
+            raise exc
         return result
     return run
 
@@ -544,7 +568,7 @@ def run_job(job, *, adapter=None, parent_call=None, run=None, sleep=time.sleep, 
                finished=True, pending=False, error_code=None)
     except Exception as exc:
         step = getattr(exc, 'managed_step', None)
-        if step not in ('init-task', 'preregister', 'configure', 'probe', 'reserve', 'preflight',
+        if step not in ('init', 'bind', 'assemble', 'run', 'attach', 'abandon', 'init-task', 'preregister', 'configure', 'probe', 'reserve', 'preflight',
                         'start', 'stop', 'scan-diagnostics', 'release', 'retire', 'confirm-retire',
                         'record-mail', 'complete', 'complete-runtime', 'clean'):
             step = 'unknown'
@@ -554,6 +578,10 @@ def run_job(job, *, adapter=None, parent_call=None, run=None, sleep=time.sleep, 
                           'missing_state', 'runtime_failed', 'validation_failed'):
             reason = 'step_failed'
         failure = {'phase': current.get('phase'), 'step': step, 'reason': reason, 'type': type(exc).__name__}
+        diagnostic = getattr(exc, 'managed_diagnostic', None)
+        if isinstance(diagnostic, dict):
+            failure['type'] = diagnostic['type']
+            failure['summary'] = diagnostic['summary']
         save(job / 'worker-failure.json', failure)
         LOG.error("managed worker failed during %s: step=%s reason=%s (%s)",
                   failure['phase'], step, reason, failure['type'])

@@ -17,6 +17,7 @@ import time
 import uuid
 
 from launch_plan import build_launch
+from cli_diagnostics import encode as encode_diagnostic
 
 
 def write_json(file, value):
@@ -543,7 +544,10 @@ if __name__ == '__main__':
     if len(sys.argv) > 1 and sys.argv[1] in ('init', 'bind', 'assemble', 'start', 'run', 'release', 'stop', 'attach', 'state', 'clean', 'abandon'):
         try:
             run_cli()
-        except (OSError, ValueError, KeyError, subprocess.SubprocessError):
-            raise SystemExit('Managed run step failed; preserve state, do not retry automatically')
+        except (OSError, ValueError, KeyError, TypeError, subprocess.SubprocessError, SystemExit) as exc:
+            if isinstance(exc, SystemExit) and (exc.code is None or isinstance(exc.code, int)):
+                raise
+            print(encode_diagnostic(sys.argv[1], exc), file=sys.stderr)
+            raise SystemExit(1)
     else:
         main()
