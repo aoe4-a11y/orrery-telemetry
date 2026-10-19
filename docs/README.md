@@ -81,6 +81,5 @@ Telemetry 自体の操作は、header の `HELP MAP`（NETWORK では `SETTINGS`
 - [管理された子の要求・状態と lifecycle](managed-spawn-contract.md)
 - [dsh stage A-min](dsh-stage-a-min.md)
 - [dsh の標準 CLI 起動](dsh-thin.md)
-- [dsh thin launch](dsh-thin.md)
 
 - [Managed catalog](managed-catalog.md)
