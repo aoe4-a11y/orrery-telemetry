@@ -80,5 +80,7 @@ Documents without a translation are labelled with their original language. Image
 
 - [Managed child requests, status, and lifecycle](managed-spawn-contract.md)
 - [dsh stage A-min](dsh-stage-a-min.md)
+- [dsh thin launch (Japanese)](dsh-thin.md)
+- [dsh thin launch](dsh-thin.md)
 
 - [Managed catalog](managed-catalog.md)
