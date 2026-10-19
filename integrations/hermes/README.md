@@ -1,4 +1,46 @@
-# Managed Hermes adapter
+# Hermes adapters
+
+## Thin native launch
+
+`thin_config.py --input INPUT --out PLAN` generates an upstream Hermes command,
+configuration and environment references without invoking a credential helper.
+`validate_input(document)` is the read-only admission used by the standard
+launcher and catalog. It imports no Hermes code and starts no subprocess.
+
+The standard launcher supplies the registered identity, product-generated MCP
+configuration, shared rendered Codex instructions and the actual working directory.
+The generator selects the installed committed executable and a custom provider
+with native `key_cmd`; provider credentials remain Hermes's responsibility.
+Optional model and helper selections must belong to the selected backend's
+configured formal model IDs. An omitted effort leaves the native default intact.
+The helper model applies to auxiliary tasks and delegation on that same provider.
+
+Memory and skills persist in the fixed backend profile. Each child uses the
+official `HERMES_MANAGED_DIR` overlay for its MCP entries and instructions;
+profile configuration is not swapped or cloned. Product skills are links to
+their canonical source, and existing unowned skills are never overwritten.
+The native input queue uses `busy_input_mode=queue`. The initial prompt uses
+`chat --query-file`; empty input opens the normal interactive CLI. No request,
+output-token or session-lifetime limit, native-command ban, egress preload or
+usage evaluator is added by this entry.
+
+`thin_guard.py` adapts native pre-tool events to the common registration,
+credential-read and acquired-reservation hooks. Only their exit 2 is a veto,
+matching the ordinary hook contract. Generation checks the plugin file and
+configuration statically; it does not import or verify runtime registration.
+Explicit MCP selections that cannot be represented are rejected. Turning off
+MCP inheritance disables unselected configured servers; profiles with enabled
+third-party plugins are rejected in that mode because portable plugins can
+append servers after configuration loading.
+
+The plugin saves the native session-start event in `native-session.json` under
+the child's existing state directory. Delegated sessions cannot overwrite it.
+An explicit `resume_session_id` becomes native `--resume`; no shared MRU is used.
+Missing resume metadata does not prevent startup. Standard launcher cleanup,
+Mail delivery and process observation own the lifecycle.
+
+The sections below describe the older managed runner and its compatibility
+fixtures; their additional policies do not apply to the thin native entry.
 
 The managed controller contract is [managed-spawn-contract.md](../../docs/managed-spawn-contract.md).
 The pinned Hermes source is `d923a5eb487a17c0a68801bba9ef0f56c81040a8`.
