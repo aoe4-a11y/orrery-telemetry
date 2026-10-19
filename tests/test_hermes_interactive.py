@@ -576,8 +576,14 @@ os.environ.update(HERMES_HOME=config['profile_home'],ORRERY_HERMES_STATE_ROOT=st
 def deny(name,args):
  if name in ('socket.connect','socket.getaddrinfo'): raise RuntimeError('offline-only fixture')
  if name=='subprocess.Popen':
-  argv=args[1]
-  if Path(str(args[0])).name=='git' and len(argv)>1 and argv[1] in ('rev-parse','describe','log','status'): return
+  argv=list(args[1])[1:]
+  if argv[:1]==['--no-optional-locks']: argv=argv[1:]
+  readonly=bool(argv) and (argv[0] in ('rev-parse','describe','log','rev-list','show')
+   or argv==['branch','--show-current'] or (argv[0]=='status' and '--porcelain' in argv)
+   or (argv[0]=='tag' and '--list' in argv and '--merged' in argv))
+  stamp=Path(config['hermes_source'])/'install-stamp.json'
+  legacy=not stamp.exists() or json.loads(stamp.read_text()).get('source')=='git'
+  if legacy and Path(str(args[0])).name=='git' and readonly: return
   raise RuntimeError('offline-only fixture')
 sys.addaudithook(deny)
 assert managed_entry.execute(state,check=True)==0
