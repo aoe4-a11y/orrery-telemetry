@@ -23,6 +23,12 @@ installer = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(installer)
 
 
+def fixture_stamp(source):
+    installer.save(Path(source) / 'install-stamp.json', {'commit': installer.HERMES_COMMIT, 'source': 'local',
+        'updateMechanism': 'external', 'payload': 'bootstrap', 'baseVersion': '0.1.0', 'displayVersion': '0.1.0'})
+    return installer.hermes_stamp_details(source)
+
+
 class InstallTests(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
@@ -80,7 +86,8 @@ class InstallTests(unittest.TestCase):
             file.chmod(0o700)
         installer.save(store / 'facts.json', {'packages': {'venv': {'environment': str(generation)}}})
         (generation / 'pyvenv.cfg').write_text('synthetic venv')
-        return {'hermes_source': str(source), 'managed_root': str(root), 'hermes_executable': str(generation / 'bin/hermes')}
+        return {'hermes_source': str(source), 'managed_root': str(root), 'hermes_executable': str(generation / 'bin/hermes'),
+                **fixture_stamp(source)}
 
     def test_default_and_dry_run_do_not_acquire_or_copy(self):
         with patch.object(installer, 'install_dsh') as dsh, patch.object(installer, 'install_hermes') as hermes:
@@ -90,6 +97,26 @@ class InstallTests(unittest.TestCase):
             self.assertFalse(self.install.exists())
             dsh.assert_not_called()
             hermes.assert_not_called()
+
+    def test_stamped_v2_keeps_legacy_v1_and_persistent_profiles_unchanged(self):
+        base = self.install / 'harnesses/hermes'
+        old = base / (installer.HERMES_COMMIT[:16] + '-v1')
+        legacy = old / 'source/legacy.txt'
+        legacy.parent.mkdir(parents=True)
+        legacy.write_text('unstamped v1 source')
+        installer.save(old / installer.OWNER, {'harness': 'hermes', 'complete': True, 'details': {'legacy': True}})
+        receipt = (old / installer.OWNER).read_bytes()
+        memory = base / 'profiles/fixture/memories/keep.txt'
+        memory.parent.mkdir(parents=True)
+        memory.write_text('persistent memory')
+        with patch.object(installer, 'install_hermes', side_effect=self.fake_acquire):
+            installer.provision(ROOT, self.install, 'hermes', choice='enable')
+        self.assertEqual(legacy.read_text(), 'unstamped v1 source')
+        self.assertEqual((old / installer.OWNER).read_bytes(), receipt)
+        self.assertFalse((old / 'source/install-stamp.json').exists())
+        self.assertEqual(memory.read_text(), 'persistent memory')
+        current = installer.read(base / 'current.json')
+        self.assertEqual(Path(current['managed_root']).resolve(), self.generation('hermes').resolve())
 
     def test_enabled_update_refreshes_capabilities_but_off_dry_run_do_not(self):
         from dashboard import managed_capabilities
@@ -269,6 +296,10 @@ class AcquisitionTests(unittest.TestCase):
             return ''
         if argv[:2] == ['git', 'rev-parse']:
             return self.commit
+        if argv[1:3] == ['-c', installer.HERMES_STAMP_SCRIPT]:
+            self.assertEqual(argv[3], installer.HERMES_COMMIT)
+            fixture_stamp(cwd)
+            return ''
         # Fixed Hermes validates combinations after parsing: combining these
         # flags exits 1 on stdout even though argparse accepts each separately.
         if '--without' in argv and '--extra' in argv:
@@ -343,6 +374,13 @@ class AcquisitionTests(unittest.TestCase):
             [sys.executable, '-m', 'pm.cli', 'install', '--without', 'agent-browser', '--without', 'cua-driver'],
             [sys.executable, '-m', 'pm.cli', 'install', '--extra', 'anthropic']])
         self.assertIn('/environments/with-anthropic/', details['hermes_executable'])
+        self.assertEqual(details['install_stamp'], str(self.root / 'source/install-stamp.json'))
+        self.assertTrue(installer.generation_id(self.repo, 'hermes').endswith('-v2'))
+        stamp = Path(details['install_stamp'])
+        stamp.write_text(stamp.read_text() + ' ')
+        with patch.object(installer, 'run', return_value=installer.HERMES_COMMIT):
+            with self.assertRaisesRegex(ValueError, 'stamp receipt changed'):
+                installer.validate(self.repo, 'hermes', {'harness': 'hermes', 'complete': True, 'details': details})
 
     def test_hermes_wrong_commit_stops_before_pm(self):
         self.commit = 'wrong-pin'
