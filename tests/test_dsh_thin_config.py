@@ -80,9 +80,11 @@ class ThinTests(unittest.TestCase):
         with patch('subprocess.run', side_effect=AssertionError('subprocess forbidden')):
             plan = thin.generate(self.doc)
         self.assertEqual(plan['argv'][:2], [str(self.node), str(self.runtime / 'node_modules/@deepseek-ai/dsh/lib/bin.js')])
-        self.assertEqual(set(plan['env']), {'DSH_HOME', 'DSH_TUI_DATA_DIR', 'AGENTSTACK_LLM_KEY_FILES', 'AGENTSTACK_LLM_KEY_DEFINITIONS'})
+        self.assertEqual(set(plan['env']), {'DSH_HOME', 'DSH_TUI_DATA_DIR', 'DSH_TUI_LANG', 'AGENTSTACK_LLM_KEY_FILES', 'AGENTSTACK_LLM_KEY_DEFINITIONS'})
         rows = self.rows(plan)
-        self.assertFalse(any(row.get('disabled') for row in rows))
+        self.assertEqual([row for row in rows if row.get('disabled')], [{'id': 'credentials', 'disabled': True}])
+        credentials = next(r for row in rows for r in row.get('insert', []) if r['id'] == 'orrery-keychain-credentials')
+        self.assertEqual(credentials['name'], str(self.integration / 'keychain_credentials.mjs'))
         self.assertIn('credentials', next(row for row in rows if row.get('id') == 'llm-deepseek')['inject'])
         text = json.dumps(rows)
         for absent in ('maxTokens', 'maxRetries', 'session_requests', 'scope_mode', 'managed_plugin', 'egress.mjs'):
@@ -93,6 +95,23 @@ class ThinTests(unittest.TestCase):
         self.assertEqual((Path(plan['env']['DSH_HOME']) / 'AGENTS.md').read_text(), 'shared rendered instructions')
         self.assertNotIn('HOME', plan['env'])
         self.assertEqual(plan, thin.generate(self.doc))
+
+    def test_only_child_tui_preferences_are_seeded_and_resume_keeps_same_dir(self):
+        user = self.root / '.dsh-tui'
+        user.mkdir()
+        for file in ('lang.json', 'onboarding.json', 'model.json'):
+            (user / file).write_text('user-owned-' + file)
+        before = {p.name: p.read_bytes() for p in user.iterdir()}
+        plan = thin.generate(self.doc)
+        tui = Path(plan['env']['DSH_TUI_DATA_DIR'])
+        self.assertEqual(plan['env']['DSH_TUI_LANG'], 'en')
+        self.assertEqual(thin.read(tui / 'lang.json'), {'lang': 'en'})
+        self.assertEqual(thin.read(tui / 'onboarding.json'), {'completed': True, 'version': 1})
+        self.assertTrue(all(p.stat().st_mode & 0o777 == 0o600 for p in tui.iterdir()))
+        resumed = thin.generate({**self.doc, 'resume_session_id': 'own-session',
+                                 'native_profile_env': {'DSH_HOME': plan['env']['DSH_HOME']}})
+        self.assertEqual(resumed['env']['DSH_TUI_DATA_DIR'], str(tui))
+        self.assertEqual({p.name: p.read_bytes() for p in user.iterdir()}, before)
 
     def test_model_helper_effort_and_exact_resume_are_projected(self):
         self.doc.update(model='b', helper_model='a', effort='high', resume_session_id='own-session')

@@ -18,7 +18,7 @@ export function payloadFor(exec, config) {
 
 export function callHook(file, payload, env = process.env) {
   return new Promise(resolve => {
-    const child = execFile(file, [], {env, cwd: payload.cwd, maxBuffer: 1024 * 1024}, (error, stdout) => {
+    const child = execFile(file, [], {env, cwd: payload.cwd, maxBuffer: 1024 * 1024}, (error, stdout, stderr) => {
       // A normal warn-open outage must remain visible, without exposing the
       // hook's private diagnostics. Only its public success schema is shown.
       if (!error) {
@@ -28,7 +28,23 @@ export function callHook(file, payload, env = process.env) {
             typeof warning.systemMessage === 'string' && warning.systemMessage)
           process.stderr.write(warning.systemMessage + '\n');
       }
-      resolve(error ? {ok: false, reason: 'ORRERY hook denied: ' + path.basename(file)} : {ok: true});
+      let reason = 'ORRERY hook denied: ' + path.basename(file);
+      if (error?.code === 2 && !error.killed && !error.signal) {
+        // Match Hermes thin_guard._denial_reason and Claude's public schema.
+        // execFile decodes UTF-8 with replacement, as the Hermes adapter does.
+        let publicOutput;
+        try { publicOutput = JSON.parse(stdout); } catch { /* Arbitrary stdout is private. */ }
+        let detail = publicOutput && !Array.isArray(publicOutput) ? publicOutput.reason : undefined;
+        if (typeof detail !== 'string' || !detail.trim())
+          detail = publicOutput?.hookSpecificOutput?.permissionDecisionReason;
+        if (typeof detail !== 'string' || !detail.trim()) detail = stderr || '';
+        if (!/^\s*(?:Traceback \(|File ".*", line \d+|\w*(?:Error|Exception):)|: line \d+:/m.test(detail)) {
+          detail = detail.replace(/\x1b\[[0-?]*[ -/]*[@-~]/g, '').trim();
+          detail = Array.from(detail).filter(c => !/[\p{C}\p{Z}]/u.test(c) || ' \n\t'.includes(c)).slice(0, 2000).join('');
+          if (detail) reason += '\n' + detail;
+        }
+      }
+      resolve(error ? {ok: false, reason} : {ok: true});
     });
     child.stdin.on('error', () => {});
     child.stdin.end(JSON.stringify(payload));
