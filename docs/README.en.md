@@ -78,9 +78,7 @@ Documents without a translation are labelled with their original language. Image
 
 - [Dedicated tmux launch and termination acceptance plan (Japanese)](r2-tb-lifecycle-plan-v3.md) — Approved R2-Tb callers, schemas, interruption points and fixtures.
 
-- [Managed child requests, status, and lifecycle](managed-spawn-contract.md)
-- [dsh stage A-min](dsh-stage-a-min.md)
 - [dsh thin launch (Japanese)](dsh-thin.md)
 
 - [Native context and helper models](native-capabilities.md) — dsh / Hermes context observations and per-model capabilities.
-- [Managed catalog](managed-catalog.md)
+- [Native catalog and effort capabilities](managed-catalog.md)
