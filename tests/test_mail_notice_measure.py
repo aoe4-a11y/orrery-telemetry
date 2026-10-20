@@ -121,6 +121,18 @@ def test_unaccepted_sender_and_unattempted_messages_remain_visible():
     assert (result['planned'], result['unconfirmed'], result['not_attempted']) == (3, 1, 2)
 
 
+@pytest.mark.parametrize('explicit', [False, True])
+def test_call_without_acceptance_is_unconfirmed_with_or_without_result_marker(explicit):
+    values = [r for r in records() if r['event'] != 'sender_accepted']
+    values[1]['count'] = 3
+    if explicit:
+        values.append(row('sender_unconfirmed', 20_000_000, phase='normal', sequence=1))
+    summary = m.summarize(values)
+    result = summary['groups']['normal']
+    assert (result['attempted'], result['accepted'], result['unconfirmed'], result['not_attempted']) == (1, 0, 1, 2)
+    assert result['notified'] == 1 and not summary['complete']
+
+
 def test_seed_equivalence_is_relative_but_changes_are_detected(tmp_path):
     first = m.seed_fixture(tmp_path / 'before', epoch=1_700_000_000, target_bytes=30_000)
     after = m.seed_fixture(tmp_path / 'after', epoch=1_700_000_100, target_bytes=30_000)
@@ -166,7 +178,8 @@ def test_seed_verification_rejects_changed_initial_encoding(tmp_path):
 
 
 @pytest.mark.parametrize('end', [None, 120, 151])
-def test_io_summary_counts_all_helpers_and_waits_for_completion(tmp_path, end):
+@pytest.mark.parametrize('workers', [False, True])
+def test_io_summary_counts_all_helpers_and_waits_for_completion(tmp_path, end, workers):
     root = tmp_path / 'seed'
     m.seed_fixture(root, epoch=1_700_000_000, empty=True)
     samples = [dict(event='phase_begin', at_ns=10),
@@ -184,14 +197,23 @@ def test_io_summary_counts_all_helpers_and_waits_for_completion(tmp_path, end):
              state_read_calls=1, state_read_bytes=100, state_write_calls=1, state_write_bytes=120)]
     if end is not None:
         samples.append(dict(event='phase_end', at_ns=end))
-    for sample in samples:
+    for index, sample in enumerate(samples):
+        if sample['event'] == 'worker_started' and not workers:
+            continue
+        if sample['event'] in ('metadata', 'state_check', 'state_result'):
+            sample['observation_id'] = str(index)
+            sample.setdefault('elapsed_ns', 0)
+            m.append_probe(root, 'first', dict(event='observation_started', observation_id=str(index),
+                operation=sample['event'], key_tag=sample['key_tag'], at_ns=sample['at_ns']))
         m.append_probe(root, 'first', sample)
     result = m.io_summary(root, 'first')
     assert result['candidate_count'] == 2
-    assert (result['excluded_success'], result['excluded_cooldown'], result['worker_started']) == (1, 1, 2)
+    assert (result['excluded_success'], result['excluded_cooldown']) == (1, 1)
+    assert result['worker_started'] == result['worker_unconfirmed'] == (2 if workers else 0)
     assert (result['state_read_calls'], result['state_read_bytes']) == (4, 400)
     assert (result['state_write_calls'], result['state_write_bytes']) == (1, 120)
-    assert result['complete'] is (end == 151)
+    assert result['observations_unfinished'] == 0 and not result['observation_pair_invalid']
+    assert result['complete'] is (end == 151 and not workers)
 
 
 @pytest.mark.parametrize('extra', [False, True])
@@ -245,10 +267,95 @@ def test_real_inline_state_helper_is_counted_without_changing_return(tmp_path):
         str(root / 'runtime/notify-state.json'), 'MeasureSuccess', '36', '30'],
         input=block, text=True, capture_output=True, timeout=5)
     assert result.returncode == 1, result.stderr
-    output = json.loads((root / 'io-first.jsonl').read_text())
+    begin, output = [json.loads(line) for line in (root / 'io-first.jsonl').read_text().splitlines()]
+    assert begin['event'] == 'observation_started'
+    assert begin['observation_id'] == output['observation_id']
+    assert begin['operation'] == output['event'] == 'state_check'
     assert output['decision'] == 'success'
     assert output['state_read_calls'] == 1 and output['state_read_bytes'] > 0
     assert 'MeasureSuccess' not in (root / 'io-first.jsonl').read_text()
+
+
+def test_interrupted_inline_probe_remains_unfinished_after_phase_end(tmp_path):
+    root = tmp_path / 'seed'
+    m.seed_fixture(root, epoch=1_700_000_000, empty=True)
+    m.append_probe(root, 'next', dict(event='phase_begin', at_ns=time.monotonic_ns()))
+    source = tmp_path / 'inline.py'
+    source.write_text('import time\ntime.sleep(60)\n')
+    with source.open() as stdin:
+        process = subprocess.Popen([sys.executable, '-I', '-B', str(SCRIPT), 'instrument-python',
+            '--root', str(root), '--phase', 'next', '--python', sys.executable, '--', '-',
+            str(root / 'runtime/notify-state.json'), 'MeasureSuccess', '36', '30'],
+            stdin=stdin, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    try:
+        deadline = time.monotonic() + 5
+        trace = root / 'io-next.jsonl'
+        while time.monotonic() < deadline and process.poll() is None:
+            if 'observation_started' in trace.read_text():
+                break
+            time.sleep(.01)
+        assert process.poll() is None and 'observation_started' in trace.read_text()
+        m.append_probe(root, 'next', dict(event='phase_end', at_ns=time.monotonic_ns()))
+        active = m.io_summary(root, 'next')
+        assert not active['complete'] and active['observations_unfinished'] == 1
+        process.terminate(); process.wait(timeout=5)
+        interrupted = m.io_summary(root, 'next')
+        assert not interrupted['complete'] and interrupted['observations_unfinished'] == 1
+        assert not interrupted['observation_pair_invalid']
+    finally:
+        if process.poll() is None:
+            process.kill(); process.wait(timeout=5)
+
+
+def test_worker_start_is_not_completed_by_persistent_helper_or_state_result(tmp_path):
+    root = tmp_path / 'seed'
+    m.seed_fixture(root, epoch=1_700_000_000, empty=True)
+    for sample in [dict(event='phase_begin', at_ns=1),
+        dict(event='worker_started', observation_id='worker-1', at_ns=2),
+        dict(event='persistent_helper_finished', observation_id='worker-1', at_ns=3),
+        dict(event='observation_started', observation_id='state-1', operation='state_result', key_tag='k', at_ns=4),
+        dict(event='state_result', observation_id='state-1', key_tag='k', at_ns=4, elapsed_ns=1, exit_code=0),
+        dict(event='phase_end', at_ns=6)]:
+        m.append_probe(root, 'next', sample)
+    result = m.io_summary(root, 'next')
+    assert result['observations_unfinished'] == 0
+    assert result['worker_unconfirmed'] == 1 and not result['complete']
+
+
+def test_eligible_check_before_worker_entry_is_still_unconfirmed(tmp_path):
+    root = tmp_path / 'seed'
+    m.seed_fixture(root, epoch=1_700_000_000, empty=True)
+    for sample in [dict(event='phase_begin', at_ns=1),
+        dict(event='observation_started', observation_id='check-1', operation='state_check', key_tag='k', at_ns=2),
+        dict(event='state_check', observation_id='check-1', key_tag='k', at_ns=2, elapsed_ns=1,
+             exit_code=0, decision='eligible'), dict(event='phase_end', at_ns=4)]:
+        m.append_probe(root, 'next', sample)
+    result = m.io_summary(root, 'next')
+    assert result['observations_unfinished'] == result['worker_started'] == 0
+    assert result['worker_dispatch_unconfirmed'] == 1 and not result['complete']
+
+
+@pytest.mark.parametrize('phase', ['first', 'next'])
+@pytest.mark.parametrize('elapsed', [None, 25, 60])
+def test_unfinished_span_is_detected_after_all_seed_metadata(tmp_path, phase, elapsed):
+    root = tmp_path / 'seed'
+    m.seed_fixture(root, epoch=1_700_000_000, target_bytes=0)
+    m.append_probe(root, phase, dict(event='phase_begin', at_ns=1))
+    for index in range(61):
+        base = dict(observation_id=str(index), key_tag=str(index), at_ns=10+index*2)
+        m.append_probe(root, phase, dict(event='observation_started', operation='metadata', **base))
+        m.append_probe(root, phase, dict(event='metadata', elapsed_ns=1, exit_code=0, **base))
+    pending = dict(observation_id='pending', key_tag='pending-key', at_ns=200)
+    m.append_probe(root, phase, dict(event='observation_started', operation='state_result', **pending))
+    m.append_probe(root, phase, dict(event='phase_end', at_ns=250))
+    result = m.io_summary(root, phase)
+    assert result['candidate_count'] == 61
+    assert result['observations_unfinished'] == 1 and not result['complete']
+    if elapsed is not None:
+        m.append_probe(root, phase, dict(event='state_result', elapsed_ns=elapsed, exit_code=0, **pending))
+        result = m.io_summary(root, phase)
+        assert result['observations_unfinished'] == 0
+        assert result['complete'] is (elapsed == 25)
 
 
 def test_io_wrappers_refuse_uncovered_watcher_source(tmp_path, monkeypatch):

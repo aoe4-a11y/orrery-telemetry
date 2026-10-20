@@ -437,6 +437,8 @@ def summarize(records, *, deadline_seconds=45):
         invalid_sink = sum(r['event'] == 'sink_rejected' for r in records)
         if set(acks) & unconfirmed:
             raise MeasurementError('contradictory_sender_result')
+        # 送信中の中断では明示の結果marker自体が残らないことがある。
+        unconfirmed |= set(calls) - set(acks)
         latest = max((row['at_ns'] for row in records), default=0)
         observation_closed = bool(endings) and max(endings) == latest
         groups[phase] = dict(planned=plan['count'], attempted=len(calls), accepted=len(acks),
@@ -636,12 +638,20 @@ def instrument_python(args):
     metadata = target is not None and target.is_relative_to(root / 'signals') and target.suffix == '.signal'
     if not (state_call or metadata):
         os.execv(args.python, [args.python, *argv])
-    source = sys.stdin.read()
+    if state_call:
+        operation = 'state_check' if len(argv) == 5 else 'state_result'
+        key_tag = tag(argv[2] + ':' + argv[3])
+    else:
+        operation, key_tag = 'metadata', tag(target.parent.name + ':' + target.stem)
+    observation_id = str(uuid.uuid4())
+    started, code = time.monotonic_ns(), 0
+    append_probe(root, args.phase, dict(event='observation_started', observation_id=observation_id,
+        operation=operation, key_tag=key_tag, at_ns=started))
     namespace = {'__name__': '__main__', '__file__': '<watcher-inline>'}
     previous, sys.argv = sys.argv, argv
-    started, code = time.monotonic_ns(), 0
     meter = JsonIO(state)
     try:
+        source = sys.stdin.read()
         with meter:
             exec(compile(source, '<watcher-inline>', 'exec'), namespace)
     except SystemExit as error:
@@ -651,14 +661,10 @@ def instrument_python(args):
         raise
     finally:
         sys.argv = previous
-        if state_call:
-            operation = 'state_check' if len(argv) == 5 else 'state_result'
-            key_tag = tag(argv[2] + ':' + argv[3])
-        else:
-            operation, key_tag = 'metadata', tag(target.parent.name + ':' + target.stem)
         entry = namespace.get('entry') or {}
         reason = ('success' if entry.get('last_result') == 'success' else 'cooldown') if code == 1 else 'eligible' if code == 0 else 'error'
-        append_probe(root, args.phase, dict(event=operation, key_tag=key_tag, at_ns=started,
+        append_probe(root, args.phase, dict(event=operation, observation_id=observation_id,
+            key_tag=key_tag, at_ns=started,
             elapsed_ns=time.monotonic_ns()-started, exit_code=code, decision=reason, **meter.counts))
     return code
 
@@ -696,14 +702,38 @@ def io_summary(root, phase):
     starts = [r['at_ns'] for r in rows if r['event'] == 'phase_begin']
     ends = [r['at_ns'] for r in rows if r['event'] == 'phase_end']
     candidates = len({r['key_tag'] for r in rows if r['event'] == 'metadata'})
+    begun, finished, invalid = {}, {}, False
+    for row in rows:
+        if row['event'] not in ('observation_started', 'metadata', 'state_check', 'state_result'):
+            continue
+        observation_id = row.get('observation_id')
+        store = begun if row['event'] == 'observation_started' else finished
+        if not isinstance(observation_id, str) or not observation_id or observation_id in store:
+            invalid = True
+        else:
+            store[observation_id] = row
+    for observation_id, finish in finished.items():
+        begin = begun.get(observation_id)
+        if (begin is None or begin.get('operation') != finish['event']
+                or begin.get('key_tag') != finish.get('key_tag')
+                or begin['at_ns'] != finish['at_ns'] or finish.get('elapsed_ns', -1) < 0):
+            invalid = True
+    unfinished = len(set(begun) - set(finished))
+    workers = sum(r['event'] == 'worker_started' for r in rows)
+    # eligible判定からworkerの入口までの待ちも、worker終了の証拠ではない。
+    dispatches = {r['key_tag'] for r in rows
+                  if r['event'] == 'state_check' and r.get('decision') == 'eligible'}
     return dict(coverage='watcher-inline-state-and-metadata-only',
         candidate_count=candidates,
         excluded_success=sum(r['decision'] == 'success' for r in checks.values()),
         excluded_cooldown=sum(r['decision'] == 'cooldown' for r in checks.values()),
         excluded_confirmed_absent=0,  # この固定baselineには一括不在選別がない。
-        worker_started=sum(r['event'] == 'worker_started' for r in rows),
+        worker_started=workers, worker_unconfirmed=workers,
+        worker_dispatch_unconfirmed=len(dispatches),
+        observations_unfinished=unfinished, observation_pair_invalid=invalid,
         scan_elapsed_ns=ends[0]-starts[0] if len(starts) == len(ends) == 1 else None,
         complete=len(starts) == len(ends) == 1
+            and not (unfinished or invalid or workers or dispatches)
             and (phase != 'first' or candidates >= manifest['signal_count'])
             and starts[0] <= min(r['at_ns'] for r in rows)
             and ends[0] >= max(r['at_ns'] + r.get('elapsed_ns', 0) for r in rows)
@@ -779,7 +809,9 @@ def cli(argv=None):
             return instrument_python(args)
         elif args.command == 'io-worker':
             root, _ = seed_manifest(args.root)
-            append_probe(root, args.phase, dict(event='worker_started', at_ns=time.monotonic_ns()))
+            # この口ではpersistent helperの後に続く配送worker全体の終了は証明できない。
+            append_probe(root, args.phase, dict(event='worker_started',
+                observation_id=str(uuid.uuid4()), completion='unconfirmed', at_ns=time.monotonic_ns()))
             arguments = args.arguments[1:] if args.arguments[:1] == ['--'] else args.arguments
             helper = ROOT / 'bin/agentstack-persistent-deliver'
             os.execv(str(helper), [str(helper), *arguments])

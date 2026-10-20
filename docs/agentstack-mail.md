@@ -499,6 +499,8 @@ python3 scripts/measure_mail_notice.py analyze \
 同hostの単調時計によるcall→通知と、成功応答→通知のp50/p95/maxを別々に出します。
 通知が応答より先ならack差は負値のまま残します。成功応答時刻はDB commit時刻ではありません。
 attempted/accepted/not_attempted/unconfirmed、missing-at-deadline、late、duplicateも残します。
+unconfirmedは明示の未確認markerに加え、callだけが残り成功応答の無い送信も1件として数えます。
+送信途中の中断とmarkerの両方があっても重複して数えず、再送はしません。
 collectorの終了証拠がなければ観測未完了で、到達なしを0秒にしません。非0は遅延の退行だけでなく
 証拠不足も表すため、内訳を読んでください。raw MCP応答・本文・token・pane全文は保存しません。
 
@@ -522,8 +524,19 @@ AGENTSTACK_PERSISTENT_DELIVERへ設定します。wrapperは既存の製品helpe
 `io-mark --root ROOT --phase first --edge begin/end` で、全workerの完了を挟んでphaseを区切り、
 `io-summary --root ROOT --phase first` で候補・除外・worker・JSON read/write回数と論理byteを集計します。
 begin/endが揃わない場合や、記録済みhelperの終了がendを超える場合はcompleteになりません。
+inline観測は開始を実行前に残し、終了と同じIDで対応付けます。開始後の中断や終了の未記録は
+`observations_unfinished`、不整合な対応は `observation_pair_invalid` に残してincompleteとします。
 初回はseedの候補件数を観測したことも要求し、wrapperの設定漏れによる0件を完了としません。
 次scanは同じrootでphaseをnextにして作成・記録し、初回の結果と分離します。
+
+`io-worker` の口で分かるのはpersistent helperへ移る前の開始だけです。そのhelperの終了や
+後続のstate書込は、lease解放等を含む配送worker全体の終了証拠には読み替えません。
+現在はworker開始を観測したrunを `worker_unconfirmed` に数えてincompleteのまま残します。
+eligible判定後でworkerの入口をまだ観測していない場合も、
+`worker_dispatch_unconfirmed` に宛先/messageの組数を残してincompleteとします。
+operatorがendを記録しても解除されず、このrunのI/Oを完全な前後比較や削減の証拠に使えません。
+全inline観測が終了しworkerの未確認が無いrunだけがcompleteの候補です。
+latencyの採取・集計は別の観測なので、この制約から成功や失敗を推測しないでください。
 
 このI/O probeは固定baselineのinline helper用です。watcherのsource hashが変わった場合は
 `io_coverage_requires_new_helper_probe` で止め、新しい候補helperの観測範囲を整えてから比較します。
