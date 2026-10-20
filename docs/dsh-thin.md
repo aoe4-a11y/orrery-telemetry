@@ -12,6 +12,8 @@ install の opt-in は従来どおり `--enable-dsh`。同じ固定版でも新�
 
 通常の native tool はそのまま使えます。`orrery_tools.mjs` が native の tool 名・入力・実 cwd を、共通の #289 鍵読取 guard、登録、予約 hook へ渡します。判定の再実装や read/write/Mail だけの制限はありません。成功した編集の予約解放も既存 hook です。これは同一ユーザーの任意 code を隔離する sandbox ではありません。
 
+固定版の補助plugin `working-activity` は依存packageが不足して起動時に警告するため、生成設定で無効にします。通常の状態行と`esc to interrupt`による作業中の判定は維持し、依存のlockやruntimeの世代は変更しません。
+
 共通hookがexit 2で編集を拒否した場合は、公開のJSON理由またはstderr理由を先頭2000文字まで子へ返します。内部診断の形は除外し、他の非0は固定文、exit 0は公開の`systemMessage`だけを表示します。Hermesと同じ扱いです。
 
 `helper_model` は省略/`same` または同じ backend の正式 ID。候補は manifest の `models`（省略時は `model` 一件）で、別資格の route は推測しません。明示の helper は native subagent の agentOptions に投影し、fork は親継承の既定を保ちます。`effort` は明示した場合だけ設定します。
