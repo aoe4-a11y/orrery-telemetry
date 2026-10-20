@@ -2466,6 +2466,12 @@ install_payload() {
   else
     plan "skip hooks copy for --dashboard-only"
     plan "skip skills copy for --dashboard-only"
+    # Balance and native credential readers use the same internal reference.
+    plan "copy internal credential reader -> $HOOKS_DIR/llm_secret_reader.py"
+    if [[ "$DRY_RUN" != true ]]; then
+      mkdir -p "$HOOKS_DIR"
+      cp "$REPO_ROOT/hooks/llm_secret_reader.py" "$HOOKS_DIR/llm_secret_reader.py"
+    fi
   fi
   copy_core_tree "$REPO_ROOT/dashboard" "$DASHBOARD_DIR" "dashboard"
   plan "copy VERSION -> $INSTALL_DIR/VERSION"

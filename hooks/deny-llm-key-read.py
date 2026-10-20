@@ -161,6 +161,15 @@ def read_definitions(paths):
             if not isinstance(adapter, dict):
                 raise ValueError('invalid adapter')
             keychain = adapter.get('keychain')
+            credential_ref = adapter.get('credential_ref')
+            if credential_ref is not None:
+                if (not isinstance(credential_ref, dict) or credential_ref.get('store') != 'secret-service'
+                        or not isinstance(credential_ref.get('attributes'), dict)
+                        or not credential_ref['attributes']
+                        or not all(isinstance(k, str) and k and isinstance(v, str) and v
+                                   for k, v in credential_ref['attributes'].items())):
+                    raise ValueError('invalid credential reference')
+                refs.append(('secret-tool', credential_ref['attributes']))
             if keychain is not None:
                 if not isinstance(keychain, dict) or not isinstance(keychain.get('service'), str) or not keychain['service']:
                     raise ValueError('invalid credential reference')
@@ -260,8 +269,14 @@ def decide(payload):
         invocations = list(commands(text))
         forms = [form for words in invocations if (form := extraction(words))]
         refs, auth_commands = read_definitions(paths)
-        for words in commands(text, executables={auth[0] for auth in auth_commands}):
+        readers = {auth[3] for auth in auth_commands if len(auth) == 8 and auth[1:3] == ['-I', '-B']
+                   and Path(auth[3]).name == 'llm_secret_reader.py'}
+        for words in commands(text, executables={auth[0] for auth in auth_commands} | readers):
             if any(words[:len(auth)] == auth for auth in auth_commands):
+                return True
+            # Python flags are not part of the credential identity. Detect an
+            # ordinary alternate invocation of the selected internal reader.
+            if any(word in readers for word in words):
                 return True
         return any(same_key(form, ref) for form in forms for ref in refs)
     except Exception:

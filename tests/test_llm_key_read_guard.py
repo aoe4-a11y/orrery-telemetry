@@ -11,6 +11,32 @@ SH = ROOT / 'hooks/deny-llm-key-read.sh'
 PLUGIN = ROOT / 'integrations/codex_app/plugin/scripts/run-key-read-guard.sh'
 
 
+@pytest.mark.parametrize('command', [
+    'secret-tool lookup service fixture-service account fixture-account',
+    'secret-tool lookup service fixture-service',
+    'secret-tool lookup',
+    'python3 /fixture/llm_secret_reader.py --manifest /fixture/manifest.json --backend deepseek',
+    '/fixture/llm_secret_reader.py --manifest /fixture/manifest.json --backend deepseek',
+    "bash -c 'python3 /fixture/llm_secret_reader.py --backend strata --manifest /fixture/manifest.json'",
+])
+def test_secret_service_and_selected_reader_direct_extraction_denied(tmp_path, command):
+    e = env(tmp_path)
+    source = tmp_path / 'references.json'
+    source.write_text(json.dumps({'backends': {'deepseek': {
+        'credential_ref': {'store': 'secret-service', 'attributes': {'service': 'fixture-service', 'account': 'fixture-account'}},
+        'auth_command': ['python3', '-I', '-B', '/fixture/llm_secret_reader.py',
+                         '--manifest', '/fixture/manifest.json', '--backend', 'deepseek']}}}))
+    e['AGENTSTACK_LLM_KEY_DEFINITIONS'] = str(source)
+    denied = hook(command, e)
+    assert denied.returncode == 2 and denied.stdout == ''
+    assert 'fixture-service' not in denied.stderr
+    # Removing the reference changes the result, proving this is the selected
+    # credential boundary rather than an unrelated unconditional shell block.
+    source.write_text('{"backends":{}}')
+    assert hook(command, e).returncode == 0
+    assert hook('printf ordinary-work', e).returncode == 0
+
+
 def env(tmp_path):
     home = tmp_path / 'home'
     home.mkdir(exist_ok=True)

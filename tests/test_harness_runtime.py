@@ -6,6 +6,42 @@ import pytest
 from dashboard import harness_runtime as runtime, managed_catalog, server
 
 
+def test_ss_hermes_route_metadata_does_not_require_legacy_key_cmd():
+    from test_hermes_capabilities import HermesCapabilities
+    fixture = HermesCapabilities()
+    fixture.setUp()
+    try:
+        for profile in fixture.template['profiles'].values():
+            del profile['key_cmd']
+        assert fixture.load()['efforts'] == ['none', 'low', 'medium', 'high', 'max']
+        assert fixture.load()['default_effort'] is None
+    finally:
+        fixture.doCleanups()
+
+
+@pytest.mark.parametrize('with_ref,mode,expected', [(True, 'legacy', True), (False, 'legacy', False),
+                                               (True, 'global', False)])
+def test_linux_catalog_requires_explicit_ss_reference_without_looking_up_key(tmp_path, monkeypatch, with_ref, mode, expected):
+    manifest, config = tmp_path / 'manifest.json', tmp_path / 'config.json'
+    config.write_text('{}')
+    backend = {'model': 'fixture'}
+    if with_ref:
+        backend['credential_ref'] = {'store': 'secret-service', 'attributes': {'service': 'fixture'}}
+    manifest.write_text(json.dumps({'enabled': True, 'backends': {'deepseek': backend}}))
+    monkeypatch.setattr(managed_catalog.sys, 'platform', 'linux')
+    monkeypatch.setattr(managed_catalog, '__file__', str(tmp_path / 'managed_catalog.py'))
+    calls = []
+    def selection(*args):
+        calls.append(args)
+        return {'config_file': str(config)}
+    monkeypatch.setattr(managed_catalog, '_thin_selection', selection)
+    monkeypatch.setattr(managed_catalog, 'load_effort_capability', lambda *a, **k: {})
+    rows = managed_catalog.standard_catalog(str(manifest), mode=mode)
+    choices = rows[0]['models'][0]['harnesses']
+    assert all(row['available'] is expected for row in choices)
+    assert len(calls) == (2 if expected else 0)
+
+
 @pytest.mark.parametrize('program,command,expected', [
     ('dsh', '/fixed/node /fixed/node_modules/@deepseek-ai/dsh/lib/bin.js --profile x', True),
     ('dsh', '/fixed/node /fixed/mcp/server.js', False),
