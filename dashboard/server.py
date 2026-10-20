@@ -44,7 +44,7 @@ import urllib.request
 from urllib.parse import urlparse, parse_qs
 
 # Public dashboard compatibility generation (docs/tests read this source).
-API_GENERATION = 23
+API_GENERATION = 24
 # Mode admission is shared with hooks and operator/service entry points.
 import runpy as _runtime_runpy
 _MODE_API = _runtime_runpy.run_path(str(Path(__file__).resolve().parents[1] / 'bin/lib/runtime_client.py'))
@@ -59,7 +59,7 @@ if __name__ == '__main__':
 # `server.py` is both an executable script and an importable dashboard module
 # in the tests.  Support both import roots without coupling callers to cwd.
 try:
-    from dashboard import codex_models, mail_signals, provider_stalls, harness_runtime, harness_helpers, harness_context
+    from dashboard import codex_models, mail_signals, provider_stalls, harness_runtime, harness_helpers, harness_context, harness_activity
 except ModuleNotFoundError:  # direct `python dashboard/server.py`
     import codex_models
     import mail_signals
@@ -67,6 +67,7 @@ except ModuleNotFoundError:  # direct `python dashboard/server.py`
     import harness_runtime
     import harness_helpers
     import harness_context
+    import harness_activity
 
 try:
     from dashboard.providers.codex_app import CodexAppRuntimeProvider
@@ -6586,20 +6587,21 @@ _NATIVE_CONTEXT_CACHE = {}
 
 
 def _native_context_runtime(session, created, session_id, program):
-    """Native footer context only; hidden status stays unknown on each capture."""
+    """Native context/activity from one capture; missing evidence stays unknown."""
     generation = (program, _runtime_generation(created, session_id))
     now = time.monotonic()
     with _rt_lock:
         cached = _NATIVE_CONTEXT_CACHE.get(session)
         if cached and cached[1] == generation and now - cached[0] < _RT_TTL:
             return cached[2]
-    result = {'ctx_used': None, 'ctx_window': None}
+    result = {'ctx_used': None, 'ctx_window': None, 'act_state': None}
     if _valid(session):
         try:
             capture = _tmux_run(['capture-pane', '-p', '-J', '-t', '=' + session, '-S', '-45'],
                                 capture_output=True, text=True, timeout=3)
             if capture.returncode == 0:
                 result = harness_context.parse_context(capture.stdout, program)
+                result['act_state'] = harness_activity.parse_activity(capture.stdout, program)
         except (OSError, subprocess.SubprocessError):
             pass
     with _rt_lock:
