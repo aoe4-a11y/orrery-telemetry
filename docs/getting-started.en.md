@@ -94,6 +94,8 @@ This standalone example uses ten round trips. [Workshop shiritori](https://githu
 
 If you start from Codex, make the child a Claude Code agent. Either way, the point is to see the game go round between agents from two vendors.
 
+The same shiritori check also works with DeepSeek or Local children. In cockpit New Agent, select a [configured provider](install.en.md) (DeepSeek or Local) and Harness (dsh or Hermes), select the Claude Code or Codex agent you will play with as the parent under Lineage, and create the child for three round trips. Have the parent start by sending the child “Play three shiritori round trips over ORRERY Mail, putting each turn’s word in the subject of each Mail” using ORRERY Mail `send_message`. Success looks the same: lines flow back and forth in NETWORK, and the last instruction on both DECK cards updates to the latest Mail subject (that turn’s word). Check dsh and Hermes separately; success with one does not verify the other.
+
 **Success**: lines keep flowing back and forth between the two agents in NETWORK, and the "last instruction" on both DECK cards updates word by word. On the author's machine each turn took about five to six seconds per agent ([post with video](https://x.com/i/status/2095650715008168255), played at double speed).
 
 Once you are here, just use your agents as usual. See [Installation](install.en.md) and [Configuration](configuration.en.md) for settings, and [Delegation and child agents](delegation.en.md) for how children work.
