@@ -215,6 +215,7 @@ def generate(document):
     # Disable the bundled file/env source and insert our credentials service.
     rows = [
         {'id': 'credentials', 'disabled': True},
+        {'id': 'working-activity', 'disabled': True},
         {'id': 'llm-deepseek', 'inject': ['llm', 'credentials'], 'config': provider},
         {'id': 'agent-default-model', 'config': route},
         {'id': 'dsh-tui', 'config': tui},

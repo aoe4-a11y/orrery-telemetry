@@ -82,7 +82,8 @@ class ThinTests(unittest.TestCase):
         self.assertEqual(plan['argv'][:2], [str(self.node), str(self.runtime / 'node_modules/@deepseek-ai/dsh/lib/bin.js')])
         self.assertEqual(set(plan['env']), {'DSH_HOME', 'DSH_TUI_DATA_DIR', 'DSH_TUI_LANG', 'AGENTSTACK_LLM_KEY_FILES', 'AGENTSTACK_LLM_KEY_DEFINITIONS'})
         rows = self.rows(plan)
-        self.assertEqual([row for row in rows if row.get('disabled')], [{'id': 'credentials', 'disabled': True}])
+        self.assertEqual([row for row in rows if row.get('disabled')], [
+            {'id': 'credentials', 'disabled': True}, {'id': 'working-activity', 'disabled': True}])
         credentials = next(r for row in rows for r in row.get('insert', []) if r['id'] == 'orrery-keychain-credentials')
         self.assertEqual(credentials['name'], str(self.integration / 'keychain_credentials.mjs'))
         self.assertIn('credentials', next(row for row in rows if row.get('id') == 'llm-deepseek')['inject'])

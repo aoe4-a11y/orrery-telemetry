@@ -109,7 +109,7 @@ test('native CLI loads memory credentials; absent/disabled/import/lookup cannot 
   }
 });
 
-for (const mode of ['ok', 'missing', 'lookup-failure']) test(`generated base profile HTTP credential path: ${mode}`, {skip: nativeSkip}, async () => {
+for (const mode of ['ok', 'missing', 'lookup-failure', 'working-enabled']) test(`generated base profile HTTP credential path: ${mode}`, {skip: nativeSkip}, async () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'dsh-generated-key-'));
   const save = (name, data) => {
     const file = path.join(root, name); fs.mkdirSync(path.dirname(file), {recursive: true});
@@ -158,7 +158,8 @@ export async function apply(ctx, config) {await install(ctx,config,()=>new Promi
     const entries = rows.flatMap(row => row.insert ?? [row]);
     const keyRow = entries.find(row => row.name === path.resolve('integrations/dsh/keychain_credentials.mjs'));
     assert.ok(keyRow); keyRow.name = mode === 'missing' ? path.join(root, 'missing.mjs') : wrapper;
-    save('generated.patch.json', rows);
+    // Negative control: re-enable only the entry with broken upstream deps.
+    save('generated.patch.json', mode === 'working-enabled' ? rows.filter(row => row.id !== 'working-activity') : rows);
     const tuiModules = path.join(runtime, 'node_modules/@deepseek-harness-tui/dsh-tui/lib/types');
     const probe = save('http-probe.mjs', `import fs from 'node:fs';
 import {resolveStartupLang} from ${JSON.stringify(pathToFileURL(path.join(tuiModules, 'i18n.js')).href)};
@@ -181,9 +182,17 @@ export function apply(ctx) {ctx.get('appReady').onReady(async()=>{
     let output = ''; child.stdout.on('data', x => {output += x;}); child.stderr.on('data', x => {output += x;});
     const [exit] = await once(child, 'close');
     assert.equal(exit, 0, output);
+    if (mode === 'working-enabled') {
+      assert.match(output, /working-activity[\s\S]*failed to import/);
+      assert.match(output, /ERR_MODULE_NOT_FOUND[\s\S]*@deepseek-ai\/schemastery/);
+      assert.match(output, /did not activate/);
+    } else if (mode === 'ok') {
+      assert.equal(output.includes('did not activate'), false, output);
+      assert.equal(output.includes('failed to import'), false, output);
+    }
     const evidence = JSON.parse(fs.readFileSync(path.join(root, 'http-result.json'), 'utf8'));
     assert.equal(evidence.language, 'en'); assert.equal(evidence.wizard, false);
-    if (mode === 'ok') {
+    if (mode === 'ok' || mode === 'working-enabled') {
       assert.equal(evidence.finished, true, JSON.stringify(evidence) + output);
       assert.equal(received.length, 1);
       assert.equal(received[0].method, 'POST'); assert.equal(received[0].url, '/anthropic/v1/messages');
@@ -197,7 +206,9 @@ export function apply(ctx) {ctx.get('appReady').onReady(async()=>{
     assert.equal(fs.readFileSync(credentials, 'utf8'), initialCredentials);
     assert.equal(/MEMORY_FIXTURE_KEY|SELECTED_ENV_CANARY|FILE_CANARY/.test(output), false);
     console.log(JSON.stringify({mode, generated_profile: true, native_base: true, local_http_requests: received.length,
-      memory_header: mode === 'ok', lookup_count: mode === 'missing' ? 0 : 1, language: evidence.language, wizard: evidence.wizard}));
+      memory_header: mode === 'ok' || mode === 'working-enabled', lookup_count: mode === 'missing' ? 0 : 1,
+      language: evidence.language, wizard: evidence.wizard, startup_warning: output.includes('did not activate'),
+      startup_head: output.split('\n').filter(Boolean).slice(0, 3)}));
   } finally {
     server.closeAllConnections(); await new Promise(resolve => server.close(resolve));
     fs.rmSync(root, {recursive: true, force: true});
