@@ -2300,6 +2300,7 @@ RUNTIME_SCHEMA_SOURCE="$REPO_ROOT/packages/agentstack_mail/src/agentstack_mail/s
 RUNTIME_FIXTURE_SOURCE="$REPO_ROOT/packages/agentstack_mail/fixtures/global-server-s2a.json"
 RUNTIME_CLIENT_CONTRACT_SOURCES=(
   "$REPO_ROOT/bin/lib/instruction_blocks.py"
+  "$REPO_ROOT/bin/lib/harness_instructions.md"
   "$REPO_ROOT/bin/lib/instruction_contract.json"
   "$REPO_ROOT/bin/lib/instruction_templates.json"
   "$REPO_ROOT/scripts/codex_plugin_trust.py"
