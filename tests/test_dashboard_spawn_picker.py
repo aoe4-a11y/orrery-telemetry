@@ -89,3 +89,32 @@ console.log(JSON.stringify(buildSpawnPayload()));
     assert result['effort']=='high' and 'harness' not in result and 'helper_model' not in result
     assert ('claude_chrome' in result) == (provider=='claude')
     assert ('claude_chrome_device' in result) == (provider=='claude')
+
+
+def test_model_own_default_is_respected_independently_of_level_source():
+    result=run('''
+spmSelectedProvider='codex';spmSelectedHarness='codex-cli';
+spmProviders=normalizeSpawnProviders({providers:[{id:'codex',program:'codex-cli',
+  models:[{id:'fixture',effort_default:null}],efforts:['low','high'],effort_default:'high'}]});
+const p=spmProviders[0],m=p.models[0];
+const initial=buildSpawnPayload();
+delete m.effort_default;const inherited=buildSpawnPayload();
+m.effort_default='low';const concrete=buildSpawnPayload();
+m.effort_default=null;spmSelectedEffort='low';spmEffortExplicit=true;const explicit=buildSpawnPayload();
+spmEffortExplicit=false;p.modelEfforts={fixture:['low','high']};p.modelEffortDefaults={fixture:'high'};
+const mapped=buildSpawnPayload();
+p.capabilities.effort_required=true;const required=spawnProviderRequirementsMissing();const requiredPayload=buildSpawnPayload();
+spmEffortExplicit=true;const chosen=spawnProviderRequirementsMissing();const chosenPayload=buildSpawnPayload();
+p.capabilities.effort_required=false;spmEffortExplicit=false;
+m.harnesses=[{id:'codex-cli',available:true,efforts:['low','high'],default_effort:'high'}];
+const harness=buildSpawnPayload();
+console.log(JSON.stringify({initial,inherited,concrete,explicit,mapped,required,requiredPayload,chosen,chosenPayload,harness}));
+''')
+    for name in ('initial','mapped','requiredPayload'):
+        assert 'effort' not in result[name]
+    assert result['inherited']['effort']=='high'
+    assert result['concrete']['effort']=='low'
+    assert result['explicit']['effort']=='low'
+    assert result['required']=='select an effort for this provider'
+    assert result['chosen']=='' and result['chosenPayload']['effort']=='low'
+    assert result['harness']['effort']=='high'

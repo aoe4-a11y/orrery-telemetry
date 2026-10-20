@@ -38348,9 +38348,11 @@ function renderSpawnHarnesses(provider){
 function spawnEffortInfo(provider){
   const model=spawnSelectedModel(provider),harness=spawnSelectedHarness(provider);
   if(harness&&Object.hasOwn(harness,'efforts'))return {levels:harness.efforts,fallback:harness.default_effort,source:harness.effort_source};
-  if(model&&Object.hasOwn(model,'efforts'))return {levels:model.efforts,fallback:Object.hasOwn(model,'effort_default')?model.effort_default:provider.defaultEffort};
-  if(provider&&provider.modelEfforts)return {levels:provider.modelEfforts[spmSelectedModel],fallback:provider.modelEffortDefaults[spmSelectedModel]};
-  return {levels:provider&&provider.efforts,fallback:provider&&provider.defaultEffort};
+  const ownDefault=model&&Object.hasOwn(model,'effort_default');
+  const modelDefault=ownDefault?model.effort_default:provider&&provider.defaultEffort;
+  if(model&&Object.hasOwn(model,'efforts'))return {levels:model.efforts,fallback:modelDefault};
+  if(provider&&provider.modelEfforts)return {levels:provider.modelEfforts[spmSelectedModel],fallback:ownDefault?model.effort_default:provider.modelEffortDefaults[spmSelectedModel]};
+  return {levels:provider&&provider.efforts,fallback:modelDefault};
 }
 function resolveSpawnEffort(levels,value,fallback){
   const allowed=Array.isArray(levels)?levels:[];
