@@ -52,7 +52,7 @@ cockpit の **Your first flight → help map → Full tour** を順に試しま�
 
 Telemetry の header の `HELP MAP`（NETWORK では `SETTINGS` の隣）を押すと、いま表示されている DECK / NETWORK の操作に注記が付きます。agent の詳細パネルでは、操作列の `HELP MAP` を押すと、そのパネルの操作に注記が付きます。cockpit 内に埋め込まれた Telemetry でも同じ操作で使えます。注記が収まらない場合は凡例で表示し、`Esc` または `Close` で閉じられます。
 
-Full tour は delegate skill（Claude Code: `/delegate`、Codex: `$delegate`）で子を1体作り、ORRERY Mail でしりとりを3往復し、端末の配置、Telemetry の EXIT / RESUME、NETWORK / REPLAY を試す案内です。画面の説明に従って操作すると進みます。DeepSeek・Local の子でも、dsh・Hermes それぞれで同じ3往復を確認できます（[確認手順](docs/getting-started.md#5-しりとりで通しの確認をする)）。[現在のクイックスタート](https://github.com/gyroid-eth/orrery/blob/master/README.md#クイックスタート)と [Full tour](https://github.com/gyroid-eth/orrery/blob/master/docs/FULL_TOUR.md)を参照してください。
+Full tour は delegate skill（Claude Code: `/delegate`、Codex: `$delegate`）で子を1体作り、ORRERY Mail でしりとりを3往復し、端末の配置、Telemetry の EXIT / RESUME、NETWORK / REPLAY を試す案内です。画面の説明に従って操作すると進みます。DeepSeek・Local の子でも、dsh・Hermes それぞれで同じ3往復を手動で確認できます（[確認手順](docs/getting-started.md#5-しりとりで通しの確認をする)）。[現在のクイックスタート](https://github.com/gyroid-eth/orrery/blob/master/README.md#クイックスタート)と [Full tour](https://github.com/gyroid-eth/orrery/blob/master/docs/FULL_TOUR.md)を参照してください。
 
 端末で仕事をするのは cockpit、チームの状態や履歴を見るのが Telemetry です。画面内のガイドを入口にし、詳しい参照は[目的別索引](docs/README.md)から開けます。
 
