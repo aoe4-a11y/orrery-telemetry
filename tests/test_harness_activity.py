@@ -219,3 +219,41 @@ def test_long_approval_with_only_its_operation_footer_is_unknown(case):
     # The same partial evidence must suppress work even after the title has
     # disappeared from the capture itself, not merely from the title window.
     assert parse_activity('\n'.join(long_panel.splitlines()[1:]), 'dsh') is None
+
+
+@pytest.mark.parametrize('file,state', [
+    ('hermes-question-real-footer.txt', 'question'),
+    ('hermes-approval-real-footer.txt', 'ask'),
+    ('hermes-long-approval-24-footer.txt', 'ask'),
+    ('hermes-long-approval-60-footer.txt', 'ask'),
+])
+def test_real_hermes_modal_without_its_offscreen_title(file, state):
+    # Exact captured footer rows; neither the panel title nor command echo is
+    # needed when the current modal input and matching operation are visible.
+    text = (_CAPTURES / file).read_text()
+    assert parse_activity(text, 'hermes') == state
+    rows = text.splitlines()
+    assert parse_activity('\n'.join(rows[1:]), 'hermes') is None  # icon without hint
+    assert parse_activity(rows[0], 'hermes') is None  # hint without frame
+    top_rule = rows[-3]
+    assert parse_activity(text.replace(top_rule, top_rule[:-1], 1), 'hermes') is None
+    if state == 'ask':
+        assert parse_activity(text.replace('⚠ ❯', '? ❯'), 'hermes') is None
+    else:
+        assert parse_activity(text.replace('? ❯', '⚠ ❯'), 'hermes') is None
+
+
+@pytest.mark.parametrize('prompt,hint,state', [
+    ('⚠ ❯', '↑/↓ to select, Enter to confirm', 'ask'),
+    ('? ❯', '↑/↓ to select, Enter to lock, Tab next question', 'question'),
+    ('✎ ❯', 'type your answer and press Enter', 'question'),
+])
+def test_hermes_modal_needs_matching_controls_even_without_a_title(prompt, hint, state):
+    text = '\n'.join([hint, '─' * 80, prompt, '─' * 80])
+    assert parse_activity(text, 'hermes') == state
+    # Slash confirmation shares ⚠, but its different operation hint must not
+    # become approval just because the state icon happens to match.
+    changed = text.replace(hint, 'type 1/2/3, or ↑/↓ to select, Enter to confirm')
+    assert parse_activity(changed, 'hermes') is None
+    for ordinary, expected in [('fixture-profile ❯', 'wait'), ('☤ ❯', 'work')]:
+        assert parse_activity(text.replace(prompt, ordinary), 'hermes') == expected

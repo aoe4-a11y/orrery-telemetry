@@ -8,13 +8,16 @@ no additional provider endpoint or credential lookup in these readers.
 
 API 24 observes native activity from the same captured pane as context.
 `dashboard.harness_activity.parse_activity(text, program)` returns `work`,
-`question`, `ask` or `wait` only from supported current controls. A question or approval
-needs both its panel title and operation hint near the bottom. Hermes also
-requires the current modal prompt (`⚠` for approval, `?`/`✎` for questions).
+`question`, `ask` or `wait` only from supported current controls. dsh questions
+and approvals need both their panel title and operation hint near the bottom.
+Hermes instead pairs the current modal prompt (`⚠` for approval, `?`/`✎` for
+questions) with the matching operation hint. A long command can push its title
+offscreen without hiding those controls; that still reports `ask`/`question`.
+The prompt icon alone or hint alone is insufficient.
 dsh hides the ordinary composer during a modal. A visible ordinary input frame
 therefore identifies panel-like text above it as transcript, not a current
 modal. Without that contradictory frame, a modal takes priority over the generic
-interrupt hint. A readable operation hint with a missing title stays unknown.
+interrupt hint. A dsh operation hint with a missing title stays unknown.
 The context parser itself does not infer activity.
 
 Supported formats are dsh-tui 0.16.1's English/Chinese approval and question
@@ -45,8 +48,10 @@ The input shapes are observed in real idle/work/resume pane captures and
 defined by Hermes `cli_tui_mixin.py:272–346,2143–2161` and dsh
 `components/PromptInput.js:59,3826–3841` / `screens/StatusLine.js:370–376`.
 Tests keep unmodified footer excerpts, excluding the surrounding private
-transcript. Question/approval controls are checked against pinned source
-formatters; live question/approval captures are not part of this evidence.
+transcript. Hermes questions, short approvals and long approvals (24- and
+60-row panes) also use real capture footer fixtures. dsh question/approval
+controls are checked against pinned source formatters; real dsh modal captures
+are not part of this evidence.
 
 ## Context
 

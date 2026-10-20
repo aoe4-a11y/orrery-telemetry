@@ -78,8 +78,9 @@ def _input_activity(lines, program):
 def parse_activity(text, program):
     """Return work/question/ask/wait or None; absence never implies idle or death.
 
-    A modal needs both its title and a current operation footer. The footer
-    must be near the bottom, not just anywhere in the captured transcript.
+    dsh needs its title and a current operation footer. Hermes instead pairs
+    its current modal prompt with the operation footer, even if a long command
+    pushes the title offscreen. The footer must be near the bottom.
     Native turns remain working while awaiting a modal. A visible ordinary
     composer contradicts a modal: dsh hides it; Hermes changes its prompt icon.
     """
@@ -124,9 +125,9 @@ def parse_activity(text, program):
             return 'work'
     else:
         prompt = _hermes_prompt(lines) or ''
-        if _HERMES_APPROVAL_PROMPT.fullmatch(prompt) and modal(_HERMES_APPROVAL, _HERMES_CONFIRM):
+        if _HERMES_APPROVAL_PROMPT.fullmatch(prompt) and next(operations(_HERMES_CONFIRM), None) is not None:
             return 'ask'
-        if _HERMES_QUESTION_PROMPT.fullmatch(prompt) and modal(_HERMES_QUESTION, _HERMES_ANSWER):
+        if _HERMES_QUESTION_PROMPT.fullmatch(prompt) and next(operations(_HERMES_ANSWER), None) is not None:
             return 'question'
         if any(_HERMES_APPROVAL.fullmatch(row) or _HERMES_QUESTION.fullmatch(row) for row in titles):
             return None
