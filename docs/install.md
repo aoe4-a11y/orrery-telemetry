@@ -16,7 +16,7 @@ Nodeの絶対pathは `AGENTSTACK_DSH_NODE` としてenv.shに保存され、通�
 
 `--disable-dsh` / `--disable-hermes` は選択を無効化し、導入済みfileは保持します。通常のuninstallは所有receiptに記録したruntime世代とadapterを削除し、`harnesses/<harness>/profiles` の記憶・skillsは保持します。既存の手動 `hermes-managed` / Hermes homeは読まず触れず、外部Node、提供したcacheも保持します。鍵やログインは導入/移行しません。各harnessの `current.json` がruntimeの絶対参照を記録します。backend URL・model・Keychain service/accountは別途利用者が設定し、起動前に静的に検査します。導入のみでcatalogを利用可にはしません。
 
-設定後に catalog の利用可否を確認し、[cockpit の New Agent / Harness / Lineage から Mail を往復](getting-started.md#5-しりとりで通しの確認をする)させます。同梱 dashboard の NEW AGENT は harness を送らないため、DeepSeek / Local の子の起動には使えません。画面を使わない起動の詳細は [API reference](api.md) を参照してください。catalog の候補表示は、資格・接続・tool・Mail の成功を確かめる試験ではありません。
+設定後に catalog の利用可否を確認し、[cockpit の New Agent / Harness / Lineage から Mail を往復](getting-started.md#5-しりとりで通しの確認をする)させます。同梱 dashboard の NEW AGENT でも、catalog で available な DeepSeek / Local の model と Harness（dsh または Hermes）を選べます。画面を使わない起動の詳細は [API reference](api.md) を参照してください。catalog の候補表示は、資格・接続・tool・Mail の成功を確かめる試験ではありません。
 
 Hermes の子ごとの独立した記憶は実装中で、今の固定版では backend ごとの profile を共有します。会話の resume と記憶の分離は別の機能です。共通 Telegram 入口は設計中、Local の手動 effort は実 Local server での受け入れ前です（[現在の制限](managed-catalog.md#現在の制限)）。
 

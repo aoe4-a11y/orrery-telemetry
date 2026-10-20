@@ -25,7 +25,7 @@ runtime の任意導入は `install.sh --enable-dsh --dsh-node /absolute/node` /
 
 provider ID は deepseek/strata、harness ID は dsh/hermes。manifest の同じ backend の正式 model を主と補助の候補に使い、generator の対応能力に従って公開します。未 opt-in は空配列、legacy 以外は unsupported_mode、Mac 以外は unsupported_platform です。私有 URL・account・実行 path を公開しません。
 
-設定が整って catalog に並んでも、起動や作業の成功は別に確かめます。Telemetry 同梱 NEW AGENT は harness を送らないため、DeepSeek / Local の子を起動できません。cockpit を追加した環境の New Agent / Harness / Lineage と Mail の[通し確認](getting-started.md#5-しりとりで通しの確認をする)を参照してください。画面を使わない起動には [API reference](api.md) の provider・model・harness・親・認証の契約を使います。
+設定が整って catalog に並んでも、起動や作業の成功は別に確かめます。Telemetry 同梱 NEW AGENT でも、catalog で available な DeepSeek / Local の model と Harness（dsh または Hermes）を選べます。cockpit を追加した環境の New Agent / Harness / Lineage と Mail の[通し確認](getting-started.md#5-しりとりで通しの確認をする)を参照してください。画面を使わない起動には [API reference](api.md) の provider・model・harness・親・認証の契約を使います。
 
 ## effort の能力と既定
 

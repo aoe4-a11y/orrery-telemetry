@@ -113,7 +113,7 @@ Codex から始めるなら child は Claude Code にします。どちらから
 
 DeepSeek・Local の子でも、同じしりとりで通しの確認ができます。この確認は、設定済みの provider と harness を持つ cockpit を追加した環境向けです。cockpit の New Agent で[設定済みの provider](install.md)（DeepSeek または Local）と Harness（dsh または Hermes）を選び、Lineage で相手にする Claude Code または Codex の agent を親に選んで子を立て、3往復します。
 
-Telemetry 単独で入れた場合、同梱 dashboard の NEW AGENT は provider と model を catalog から並べますが harness を送らないため、そこからは起動できません。画面を使わずに立てる場合は [API reference](api.md) の `POST /api/spawn` を、親（parent または standalone）と認証を含む契約どおりに使い、`harness` を必ず指定します。
+Telemetry 単独で入れた場合も、同梱 dashboard の NEW AGENT で catalog が available と示す provider・model と Harness（dsh または Hermes）を選べます。画面を使わずに立てる場合は [API reference](api.md) の `POST /api/spawn` を、親（parent または standalone）と認証を含む契約どおりに使い、`harness` を必ず指定します。
 
 親から ORRERY Mail の `send_message` で「ORRERY Mail でしりとりを3往復し、各 Mail の件名にそのターンの単語を入れて」と子に頼んで始めます。成功の見え方は同じで、NETWORK に往復の線が流れ、DECK の両カードの最後の指示が最新の Mail の件名（そのターンの単語）に更新されます。dsh・Hermes はそれぞれ確認してください。片方だけの成功では、もう片方の確認にはなりません。
 
