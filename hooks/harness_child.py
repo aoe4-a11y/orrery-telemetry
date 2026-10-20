@@ -10,6 +10,7 @@ import json
 import os
 from pathlib import Path
 import re
+import runpy
 import subprocess
 import sys
 import time
@@ -205,6 +206,11 @@ def prepare_resume(runtime_dir, name, project_key=None):
     previous = read(state_dir / 'launch.json')
     document.setdefault('native_profile_env', {key: previous.get('env', {}).get(key)
         for key in ('DSH_HOME', 'HERMES_HOME') if key in previous.get('env', {})})
+    if document['program'] == 'hermes':
+        # Use the generator's HOME/pin policy before rewriting the saved prompt,
+        # Mail configuration, instructions or input for this attempt.
+        generator = runpy.run_path(str(config_generator(ROOT, 'hermes')))
+        generator['child_home'](document)
     prompt = state_dir / 'resume-prompt.txt'
     child_resume._atomic_bytes(prompt, b'')
     parent = state.get('parent_agent')

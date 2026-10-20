@@ -152,7 +152,7 @@ def _validate(document):
     return {'provider': provider, 'model': model, 'helper_model': model if helper == 'same' else helper,
             'route': route, 'source': str(source),
             'root': str(root), 'executable': str(executable), 'python': str(python),
-            'profile': str(root / 'profiles' / backend), 'template_file': str(template_file),
+            'profiles_root': str((root / 'profiles').resolve()), 'template_file': str(template_file),
             'credential_files': [str(template_file), *([str(Path(spec['template']).resolve())] if spec.get('template') else [])]}
 
 
@@ -233,17 +233,47 @@ def _personality_prompt(existing, source):
     return str(value or '').strip()
 
 
+def child_home(document, facts=None):
+    """Check this identity's persistent HOME before any writes, never in catalog.
+
+    The profiles root may be the installer's generation-external symlink, but
+    child namespaces must not redirect into another HOME.
+    """
+    facts = validate_input(document) if facts is None else facts
+    name, project = document.get('agent_name'), document.get('project_key')
+    if (not isinstance(name, str) or not re.fullmatch(r'[A-Za-z][A-Za-z0-9_-]*', name)
+            or not isinstance(project, str) or not project.strip()):
+        raise ValueError('invalid_input')
+    profiles = Path(facts['profiles_root'])
+    profile = profiles / 'children' / hashlib.sha256(project.encode()).hexdigest() / name
+    if profile.resolve() != profile:
+        raise ValueError('native_resume_profile_changed')
+    resume = document.get('resume_session_id') is not None
+    pin = document.get('native_profile_env')
+    if resume and (pin is None or pin == {}):
+        raise ValueError('native_resume_profile_missing')
+    if pin is not None:
+        if (not isinstance(pin, dict) or set(pin) != {'HERMES_HOME'}
+                or not isinstance(pin['HERMES_HOME'], str) or not Path(pin['HERMES_HOME']).is_absolute()):
+            raise ValueError('native_resume_profile_changed')
+        pinned = Path(pin['HERMES_HOME']).resolve()
+        if pinned == profiles / document['backend_id']:
+            raise ValueError('native_resume_legacy_profile')
+        if pinned != profile:
+            raise ValueError('native_resume_profile_changed')
+    if resume and (not profile.is_dir() or not os.access(profile, os.R_OK | os.X_OK)):
+        raise ValueError('native_resume_home_missing')
+    if resume and (not (profile / 'state.db').is_file() or not os.access(profile / 'state.db', os.R_OK)):
+        raise ValueError('native_resume_history_missing')
+    return profile
+
+
 def generate(document):
     facts = validate_input(document)
-    product, profile = Path(document['product_root']).resolve(), Path(facts['profile'])
-    pin = document.get('native_profile_env')
-    if pin is not None and (not isinstance(pin, dict) or set(pin) != {'HERMES_HOME'}
-                            or not isinstance(pin['HERMES_HOME'], str)
-                            or Path(pin['HERMES_HOME']).resolve() != profile.resolve()):
-        raise ValueError('native_resume_profile_changed')
+    product, profile = Path(document['product_root']).resolve(), child_home(document, facts)
     state, cwd = Path(document['state_dir']).resolve(), Path(document['cwd']).resolve()
     # A private config slug keeps old named/custom credential pools and endpoint
-    # aliases out of this selection, while the memory profile remains shared.
+    # aliases out of this selection. The persistent HOME belongs to one child.
     native_provider = 'orrery-' + document['backend_id'] + '-' + hashlib.sha256(str(state).encode()).hexdigest()[:24]
     if not re.fullmatch(r'[A-Za-z][A-Za-z0-9_-]*', document['agent_name']) or not cwd.is_dir():
         raise ValueError('invalid_input')
@@ -364,7 +394,9 @@ def main():
         allowed = {'unknown_backend', 'model_mismatch', 'invalid_effort', 'builtin_provider_collision',
                    'invalid_runtime', 'invalid_route', 'invalid_input', 'invalid_telemetry_config', 'unsupported_mcp_selection',
                    'inherited_mcp_conflict', 'owned_link_conflict', 'invalid_helper_model',
-                   'invalid_resume_session_id', 'native_resume_profile_changed', 'native_provider_conflict'}
+                   'invalid_resume_session_id', 'native_resume_profile_changed', 'native_provider_conflict',
+                   'native_resume_profile_missing', 'native_resume_legacy_profile', 'native_resume_home_missing',
+                   'native_resume_history_missing'}
         reason = str(error) if str(error) in allowed else 'invalid_input'
         print('HERMES_THIN_CONFIG_ERROR=' + reason, file=sys.stderr)
         raise SystemExit(1)
