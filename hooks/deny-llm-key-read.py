@@ -119,21 +119,18 @@ def extraction(words):
     if name == 'secret-tool' and len(words) > 1 and words[1] in {'lookup', 'search'}:
         args = words[2:]
         if words[1] == 'search':
-            # Search returns secret values too. Consume options only between
-            # pairs, never an attribute value that resembles an option.
+            # GOption removes options anywhere before --, before secret-tool
+            # forms attribute/value pairs. Only tokens after -- are literal.
             selectors, options = [], True
-            while args:
-                if options and args[0] in {'--all', '--unlock'}:
-                    args = args[1:]
-                elif options and args[0] == '--':
-                    options, args = False, args[1:]
+            for arg in args:
+                if options and arg in {'--all', '--unlock'}:
+                    continue
+                elif options and arg == '--':
+                    options = False
                 else:
-                    if options and args[0].startswith('-'):
+                    if options and arg.startswith('-'):
                         raise ValueError('unknown secret search option')
-                    if len(args) < 2:
-                        raise ValueError('incomplete secret selector')
-                    selectors.extend(args[:2])
-                    args = args[2:]
+                    selectors.append(arg)
             args = selectors
         if len(args) % 2:
             raise ValueError('incomplete secret selector')

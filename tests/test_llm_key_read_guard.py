@@ -18,6 +18,7 @@ PLUGIN = ROOT / 'integrations/codex_app/plugin/scripts/run-key-read-guard.sh'
     'secret-tool search service fixture-service account fixture-account',
     'secret-tool search --all --unlock account fixture-account service fixture-service',
     'secret-tool search account fixture-account --all --unlock service fixture-service',
+    'secret-tool search service --all fixture-service --unlock account fixture-account',
     'secret-tool search --unlock --all -- service fixture-service',
     'secret-tool search --all account fixture-account',
     'secret-tool search --all',
@@ -125,10 +126,32 @@ def test_r3_auth_argv_and_wsl_selector_share_the_guard(tmp_path):
     assert hook('secret-tool search service fixture-local', e).returncode == 2
     assert hook('secret-tool search --all service unrelated', e).returncode == 0
     assert hook('secret-tool search --unlock service fixture-local account unrelated', e).returncode == 0
-    assert hook('secret-tool search service fixture-local account --all', e).returncode == 0
+    assert hook('secret-tool search service fixture-local account --all', e).returncode == 2
+    assert hook('secret-tool search -- service fixture-local account --all', e).returncode == 0
     assert hook("grep 'secret-tool search --all' guide.md", e).returncode == 0
     assert hook("printf '%s' 'secret-tool search --all'", e).returncode == 0
     assert hook('grep auth_command local.toml', e).returncode == 0
+
+
+@pytest.mark.parametrize('command, expected', [
+    ('secret-tool search service --all fixture-service --unlock account fixture-account', 2),
+    ('secret-tool search service --all unrelated --unlock account fixture-account', 0),
+    ('secret-tool search -- service --all fixture-service --unlock account fixture-account', 0),
+    ('secret-tool search -- service fixture-service account --all', 0),
+    ('secret-tool search service fixture-service account --all', 2),
+    ('secret-tool search service --unknown fixture-service account fixture-account', 2),
+])
+def test_search_options_are_removed_before_forming_selectors(tmp_path, command, expected):
+    e = env(tmp_path)
+    source = tmp_path / 'references.json'
+    source.write_text(json.dumps({'backends': {'fixture': {'credential_ref': {
+        'store': 'secret-service',
+        'attributes': {'service': 'fixture-service', 'account': 'fixture-account'},
+    }}}}))
+    e['AGENTSTACK_LLM_KEY_DEFINITIONS'] = str(source)
+    done = hook(command, e)
+    assert done.returncode == expected and done.stdout == ''
+    assert 'fixture-service' not in done.stderr
 
 
 def test_failure_only_closes_credential_extraction_shapes(tmp_path):
