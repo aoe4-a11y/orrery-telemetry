@@ -295,7 +295,7 @@ def test_real_dsh_generator_round_trip_preserves_owned_native_session(tmp_path, 
     # never executes a runtime, provider plugin, credential helper or Mail RPC.
 
 
-@pytest.mark.parametrize('changed_profile', [False, True, 'legacy', 'missing_home', 'missing_pin', 'missing_history'])
+@pytest.mark.parametrize('changed_profile', [False, True, 'legacy', 'missing_home', 'missing_pin', 'missing_history', 'unknown_reason'])
 def test_real_hermes_generator_round_trip_preserves_owned_native_session(tmp_path, monkeypatch, request, changed_profile):
     from unittest.mock import patch
     from test_hermes_thin_config import ThinConfig, config
@@ -354,12 +354,22 @@ def test_real_hermes_generator_round_trip_preserves_owned_native_session(tmp_pat
             elif changed_profile == 'missing_history':
                 (memory.parent.parent / 'state.db').unlink()
                 reason = 'native_resume_history_missing'
+            elif changed_profile == 'unknown_reason':
+                reason = 'native_resume_profile_changed-untrusted-private-text'
+                def unknown_home(document):
+                    raise ValueError(reason)
+                monkeypatch.setattr(native.runpy, 'run_path', lambda _: {'child_home': unknown_home})
             else:
                 source['native_profile_env'] = {'HERMES_HOME': str(tmp_path / 'foreign-profile')}
             native.save(directory / 'input.json', source)
             original = {str(p.relative_to(directory)): p.read_bytes() for p in directory.rglob('*') if p.is_file()}
-            with pytest.raises(ValueError, match=reason):
+            with pytest.raises(ValueError) as failure:
                 native.prepare_resume(runtime, args.agent_name)
+            if changed_profile == 'unknown_reason':
+                assert not hasattr(failure.value, 'code')
+            else:
+                assert isinstance(failure.value, resume.ResumeStateError)
+                assert failure.value.code == reason
             assert {str(p.relative_to(directory)): p.read_bytes() for p in directory.rglob('*') if p.is_file()} == original
             assert not (tmp_path / 'foreign-profile').exists()
             assert resume._load_state(runtime / 'child-agents' / (args.agent_name + '.json'))['retired_at']
@@ -383,7 +393,10 @@ def test_real_hermes_generator_round_trip_preserves_owned_native_session(tmp_pat
 
 
 @pytest.mark.parametrize('harness', ['dsh', 'hermes'])
-def test_jump_preserves_finished_native_husk_when_generation_fails(tmp_path, monkeypatch, harness):
+@pytest.mark.parametrize('reason', [None, 'native_resume_profile_changed', 'native_resume_profile_missing',
+                                  'native_resume_legacy_profile', 'native_resume_home_missing',
+                                  'native_resume_history_missing'])
+def test_jump_preserves_finished_native_husk_when_generation_fails(tmp_path, monkeypatch, harness, reason):
     runtime, state, _, _ = child(tmp_path, 'FirstAgent', harness)
     monkeypatch.setattr(server, 'RUNTIME_DIR', str(runtime))
     monkeypatch.setattr(server, '_agent_program', lambda _: harness)
@@ -393,12 +406,16 @@ def test_jump_preserves_finished_native_husk_when_generation_fails(tmp_path, mon
     monkeypatch.setattr(server, '_resume_registration', lambda *a: state)
     monkeypatch.setattr(server, '_native_resume_launcher_ready', lambda: True)
     def fail(*args):
-        raise ValueError('native_resume_profile_changed')
+        if reason:
+            raise resume.ResumeStateError(reason, 'Native resume HOME prerequisites are unavailable')
+        raise ValueError('untrusted-private-exception-text')
     monkeypatch.setattr(server, '_native_prepare_resume', fail)
     monkeypatch.setattr(server, '_tmux_run', lambda *a, **k: pytest.fail('husk changed before config generation'))
     monkeypatch.setattr(server, '_register_claude_resume', lambda *a: pytest.fail('Mail called'))
     result = server.do_jump('FirstAgent', open_terminal=False)
     assert not result['ok']
+    assert result['resume_capability'] == (reason or 'config_unrestorable')
+    assert 'untrusted-private-exception-text' not in json.dumps(result)
     current = resume._load_state(runtime / 'child-agents/FirstAgent.json')
     assert current['retired_at'] == state['retired_at'] and 'resume_in_progress_at' not in current
     assert (runtime / 'agent_token_FirstAgent').read_text() == state['registration_token']

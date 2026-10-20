@@ -210,7 +210,15 @@ def prepare_resume(runtime_dir, name, project_key=None):
         # Use the generator's HOME/pin policy before rewriting the saved prompt,
         # Mail configuration, instructions or input for this attempt.
         generator = runpy.run_path(str(config_generator(ROOT, 'hermes')))
-        generator['child_home'](document)
+        try:
+            generator['child_home'](document)
+        except ValueError as error:
+            reason = str(error)
+            if reason in {'native_resume_profile_changed', 'native_resume_profile_missing',
+                          'native_resume_legacy_profile', 'native_resume_home_missing',
+                          'native_resume_history_missing'}:
+                raise child_resume.ResumeStateError(reason, 'Native resume HOME prerequisites are unavailable') from None
+            raise
     prompt = state_dir / 'resume-prompt.txt'
     child_resume._atomic_bytes(prompt, b'')
     parent = state.get('parent_agent')
