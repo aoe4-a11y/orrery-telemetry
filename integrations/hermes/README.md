@@ -23,6 +23,15 @@ Optional model and helper selections must belong to the selected backend's
 configured formal model IDs. An omitted effort leaves the native default intact.
 The helper model applies to auxiliary tasks and delegation on that same provider.
 
+Effort choices are read as data from the installed Hermes CLI vocabulary and
+custom-provider wire policy, including its native default. They are not forced
+onto dsh's four steps: Hermes's default `medium` must retain its meaning.
+The catalog exposes only CLI levels sent unchanged on that wire; `ultra`, which
+is clamped to `max`, is not a separate step. `none`/`off` is not advertised as a
+DeepSeek thinking toggle because the custom route does not send the required
+`thinking.type: disabled`. Missing or changed native declarations yield unknown
+capabilities. Reading this metadata executes no Hermes code or credential helper.
+
 The pinned upstream Anthropic converter drops DeepSeek thinking blocks carrying a
 nonempty signature. For the DeepSeek backend's official `/anthropic` endpoint,
 the generator selects the same provider's `/v1` chat-completions transport so

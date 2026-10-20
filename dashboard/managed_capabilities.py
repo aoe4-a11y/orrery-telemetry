@@ -1,4 +1,5 @@
 """Local, keyless effort metadata. Unknown is never a copied trial default."""
+import ast
 import hashlib
 import json
 import os
@@ -43,8 +44,59 @@ def cache_file(template):
     return Path(template['runtime']).parent / 'evidence/effort-capabilities.json'
 
 
+def _literal_assignment(tree, name):
+    for node in tree.body:
+        targets = node.targets if isinstance(node, ast.Assign) else [node.target] if isinstance(node, ast.AnnAssign) else []
+        if any(isinstance(target, ast.Name) and target.id == name for target in targets):
+            return ast.literal_eval(node.value)
+    raise ValueError('Missing native reasoning declaration')
+
+
+def hermes_effort_capability(template):
+    """Read the native custom-route vocabulary and default as data, never import it.
+
+    Named key_cmd providers use CustomProfile. Intersect its actual wire levels
+    with the CLI parser's levels: disabled is not a graded level, and an internal
+    level clamped to another wire value is not a separate slider step.
+    """
+    source = Path(template['hermes_source'])
+    cli = ast.parse((source / 'hermes_constants.py').read_text())
+    wire = ast.parse((source / 'agent/reasoning_effort.py').read_text())
+    custom = ast.parse((source / 'plugins/model-providers/custom/__init__.py').read_text())
+    levels = _literal_assignment(cli, 'VALID_REASONING_EFFORTS')
+    profile = next(node for node in custom.body if isinstance(node, ast.ClassDef) and node.name == 'CustomProfile')
+    methods = {node.name: node for node in profile.body if isinstance(node, ast.FunctionDef)}
+    def returned(name):
+        body = [node for node in methods[name].body if not (isinstance(node, ast.Expr)
+                and isinstance(node.value, ast.Constant) and isinstance(node.value.value, str))]
+        if len(body) != 1 or not isinstance(body[0], ast.Return):
+            raise ValueError('Native reasoning policy changed')
+        return body[0].value
+    vocabulary = returned('supported_reasoning_efforts')
+    if not isinstance(vocabulary, ast.Name):
+        raise ValueError('Native wire vocabulary changed')
+    supported = _literal_assignment(wire, vocabulary.id)
+    default_config = ast.literal_eval(returned('default_reasoning_config'))
+    if (not isinstance(levels, (tuple, list)) or not isinstance(supported, (tuple, list))
+            or not all(isinstance(value, str) and value for value in (*levels, *supported))
+            or not isinstance(default_config, dict) or default_config.get('enabled') is not True):
+        raise ValueError('Invalid native reasoning metadata')
+    efforts = list(dict.fromkeys(value for value in levels if value in supported))
+    default = default_config.get('effort')
+    if not efforts or default not in efforts:
+        raise ValueError('Unknown native reasoning default')
+    return {'efforts': efforts, 'default_effort': default, 'effort_source': 'harness'}
+
+
 def load_effort_capability(template, *, harness, backend_id, model):
     """Read checked metadata only. No process, provider or credential calls."""
+    if harness == 'hermes':
+        try:
+            if backend_id not in template.get('profiles', {}) or not isinstance(model, str) or not model:
+                return dict(UNKNOWN)
+            return hermes_effort_capability(template)
+        except (OSError, ValueError, KeyError, TypeError, SyntaxError, StopIteration, UnicodeError):
+            return dict(UNKNOWN)
     if harness != 'dsh':
         return dict(UNKNOWN)
     try:

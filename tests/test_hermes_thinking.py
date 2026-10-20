@@ -1,4 +1,5 @@
 """Pinned native transport/SDK wire proof with a synthetic loopback provider."""
+import json
 import os
 from pathlib import Path
 import subprocess
@@ -25,8 +26,14 @@ try:
     fixture.manifest_data['backends']['deepseek']={'model':'deepseek-flash'}
     fixture.save(fixture.template,fixture.template_data);fixture.save(fixture.manifest,fixture.manifest_data)
     fixture.document['model']='deepseek-flash'
+    effort=os.environ.get('FIXTURE_EFFORT')
+    if effort is not None:
+        fixture.document['effort']=effort
     plan=fixture.generate()
-    assert '--reasoning' not in plan['argv']
+    if effort is None:
+        assert '--reasoning' not in plan['argv']
+    else:
+        assert plan['argv'][plan['argv'].index('--reasoning')+1]==effort
     overlay=config.read(Path(plan['config_dir'])/'config.yaml')
     provider=plan['argv'][3];route=overlay['providers'][provider]
     assert route['api_mode']=='chat_completions' and route['base_url']=='https://api.deepseek.com/v1'
@@ -39,7 +46,8 @@ try:
             anthropic=self.path.endswith('/messages')
             replay=not assistants or (any(b.get('type')=='thinking' for b in assistants[-1]['content'])
                                      if anthropic else assistants[-1].get('reasoning_content')=='fixture-thought')
-            records.append({'protocol':'anthropic' if anthropic else 'chat','replayed':bool(assistants and replay)})
+            records.append({'protocol':'anthropic' if anthropic else 'chat','replayed':bool(assistants and replay),
+                            'effort':body.get('reasoning_effort'),'thinking':body.get('thinking')})
             if assistants and not replay:
                 result={'error':{'type':'invalid_request_error','message':'fixture requires thinking pass-back'}};status=400
             elif anthropic:
@@ -75,19 +83,25 @@ try:
     load_config()
     runtime=resolve_runtime_provider(requested=provider,target_model='deepseek-flash')
     assert runtime['api_mode']=='chat_completions' and runtime['base_url']==route['base_url']
+    assert runtime['provider']=='custom'
+    from providers import get_provider_profile
+    from hermes_constants import parse_reasoning_effort
+    profile=get_provider_profile(runtime['provider'])
+    reasoning=parse_reasoning_effort(effort) if effort is not None else profile.default_reasoning_config('deepseek-flash')
     from agent.transports.anthropic import AnthropicTransport
     from agent.transports.chat_completions import ChatCompletionsTransport
     import anthropic,openai
     tools=[{'type':'function','function':{'name':'fixture_tool','description':'fixture','parameters':{'type':'object','properties':{}}}}]
     origin=f'http://127.0.0.1:{server.server_port}'
-    for old in (True,False):
+    for old in ((True,False) if effort is None else (False,)):
         transport=AnthropicTransport() if old else ChatCompletionsTransport()
         client=(anthropic.Anthropic if old else openai.OpenAI)(api_key='fixture-local-token',base_url=origin+'/v1',max_retries=0,timeout=5)
         clients.append(client)
         history=[{'role':'user','content':'fixture tool'}]
         params={'reasoning_config':None,'base_url':'https://api.deepseek.com/anthropic' if old else route['base_url']}
         if old: params['max_tokens']=4096
-        else: params['provider_name']=runtime['provider']
+        else:
+            params.update(provider_name=runtime['provider'],provider_profile=profile,reasoning_config=reasoning)
         send=client.messages.create if old else client.chat.completions.create
         first=send(**transport.build_kwargs('deepseek-flash',history,tools,**params))
         normalized=transport.normalize_response(first)
@@ -103,9 +117,17 @@ try:
         else:
             response=send(**second)
             assert response.choices[0].message.content=='fixture-complete'
-    assert records==[{'protocol':'anthropic','replayed':False},{'protocol':'anthropic','replayed':False},
-                     {'protocol':'chat','replayed':False},{'protocol':'chat','replayed':True}],records
-    print(json.dumps({'success':True,'local_requests':len(records),'effort':None,'records':records,'external_requests':0}))
+    chat=[r for r in records if r['protocol']=='chat']
+    assert [r['replayed'] for r in chat]==[False,True],records
+    expected='medium' if effort is None else effort
+    assert all(r['effort']==expected for r in chat),records
+    # CustomProfile emits no DeepSeek thinking toggle for "none": do not
+    # advertise it as an effective off switch on this route.
+    if effort=='none':
+        assert all(r['thinking'] is None for r in chat),records
+    if effort is None:
+        assert [r['replayed'] for r in records if r['protocol']=='anthropic']==[False,False]
+    print(json.dumps({'success':True,'local_requests':len(records),'effort':effort,'records':records,'external_requests':0}))
 finally:
     for client in clients: client.close()
     if server is not None: server.shutdown();server.server_close()
@@ -116,17 +138,33 @@ finally:
 
 class NativeThinking(unittest.TestCase):
     def test_unspecified_effort_replays_thinking_on_second_sdk_wire_request(self):
+        self.run_wire(None)
+
+    def test_source_derived_efforts_reach_both_requests_and_preserve_thinking(self):
+        source = os.environ.get('ORRERY_HERMES_TEST_SOURCE')
+        if not source:
+            self.skipTest('Explicit installed dependency interpreter/source required')
+        from dashboard.managed_capabilities import hermes_effort_capability
+        for effort in hermes_effort_capability({'hermes_source':source})['efforts']:
+            with self.subTest(effort=effort):
+                self.run_wire(effort)
+        with self.subTest(effort='none', advertised=False):
+            self.run_wire('none')
+
+    def run_wire(self, effort):
         source, python = os.environ.get('ORRERY_HERMES_TEST_SOURCE'), os.environ.get('ORRERY_HERMES_TEST_PYTHON')
         if not source or not python:
             self.skipTest('Explicit installed dependency interpreter/source required')
         with tempfile.TemporaryDirectory() as home:
+            extra={'FIXTURE_EFFORT':effort} if effort is not None else {}
             result = subprocess.run([python, '-I', '-B', '-c', WIRE_SCRIPT], cwd='/',
                 env={'HOME':home,'PATH':os.defpath,'PYTHONDONTWRITEBYTECODE':'1',
                      'HERMES_DISABLE_LAZY_INSTALLS':'1','UV_OFFLINE':'1',
-                     'FIXTURE_PRODUCT':str(ROOT),'ORRERY_HERMES_TEST_SOURCE':source},
+                     'FIXTURE_PRODUCT':str(ROOT),'ORRERY_HERMES_TEST_SOURCE':source,**extra},
                 capture_output=True,text=True,timeout=30)
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertIn('"success": true', result.stdout)
+        print(json.dumps(json.loads(result.stdout.splitlines()[-1])))
 
 
 if __name__ == '__main__':
