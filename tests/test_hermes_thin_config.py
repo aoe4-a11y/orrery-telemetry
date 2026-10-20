@@ -297,6 +297,14 @@ class ThinConfig(unittest.TestCase):
         overlay = config.read(Path(plan['config_dir']) / 'config.yaml')
         self.assertEqual(overlay['mcp_servers']['orrery_mail'], config.read(self.base / 'mcp.json')['mcpServers']['orrery_mail'])
 
+    def test_product_delegate_is_linked_into_native_skills(self):
+        plan = self.generate()
+        linked = Path(plan['env']['HERMES_HOME']) / 'skills/delegate'
+        self.assertTrue(linked.is_symlink())
+        self.assertEqual(linked.resolve(), (ROOT / 'skills/delegate').resolve())
+        self.assertEqual((linked / 'SKILL.md').read_bytes(),
+                         (ROOT / 'skills/delegate/SKILL.md').read_bytes())
+
     def test_unowned_skill_is_not_replaced(self):
         path = self.runtime / 'profiles/deepseek/skills/delegate'
         path.mkdir(parents=True)
