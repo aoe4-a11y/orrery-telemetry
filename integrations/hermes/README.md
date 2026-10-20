@@ -13,8 +13,8 @@ The generator selects the installed committed executable and a custom provider
 with native `key_cmd`; provider credentials remain Hermes's responsibility.
 Each child uses a private provider name and minimal route in its overlay, so
 old endpoint aliases, inline keys and named credential pools in the persistent
-profile cannot override the selected route. The profile and its auth store are
-not rewritten or copied. Legacy model credential pointers are cleared only in
+profile cannot override the selected route. Route projection does not rewrite
+or copy the profile or its auth store. Legacy model credential pointers are cleared only in
 the child overlay; memory and skills remain in the fixed backend profile.
 Auxiliary tasks and delegation use that same private provider, with old direct
 endpoint and credential pointers cleared in the overlay. Existing helper
@@ -22,6 +22,13 @@ settings cannot pair the selected credential with a previous endpoint.
 Optional model and helper selections must belong to the selected backend's
 configured formal model IDs. An omitted effort leaves the native default intact.
 The helper model applies to auxiliary tasks and delegation on that same provider.
+
+The pinned upstream Anthropic converter drops DeepSeek thinking blocks carrying a
+nonempty signature. For the DeepSeek backend's official `/anthropic` endpoint,
+the generator selects the same provider's `/v1` chat-completions transport so
+thinking survives subsequent tool requests, including when effort is omitted.
+Main, auxiliary and delegation routes share this selection; Strata and custom
+hosts keep their configured transport. No reasoning level or token cap is added.
 
 Memory and skills persist in the fixed backend profile. Each child uses the
 official `HERMES_MANAGED_DIR` overlay for its MCP entries and instructions;
@@ -36,15 +43,39 @@ usage evaluator is added by this entry.
 registration and acquired-reservation hooks, in that order. A failed check
 blocks the tool with a fixed diagnostic, without exposing hook output.
 An allowed hook's structured `systemMessage` warning remains visible; raw
-stdout/stderr are not forwarded.
+success stdout/stderr are not forwarded. Blocking exit-2 hooks return their
+public JSON reason or stderr to the caller, limited to the first 2000 Unicode
+code points without a truncation marker. Internal traceback/error diagnostics
+are excluded, terminal control sequences are removed and invalid UTF-8 is
+replaced. Other failed exit codes keep the fixed hook-name diagnostic.
 Successful native edits call the common reservation release hook. Both
 checks and release run in the native tool's current directory.
 Generation checks the plugin file and
 configuration statically; it does not import or verify runtime registration.
-Explicit MCP selections that cannot be represented are rejected. Turning off
-MCP inheritance disables unselected configured servers; profiles with enabled
-third-party plugins are rejected in that mode because portable plugins can
-append servers after configuration loading.
+Explicit MCP selections that cannot be represented are rejected. As with the
+standard launcher's strict MCP config, inherited profile servers not in the
+selected set are disabled in the child overlay. Product Mail and explicitly
+selected additional MCP servers use the freshly generated definitions, even
+when a profile retained the same server name. The profile's MCP data is unchanged.
+If native deep-merge would retain extra inherited fields in a selected server,
+generation refuses with `inherited_mcp_conflict` and logs the server name in the
+child's `config-generation.log`,
+rather than silently using the old endpoint or credentials.
+Profiles with enabled third-party plugins are rejected when inheritance is
+explicitly disabled because portable plugins can append servers after loading.
+
+The native packaging locale directory is supplied through the official
+`HERMES_BUNDLED_LOCALES` environment setting, so translated strings are available
+even when PM's editable workspace omits non-Python catalog files.
+
+Before chat or exact resume, an unanswered shared-metrics offer defaults to
+`enabled: false`, `send: false`, `offer_version: 2`. Native consent checks raw
+profile configuration, so these three fields are saved under the existing
+profile lock with an atomic replacement; all other YAML bytes remain unchanged.
+An explicit opt-in, local-only choice or current-version opt-out is preserved.
+The child's `telemetry-defaults.log` records a default only when written.
+This affects only the product-selected profile and never the user's separate
+Hermes home. No global noninteractive setting or upstream patch is added.
 
 The plugin saves the native session-start event in `native-session.json` under
 the child's existing state directory. Delegated sessions cannot overwrite it.

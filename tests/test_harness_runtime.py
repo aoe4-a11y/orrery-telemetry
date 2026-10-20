@@ -184,8 +184,8 @@ def test_native_context_unknown_never_reuses_previous_footer(monkeypatch):
     monkeypatch.setattr(server, '_tmux_run', lambda *a, **k: SimpleNamespace(
         returncode=0, stdout=capture[0]))
     first = server._native_context_runtime('FixtureAgent', 100, '$1', 'dsh')
-    assert first == {'ctx_used': 19, 'ctx_window': '128K'}
+    assert first == {'ctx_used': 19, 'ctx_window': '128K', 'act_state': None}
     capture[0] = 'footer hidden'
     clock[0] += server._RT_TTL + 1
     assert server._native_context_runtime('FixtureAgent', 100, '$1', 'dsh') == {
-        'ctx_used': None, 'ctx_window': None}
+        'ctx_used': None, 'ctx_window': None, 'act_state': None}

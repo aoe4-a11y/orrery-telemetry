@@ -4427,8 +4427,8 @@ else
     CLAUDE_CHILD_ARGV_PROMPT=true
     CLAUDE_READY_PROMPT_ECHO="$(claude_prompt_echo_head "$CHILD_PROMPT" "$CHILD_NAME")"
     CLAUDE_CHILD_SYSTEM_PROMPT="$(claude_child_system_prompt "$CHILD_NAME" "$PARENT_NAME" "$CHILD_MCP_CONFIG")"
-    CLAUDE_LAUNCH_EPOCH="$(date +%s)"
     CHILD_SESSION_START_PENDING=true
+    CLAUDE_LAUNCH_EPOCH="$(date +%s)"
     tmux new-session -d -s "$CHILD_NAME" \
         -c "$WORK_DIR" \
         "${TMUX_ENV_ARGS[@]}" \

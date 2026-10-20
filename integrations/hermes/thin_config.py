@@ -10,6 +10,7 @@ import ast
 from contextlib import contextmanager
 import fcntl
 import hashlib
+import importlib.util
 import json
 import os
 from pathlib import Path
@@ -30,7 +31,12 @@ def read(path):
         return json.loads(text)
     except json.JSONDecodeError:
         # Data parser only: never import Hermes (which can bootstrap at import).
-        from ruamel.yaml import YAML
+        try:
+            from ruamel.yaml import YAML
+        except ModuleNotFoundError:
+            # Match telemetry_defaults in the repository development environment.
+            from yaml import safe_load
+            return safe_load(text) or {}
         parser = YAML(typ='safe')
         parser.version = (1, 1)
         return parser.load(text) or {}
@@ -107,6 +113,11 @@ def _validate(document):
         raise ValueError('invalid_route')
     if document.get('effort') is not None and document['effort'] not in EFFORTS:
         raise ValueError('invalid_effort')
+    # This pinned Anthropic converter discards DeepSeek's signed thinking.
+    # The native OpenAI-compatible transport preserves reasoning across tools.
+    if (backend == 'deepseek' and mode == 'anthropic_messages'
+            and url.hostname == 'api.deepseek.com' and url.path.rstrip('/') == '/anthropic'):
+        base, mode = 'https://' + url.netloc + '/v1', 'chat_completions'
     root = Path(config['managed_root']).resolve()
     install = root / 'installs' / hashlib.sha256(str(source).encode()).hexdigest()[:16]
     environment = Path(read(install / 'facts.json')['packages']['venv']['environment']).resolve()
@@ -147,6 +158,16 @@ def _save(path, value):
         temporary.replace(path)
     finally:
         temporary.unlink(missing_ok=True)
+
+
+def _effective_mcp(base, selected):
+    """Project the fixed native deep-merge semantics, including None-over-map."""
+    if not isinstance(base, dict) or not isinstance(selected, dict):
+        return base if isinstance(base, dict) and selected is None else selected
+    effective = dict(base)
+    for key, value in selected.items():
+        effective[key] = _effective_mcp(base.get(key), value)
+    return effective
 
 
 def _link(path, target):
@@ -244,10 +265,18 @@ def generate(document):
             # No plugin import/preflight or silent expansion of the selection.
             raise ValueError('inherited_mcp_conflict')
         mcp = dict(servers)
-        if selection.get('inherit') is False:
-            for name in existing.get('mcp_servers', {}):
-                if name not in mcp:
-                    mcp[name] = {'enabled': False}
+        inherited = existing.get('mcp_servers', {})
+        for name, definition in servers.items():
+            if name in inherited and _effective_mcp(inherited[name], definition) != definition:
+                state.mkdir(parents=True, exist_ok=True, mode=0o700)
+                with (state / 'config-generation.log').open('a', encoding='utf-8') as handle:
+                    handle.write(json.dumps({'event': 'inherited_mcp_conflict', 'mcp_server': name}) + '\n')
+                raise ValueError('inherited_mcp_conflict')
+        # Like the standard launcher's strict MCP config, expose only product
+        # Mail and explicitly selected servers. Preserve the persistent profile.
+        for name in existing.get('mcp_servers', {}):
+            if name not in mcp:
+                mcp[name] = {'enabled': False}
         plugin = profile / 'plugins' / PLUGIN
         plugin.mkdir(parents=True, exist_ok=True, mode=0o700)
         manifest = {'name': PLUGIN, 'version': '1.0.0', 'description': 'Common ORRERY native tool guards',
@@ -281,6 +310,13 @@ def generate(document):
             'delegation': _helper_route(native_provider, facts['helper_model']),
         }
         personality = _personality_prompt(existing, Path(facts['source']))
+        # Native consent reads raw config, so the overlay alone cannot settle
+        # its offer. Preserve all explicit choices and every other config byte.
+        spec = importlib.util.spec_from_file_location('orrery_telemetry_defaults',
+            Path(__file__).with_name('telemetry_defaults.py'))
+        defaults = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(defaults)
+        defaults.settle_unanswered(profile, state)
         _save(state / 'overlay/config.yaml', overlay)
     definitions = state / 'credential-references.json'
     _save(definitions, {'backends': {'hermes': {'auth_command': shlex.split(facts['route']['key_cmd'])}}})
@@ -292,6 +328,7 @@ def generate(document):
     if prompt_text:
         argv.extend(['--query-file', str(prompt)])
     env = {'HERMES_HOME': str(profile), 'HERMES_MANAGED_DIR': str(state / 'overlay'),
+           'HERMES_BUNDLED_LOCALES': str(Path(facts['source']) / 'locales'),
            'AGENTSTACK_LLM_KEY_DEFINITIONS': str(definitions),
            'AGENTSTACK_NATIVE_SESSION_FILE': str(state / 'native-session.json'),
            'AGENTSTACK_LLM_KEY_FILES': json.dumps([str(state / 'overlay/config.yaml'),
@@ -315,7 +352,7 @@ def main():
         _save(args.out, generate(read(args.input)))
     except Exception as error:
         allowed = {'unknown_backend', 'model_mismatch', 'invalid_effort', 'builtin_provider_collision',
-                   'invalid_runtime', 'invalid_route', 'invalid_input', 'unsupported_mcp_selection',
+                   'invalid_runtime', 'invalid_route', 'invalid_input', 'invalid_telemetry_config', 'unsupported_mcp_selection',
                    'inherited_mcp_conflict', 'owned_link_conflict', 'invalid_helper_model',
                    'invalid_resume_session_id', 'native_resume_profile_changed', 'native_provider_conflict'}
         reason = str(error) if str(error) in allowed else 'invalid_input'

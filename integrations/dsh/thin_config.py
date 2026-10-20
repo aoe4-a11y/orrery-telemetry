@@ -211,13 +211,18 @@ def generate(document):
         tui['effort'] = document['effort']
     guard_config = {'cwd': str(cwd), 'state_dir': str(state), 'hooks_dir': str(facts['root'] / 'hooks'),
                     'env': document.get('env', {})}
+    # In native patches, `name` is a match predicate, not a replacement.
+    # Disable the bundled file/env source and insert our credentials service.
     rows = [
-        {'id': 'credentials', 'name': str(facts['credential_plugin']),
-         'config': {'ref': ref, 'runtime': str(facts['runtime']), 'dshHome': str(home), **backend['keychain']}},
+        {'id': 'credentials', 'disabled': True},
+        {'id': 'working-activity', 'disabled': True},
         {'id': 'llm-deepseek', 'inject': ['llm', 'credentials'], 'config': provider},
         {'id': 'agent-default-model', 'config': route},
         {'id': 'dsh-tui', 'config': tui},
-        {'insert': [{'id': 'orrery-tools', 'name': str(facts['plugin']), 'config': guard_config}, *facts['mcp_rows']]},
+        {'insert': [
+            {'id': 'orrery-keychain-credentials', 'name': str(facts['credential_plugin']),
+             'config': {'ref': ref, 'runtime': str(facts['runtime']), 'dshHome': str(home), **backend['keychain']}},
+            {'id': 'orrery-tools', 'name': str(facts['plugin']), 'config': guard_config}, *facts['mcp_rows']]},
     ]
     if skill_roots:
         rows.append({'id': 'skill-filesystem', 'config': {'customSkillDirs': skill_roots}})
@@ -226,6 +231,9 @@ def generate(document):
             'provider': 'deepseek-official', 'model': facts['helper']}}})
     tui_data = state / 'tui'
     save(tui_data / 'model.json', {'provider': 'deepseek-official', 'model': document['model']})
+    language = 'en'
+    save(tui_data / 'lang.json', {'lang': language})
+    save(tui_data / 'onboarding.json', {'completed': True, 'version': 1})
     overlay = config_dir / 'native.patch.json'
     save(overlay, rows)
     argv = [str(facts['node']), str(facts['entry']), '--profile', 'orrery', '--patch', str(overlay)]
@@ -239,7 +247,8 @@ def generate(document):
         argv += ['--', prompt]
     protected = [str(overlay), str(home / '.credentials.yaml'), str(facts['backend_file'])]
     return {'argv': argv, 'cwd': str(cwd), 'config_dir': str(config_dir),
-            'env': {'DSH_HOME': str(home), 'DSH_TUI_DATA_DIR': str(tui_data), 'AGENTSTACK_LLM_KEY_FILES': json.dumps(protected),
+            'env': {'DSH_HOME': str(home), 'DSH_TUI_DATA_DIR': str(tui_data), 'DSH_TUI_LANG': language,
+                    'AGENTSTACK_LLM_KEY_FILES': json.dumps(protected),
                     'AGENTSTACK_LLM_KEY_DEFINITIONS': str(facts['backend_file'])},
             'guard': {'plugin': str(facts['plugin']), 'contract': 1}}
 

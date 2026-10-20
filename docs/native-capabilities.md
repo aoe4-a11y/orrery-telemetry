@@ -4,13 +4,64 @@ Thin dsh/Hermes launch uses the existing agent `ctx_used` / `ctx_window` fields
 and existing spawn catalog `models[].harnesses[].helper_models` shape. There is
 no additional provider endpoint or credential lookup in these readers.
 
+## Coordination instructions
+
+Native dsh/Hermes children receive harness-neutral coordination instructions.
+Shared Mail, reservation and waiting rules are included from the existing
+instruction template; program-specific identity, configuration and tool
+examples are kept separate. Missing or ambiguous shared-section boundaries
+stop rendering instead of silently omitting rules. Existing program instruction
+blocks and user instruction files are unchanged. The child's actual program
+and model come from its canonical launch task or runtime binding.
+
 ## Activity classification boundary
 
-This stage implements native context and process liveness observations only.
-Native working / waiting for a question / waiting for approval classification
-is not implemented: `act_state: null` means unknown. It is not evidence that the
-agent is idle, finished or ready. Activity classification belongs to a later
-change and is not inferred by the context parser.
+API 24 observes native activity from the same captured pane as context.
+`dashboard.harness_activity.parse_activity(text, program)` returns `work`,
+`question`, `ask` or `wait` only from supported current controls. dsh questions
+and approvals need both their panel title and operation hint near the bottom.
+Hermes instead pairs the current modal prompt (`⚠` for approval, `?`/`✎` for
+questions) with the matching operation hint. A long command can push its title
+offscreen without hiding those controls; that still reports `ask`/`question`.
+The prompt icon alone or hint alone is insufficient.
+dsh hides the ordinary composer during a modal. A visible ordinary input frame
+therefore identifies panel-like text above it as transcript, not a current
+modal. Without that contradictory frame, a modal takes priority over the generic
+interrupt hint. A dsh operation hint with a missing title stays unknown.
+The context parser itself does not infer activity.
+
+Supported formats are dsh-tui 0.16.1's English/Chinese approval and question
+panels (including folded questions), its interrupt footer, and Hermes
+d923a5eb's bundled English/Japanese approval and clarify panels. Hermes busy
+and idle classification uses the input frame and prompt symbols, independent
+of the profile/model name and translated placeholder text.
+Missing, hidden, incomplete, offscreen or unsupported localized controls stay
+`act_state: null`. Each new capture replaces the previous observation; a missing
+control does not preserve the old activity. Display text is not authenticated
+telemetry and can be imitated by terminal output.
+
+Idle is not inferred from absence alone. `wait` needs a complete current input
+frame and no work/question/approval evidence. Hermes uses matching rules around
+the input and a normal `❯` prompt (with an optional profile name); working uses
+the `☤` state icon instead. dsh uses its complete `⌸ ❯ … ⛶` input box and current
+context footer, without the interrupt hint. Broken/truncated frames, startup
+consent screens, hidden chrome and unsupported custom prompt shapes stay null.
+Multiline/wrapped input outside these complete shapes also stays unknown.
+Null means unknown, not idle, finished or ready. Activity never changes process
+liveness or stop eligibility.
+The existing Claude/Codex classification is unchanged. No new watcher, native
+patch, status file or provider call is introduced.
+These additions apply to legacy agent rows and graph nodes; the global runtime
+observation route is unchanged.
+
+The input shapes are observed in real idle/work/resume pane captures and
+defined by Hermes `cli_tui_mixin.py:272–346,2143–2161` and dsh
+`components/PromptInput.js:59,3826–3841` / `screens/StatusLine.js:370–376`.
+Tests keep unmodified footer excerpts, excluding the surrounding private
+transcript. Hermes questions, short approvals and long approvals (24- and
+60-row panes) also use real capture footer fixtures. dsh question/approval
+controls are checked against pinned source formatters; real dsh modal captures
+are not part of this evidence.
 
 ## Context
 
