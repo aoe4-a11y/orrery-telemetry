@@ -21,8 +21,15 @@ class HermesCapabilities(unittest.TestCase):
         self.addCleanup(temporary.cleanup)
         self.root = Path(temporary.name)
         self.source = self.root / 'source'
-        self.template = {'hermes_source': str(self.source), 'profiles': {'deepseek': {}, 'strata': {}}}
-        self.write('hermes_constants.py', 'raise RuntimeError("must never import")\nVALID_REASONING_EFFORTS = ("low", "medium", "high", "max", "ultra")\n')
+        route = {'provider': 'fixture-api', 'base_url': 'https://fixture.invalid/v1',
+                 'api_mode': 'chat_completions', 'key_cmd': '/fixture/key-helper'}
+        self.template = {'hermes_source': str(self.source), 'profiles': {'deepseek': dict(route), 'strata': dict(route)}}
+        self.write('hermes_constants.py', '''raise RuntimeError("must never import")
+VALID_REASONING_EFFORTS = ("low", "medium", "high", "max", "ultra")
+def parse_reasoning_effort(effort):
+    if effort in {"none", "false", "disabled"}:
+        return {"enabled": False}
+''')
         self.write('agent/reasoning_effort.py', 'OPENAI_COMPAT_WIRE_EFFORTS = ("none", "low", "medium", "high", "max")\n')
         self.write('plugins/model-providers/custom/__init__.py', '''raise RuntimeError("must never import")
 class CustomProfile:
@@ -42,15 +49,45 @@ class CustomProfile:
                 patch.object(socket, 'socket', side_effect=AssertionError('no network')):
             return capabilities.load_effort_capability(self.template, harness='hermes', backend_id=backend, model='fixture-model')
 
-    def test_source_not_saved_override_supplies_vocabulary_and_default(self):
+    def test_source_supplies_vocabulary_without_guessing_effective_default(self):
         self.template['profiles']['deepseek']['reasoning_effort'] = 'low'
-        expected = {'efforts': ['low', 'medium', 'high', 'max'], 'default_effort': 'medium', 'effort_source': 'harness'}
+        expected = {'efforts': ['none', 'low', 'medium', 'high', 'max'], 'default_effort': None, 'effort_source': 'harness'}
         self.assertEqual(self.load(), expected)
         self.assertEqual(self.load('strata'), expected)
         # A new upstream declaration is used directly, without copied product levels.
-        self.write('hermes_constants.py', 'VALID_REASONING_EFFORTS = ("medium", "high")\n')
-        self.assertEqual(self.load()['efforts'], ['medium', 'high'])
+        path = self.source / 'hermes_constants.py'
+        self.write('hermes_constants.py', path.read_text().replace('("low", "medium", "high", "max", "ultra")', '("medium", "high")'))
+        self.assertEqual(self.load()['efforts'], ['none', 'medium', 'high'])
         self.assertEqual(self.load('missing'), capabilities.UNKNOWN)
+
+    def test_only_effective_chat_route_uses_custom_wire_metadata(self):
+        for backend in ('deepseek', 'strata'):
+            for base, mode, known in (
+                    ('https://fixture.invalid/anthropic', 'anthropic_messages', False),
+                    ('https://fixture.invalid/v1', 'chat_completions', True),
+                    ('https://api.deepseek.com/anthropic', 'anthropic_messages', backend == 'deepseek')):
+                with self.subTest(backend=backend, mode=mode, base=base):
+                    self.template['profiles'][backend].update(base_url=base, api_mode=mode)
+                    result = self.load(backend)
+                    self.assertEqual(result['effort_source'], 'harness' if known else 'unknown')
+                    self.assertIsNone(result['default_effort'])
+        inherited = self.root / 'inherited.json'
+        inherited.write_text(json.dumps({'model': {'provider': 'fixture-api'},
+            'providers': {'fixture-api': {'api': 'https://fixture.invalid/anthropic',
+                'transport': 'anthropic_messages', 'key_cmd': '/fixture/helper'}}}))
+        self.template['profiles']['strata'] = {'template': str(inherited)}
+        self.assertEqual(self.load('strata'), capabilities.UNKNOWN)
+
+    def test_saved_global_and_model_override_cannot_be_mislabelled_medium(self):
+        self.template['managed_root'] = str(self.root / 'runtime')
+        profile = self.root / 'runtime/profiles/deepseek/config.yaml'
+        profile.parent.mkdir(parents=True)
+        for settings in ({'reasoning_effort': 'high'}, {'reasoning_overrides': {'fixture-model': 'max'}}):
+            with self.subTest(settings=settings):
+                profile.write_text(json.dumps({'agent': settings}))
+                original = profile.read_bytes()
+                self.assertIsNone(self.load()['default_effort'])
+                self.assertEqual(profile.read_bytes(), original)
 
     def test_unknown_or_changed_policy_never_reuses_known_values(self):
         self.assertEqual(self.load()['effort_source'], 'harness')
@@ -81,8 +118,8 @@ class CustomProfile:
         for row in rows:
             dsh, hermes = row['models'][0]['harnesses']
             self.assertIsNone(dsh['efforts'])
-            self.assertEqual(hermes['efforts'], ['low', 'medium', 'high', 'max'])
-            self.assertEqual(hermes['default_effort'], 'medium')
+            self.assertEqual(hermes['efforts'], ['none', 'low', 'medium', 'high', 'max'])
+            self.assertIsNone(hermes['default_effort'])
             self.assertEqual(hermes['effort_source'], 'harness')
         for harness in ('claude', 'codex', 'unknown'):
             self.assertEqual(capabilities.load_effort_capability(self.template, harness=harness, backend_id='deepseek', model='fixture-model'), capabilities.UNKNOWN)
@@ -92,8 +129,8 @@ class CustomProfile:
         if not source:
             self.skipTest('Explicit installed dependency interpreter/source required')
         self.template['hermes_source'] = source
-        self.assertEqual(self.load(), {'efforts': ['minimal', 'low', 'medium', 'high', 'xhigh', 'max'],
-                                      'default_effort': 'medium', 'effort_source': 'harness'})
+        self.assertEqual(self.load(), {'efforts': ['none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max'],
+                                      'default_effort': None, 'effort_source': 'harness'})
 
     def test_installed_dashboard_only_import_and_metadata_from_root_directory(self):
         installed = self.root / 'installed/dashboard'
@@ -101,6 +138,9 @@ class CustomProfile:
         repo = Path(__file__).resolve().parents[1]
         for name in ('managed_capabilities.py', 'managed_catalog.py', 'harness_helpers.py'):
             shutil.copyfile(repo / 'dashboard' / name, installed / name)
+        generator = installed.parent / 'integrations/hermes/thin_config.py'
+        generator.parent.mkdir(parents=True)
+        shutil.copyfile(repo / 'integrations/hermes/thin_config.py', generator)
         self.template['hermes_source'] = os.environ.get('ORRERY_HERMES_TEST_SOURCE', str(self.source))
         expected = self.load()
         script = '''import json,sys

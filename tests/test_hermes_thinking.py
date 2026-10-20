@@ -27,6 +27,9 @@ try:
     fixture.save(fixture.template,fixture.template_data);fixture.save(fixture.manifest,fixture.manifest_data)
     fixture.document['model']='deepseek-flash'
     effort=os.environ.get('FIXTURE_EFFORT')
+    saved=json.loads(os.environ.get('FIXTURE_SAVED_REASONING','{}'))
+    if saved:
+        fixture.save(fixture.runtime/'profiles/deepseek/config.yaml',{'agent':saved})
     if effort is not None:
         fixture.document['effort']=effort
     plan=fixture.generate()
@@ -44,11 +47,12 @@ try:
             body=json.loads(self.rfile.read(int(self.headers['Content-Length'])))
             assistants=[m for m in body['messages'] if m['role']=='assistant']
             anthropic=self.path.endswith('/messages')
-            replay=not assistants or (any(b.get('type')=='thinking' for b in assistants[-1]['content'])
-                                     if anthropic else assistants[-1].get('reasoning_content')=='fixture-thought')
+            off=body.get('reasoning_effort')=='none'
+            replay=bool(assistants) and (any(b.get('type')=='thinking' for b in assistants[-1]['content'])
+                                       if anthropic else assistants[-1].get('reasoning_content')=='fixture-thought')
             records.append({'protocol':'anthropic' if anthropic else 'chat','replayed':bool(assistants and replay),
                             'effort':body.get('reasoning_effort'),'thinking':body.get('thinking')})
-            if assistants and not replay:
+            if assistants and not replay and not off:
                 result={'error':{'type':'invalid_request_error','message':'fixture requires thinking pass-back'}};status=400
             elif anthropic:
                 result={'id':'msg_fixture','type':'message','role':'assistant','model':body['model'],
@@ -57,7 +61,7 @@ try:
                     'stop_reason':'tool_use','stop_sequence':None,'usage':{'input_tokens':1,'output_tokens':1}};status=200
             else:
                 message=({'role':'assistant','content':'fixture-complete'} if assistants else
-                    {'role':'assistant','content':None,'reasoning_content':'fixture-thought',
+                    {'role':'assistant','content':None,**({} if off else {'reasoning_content':'fixture-thought'}),
                      'tool_calls':[{'id':'call_fixture','type':'function','function':{'name':'fixture_tool','arguments':'{}'}}]})
                 result={'id':'chatcmpl_fixture','object':'chat.completion','created':0,'model':body['model'],
                     'choices':[{'index':0,'message':message,'finish_reason':'stop' if assistants else 'tool_calls'}],
@@ -80,14 +84,18 @@ try:
     os.environ.update(plan['env']);sys.path.insert(0,str(native))
     from hermes_cli.config import load_config
     from hermes_cli.runtime_provider import resolve_runtime_provider
-    load_config()
+    loaded=load_config()
     runtime=resolve_runtime_provider(requested=provider,target_model='deepseek-flash')
     assert runtime['api_mode']=='chat_completions' and runtime['base_url']==route['base_url']
     assert runtime['provider']=='custom'
     from providers import get_provider_profile
-    from hermes_constants import parse_reasoning_effort
+    from hermes_constants import parse_reasoning_effort,resolve_reasoning_config
+    from agent.reasoning_params import unset_reasoning_default
+    from types import SimpleNamespace
     profile=get_provider_profile(runtime['provider'])
-    reasoning=parse_reasoning_effort(effort) if effort is not None else profile.default_reasoning_config('deepseek-flash')
+    reasoning=parse_reasoning_effort(effort) if effort is not None else resolve_reasoning_config(loaded,'deepseek-flash')
+    if reasoning is None:
+        reasoning=unset_reasoning_default(SimpleNamespace(api_mode=runtime['api_mode'],provider=runtime['provider'],model='deepseek-flash'))
     from agent.transports.anthropic import AnthropicTransport
     from agent.transports.chat_completions import ChatCompletionsTransport
     import anthropic,openai
@@ -118,16 +126,15 @@ try:
             response=send(**second)
             assert response.choices[0].message.content=='fixture-complete'
     chat=[r for r in records if r['protocol']=='chat']
-    assert [r['replayed'] for r in chat]==[False,True],records
-    expected='medium' if effort is None else effort
+    expected=os.environ.get('FIXTURE_EXPECTED_EFFORT','medium' if effort is None else effort)
+    assert [r['replayed'] for r in chat]==[False,expected!='none'],records
     assert all(r['effort']==expected for r in chat),records
-    # CustomProfile emits no DeepSeek thinking toggle for "none": do not
-    # advertise it as an effective off switch on this route.
+    # The official Chat API also accepts reasoning_effort=none as the switch.
     if effort=='none':
         assert all(r['thinking'] is None for r in chat),records
     if effort is None:
         assert [r['replayed'] for r in records if r['protocol']=='anthropic']==[False,False]
-    print(json.dumps({'success':True,'local_requests':len(records),'effort':effort,'records':records,'external_requests':0}))
+    print(json.dumps({'success':True,'local_requests':len(records),'effort':effort,'saved':saved,'records':records,'external_requests':0}))
 finally:
     for client in clients: client.close()
     if server is not None: server.shutdown();server.server_close()
@@ -148,15 +155,23 @@ class NativeThinking(unittest.TestCase):
         for effort in hermes_effort_capability({'hermes_source':source})['efforts']:
             with self.subTest(effort=effort):
                 self.run_wire(effort)
-        with self.subTest(effort='none', advertised=False):
-            self.run_wire('none')
+    def test_saved_global_and_per_model_effort_precede_native_fallback(self):
+        for saved,effort,expected in (({'reasoning_effort':'low'},None,'low'),
+                                     ({'reasoning_effort':'high'},None,'high'),
+                                     ({'reasoning_effort':'high','reasoning_overrides':{'deepseek-flash':'max'}},None,'max'),
+                                     ({'reasoning_overrides':{'deepseek-flash':'max'}},'low','low')):
+            with self.subTest(saved=saved,effort=effort):
+                self.run_wire(effort,saved=saved,expected=expected)
 
-    def run_wire(self, effort):
+    def run_wire(self, effort, *, saved=None, expected=None):
         source, python = os.environ.get('ORRERY_HERMES_TEST_SOURCE'), os.environ.get('ORRERY_HERMES_TEST_PYTHON')
         if not source or not python:
             self.skipTest('Explicit installed dependency interpreter/source required')
         with tempfile.TemporaryDirectory() as home:
             extra={'FIXTURE_EFFORT':effort} if effort is not None else {}
+            if saved is not None:
+                extra['FIXTURE_SAVED_REASONING']=json.dumps(saved)
+                extra['FIXTURE_EXPECTED_EFFORT']=expected
             result = subprocess.run([python, '-I', '-B', '-c', WIRE_SCRIPT], cwd='/',
                 env={'HOME':home,'PATH':os.defpath,'PYTHONDONTWRITEBYTECODE':'1',
                      'HERMES_DISABLE_LAZY_INSTALLS':'1','UV_OFFLINE':'1',

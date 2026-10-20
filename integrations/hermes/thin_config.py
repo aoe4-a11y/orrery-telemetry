@@ -67,6 +67,35 @@ def validate_input(document):
         raise ValueError('invalid_runtime') from None
 
 
+def profile_route(spec, backend):
+    """Project a configured route as data for both generation and metadata."""
+    inherited = read(spec['template']) if spec.get('template') else {}
+    provider = spec.get('provider') or inherited.get('model', {}).get('provider')
+    if isinstance(provider, str):
+        provider = provider.strip()
+    entry = inherited.get('providers', {}).get(provider, {})
+    if not entry:
+        entry = next((row for row in inherited.get('custom_providers', []) if row.get('name') == provider), {})
+    route = {key: entry[key] for key in ('base_url', 'api', 'api_mode', 'transport', 'model', 'key_cmd') if key in entry}
+    route.update({key: spec[key] for key in ('base_url', 'api', 'api_mode', 'transport', 'model', 'key_cmd') if key in spec})
+    default_model = spec.get('model') or inherited.get('model', {}).get('default') or route.get('model')
+    base = route.get('base_url') or route.get('api') or ''
+    url = urlsplit(base)
+    mode = route.get('api_mode') or route.get('transport')
+    command = route.get('key_cmd')
+    if (url.scheme != 'https' or not url.hostname or url.username or url.password or url.query or url.fragment
+            or mode not in ('chat_completions', 'anthropic_messages')
+            or not isinstance(command, str) or not shlex.split(command)):
+        raise ValueError('invalid_route')
+    # This pinned Anthropic converter discards DeepSeek's signed thinking.
+    # The native OpenAI-compatible transport preserves reasoning across tools.
+    if (backend == 'deepseek' and mode == 'anthropic_messages'
+            and url.hostname == 'api.deepseek.com' and url.path.rstrip('/') == '/anthropic'):
+        base, mode = 'https://' + url.netloc + '/v1', 'chat_completions'
+    return {'inherited': inherited, 'provider': provider, 'model': default_model,
+            'route': {'base_url': base, 'api_mode': mode, 'key_cmd': command}}
+
+
 def _validate(document):
     backend = document['backend_id']
     if backend not in ('deepseek', 'strata'):
@@ -77,18 +106,13 @@ def _validate(document):
     spec = config['profiles'].get(backend)
     if not isinstance(spec, dict):
         raise ValueError('unknown_backend')
-    inherited = read(spec['template']) if spec.get('template') else {}
-    provider = spec.get('provider') or inherited.get('model', {}).get('provider')
+    selected = profile_route(spec, backend)
+    inherited, provider, route = selected['inherited'], selected['provider'], selected['route']
     source = Path(config['hermes_source']).resolve()
     if not isinstance(provider, str) or not provider.strip() or provider.strip().lower() in (_provider_ids(source) | {'auto', 'main', 'custom'}):
         raise ValueError('builtin_provider_collision')
     provider = provider.strip()
-    entry = inherited.get('providers', {}).get(provider, {})
-    if not entry:
-        entry = next((row for row in inherited.get('custom_providers', []) if row.get('name') == provider), {})
-    route = {key: entry[key] for key in ('base_url', 'api', 'api_mode', 'transport', 'model', 'key_cmd') if key in entry}
-    route.update({key: spec[key] for key in ('base_url', 'api', 'api_mode', 'transport', 'model', 'key_cmd') if key in spec})
-    default_model = spec.get('model') or inherited.get('model', {}).get('default') or route.get('model')
+    default_model = selected['model']
     backend_definition = manifest.get('backends', {}).get(backend, {})
     allowed_models = backend_definition.get('models', [backend_definition.get('model', default_model)])
     if not isinstance(allowed_models, list) or not allowed_models or not all(isinstance(row, str) and row for row in allowed_models):
@@ -103,21 +127,8 @@ def _validate(document):
     if resume is not None and (not isinstance(resume, str) or not resume.strip()
                                or resume.lower() == 'latest' or resume.startswith('-')):
         raise ValueError('invalid_resume_session_id')
-    base = route.get('base_url') or route.get('api') or ''
-    url = urlsplit(base)
-    mode = route.get('api_mode') or route.get('transport')
-    command = route.get('key_cmd')
-    if (url.scheme != 'https' or not url.hostname or url.username or url.password or url.query or url.fragment
-            or mode not in ('chat_completions', 'anthropic_messages')
-            or not isinstance(command, str) or not shlex.split(command)):
-        raise ValueError('invalid_route')
     if document.get('effort') is not None and document['effort'] not in EFFORTS:
         raise ValueError('invalid_effort')
-    # This pinned Anthropic converter discards DeepSeek's signed thinking.
-    # The native OpenAI-compatible transport preserves reasoning across tools.
-    if (backend == 'deepseek' and mode == 'anthropic_messages'
-            and url.hostname == 'api.deepseek.com' and url.path.rstrip('/') == '/anthropic'):
-        base, mode = 'https://' + url.netloc + '/v1', 'chat_completions'
     root = Path(config['managed_root']).resolve()
     install = root / 'installs' / hashlib.sha256(str(source).encode()).hexdigest()[:16]
     environment = Path(read(install / 'facts.json')['packages']['venv']['environment']).resolve()
@@ -132,7 +143,6 @@ def _validate(document):
     product = Path(document['product_root']).resolve()
     if not (product / 'integrations/hermes/thin_guard.py').is_file():
         raise ValueError('invalid_runtime')
-    route = {'base_url': base, 'api_mode': mode, 'key_cmd': command}
     # Explicit operator context is preserved; no guessed trial defaults/caps.
     context = spec.get('context_length', inherited.get('model', {}).get('context_length'))
     if context is not None:

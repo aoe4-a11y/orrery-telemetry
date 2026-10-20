@@ -1,6 +1,7 @@
 """Local, keyless effort metadata. Unknown is never a copied trial default."""
 import ast
 import hashlib
+import importlib.util
 import json
 import os
 from pathlib import Path
@@ -55,15 +56,23 @@ def _literal_assignment(tree, name):
 def hermes_effort_capability(template):
     """Read the native custom-route vocabulary and default as data, never import it.
 
-    Named key_cmd providers use CustomProfile. Intersect its actual wire levels
-    with the CLI parser's levels: disabled is not a graded level, and an internal
-    level clamped to another wire value is not a separate slider step.
+    Named key_cmd chat providers use CustomProfile. Intersect its actual wire
+    levels with the CLI parser, including its explicit disabled spellings. An
+    internal level clamped to another wire value is not a separate slider step.
     """
     source = Path(template['hermes_source'])
     cli = ast.parse((source / 'hermes_constants.py').read_text())
     wire = ast.parse((source / 'agent/reasoning_effort.py').read_text())
     custom = ast.parse((source / 'plugins/model-providers/custom/__init__.py').read_text())
     levels = _literal_assignment(cli, 'VALID_REASONING_EFFORTS')
+    parser = next(node for node in cli.body if isinstance(node, ast.FunctionDef) and node.name == 'parse_reasoning_effort')
+    disabled = next(ast.literal_eval(node.test.comparators[0]) for node in parser.body
+        if isinstance(node, ast.If) and isinstance(node.test, ast.Compare)
+        and isinstance(node.test.left, ast.Name) and node.test.left.id == parser.args.args[0].arg
+        and len(node.test.ops) == 1 and isinstance(node.test.ops[0], ast.In)
+        and isinstance(node.test.comparators[0], (ast.Set, ast.Tuple, ast.List))
+        and len(node.body) == 1 and isinstance(node.body[0], ast.Return)
+        and ast.literal_eval(node.body[0].value) == {'enabled': False})
     profile = next(node for node in custom.body if isinstance(node, ast.ClassDef) and node.name == 'CustomProfile')
     methods = {node.name: node for node in profile.body if isinstance(node, ast.FunctionDef)}
     def returned(name):
@@ -81,11 +90,13 @@ def hermes_effort_capability(template):
             or not all(isinstance(value, str) and value for value in (*levels, *supported))
             or not isinstance(default_config, dict) or default_config.get('enabled') is not True):
         raise ValueError('Invalid native reasoning metadata')
-    efforts = list(dict.fromkeys(value for value in levels if value in supported))
+    efforts = list(dict.fromkeys(value for value in supported if value in (*levels, *disabled)))
     default = default_config.get('effort')
     if not efforts or default not in efforts:
         raise ValueError('Unknown native reasoning default')
-    return {'efforts': efforts, 'default_effort': default, 'effort_source': 'harness'}
+    # The profile can retain a global effort or per-model override. Do not read
+    # user state or pretend the native fallback is the effective launch default.
+    return {'efforts': efforts, 'default_effort': None, 'effort_source': 'harness'}
 
 
 def load_effort_capability(template, *, harness, backend_id, model):
@@ -94,8 +105,14 @@ def load_effort_capability(template, *, harness, backend_id, model):
         try:
             if backend_id not in template.get('profiles', {}) or not isinstance(model, str) or not model:
                 return dict(UNKNOWN)
+            path = Path(__file__).resolve().parents[1] / 'integrations/hermes/thin_config.py'
+            spec = importlib.util.spec_from_file_location('_orrery_hermes_route_projection', path)
+            projection = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(projection)
+            if projection.profile_route(template['profiles'][backend_id], backend_id)['route']['api_mode'] != 'chat_completions':
+                return dict(UNKNOWN)
             return hermes_effort_capability(template)
-        except (OSError, ValueError, KeyError, TypeError, SyntaxError, StopIteration, UnicodeError):
+        except (OSError, ValueError, KeyError, TypeError, SyntaxError, StopIteration, UnicodeError, ImportError, AttributeError):
             return dict(UNKNOWN)
     if harness != 'dsh':
         return dict(UNKNOWN)
