@@ -27,6 +27,7 @@ import os
 import random
 import re
 import sys
+import stat
 import tempfile
 import threading
 import time
@@ -1916,6 +1917,58 @@ def _native_archive_git(repo: Repo, command: str, *args: str, **kwargs: Any) -> 
         raise
 
 
+def _stage_archive_bytes(repo: Repo, rel_paths: Sequence[str]) -> None:
+    """Stage raw audit bytes without ignore, clean, or newline conversion."""
+    root = Path(repo.working_tree_dir)
+    files: list[tuple[str, int]] = []
+
+    def add_file(path: Path) -> None:
+        mode = path.lstat().st_mode
+        index_mode = 0o120000 if stat.S_ISLNK(mode) else (0o100755 if mode & stat.S_IXUSR else 0o100644)
+        files.append((os.path.relpath(path, root), index_mode))
+
+    def walk_error(error: OSError) -> None:
+        raise error
+
+    for relative in rel_paths:
+        path = root / relative
+        mode = path.lstat().st_mode  # Explicit missing paths must fail.
+        if stat.S_ISDIR(mode):
+            for directory, dirs, names in os.walk(path, onerror=walk_error):
+                # The archive's Git administration is not audit content.
+                dirs[:] = [name for name in dirs if name != ".git"]
+                for name in names:
+                    add_file(Path(directory) / name)
+        else:
+            add_file(path)
+
+    if not files:
+        return
+    with tempfile.TemporaryFile() as index_info:
+        regular = [(path, mode) for path, mode in files if mode != 0o120000]
+        # Bound argv size for heal batches; no index entries are loaded in Python.
+        for start in range(0, len(regular), 64):
+            batch = regular[start:start + 64]
+            hashes = _native_archive_git(repo, "hash_object", "-w", "--no-filters", "--",
+                                         *(path for path, _ in batch)).splitlines()
+            for (path, mode), sha in zip(batch, hashes, strict=True):
+                index_info.write(f"{mode:o} {sha}\t".encode("ascii") + os.fsencode(path) + b"\0")
+        for path, mode in files:
+            if mode != 0o120000:
+                continue
+            # hash-object on a path follows a symlink; its blob must instead
+            # contain the link text, just like IndexFile._store_path.
+            with tempfile.TemporaryFile() as link_text:
+                link_text.write(os.fsencode(os.readlink(root / path)))
+                link_text.seek(0)
+                sha = _native_archive_git(repo, "hash_object", "-w", "--no-filters", "--stdin",
+                                           istream=link_text).strip()
+            index_info.write(f"{mode:o} {sha}\t".encode("ascii") + os.fsencode(path) + b"\0")
+        index_info.seek(0)
+        _native_archive_git(repo, "update_index", "--add", "--replace", "-z", "--index-info",
+                            istream=index_info)
+
+
 async def _commit_direct(
     repo_root: Path,
     settings: Settings,
@@ -1957,12 +2010,7 @@ async def _commit_direct(
         # the wrong cwd even when they target different repositories.
         with _GITPYTHON_INDEX_OPERATION_LOCK:
             if sys.platform == "darwin":
-                # Preserve missing-path failures and do not stage deletions
-                # when a requested directory contains removed tracked files.
-                for relative in rel_paths:
-                    os.lstat(Path(target_repo.working_tree_dir) / relative)
-                with target_repo.git.custom_environment(GIT_LITERAL_PATHSPECS="1"):
-                    _native_archive_git(target_repo, "add", "--ignore-removal", "--", *rel_paths)
+                _stage_archive_bytes(target_repo, rel_paths)
             elif sys.platform == "win32":
                 # GitPython's IndexFile.add() calls os.lstat() on each relative
                 # path before invoking Git. That call still hits MAX_PATH on

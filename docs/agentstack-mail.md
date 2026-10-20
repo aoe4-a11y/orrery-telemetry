@@ -311,6 +311,7 @@ Python で読み書きする CPU 負荷を減らします。author・committer�
 Agent trailer と commit の順序、既存の commit hook の呼び出しと失敗の扱いは
 維持します。非同期 queue・batch のまとめ方・lock・retry と、macOS 以外の
 分岐は変更しません。index の形式や Git の利用者設定も変更しません。
+監査fileはignoreやtext/clean filterを通さず、生bytesとfile modeをindexへ登録します。
 
 trade-off は Git の projection に限られます。process や machine の
 hard shutdown は、tool が返った後で commit を取り消してしまうことが

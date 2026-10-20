@@ -297,6 +297,7 @@ commit order, and existing commit-hook invocation and failure behavior are
 preserved. The asynchronous queue, batching policy, locks, retries, and
 non-macOS branches stay the same. This does not change the index format or
 the user’s Git configuration.
+Staging records original audit bytes and file modes without ignore rules or text/clean filters.
 
 The trade-off is limited to the Git projection. A hard process or machine
 shutdown can cancel a commit after the tool has returned. The database remains

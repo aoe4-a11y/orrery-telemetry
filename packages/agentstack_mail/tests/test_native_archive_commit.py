@@ -214,7 +214,7 @@ def test_transient_native_index_lock_uses_existing_retry(isolated, monkeypatch):
                 task.cancel()
                 await asyncio.gather(task, return_exceptions=True)
         asyncio.run(run())
-        assert calls.count('add') == 2
+        assert calls.count('update_index') == 2
         assert repo.head.commit.message == 'retried'
 
 
@@ -286,7 +286,7 @@ def test_native_emfile_recovers_with_existing_locks(isolated, monkeypatch):
         def run(target, command, *args, **kwargs):
             assert storage._GITPYTHON_INDEX_OPERATION_LOCK.locked()
             assert storage._commit_lock_path(root, ["tracked.md"]).exists()
-            if command == "add":
+            if command == "update_index":
                 attempts.append(target)
                 if len(attempts) == 1:
                     raise OSError(errno.EMFILE, "fixture exhausted descriptors")
@@ -297,3 +297,80 @@ def test_native_emfile_recovers_with_existing_locks(isolated, monkeypatch):
         assert repo.head.commit.message == "recovered"
         assert not storage._commit_lock_path(root, ["tracked.md"]).exists()
         assert not storage._GITPYTHON_INDEX_OPERATION_LOCK.locked()
+
+
+@pytest.mark.parametrize("scope", ["file", "directory"])
+@pytest.mark.parametrize("excludes", ["repository", "global"])
+def test_ignored_audit_files_match_legacy_blobs_and_tree(isolated, scope, excludes):
+    trees = []
+    for backend in ("legacy", "native"):
+        root = isolated / backend
+        with make_repo(root) as repo:
+            rules = root / (".gitignore" if excludes == "repository" else ".git/global-ignore")
+            rules.write_text("events/*.json\n")
+            if excludes == "global":
+                repo.git.config("core.excludesFile", str(rules))
+            (root / "events").mkdir()
+            (root / "events/event.json").write_bytes(b'{"ignored":true}\n')
+            (root / "events/visible.md").write_bytes(b"visible\n")
+            paths = ["events/event.json"] if scope == "file" else ["events"]
+            if backend == "legacy":
+                repo.index.add(paths)
+                repo.index.commit("ignored audit", author=ACTOR, committer=ACTOR)
+            else:
+                direct(root, "ignored audit", paths)
+            blob = repo.head.commit.tree["events/event.json"]
+            assert blob.data_stream.read() == b'{"ignored":true}\n'
+            trees.append((repo.head.commit.tree.hexsha, blob.hexsha))
+    assert trees[0] == trees[1]
+
+
+@pytest.mark.parametrize("extension", ["md", "json"])
+@pytest.mark.parametrize("content", [b"first\r\nsecond\r\n", b"first\rsecond\r",
+                                     b"a\r\nb\rc\nd", b"no final newline", b""])
+def test_audit_bytes_ignore_text_and_clean_filters(isolated, extension, content):
+    results = []
+    for backend in ("legacy", "native"):
+        root = isolated / backend
+        with make_repo(root) as repo:
+            (root / ".gitattributes").write_text("*.json text filter=audit\n*.md text filter=audit\n")
+            repo.git.config("filter.audit.clean", "tr a-z A-Z")
+            target = f"nested/deep/event.{extension}"
+            (root / target).parent.mkdir(parents=True)
+            (root / target).write_bytes(content)
+            if backend == "legacy":
+                repo.index.add([target])
+                repo.index.commit("raw audit", author=ACTOR, committer=ACTOR)
+            else:
+                direct(root, "raw audit", [target])
+            blob = repo.head.commit.tree[target]
+            assert blob.data_stream.read() == content
+            results.append((repo.head.commit.tree.hexsha, blob.hexsha))
+    assert results[0] == results[1]
+
+
+@pytest.mark.parametrize("scope", ["files", "directory"])
+def test_modes_symlinks_and_empty_files_match_legacy(isolated, scope):
+    results = []
+    for backend in ("legacy", "native"):
+        root = isolated / backend
+        with make_repo(root) as repo:
+            directory = root / "events"
+            directory.mkdir()
+            for name, mode, content in (("run.sh", 0o755, b"echo audit\r\n"),
+                                        ("group-exec", 0o654, b"group executable only"),
+                                        ("empty", 0o644, b"")):
+                file = directory / name
+                file.write_bytes(content)
+                file.chmod(mode)
+            (directory / "link").symlink_to("run.sh")
+            paths = ["events"] if scope == "directory" else ["events/"+n for n in ("run.sh", "group-exec", "empty", "link")]
+            if backend == "legacy":
+                repo.index.add(paths)
+                repo.index.commit("modes", author=ACTOR, committer=ACTOR)
+            else:
+                direct(root, "modes", paths)
+            tree = repo.head.commit.tree
+            results.append((tree.hexsha, [(tree["events/"+name].mode, tree["events/"+name].hexsha)
+                                         for name in ("run.sh", "group-exec", "empty", "link")]))
+    assert results[0] == results[1]
