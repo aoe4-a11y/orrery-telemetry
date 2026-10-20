@@ -94,6 +94,8 @@ install が本当にできたかを一度に確かめるには、Claude Code と
 
 Codex から始めるなら child は Claude Code にします。どちらから始めても、2 社の agent の間でしりとりが回ることを確かめるのが目的です。
 
+DeepSeek・Local の子でも、同じしりとりで通しの確認ができます。cockpit の New Agent で設定済みの provider（DeepSeek または Local）と Harness（dsh または Hermes）を選んで子を立て、Claude Code または Codex の agent と3往復します。親から ORRERY Mail の `send_message` で「ORRERY Mail でしりとりを3往復」と子に頼んで始めます。成功の見え方は同じで、NETWORK に往復の線が流れ、DECK の両カードの最後の指示が単語ごとに更新されます。dsh・Hermes はそれぞれ確認してください。片方だけの成功では、もう片方の確認にはなりません。
+
 **成功**: NETWORK に 2 体の間を往復する線が流れ続け、DECK の両カードの最後の指示が単語ごとに更新されます。作者の環境では 1 人あたり 1 ターン 5〜6 秒で回りました（[動画つきの投稿](https://x.com/i/status/2095650715008168255)、倍速再生）。
 
 ここまで通れば、あとは普段どおり agent を使うだけです。詳しい設定は[インストール](install.md)と[設定](configuration.md)、child の仕組みは[委任と child agent](delegation.md)を参照してください。
