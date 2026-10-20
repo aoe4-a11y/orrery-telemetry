@@ -306,6 +306,12 @@ archive を書く tool は、返る前に SQLite を確実に更新し、audit f
 挙動に戻せます。この kill switch は、deployment で queue や commit の
 失敗が観測された場合に備えて残してあります。
 
+macOS では archive の stage と commit に native Git を使い、大きな index を
+Python で読み書きする CPU 負荷を減らします。author・committer・message・
+Agent trailer と commit の順序、既存の commit hook の呼び出しと失敗の扱いは
+維持します。非同期 queue・batch のまとめ方・lock・retry と、macOS 以外の
+分岐は変更しません。index の形式や Git の利用者設定も変更しません。
+
 trade-off は Git の projection に限られます。process や machine の
 hard shutdown は、tool が返った後で commit を取り消してしまうことが
 あります。database は commit されたままで、audit file は archive の

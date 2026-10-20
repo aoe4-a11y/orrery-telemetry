@@ -27,6 +27,7 @@ import os
 import random
 import re
 import sys
+import tempfile
 import threading
 import time
 from contextlib import asynccontextmanager
@@ -37,6 +38,8 @@ from typing import Any, AsyncIterator, Iterable, Sequence, TypeVar, cast
 
 from filelock import SoftFileLock, Timeout
 from git import Actor, Repo
+from git.index.fun import run_commit_hook
+from git.exc import GitCommandError
 from git.objects.tree import Tree
 from PIL import Image
 
@@ -1899,6 +1902,20 @@ class GitIndexLockError(Exception):
         self.attempts = attempts
 
 
+def _native_archive_git(repo: Repo, command: str, *args: str, **kwargs: Any) -> Any:
+    """Use the selected Git binary, preserving the existing index-lock retry."""
+    try:
+        return getattr(repo.git, command)(*args, **kwargs)
+    except GitCommandError as exc:
+        if "index.lock" in (exc.stderr or "").lower():
+            # Native Git reports lock contention through stderr rather than
+            # GitPython's OSError. Feed only that case into the same retry loop.
+            import errno
+
+            raise FileExistsError(errno.EEXIST, "Git index.lock contention") from exc
+        raise
+
+
 async def _commit_direct(
     repo_root: Path,
     settings: Settings,
@@ -1939,7 +1956,14 @@ async def _commit_direct(
         # Async commits can otherwise overlap across worker threads and restore
         # the wrong cwd even when they target different repositories.
         with _GITPYTHON_INDEX_OPERATION_LOCK:
-            if sys.platform == "win32":
+            if sys.platform == "darwin":
+                # Preserve missing-path failures and do not stage deletions
+                # when a requested directory contains removed tracked files.
+                for relative in rel_paths:
+                    os.lstat(Path(target_repo.working_tree_dir) / relative)
+                with target_repo.git.custom_environment(GIT_LITERAL_PATHSPECS="1"):
+                    _native_archive_git(target_repo, "add", "--ignore-removal", "--", *rel_paths)
+            elif sys.platform == "win32":
                 # GitPython's IndexFile.add() calls os.lstat() on each relative
                 # path before invoking Git. That call still hits MAX_PATH on
                 # native Windows. Git itself supports these paths once the
@@ -1973,7 +1997,36 @@ async def _commit_direct(
                 final_message = message
                 if trailers:
                     final_message = message + "\n\n" + "\n".join(trailers) + "\n"
-                target_repo.index.commit(final_message, author=actor, committer=actor)
+                if sys.platform == "darwin":
+                    # Match IndexFile.commit's three hooks and failure semantics:
+                    # native Git otherwise adds prepare-commit-msg and ignores
+                    # a failed post-commit. These helpers never read index entries.
+                    index = target_repo.index
+                    run_commit_hook("pre-commit", index)
+                    index._write_commit_editmsg(final_message)
+                    run_commit_hook("commit-msg", index, index._commit_editmsg_filepath())
+                    final_message = index._read_commit_editmsg()
+                    index._remove_commit_editmsg()
+                    # Pass message bytes through stdin, never argv. Verbatim
+                    # cleanup retains whitespace and existing trailer bytes.
+                    with tempfile.TemporaryFile() as message_file:
+                        message_file.write(final_message.encode("utf-8"))
+                        message_file.seek(0)
+                        with target_repo.git.custom_environment(
+                            GIT_AUTHOR_NAME=actor.name, GIT_AUTHOR_EMAIL=actor.email,
+                            GIT_COMMITTER_NAME=actor.name, GIT_COMMITTER_EMAIL=actor.email,
+                        ):
+                            # One-command override; do not change repo/user config
+                            # or run the hooks above a second time.
+                            target_repo.git(c="core.hooksPath=/dev/null")
+                            _native_archive_git(
+                                target_repo, "commit", "--quiet", "--allow-empty",
+                                "--allow-empty-message", "--cleanup=verbatim",
+                                "--no-gpg-sign", "--file=-", istream=message_file,
+                            )
+                    run_commit_hook("post-commit", index)
+                else:
+                    target_repo.index.commit(final_message, author=actor, committer=actor)
 
     commit_lock_path = _commit_lock_path(repo_root, rel_paths)
     await _to_thread(commit_lock_path.parent.mkdir, parents=True, exist_ok=True)
