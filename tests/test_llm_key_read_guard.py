@@ -15,6 +15,14 @@ PLUGIN = ROOT / 'integrations/codex_app/plugin/scripts/run-key-read-guard.sh'
     'secret-tool lookup service fixture-service account fixture-account',
     'secret-tool lookup service fixture-service',
     'secret-tool lookup',
+    'secret-tool search service fixture-service account fixture-account',
+    'secret-tool search --all --unlock account fixture-account service fixture-service',
+    'secret-tool search account fixture-account --all --unlock service fixture-service',
+    'secret-tool search --unlock --all -- service fixture-service',
+    'secret-tool search --all account fixture-account',
+    'secret-tool search --all',
+    "bash -lc 'secret-tool search --all service fixture-service'",
+    'env secret-tool search --unlock service fixture-service | cat',
     'python3 /fixture/llm_secret_reader.py --manifest /fixture/manifest.json --backend deepseek',
     '/fixture/llm_secret_reader.py --manifest /fixture/manifest.json --backend deepseek',
     "bash -c 'python3 /fixture/llm_secret_reader.py --backend strata --manifest /fixture/manifest.json'",
@@ -114,7 +122,12 @@ def test_r3_auth_argv_and_wsl_selector_share_the_guard(tmp_path):
     e['AGENTSTACK_LLM_KEY_DEFINITIONS'] = str(root)
     assert hook('secret-tool lookup account fixture-user service fixture-local', e).returncode == 2
     assert hook('secret-tool lookup service unrelated', e).returncode == 0
-    assert hook('secret-tool search service fixture-local', e).returncode == 0
+    assert hook('secret-tool search service fixture-local', e).returncode == 2
+    assert hook('secret-tool search --all service unrelated', e).returncode == 0
+    assert hook('secret-tool search --unlock service fixture-local account unrelated', e).returncode == 0
+    assert hook('secret-tool search service fixture-local account --all', e).returncode == 0
+    assert hook("grep 'secret-tool search --all' guide.md", e).returncode == 0
+    assert hook("printf '%s' 'secret-tool search --all'", e).returncode == 0
     assert hook('grep auth_command local.toml', e).returncode == 0
 
 
@@ -123,12 +136,25 @@ def test_failure_only_closes_credential_extraction_shapes(tmp_path):
     path = definitions(tmp_path, e)
     path.write_text('{invalid json')
     assert hook('security find-generic-password -w -s fixture-model-key', e).returncode == 2
+    assert hook('secret-tool search --all service fixture-service', e).returncode == 2
+    assert hook('secret-tool search --all service', e).returncode == 2
+    assert hook('secret-tool search --unknown service fixture-service', e).returncode == 2
     assert hook('git status', e).returncode == 0
     assert hook('security find-generic-password -s fixture-model-key', e).returncode == 0
     assert hook("grep 'security find-generic-password -w' guide.md", e).returncode == 0
+    assert hook("grep 'secret-tool search --all' guide.md", e).returncode == 0
     e['AGENTSTACK_PYTHON'] = '/does-not-exist/fixture-python'
     assert hook('git status', e).returncode == 0
     assert hook('security find-generic-password -w -s fixture-model-key', e).returncode == 2
+    assert hook('secret-tool search --all service fixture-service', e).returncode == 2
+
+
+def test_malformed_payload_preserves_search_extraction_boundary(tmp_path):
+    e = env(tmp_path)
+    for raw, expected in [('not-json secret-tool search --all', 2), ('not-json git status', 0)]:
+        done = subprocess.run([sys.executable, str(SH.with_suffix('.py'))], input=raw,
+                              text=True, capture_output=True, env=e, timeout=10)
+        assert done.returncode == expected and done.stdout == ''
 
 
 def test_non_shell_tools_never_block(tmp_path):
@@ -150,6 +176,7 @@ def test_codex_plugin_executes_same_installed_guard(tmp_path):
     (core_hooks / 'deny-llm-key-read.sh').unlink()
     assert hook('git status', e, tool='exec_command', entry=PLUGIN).returncode == 0
     assert hook('secret-tool lookup service fixture-local', e, tool='exec_command', entry=PLUGIN).returncode == 2
+    assert hook('secret-tool search --all service fixture-local', e, tool='exec_command', entry=PLUGIN).returncode == 2
 
 
 def test_launch_auth_helper_is_not_a_shell_tool_and_is_not_executed_by_inspection(tmp_path):

@@ -116,8 +116,25 @@ def extraction(words):
                         break
             i += 1
         return ('keychain', attrs) if read else None
-    if name == 'secret-tool' and len(words) > 1 and words[1] == 'lookup':
+    if name == 'secret-tool' and len(words) > 1 and words[1] in {'lookup', 'search'}:
         args = words[2:]
+        if words[1] == 'search':
+            # Search returns secret values too. Consume options only between
+            # pairs, never an attribute value that resembles an option.
+            selectors, options = [], True
+            while args:
+                if options and args[0] in {'--all', '--unlock'}:
+                    args = args[1:]
+                elif options and args[0] == '--':
+                    options, args = False, args[1:]
+                else:
+                    if options and args[0].startswith('-'):
+                        raise ValueError('unknown secret search option')
+                    if len(args) < 2:
+                        raise ValueError('incomplete secret selector')
+                    selectors.extend(args[:2])
+                    args = args[2:]
+            args = selectors
         if len(args) % 2:
             raise ValueError('incomplete secret selector')
         return 'secret-tool', dict(zip(args[::2], args[1::2]))
@@ -260,7 +277,7 @@ def decide(payload):
     if text is None:
         return False
     # Parsing errors must not stop unrelated shell commands.
-    shape = ('find-generic-password' in text and bool(re.search(r'-[a-zA-Z]*[wg]', text))) or ('secret-tool' in text and 'lookup' in text)
+    shape = ('find-generic-password' in text and bool(re.search(r'-[a-zA-Z]*[wg]', text))) or ('secret-tool' in text and any(verb in text for verb in ('lookup', 'search')))
     forms = None
     try:
         paths = definition_paths()
@@ -288,7 +305,7 @@ def main():
     try:
         denied = decide(json.loads(raw))
     except Exception:
-        denied = ('find-generic-password' in raw and ('-w' in raw or '-g' in raw)) or ('secret-tool' in raw and 'lookup' in raw)
+        denied = ('find-generic-password' in raw and ('-w' in raw or '-g' in raw)) or ('secret-tool' in raw and any(verb in raw for verb in ('lookup', 'search')))
     if denied:
         print(MESSAGE, file=sys.stderr)
         return 2
