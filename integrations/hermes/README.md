@@ -23,6 +23,22 @@ Optional model and helper selections must belong to the selected backend's
 configured formal model IDs. An omitted effort leaves the native default intact.
 The helper model applies to auxiliary tasks and delegation on that same provider.
 
+For Chat Completions routes, effort choices are read as data from the installed
+Hermes CLI vocabulary and custom-provider wire policy. Other transports retain
+unknown metadata. The catalog and generator use the same route projection,
+including the official DeepSeek transport correction described below.
+Choices retain native names rather than dsh's four steps; `ultra`, clamped to
+`max`, is not a separate step. DeepSeek accepts `none` as thinking off,
+`minimal`/`low` as low, `medium`/`high`/`xhigh` as high, and `max` as max on its
+[official Chat API](https://api-docs.deepseek.com/api/create-chat-completion/).
+These are harness choices, not independent capability claims about local servers.
+The public default is unspecified: saved global and model-specific reasoning
+settings take precedence over the custom profile's `medium` fallback. The UI
+therefore keeps its neutral default display, and no explicit CLI value is added
+until selected. Missing or changed native declarations yield unknown capabilities.
+Metadata reads execute only the product's data projection, no Hermes code or
+credential helper, and do not read or change persistent profile configuration.
+
 The pinned upstream Anthropic converter drops DeepSeek thinking blocks carrying a
 nonempty signature. For the DeepSeek backend's official `/anthropic` endpoint,
 the generator selects the same provider's `/v1` chat-completions transport so
