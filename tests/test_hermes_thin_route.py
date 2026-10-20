@@ -31,7 +31,8 @@ try:
         'if sys.argv[1]=="blank": raise SystemExit(0)',
         'print(' + repr(selected_key) + ')', '']))
     command = shlex.join([sys.executable, str(helper), failure])
-    fixture.profile_spec.update(base_url=selected_url, key_cmd=command)
+    fixture.profile_spec.update(base_url='https://api.deepseek.com/anthropic',
+                                api_mode='anthropic_messages', key_cmd=command)
     fixture.save(fixture.template, fixture.template_data)
     profile = fixture.runtime / 'profiles/deepseek'
     old = {'memory': {'memory_enabled': True},
