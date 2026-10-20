@@ -126,6 +126,41 @@ class ThinConfig(unittest.TestCase):
             with self.subTest(changes=changes), self.assertRaisesRegex(ValueError, '^' + reason + '$'):
                 config.validate_input({**self.document, **changes})
 
+    def test_deepseek_anthropic_selection_uses_native_chat_thinking_replay(self):
+        self.profile_spec.update(base_url='https://api.deepseek.com/anthropic', api_mode='anthropic_messages')
+        self.save(self.template, self.template_data)
+        for effort in (None, 'none', 'low', 'high'):
+            with self.subTest(effort=effort):
+                plan = self.generate(helper_model='fixture-helper', effort=effort)
+                overlay = config.read(Path(plan['config_dir']) / 'config.yaml')
+                provider = overlay['providers'][plan['argv'][3]]
+                self.assertEqual(provider['api_mode'], 'chat_completions')
+                self.assertEqual(provider['api'], 'https://api.deepseek.com/v1')
+                self.assertEqual(provider['base_url'], 'https://api.deepseek.com/v1')
+                self.assertEqual(overlay['model']['api_mode'], 'chat_completions')
+                self.assertEqual(overlay['delegation']['provider'], plan['argv'][3])
+                self.assertEqual(overlay['delegation']['model'], 'fixture-helper')
+                if effort is None:
+                    self.assertNotIn('--reasoning', plan['argv'])
+                else:
+                    index = plan['argv'].index('--reasoning')
+                    self.assertEqual(plan['argv'][index + 1], effort)
+
+    def test_strata_and_non_deepseek_hosts_keep_selected_transport(self):
+        for backend, url in [('strata', 'https://api.deepseek.com/anthropic'),
+                             ('deepseek', 'https://custom-provider.invalid/anthropic')]:
+            with self.subTest(backend=backend):
+                self.profile_spec.update(base_url=url, api_mode='anthropic_messages')
+                self.save(self.template, self.template_data)
+                self.manifest_data['backends'][backend] = self.manifest_data['backends']['deepseek']
+                self.save(self.manifest, self.manifest_data)
+                plan = self.generate(backend_id=backend)
+                overlay = config.read(Path(plan['config_dir']) / 'config.yaml')
+                provider = overlay['providers'][plan['argv'][3]]
+                self.assertEqual(provider['api_mode'], 'anthropic_messages')
+                self.assertEqual(provider['base_url'], url)
+                self.assertNotIn('--reasoning', plan['argv'])
+
     def test_resume_only_exact_id_and_empty_prompt_stays_interactive(self):
         (self.base / 'prompt').write_text('')
         plan = self.generate(resume_session_id='session-exact-123')

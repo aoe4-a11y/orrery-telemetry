@@ -113,6 +113,11 @@ def _validate(document):
         raise ValueError('invalid_route')
     if document.get('effort') is not None and document['effort'] not in EFFORTS:
         raise ValueError('invalid_effort')
+    # This pinned Anthropic converter discards DeepSeek's signed thinking.
+    # The native OpenAI-compatible transport preserves reasoning across tools.
+    if (backend == 'deepseek' and mode == 'anthropic_messages'
+            and url.hostname == 'api.deepseek.com' and url.path.rstrip('/') == '/anthropic'):
+        base, mode = 'https://' + url.netloc + '/v1', 'chat_completions'
     root = Path(config['managed_root']).resolve()
     install = root / 'installs' / hashlib.sha256(str(source).encode()).hexdigest()[:16]
     environment = Path(read(install / 'facts.json')['packages']['venv']['environment']).resolve()

@@ -23,6 +23,13 @@ Optional model and helper selections must belong to the selected backend's
 configured formal model IDs. An omitted effort leaves the native default intact.
 The helper model applies to auxiliary tasks and delegation on that same provider.
 
+The pinned upstream Anthropic converter drops DeepSeek thinking blocks carrying a
+nonempty signature. For the DeepSeek backend's official `/anthropic` endpoint,
+the generator selects the same provider's `/v1` chat-completions transport so
+thinking survives subsequent tool requests, including when effort is omitted.
+Main, auxiliary and delegation routes share this selection; Strata and custom
+hosts keep their configured transport. No reasoning level or token cap is added.
+
 Memory and skills persist in the fixed backend profile. Each child uses the
 official `HERMES_MANAGED_DIR` overlay for its MCP entries and instructions;
 profile configuration is not swapped or cloned. Product skills are links to
