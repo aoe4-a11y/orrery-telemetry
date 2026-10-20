@@ -156,7 +156,7 @@ def write_instructions(state_dir, project_key):
     spec.loader.exec_module(renderer)
     instructions = state_dir / 'instructions.md'
     child_resume._atomic_bytes(instructions, renderer.render(
-        'codex', (ROOT / 'codex/AGENTS.md').read_bytes(), str(ROOT), project_key))
+        'harness', (ROOT / 'codex/AGENTS.md').read_bytes(), str(ROOT), project_key))
     return instructions
 
 

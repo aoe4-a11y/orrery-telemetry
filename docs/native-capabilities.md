@@ -4,6 +4,16 @@ Thin dsh/Hermes launch uses the existing agent `ctx_used` / `ctx_window` fields
 and existing spawn catalog `models[].harnesses[].helper_models` shape. There is
 no additional provider endpoint or credential lookup in these readers.
 
+## Coordination instructions
+
+Native dsh/Hermes children receive harness-neutral coordination instructions.
+Shared Mail, reservation and waiting rules are included from the existing
+instruction template; program-specific identity, configuration and tool
+examples are kept separate. Missing or ambiguous shared-section boundaries
+stop rendering instead of silently omitting rules. Existing program instruction
+blocks and user instruction files are unchanged. The child's actual program
+and model come from its canonical launch task or runtime binding.
+
 ## Activity classification boundary
 
 API 24 observes native activity from the same captured pane as context.

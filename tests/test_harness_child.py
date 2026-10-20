@@ -64,7 +64,9 @@ os.chmod(a.out,0o600)
     spec=importlib.util.spec_from_file_location('expected_instruction_renderer', ROOT/'bin/lib/instruction_blocks.py')
     renderer=importlib.util.module_from_spec(spec);spec.loader.exec_module(renderer)
     assert Path(source['instructions_file']).read_bytes() == renderer.render(
-        'codex',(ROOT/'codex/AGENTS.md').read_bytes(),str(ROOT),args.project_key)
+        'harness',(ROOT/'codex/AGENTS.md').read_bytes(),str(ROOT),args.project_key)
+    instructions = Path(source['instructions_file']).read_text()
+    assert not any(word in instructions.lower() for word in ('codex', 'claude-code'))
     import shlex
     invocation = child.command(state, 'FixtureChild').split('; native_rc=$?',1)[0]
     assert shlex.split(invocation)[-1] == Path(args.prompt_file).read_text()
