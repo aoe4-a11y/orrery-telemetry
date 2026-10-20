@@ -106,6 +106,26 @@ each pair independently; it must not copy the primary model's effort metadata
 to other models. Missing/unavailable pairs expose unknown effort metadata and
 only `same` as helper. The shared selection cache owns subprocess budgets.
 
+### Hermes の manual Anthropic 経路の Effort
+
+モデルとハーネスごとの能力として、固定版 Hermes の manual thinking 経路では
+`low`・`medium`・`high`・`xhigh` を公開する。native の budget 定義と CLI 語彙を
+読み、budget の小さい順に並べる。選択中の正式モデル ID で判定し、profile の
+主モデルから能力をコピーしない。Claude・Haiku・Kimi の別の thinking 方針には
+この4段を当てはめない。関係する native の構造が変わった場合は不明とする。
+
+未操作と「Use default」は `default_effort=null` のまま、`--reasoning` を渡さない。
+利用者が保存した全体・モデル別の設定を維持する。明示した段だけがその起動に
+優先する。既存の Chat 経路の7段と起動引数の組立は変更しない。
+manual で専用 budget のない `minimal`・`max`・`ultra` は独立の段にしない。
+`none` はこの経路では thinking の省略であり、明示的な無効化として公開しない。
+
+これはハーネスが要求を組み立てる能力であり、Local サーバの受理・効果の保証ではない。
+固定版の manual は temperature を1とし、max_tokens を budget+4096 以上に上げる。
+context の制約によっては拒否され得るため、実サーバの受け入れは別に確認する。
+要求を拒否された後に native が fallback して会話できたことを、選んだ Effort が
+有効だった証拠にしない。
+
 Alternate helpers require literal `HELPER_MODEL_CONTRACT = 1` in the selected
 `integrations/<harness>/thin_config.py`. The catalog reads this via AST and
 does not import the generator. The helper list is the intersection of configured

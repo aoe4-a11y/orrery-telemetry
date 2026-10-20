@@ -99,6 +99,92 @@ def hermes_effort_capability(template):
     return {'efforts': efforts, 'default_effort': None, 'effort_source': 'harness'}
 
 
+# Reviewed Hermes d923a5eb manual policy, without docstrings or source locations.
+# A semantic change requires another wire review; formatting/comments do not.
+_HERMES_MANUAL_POLICY = {
+    'agent/anthropic_adapter.py': {
+        '_thinking_kwargs': '34840bc66ceb64e1115adf505d7d0a55862eeb742198b8725022748ff294b042',
+        '_supports_adaptive_thinking': '70240bf34f91c1d15b4378d14be8005ef481568d4283dfc7579b6ba616ebdc64',
+        '_is_claude_model': '81dcfae56af3d09d3571148272c5bd61efe3e81d031b534eac093c211a98a6f5',
+        '_is_pre_thinking_haiku': '937f2597defc085df106c61221705f61005749161fc73514e58808857767204b',
+        'build_anthropic_kwargs': '8daacc10dc8f2624b4f1eb2b505fe9e6885891f54e295a6eb2355f8e82fdc909',
+    },
+    'agent/anthropic_endpoints.py': {
+        '_model_name_is_kimi_family': 'd844d2cf8783162b8c6bb786288632a265dea8ef7cf58170edd72d7e774b80bf',
+    },
+    'hermes_constants.py': {
+        'parse_reasoning_effort': 'eebf29640f745d1a9d965860d95b1b7fdd7959687b3da4ecf1037d21616b9b4f',
+    },
+}
+
+
+def _native_ast_data(node):
+    # ast.dump's empty-field defaults differ between supported Python versions.
+    if isinstance(node, ast.AST):
+        return [type(node).__name__, [(key, _native_ast_data(value)) for key, value in ast.iter_fields(node)
+                                     if value is not None and value != []]]
+    if isinstance(node, list):
+        return [_native_ast_data(value) for value in node]
+    return node
+
+
+def _native_declaration(tree, name):
+    declarations = [node.value for node in tree.body if
+        isinstance(node, ast.Assign) and any(isinstance(t, ast.Name) and t.id == name for t in node.targets)
+        or isinstance(node, ast.AnnAssign) and isinstance(node.target, ast.Name) and node.target.id == name]
+    if len(declarations) != 1:
+        raise ValueError('Ambiguous native reasoning declaration')
+    return declarations[0]
+
+
+def hermes_manual_effort_capability(template, model):
+    """Project checked manual budgets, never execute a native policy or read settings.
+
+    Adaptive/Claude and Haiku policies are outside this projection. The selected
+    model, not the profile's primary model, decides which branch is eligible.
+    """
+    source = Path(template['hermes_source'])
+    trees = {}
+    for filename, policies in _HERMES_MANUAL_POLICY.items():
+        tree = trees[filename] = ast.parse((source / filename).read_text())
+        for name, expected in policies.items():
+            functions = [n for n in tree.body if isinstance(n, ast.FunctionDef) and n.name == name]
+            if len(functions) != 1:
+                raise ValueError('Missing native manual policy')
+            body = functions[0].body
+            if body and isinstance(body[0], ast.Expr) and isinstance(body[0].value, ast.Constant) and isinstance(body[0].value.value, str):
+                body = body[1:]
+            normalized = json.dumps(_native_ast_data(body), separators=(',', ':'))
+            if hashlib.sha256(normalized.encode()).hexdigest() != expected:
+                raise ValueError('Native manual policy changed')
+    endpoint = trees['agent/anthropic_endpoints.py']
+    prefixes = ast.literal_eval(_native_declaration(endpoint, '_KIMI_FAMILY_MODEL_PREFIXES'))
+    exact_node = _native_declaration(endpoint, '_KIMI_FAMILY_EXACT_SLUGS')
+    if not (isinstance(exact_node, ast.Call) and isinstance(exact_node.func, ast.Name)
+            and exact_node.func.id == 'frozenset' and len(exact_node.args) == 1 and not exact_node.keywords):
+        raise ValueError('Native model family policy changed')
+    exact = ast.literal_eval(exact_node.args[0])
+    if (not isinstance(prefixes, tuple) or not isinstance(exact, (set, tuple, list))
+            or not all(isinstance(v, str) and v for v in (*prefixes, *exact))):
+        raise ValueError('Invalid native model families')
+    # Normalization only strips anthropic/ on non-Claude names; it does not
+    # change these predicates. Exclude every Haiku, including future variants.
+    name = model.lower()
+    slug = model.strip().lower().rsplit('/', 1)[-1]
+    if not slug or 'claude' in name or 'haiku' in name or slug in exact or slug.startswith(prefixes):
+        return dict(UNKNOWN)
+    budgets = ast.literal_eval(_native_declaration(trees['agent/anthropic_adapter.py'], 'THINKING_BUDGET'))
+    levels = ast.literal_eval(_native_declaration(trees['hermes_constants.py'], 'VALID_REASONING_EFFORTS'))
+    if (not isinstance(budgets, dict) or not budgets or not isinstance(levels, (tuple, list))
+            or not all(isinstance(v, str) and v for v in levels)
+            or not all(isinstance(k, str) and k in levels and type(v) is int and v > 0 for k, v in budgets.items())
+            or len(set(budgets.values())) != len(budgets)):
+        raise ValueError('Invalid native manual budgets')
+    # No synthesized None/Off: on this path native disabled means omission.
+    # Names missing from THINKING_BUDGET fall back to 8000, not extra tiers.
+    return {'efforts': sorted(budgets, key=budgets.get), 'default_effort': None, 'effort_source': 'harness'}
+
+
 def load_effort_capability(template, *, harness, backend_id, model):
     """Read checked metadata only. No process, provider or credential calls."""
     if harness == 'hermes':
@@ -109,9 +195,12 @@ def load_effort_capability(template, *, harness, backend_id, model):
             spec = importlib.util.spec_from_file_location('_orrery_hermes_route_projection', path)
             projection = importlib.util.module_from_spec(spec)
             spec.loader.exec_module(projection)
-            if projection.profile_route(template['profiles'][backend_id], backend_id)['route']['api_mode'] != 'chat_completions':
-                return dict(UNKNOWN)
-            return hermes_effort_capability(template)
+            mode = projection.profile_route(template['profiles'][backend_id], backend_id)['route']['api_mode']
+            if mode == 'chat_completions':
+                return hermes_effort_capability(template)
+            if mode == 'anthropic_messages':
+                return hermes_manual_effort_capability(template, model)
+            return dict(UNKNOWN)
         except (OSError, ValueError, KeyError, TypeError, SyntaxError, StopIteration, UnicodeError, ImportError, AttributeError):
             return dict(UNKNOWN)
     if harness != 'dsh':
