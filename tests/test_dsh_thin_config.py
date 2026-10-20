@@ -76,6 +76,17 @@ class ThinTests(unittest.TestCase):
     def rows(self, plan):
         return thin.read(Path(plan['config_dir']) / 'native.patch.json')
 
+    def test_product_delegate_is_linked_into_native_skills(self):
+        source = self.product / 'skills/delegate'
+        source.mkdir(parents=True)
+        content = (ROOT / 'skills/delegate/SKILL.md').read_bytes()
+        (source / 'SKILL.md').write_bytes(content)
+        plan = thin.generate(self.doc)
+        linked = Path(plan['env']['DSH_HOME']) / 'skills/delegate'
+        self.assertTrue(linked.is_symlink())
+        self.assertEqual(linked.resolve(), source.resolve())
+        self.assertEqual((linked / 'SKILL.md').read_bytes(), content)
+
     def test_native_plan_omits_trial_policy_preserves_proxy_and_instructions(self):
         with patch('subprocess.run', side_effect=AssertionError('subprocess forbidden')):
             plan = thin.generate(self.doc)
