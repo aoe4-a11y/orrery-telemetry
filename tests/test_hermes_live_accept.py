@@ -168,7 +168,7 @@ class NativeAcceptanceData(unittest.TestCase):
         fixture = fixtures.ThinConfig()
         fixture.setUp()
         self.addCleanup(fixture.doCleanups)
-        profile = fixture.runtime / 'profiles/deepseek'
+        profile = fixture.profile
         profile.mkdir(parents=True)
         raw = '# unchanged\nmodel: "preserve" # verbatim\ntelemetry:\n  shared_metrics:\n    enabled: false\n    send: false\n    offer_version: 1 # old\nmemory: {enabled: true}\n'
         (profile / 'config.yaml').write_text(raw)
