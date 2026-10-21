@@ -64,7 +64,7 @@ curl -s http://127.0.0.1:8770/api/version
 ```
 
 ```json
-{"name":"orrery-telemetry","version":"2026.09.16.1","api":25}
+{"name":"orrery-telemetry","version":"2026.09.16.1","api":26}
 ```
 
 version の解決順は [インストール](install.md#version)を参照してください。
@@ -274,6 +274,8 @@ API 世代5からの追加 field です。resume できる（`ready` または `
 `mail_reason: mail_schema_unsupported` の row と応答には `mail_remedy` も付きます。この installer が入れた ORRERY Mail を `./scripts/install.sh --update-mail` で更新し、会話だけのセッションを終えてから再開し直す手順で、dry-run が拒否したら [Mail の更新手順](agentstack-mail-update.md) に従うよう案内します。同じ文は `mail_message` の末尾にも入るので、`mail_message` を表示する利用側には新しい field を読まなくても届きます（API 世代は変えていません）。`credential_absent` と `retention_expired` は dashboard から直せないので付きません。稼働中の会話だけのセッションは、Mail の row が retired で `program` が空でも `mail_status` / `mail_reason` / `mail_message` を出します。
 
 ## GET `/api/graph`
+
+API 世代26では `/api/graph` の node に正規化前の `model_raw` を追加します。`provider=strata` / `locality=local` を既存の Local 六角形で表示し、`model_raw` を優先して Qwen などの maker を選びます。未知の maker は空の六角形です。provider / locality の意味は変わりません。
 
 query:
 
