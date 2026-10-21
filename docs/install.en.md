@@ -4,7 +4,32 @@
 
 ## Optional dsh / Hermes installation
 
-For Claude Code / Codex CLI, start with the common installation and each CLI's login below. For an API model through dsh / Hermes, first check the [supported combinations and limitations (Japanese)](managed-catalog.md). This route currently targets macOS in legacy mode; the common WSL2 / Linux installation alone does not enable it.
+### Ubuntu WSL Secret Service references (real-machine acceptance pending)
+
+Linux catalog admission requires an explicit non-secret `backends.<id>.credential_ref` in the manifest:
+`{"store":"secret-service","attributes":{"service":"example-service","account":"example-account"}}`.
+Never put a key value in this reference. Attribute names start with an ASCII letter and use letters, digits,
+`_`, `.`, or `-`; values are nonempty strings. Control characters, leading option-like `-` values and unknown stores are rejected.
+
+dsh, Hermes and DeepSeek balance use this same reference through an internal reader.
+Combining it with the existing dsh `keychain` or Hermes `key_cmd` produces `credential_reference_conflict`.
+Mac configurations without the new reference retain their existing behavior.
+The reader only performs `/usr/bin/secret-tool lookup`; it does not register, unlock, persist a key or fall back to another credential.
+Do not run this internal reader to display a key as a verification step.
+
+Secret Service, the same user's session D-Bus and an unlocked collection must be prepared separately.
+`DBUS_SESSION_BUS_ADDRESS` and `XDG_RUNTIME_DIR` are non-secret connection context forwarded only to the relevant lookup process.
+`credential_reader_unavailable` means a missing executable, `credential_unavailable` a failed lookup and
+`credential_timeout` a lookup timeout. Static catalog checks do not look up keys or verify unlock state.
+Balance availability remains separate from conversation success.
+
+Checks use synthetic stores, generators and guards. Real WSL version/architecture/services, Linux runtime dependencies,
+authentication, Mail, exit and resume remain unaccepted. This is not a verified Secret Service/D-Bus setup guide.
+Windows bridging, a public login CLI and automatic configuration migration are outside this change.
+
+### Existing installation and configuration
+
+For Claude Code / Codex CLI, start with the common installation and each CLI's login below. For an API model through dsh / Hermes, first check the [supported combinations and limitations (Japanese)](managed-catalog.md). The real-machine checks currently cover macOS in legacy mode; the common WSL2 / Linux installation alone does not enable it.
 
 Before launching, prepare the optional harness, backend URL and formal model IDs, credential references, the private manifest and harness configuration connecting them, a work folder, and a choice of parent or standalone. The installer does not create backends or logins; common provider login is in design. Preparing these settings is a separate step from installing a runtime.
 
