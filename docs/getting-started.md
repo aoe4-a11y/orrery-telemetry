@@ -101,6 +101,8 @@ child の OS terminal は既定で背面に自動で開きます。dashboard か
 
 ### 5. しりとりで通しの確認をする
 
+dsh / Hermesの接続先が未設定なら、先に[同梱例とagent補助で非秘密設定を準備](install.md#同梱例から設定を準備する)します。秘密入力と有効化は本人が承認し、例の配布と通しの確認を分けます。
+
 install が本当にできたかを一度に確かめるには、Claude Code と Codex の child にしりとりをさせるのが手軽です。名前の登録、ORRERY Mail の往復、通知の差し込み、dashboard の描画がすべて動いていないと、しりとりは一巡もしません。
 
 ```text

@@ -34,6 +34,12 @@ Claude Code / Codex CLI を使う人は、下の共通導入と各 CLI のログ
 
 起動までに用意するものは、任意導入する harness、接続先 backend の URL と正式な model ID、資格を取り出す参照、これらを結ぶ私有 manifest と harness 設定、作業 folder と親を使うかの選択です。installer は backend やログインを作らず、共通の provider ログイン機能は設計中です。利用者が設定を準備する工程と、runtime を導入する工程を分けてください。
 
+### 同梱例から設定を準備する
+
+installは `examples/native-harnesses/` に[日本語手順と4つの非有効例](../examples/native-harnesses/README.md)を配ります。導入済みruntimeは所有receipt/currentを検証し、参照入りの `resolved/<snapshot-id>/` を完了時に案内します（B標準）。未導入・model変更・調整では、既存agentが非秘密設定を補助するAの手順を使えます。コピー後の絶対参照3箇所と接続先を合わせ、本人が秘密入力・有効化を承認します。例は常に `enabled: false`、既存例/私有設定は非上書きで、例を置くだけでcatalogを有効にしません。
+
+MacのKeychain形式とLinuxのSecret Service `credential_ref` は同梱手順で区別します。Linux対応sourceの静的準備は、実WSLの秘密取得/接続/Mail/終了/resumeの受入を意味しません。uninstall/purgeは所有記録のhashと一致する未編集の例だけを削除し、利用者コピー・編集済み/未記録fileは保持します。
+
 `install.sh --enable-dsh --dsh-node /absolute/node` はdsh 0.2.1-rc.2 / TUI 0.16.1と標準起動用のnative hook adapter、`--enable-hermes` は固定commit d923a5eb487a17c0a68801bba9ef0f56c81040a8のHermesを `harnesses/{dsh,hermes}/<世代>` へ導入します。両方なら2つのenableを指定します。既定ではどちらも取得せず、更新時は各々の保存済みenabledを継承します。Nodeは既存の24.2以上を絶対pathで指定し、本体は取得しません。取得はnpm/GitHubとHermesの固定PMに必要な配布元から行います。`--harness-cache PATH` はdshのtarball/npm offline cacheとHermesのlocal sourceを参照します（Hermes PMの依存取得は別です）。`--dry-run` は取得・書込なしです。
 
 Nodeの絶対pathは `AGENTSTACK_DSH_NODE` としてenv.shに保存され、通常の更新で引き継ぎます。旧導入で未保存の場合はdshの `current.json` から補完します。`--managed-spawn-config /absolute/manifest.json` は標準のDeepSeek・Local catalogと起動に使う私有manifestの参照だけを `AGENTSTACK_MANAGED_SPAWN_CONFIG` に保存し、dashboardのlaunchd/systemd/背景起動へ渡します。再起動・次のログイン・通常更新でも保持され、manifest本体や鍵はコピーしません。明示のオプション・環境変数が保存値より優先します。

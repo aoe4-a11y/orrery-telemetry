@@ -101,6 +101,8 @@ By default the child's OS terminal opens automatically in the background. If you
 
 ### 5. Play shiritori as an end-to-end check
 
+For an unconfigured dsh / Hermes backend, first [prepare non-secret settings from bundled examples with agent assistance](install.en.md#prepare-settings-from-bundled-examples). Secret input and activation require the person; example distribution and end-to-end acceptance are separate steps.
+
 The quickest way to confirm the whole install at once is a game of shiritori (Japanese word chain) between a Claude Code agent and a Codex child. Name registration, ORRERY Mail round trips, notification injection, and dashboard rendering all have to work for even one round to complete.
 
 ```text
