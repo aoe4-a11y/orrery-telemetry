@@ -44,7 +44,7 @@ import urllib.request
 from urllib.parse import urlparse, parse_qs
 
 # Public dashboard compatibility generation (docs/tests read this source).
-API_GENERATION = 25
+API_GENERATION = 26
 # Mode admission is shared with hooks and operator/service entry points.
 import runpy as _runtime_runpy
 _MODE_API = _runtime_runpy.run_path(str(Path(__file__).resolve().parents[1] / 'bin/lib/runtime_client.py'))
@@ -2527,6 +2527,7 @@ def graph_payload(days: float, show_all: bool) -> dict:
          # モデル: pane 由来を優先 (warm pool claim で DB が乖離するケース)
          #   display 形式に揃える (build_agents と同じ正規化)
          "model": _display_model(_pane_model_for(lv.get("pane_model"), n.get("program"))) or n.get("model"),
+         "model_raw": _pane_model_for(lv.get("pane_model"), n.get("program")) or n.get("model") or "",
          # provider: family ベースで anthropic / openai 等を判定（logo 用）
          "provider": _provider_of(_pane_model_for(lv.get("pane_model"), n.get("program"))
                                   or n.get("model") or n.get("program"))}
