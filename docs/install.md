@@ -50,7 +50,7 @@ Nodeの絶対pathは `AGENTSTACK_DSH_NODE` としてenv.shに保存され、通�
 
 設定後に catalog の利用可否を確認し、[cockpit の New Agent / Harness / Lineage から Mail を往復](getting-started.md#5-しりとりで通しの確認をする)させます。同梱 dashboard の NEW AGENT でも、catalog で available な DeepSeek / Local の model と Harness（dsh または Hermes）を選べます。画面を使わない起動の詳細は [API reference](api.md) を参照してください。catalog の候補表示は、資格・接続・tool・Mail の成功を確かめる試験ではありません。
 
-Hermes の子ごとの独立した記憶は実装中で、今の固定版では backend ごとの profile を共有します。会話の resume と記憶の分離は別の機能です。共通 Telegram 入口は設計中、Local の手動 effort は実 Local server での受け入れ前です（[現在の制限](managed-catalog.md#現在の制限)）。
+Hermes の新しい子は project と canonical 名ごとの安定した独立 HOME を使い、正規 resume では保存 pin と exact native session ID を照合して同じ HOME を使います。旧共有 HOME の pin は `native_resume_legacy_profile` で停止し、旧データや pin を自動移行しません。合成 provider を使う実 CLI で保存・同 HOME / ID の復帰・別子との非共有を確認していますが、resume 時に最新 memory を初回 system prompt へ再注入するものではなく、実 provider・full Mail の通し受け入れは未完です。共通 Telegram 入口は設計中、Local の手動 effort は実 Local server での受け入れ前です（[現在の制限](managed-catalog.md#現在の制限)）。
 
 [README に戻る](../README.md) · [次: Launcher と identity](launchers.md)
 

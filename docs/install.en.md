@@ -49,7 +49,7 @@ When a standard catalog manifest is configured, dsh installation/update extracts
 
 Once configured, check catalog availability, then [exchange Mail through cockpit New Agent / Harness / Lineage](getting-started.en.md#5-play-shiritori-as-an-end-to-end-check). The bundled dashboard NEW AGENT also lets you select a DeepSeek / Local model and Harness (dsh or Hermes) marked available in the catalog. See the [API reference](api.en.md) for a launch without the screen. Catalog visibility does not test credentials, connections, tools or Mail delivery.
 
-Independent per-child Hermes memory is in implementation; the current pinned version shares a profile per backend. Conversation resume and memory separation are different features. A common Telegram entry point is in design, and manual Local effort has not passed real Local server acceptance. See [current limitations (Japanese)](managed-catalog.md#現在の制限).
+New Hermes children use a stable, separate HOME for each project and canonical name. Standard resume checks the saved pin and exact native session ID and reuses that HOME. Old shared-HOME pins stop with `native_resume_legacy_profile`; old data and pins are not migrated automatically. Real CLI checks with a synthetic provider confirmed storage, same-HOME/ID restoration and separation between children. Resume does not reinject the latest memory into the initial system prompt, and real-provider/full-Mail end-to-end acceptance remains incomplete. A common Telegram entry point is in design, and manual Local effort has not passed real Local server acceptance. See [current limitations (Japanese)](managed-catalog.md#現在の制限).
 
 [Back to README](../README.en.md) · [Next: Launchers and identity](launchers.en.md)
 
