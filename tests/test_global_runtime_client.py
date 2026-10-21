@@ -1208,7 +1208,13 @@ def test_reregister_observe_only_has_distinct_output_and_status(prepared):
 def test_waiting_client_survives_another_process_metadata_update(prepared, monkeypatch):
     import inspect
     import time
+    from types import SimpleNamespace
     module = runpy.run_path(str(ROOT / 'bin/agentstack-await-reply'))
+    # Metadata refresh is a correctness check, not a five-second performance gate.
+    # Replace only this loaded entrypoint's clock; real RPC/subprocess clocks remain real.
+    clock = [time.monotonic()]
+    monkeypatch.setitem(module['main'].__globals__, 'time',
+                        SimpleNamespace(monotonic=lambda: clock[0]))
     context_before = prepared['client_path'].read_bytes()
     diagnostics = {'rpc_errors': [], 'registration_seconds': None}
     def waiting(fetch, **kwargs):
@@ -1235,6 +1241,7 @@ def test_waiting_client_survives_another_process_metadata_update(prepared, monke
                     })
                 return trace_exception
             started = time.monotonic()
+            deadline_remaining_before = deadline - clock[0]
             previous_trace = sys.gettrace()
             try:
                 sys.settrace(trace_exception)
@@ -1245,8 +1252,8 @@ def test_waiting_client_survives_another_process_metadata_update(prepared, monke
             assert isinstance(rows, list), json.dumps({
                 'phase': phase, 'fetch_seconds': finished - started,
                 'elapsed_since_main': finished - main_started,
-                'deadline_remaining_before': deadline - started,
-                'deadline_remaining_after': deadline - finished,
+                'deadline_remaining_before': deadline_remaining_before,
+                'deadline_remaining_after': deadline - clock[0],
                 **diagnostics,
             }, indent=2, sort_keys=True)
         fetch_checked('before-metadata-update')
@@ -1255,6 +1262,9 @@ def test_waiting_client_survives_another_process_metadata_update(prepared, monke
         diagnostics['registration_seconds'] = time.monotonic() - registration_started
         assert result.returncode == 0, result.stderr
         fetch_checked('after-metadata-update')
+        # The same fetch still honors the unchanged five-second deadline.
+        clock[0] = deadline
+        assert fetch() is None
         return 124, None
     monkeypatch.setitem(module['main'].__globals__, 'wait_for_reply', waiting)
     main_started = time.monotonic()
