@@ -16,7 +16,11 @@ Multiple coding agents can talk directly, divide the work, and check each other'
 
 A provider supplies the connection, a model identifies what runs there, and a harness is the CLI that runs tools and the conversation. Standard API combinations currently cover DeepSeek / Local × dsh / Hermes, with availability checked per configured model. This does not promise arbitrary API and harness combinations.
 
-API-backed children currently target macOS in legacy mode. Backend and credential references need manual preparation. Common login, independent per-child Hermes memory and a common Telegram entry point are unfinished; manual Local effort has not passed real-server acceptance. The bundled NEW AGENT does not send a harness and cannot launch these children. See the [New Agent / Harness / Lineage check](docs/getting-started.en.md#5-play-shiritori-as-an-end-to-end-check) for an environment with cockpit added.
+Configured DeepSeek / Local models can be selected through Model and Harness (dsh / Hermes) in the bundled NEW AGENT. Backend, runtime and credential references require manual preparation. API spawning uses legacy mode with macOS Keychain or explicitly configured Linux Secret Service references. New Hermes children use a separate HOME per project and canonical name. Common login and Telegram entry points are in design; real-server acceptance of manual Local effort remains incomplete. See the [current limitations (Japanese)](docs/managed-catalog.md#現在の制限) and the [Model / Harness screen examples](docs/dashboard.en.md#native-models-and-harnesses).
+
+![Select a configured Local model and dsh / Hermes in NEW AGENT](docs/img/native-harness-picker.png)
+
+Fictional catalog data rendered by the product UI. [Watch the selection GIF](docs/img/native-harness-selection.gif); it stops before SPAWN.
 
 ## Install Telemetry only
 
