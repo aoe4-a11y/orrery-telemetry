@@ -23,11 +23,18 @@ def test_native_entry_identity(program, command, expected):
 @pytest.mark.parametrize('command,returncode,expected', [
     ('node /fixed/node_modules/@deepseek-ai/dsh/lib/bin.js', 0, True),
     ('node /fixed/mcp.js', 0, False),
+    ('python /fixed/node_modules/@deepseek-ai/dsh/lib/bin.js', 0, False),
+    ('node', 0, False),
+    ('node "unterminated', 0, False),
     ('', 1, None),
 ])
-def test_only_pane_descendants_count(monkeypatch, command, returncode, expected):
+@pytest.mark.parametrize('platform,comm', [
+    ('linux', 'node'), ('linux', 'MainThread'), ('darwin', 'node'),
+])
+def test_only_pane_descendants_count(monkeypatch, command, returncode, expected, platform, comm):
+    monkeypatch.setattr(runtime, 'sys', SimpleNamespace(platform=platform))
     server._NATIVE_COMMAND_CACHE.clear()
-    tree = ({10: 'zsh', 11: 'node', 50: 'node'}, {10: [11]})
+    tree = server._parse_process_tree(f'10 1 bash\n11 10 {comm}\n50 1 {comm}\n')
     calls = []
 
     def ps(argv, **kwargs):
@@ -39,6 +46,28 @@ def test_only_pane_descendants_count(monkeypatch, command, returncode, expected)
     assert calls == [['ps', '-p', '11', '-o', 'args=']]
     assert server.classify('FixtureAgent', 'node', '', True, 'dsh', expected) == (
         'finished' if expected is False else 'agent')
+
+
+@pytest.mark.parametrize('platform,program,comm', [
+    ('darwin', 'dsh', 'MainThread'),
+    ('linux', 'dsh', 'OtherThread'),
+    ('linux', 'hermes', 'MainThread'),
+])
+def test_unrelated_process_names_never_reach_native_argv(monkeypatch, platform, program, comm):
+    monkeypatch.setattr(runtime, 'sys', SimpleNamespace(platform=platform))
+    server._NATIVE_COMMAND_CACHE.clear()
+    tree = server._parse_process_tree(f'10 1 bash\n11 10 {comm}\n')
+    monkeypatch.setattr(server.subprocess, 'run', lambda *a, **k: pytest.fail('unexpected args probe'))
+    assert server._agent_process_alive(10, tree, program) is False
+
+
+@pytest.mark.parametrize('comm', ['node', 'MainThread'])
+def test_native_process_outside_the_pane_is_not_probed(monkeypatch, comm):
+    monkeypatch.setattr(runtime, 'sys', SimpleNamespace(platform='linux'))
+    server._NATIVE_COMMAND_CACHE.clear()
+    tree = server._parse_process_tree(f'10 1 bash\n11 10 sh\n50 1 {comm}\n')
+    monkeypatch.setattr(server.subprocess, 'run', lambda *a, **k: pytest.fail('foreign process probe'))
+    assert server._agent_process_alive(10, tree, 'dsh') is False
 
 
 def test_backend_metadata_never_uses_model_vendor(tmp_path):
