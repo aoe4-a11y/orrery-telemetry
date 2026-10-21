@@ -111,6 +111,8 @@ dsh opt-inが有効な時だけ `providers` に `provider: "dsh"` を加える�
 
 ## GET `/api/spawn-names`
 
+The bundled NEW AGENT selects Model → Harness → Helper model → Effort. Untouched Effort and Use default send a supported concrete default reported by the catalog; a null, unknown, or unsupported default omits effort. The first candidate is not guessed as a default, and providers requiring explicit effort still require a selection. Same as main omits helper_model. Untouched Terminal omits headless to inherit the existing launch policy; only an explicit change sends it.
+
 API 23 includes explicitly configured DeepSeek (`provider=deepseek`) and Local (`provider=strata`, `locality=local`) in standard spawn. Use the model's `harnesses` availability and `efforts` / `default_effort` / `effort_source`. Capabilities come from checked local evidence, never trial effort settings. The normal catalog does not require managed task modes or attempt IDs. Missing runtimes and disabled opt-ins are unavailable.
 
 The Claude provider exposes `model_source` (`override`, `local_cache`, or `bundled`) and `model_error` for explicit-setting diagnostics. Invalid overrides return an empty Claude `models` list without disabling other providers. Top-level `models` / `default_model` mirror the same Claude candidates. See [Claude model catalog](configuration.en.md#claude-model-catalog) for discovery and authorization boundaries.

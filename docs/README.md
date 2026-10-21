@@ -12,6 +12,7 @@ Telemetry 自体の操作は、header の `HELP MAP`（NETWORK では `SETTINGS`
 
 ## はじめる
 
+- [目的と provider・model・harness を選ぶ](getting-started.md#provider-model-harness) — 観測、API の model で作成、agent 同士の連携の3導線。[対応組合せと現在の制限](managed-catalog.md)で準備・OS・画面の範囲を確認する。
 - [ORRERY cockpit](https://github.com/gyroid-eth/orrery/blob/master/README.md#クイックスタート) — 1行で両方を入れ、画面の初回ガイドから始める。
 - [Telemetry 単独で使い始める](getting-started.md) — 対象者・用語と、単独 install、agent 起動、Mail の通し確認。
 
@@ -30,7 +31,7 @@ Telemetry 自体の操作は、header の `HELP MAP`（NETWORK では `SETTINGS`
 - [Codex plugin 導入処理の再利用](codex-plugin-lifecycle.md) — 本体 install 接続前の共通処理、対象 hook の信頼と隔離確認。
 - [Codex App 統合](codex-app.md) — optional provider として Desktop の task/subagent を載せる。
 - [Antigravity / Gemini](antigravity.md) — optional provider の追加と認証・機能の境界。
-- [DeepSeekの表示と残高](dsh-stage-a.md) — 明示opt-inのロゴ・USD残高。子の起動は次の版。
+- [DeepSeekの表示と残高](dsh-stage-a.md) — 段Aの歴史記録。現在の dsh / Hermes の導入は[インストール](install.md)、子の起動は provider と harness の指定が必要（[API](api.md)）。
 - [常駐 agent](persistent-agents.md) — enrollment、interactive/headless 起動、credential の復旧。
 - [決定論的 daemon](daemon-agents.md) — 専用 identity、正規 binding、通知待機と停止の契約。
 - [Mail service の更新](agentstack-mail-update.md) — 稼働中 Mail の build を検証して差し替える運用手順。

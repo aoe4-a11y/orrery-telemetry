@@ -17230,6 +17230,328 @@
           "selector": ".bub.tool .tk,.bub.tool.res .tk",
           "tokens": [],
           "value": "var(--amber)"
+        },
+        {
+          "channels": [
+            "color"
+          ],
+          "consumer": true,
+          "id": "6d19e6c39fdeaa90",
+          "important": false,
+          "line": 2618,
+          "property": "color",
+          "references": [
+            "--ink"
+          ],
+          "selector": ".effort-value",
+          "tokens": [
+            "--ink"
+          ],
+          "value": "var(--ink)"
+        },
+        {
+          "channels": [
+            "stroke"
+          ],
+          "consumer": true,
+          "id": "da8ddaa20708c7fd",
+          "important": false,
+          "line": 2620,
+          "property": "stroke",
+          "references": [
+            "--hair"
+          ],
+          "selector": ".effort-track",
+          "tokens": [
+            "--hair"
+          ],
+          "value": "var(--hair)"
+        },
+        {
+          "channels": [
+            "stroke"
+          ],
+          "consumer": true,
+          "id": "beec69d3708cac8a",
+          "important": false,
+          "line": 2621,
+          "property": "stroke",
+          "references": [
+            "--hair"
+          ],
+          "selector": ".effort-guide",
+          "tokens": [
+            "--hair"
+          ],
+          "value": "var(--hair)"
+        },
+        {
+          "channels": [
+            "stroke"
+          ],
+          "consumer": false,
+          "id": "800749b926506400",
+          "important": false,
+          "line": 2622,
+          "property": "stroke",
+          "references": [
+            "--amber"
+          ],
+          "selector": ".effort-progress",
+          "tokens": [],
+          "value": "var(--amber)"
+        },
+        {
+          "channels": [
+            "fill"
+          ],
+          "consumer": true,
+          "id": "a6da25c977b33c26",
+          "important": false,
+          "line": 2623,
+          "property": "fill",
+          "references": [
+            "--ink-faint"
+          ],
+          "selector": ".effort-stop",
+          "tokens": [
+            "--ink-faint"
+          ],
+          "value": "var(--ink-faint)"
+        },
+        {
+          "channels": [
+            "fill"
+          ],
+          "consumer": false,
+          "id": "92253475573f3603",
+          "important": false,
+          "line": 2624,
+          "property": "fill",
+          "references": [],
+          "selector": ".effort-halo",
+          "tokens": [],
+          "value": "none"
+        },
+        {
+          "channels": [
+            "stroke"
+          ],
+          "consumer": false,
+          "id": "84075e517df11061",
+          "important": false,
+          "line": 2624,
+          "property": "stroke",
+          "references": [
+            "--amber"
+          ],
+          "selector": ".effort-halo",
+          "tokens": [],
+          "value": "var(--amber)"
+        },
+        {
+          "channels": [
+            "fill"
+          ],
+          "consumer": true,
+          "id": "fb6383188b1901e6",
+          "important": false,
+          "line": 2625,
+          "property": "fill",
+          "references": [
+            "--panel-2"
+          ],
+          "selector": ".effort-ring",
+          "tokens": [
+            "--panel-2"
+          ],
+          "value": "var(--panel-2)"
+        },
+        {
+          "channels": [
+            "stroke"
+          ],
+          "consumer": false,
+          "id": "961664501dc26308",
+          "important": false,
+          "line": 2625,
+          "property": "stroke",
+          "references": [
+            "--amber"
+          ],
+          "selector": ".effort-ring",
+          "tokens": [],
+          "value": "var(--amber)"
+        },
+        {
+          "channels": [
+            "fill"
+          ],
+          "consumer": false,
+          "id": "0a896d1d90dd64f7",
+          "important": false,
+          "line": 2626,
+          "property": "fill",
+          "references": [
+            "--amber"
+          ],
+          "selector": ".effort-dot",
+          "tokens": [],
+          "value": "var(--amber)"
+        },
+        {
+          "channels": [
+            "stroke"
+          ],
+          "consumer": true,
+          "id": "87cc8aa80040db24",
+          "important": false,
+          "line": 2627,
+          "property": "stroke",
+          "references": [
+            "--ink-faint"
+          ],
+          "selector": ".effort-orbit.is-default .effort-halo,.effort-orbit.is-default .effort-ring",
+          "tokens": [
+            "--ink-faint"
+          ],
+          "value": "var(--ink-faint)"
+        },
+        {
+          "channels": [
+            "fill"
+          ],
+          "consumer": true,
+          "id": "5946bcb7ce789cd7",
+          "important": false,
+          "line": 2628,
+          "property": "fill",
+          "references": [
+            "--ink-faint"
+          ],
+          "selector": ".effort-orbit.is-default .effort-dot",
+          "tokens": [
+            "--ink-faint"
+          ],
+          "value": "var(--ink-faint)"
+        },
+        {
+          "channels": [
+            "color"
+          ],
+          "consumer": true,
+          "id": "f633c7484f83075e",
+          "important": false,
+          "line": 2629,
+          "property": "color",
+          "references": [
+            "--ink-dim"
+          ],
+          "selector": ".effort-ends",
+          "tokens": [
+            "--ink-dim"
+          ],
+          "value": "var(--ink-dim)"
+        },
+        {
+          "channels": [
+            "borderTopColor",
+            "borderRightColor",
+            "borderBottomColor",
+            "borderLeftColor"
+          ],
+          "consumer": false,
+          "id": "3b5da5639678e0dd",
+          "important": false,
+          "line": 2630,
+          "property": "border",
+          "references": [],
+          "selector": "#spm-effort-row .effort-range",
+          "tokens": [],
+          "value": "0"
+        },
+        {
+          "channels": [
+            "color"
+          ],
+          "consumer": true,
+          "id": "d9a190c2cbbd6969",
+          "important": false,
+          "line": 2632,
+          "property": "color",
+          "references": [
+            "--ink-dim"
+          ],
+          "selector": "#spm-effort-row .effort-caption",
+          "tokens": [
+            "--ink-dim"
+          ],
+          "value": "var(--ink-dim)"
+        },
+        {
+          "channels": [
+            "borderTopColor",
+            "borderRightColor",
+            "borderBottomColor",
+            "borderLeftColor"
+          ],
+          "consumer": false,
+          "id": "e7989f5a9f591466",
+          "important": false,
+          "line": 2633,
+          "property": "border",
+          "references": [],
+          "selector": "#spm-effort-row .effort-reset",
+          "tokens": [],
+          "value": "0"
+        },
+        {
+          "channels": [
+            "backgroundColor"
+          ],
+          "consumer": false,
+          "id": "2612692a992dfe70",
+          "important": false,
+          "line": 2633,
+          "property": "background",
+          "references": [],
+          "selector": "#spm-effort-row .effort-reset",
+          "tokens": [],
+          "value": "none"
+        },
+        {
+          "channels": [
+            "color"
+          ],
+          "consumer": false,
+          "id": "efd35e8d36cc65b4",
+          "important": false,
+          "line": 2633,
+          "property": "color",
+          "references": [
+            "--amber"
+          ],
+          "selector": "#spm-effort-row .effort-reset",
+          "tokens": [],
+          "value": "var(--amber)"
+        },
+        {
+          "channels": [
+            "color"
+          ],
+          "consumer": true,
+          "id": "1d755b3e2ab43bbb",
+          "important": false,
+          "line": 2634,
+          "property": "color",
+          "references": [
+            "--ink-dim"
+          ],
+          "selector": ".effort-not-supported",
+          "tokens": [
+            "--ink-dim"
+          ],
+          "value": "var(--ink-dim)"
         }
       ],
       "records": [
@@ -34019,6 +34341,320 @@
           "selector": ".bub.tool .tk,.bub.tool.res .tk",
           "tokens": [],
           "value": "var(--amber)"
+        },
+        {
+          "channels": [
+            "color"
+          ],
+          "consumer": false,
+          "id": "6aa1d22ad7fdaadf",
+          "important": false,
+          "line": 2618,
+          "property": "color",
+          "references": [
+            "--ink"
+          ],
+          "selector": ".effort-value",
+          "tokens": [],
+          "value": "var(--ink)"
+        },
+        {
+          "channels": [
+            "stroke"
+          ],
+          "consumer": false,
+          "id": "9c5574d5d200445a",
+          "important": false,
+          "line": 2620,
+          "property": "stroke",
+          "references": [
+            "--hair"
+          ],
+          "selector": ".effort-track",
+          "tokens": [],
+          "value": "var(--hair)"
+        },
+        {
+          "channels": [
+            "stroke"
+          ],
+          "consumer": false,
+          "id": "d43226116eb309e7",
+          "important": false,
+          "line": 2621,
+          "property": "stroke",
+          "references": [
+            "--hair"
+          ],
+          "selector": ".effort-guide",
+          "tokens": [],
+          "value": "var(--hair)"
+        },
+        {
+          "channels": [
+            "stroke"
+          ],
+          "consumer": false,
+          "id": "f488905b0fada269",
+          "important": false,
+          "line": 2622,
+          "property": "stroke",
+          "references": [
+            "--amber"
+          ],
+          "selector": ".effort-progress",
+          "tokens": [],
+          "value": "var(--amber)"
+        },
+        {
+          "channels": [
+            "fill"
+          ],
+          "consumer": true,
+          "id": "ecc3e02a9e5a072a",
+          "important": false,
+          "line": 2623,
+          "property": "fill",
+          "references": [
+            "--ink-faint"
+          ],
+          "selector": ".effort-stop",
+          "tokens": [
+            "--ink-faint"
+          ],
+          "value": "var(--ink-faint)"
+        },
+        {
+          "channels": [
+            "fill"
+          ],
+          "consumer": false,
+          "id": "c753caf5b2b8133a",
+          "important": false,
+          "line": 2624,
+          "property": "fill",
+          "references": [],
+          "selector": ".effort-halo",
+          "tokens": [],
+          "value": "none"
+        },
+        {
+          "channels": [
+            "stroke"
+          ],
+          "consumer": false,
+          "id": "d8e61129a04e4038",
+          "important": false,
+          "line": 2624,
+          "property": "stroke",
+          "references": [
+            "--amber"
+          ],
+          "selector": ".effort-halo",
+          "tokens": [],
+          "value": "var(--amber)"
+        },
+        {
+          "channels": [
+            "fill"
+          ],
+          "consumer": false,
+          "id": "3f65be75f7339506",
+          "important": false,
+          "line": 2625,
+          "property": "fill",
+          "references": [
+            "--panel-2"
+          ],
+          "selector": ".effort-ring",
+          "tokens": [],
+          "value": "var(--panel-2)"
+        },
+        {
+          "channels": [
+            "stroke"
+          ],
+          "consumer": false,
+          "id": "5554582ac0f195ae",
+          "important": false,
+          "line": 2625,
+          "property": "stroke",
+          "references": [
+            "--amber"
+          ],
+          "selector": ".effort-ring",
+          "tokens": [],
+          "value": "var(--amber)"
+        },
+        {
+          "channels": [
+            "fill"
+          ],
+          "consumer": false,
+          "id": "f8c2001d3e290550",
+          "important": false,
+          "line": 2626,
+          "property": "fill",
+          "references": [
+            "--amber"
+          ],
+          "selector": ".effort-dot",
+          "tokens": [],
+          "value": "var(--amber)"
+        },
+        {
+          "channels": [
+            "stroke"
+          ],
+          "consumer": true,
+          "id": "9b4359910ad6cbd5",
+          "important": false,
+          "line": 2627,
+          "property": "stroke",
+          "references": [
+            "--ink-faint"
+          ],
+          "selector": ".effort-orbit.is-default .effort-halo,.effort-orbit.is-default .effort-ring",
+          "tokens": [
+            "--ink-faint"
+          ],
+          "value": "var(--ink-faint)"
+        },
+        {
+          "channels": [
+            "fill"
+          ],
+          "consumer": true,
+          "id": "0a88a4aca04ac4ae",
+          "important": false,
+          "line": 2628,
+          "property": "fill",
+          "references": [
+            "--ink-faint"
+          ],
+          "selector": ".effort-orbit.is-default .effort-dot",
+          "tokens": [
+            "--ink-faint"
+          ],
+          "value": "var(--ink-faint)"
+        },
+        {
+          "channels": [
+            "color"
+          ],
+          "consumer": true,
+          "id": "a153491cecbba43c",
+          "important": false,
+          "line": 2629,
+          "property": "color",
+          "references": [
+            "--ink-dim"
+          ],
+          "selector": ".effort-ends",
+          "tokens": [
+            "--ink-dim"
+          ],
+          "value": "var(--ink-dim)"
+        },
+        {
+          "channels": [
+            "borderTopColor",
+            "borderRightColor",
+            "borderBottomColor",
+            "borderLeftColor"
+          ],
+          "consumer": false,
+          "id": "57d0ded3d46813f6",
+          "important": false,
+          "line": 2630,
+          "property": "border",
+          "references": [],
+          "selector": "#spm-effort-row .effort-range",
+          "tokens": [],
+          "value": "0"
+        },
+        {
+          "channels": [
+            "color"
+          ],
+          "consumer": true,
+          "id": "e0eabd4f5535fcc3",
+          "important": false,
+          "line": 2632,
+          "property": "color",
+          "references": [
+            "--ink-dim"
+          ],
+          "selector": "#spm-effort-row .effort-caption",
+          "tokens": [
+            "--ink-dim"
+          ],
+          "value": "var(--ink-dim)"
+        },
+        {
+          "channels": [
+            "borderTopColor",
+            "borderRightColor",
+            "borderBottomColor",
+            "borderLeftColor"
+          ],
+          "consumer": false,
+          "id": "c42cfe9b40de3782",
+          "important": false,
+          "line": 2633,
+          "property": "border",
+          "references": [],
+          "selector": "#spm-effort-row .effort-reset",
+          "tokens": [],
+          "value": "0"
+        },
+        {
+          "channels": [
+            "backgroundColor"
+          ],
+          "consumer": false,
+          "id": "741158cabae00283",
+          "important": false,
+          "line": 2633,
+          "property": "background",
+          "references": [],
+          "selector": "#spm-effort-row .effort-reset",
+          "tokens": [],
+          "value": "none"
+        },
+        {
+          "channels": [
+            "color"
+          ],
+          "consumer": false,
+          "id": "ae376c48729a7853",
+          "important": false,
+          "line": 2633,
+          "property": "color",
+          "references": [
+            "--amber"
+          ],
+          "selector": "#spm-effort-row .effort-reset",
+          "tokens": [],
+          "value": "var(--amber)"
+        },
+        {
+          "channels": [
+            "color"
+          ],
+          "consumer": true,
+          "id": "4c4b9ea25714b50e",
+          "important": false,
+          "line": 2634,
+          "property": "color",
+          "references": [
+            "--ink-dim"
+          ],
+          "selector": ".effort-not-supported",
+          "tokens": [
+            "--ink-dim"
+          ],
+          "value": "var(--ink-dim)"
         }
       ],
       "records": [
@@ -37480,6 +38116,12 @@
           "property": "font-size",
           "selector": ".tm-exit-btn,.tm-open,.tm-x",
           "value": "11px"
+        },
+        {
+          "line": 2609,
+          "property": "font-size",
+          "selector": ".spm-picker-columns p",
+          "value": "11px"
         }
       ],
       "unit": "declaration"
@@ -37857,12 +38499,12 @@
     }
   },
   "observed": {
-    "background_consumer_records": 393,
-    "dim_contrast_consumer_records": 167,
+    "background_consumer_records": 403,
+    "dim_contrast_consumer_records": 173,
     "glow_color_literals": 98,
     "glow_mutable_components": 41,
     "glow_source_declarations": 79,
-    "small_text_source_records": 162,
+    "small_text_source_records": 163,
     "tracking_source_records": 61
   },
   "rules": {
@@ -52175,6 +52817,271 @@
             ],
             "selector": ".bub.tool .tk,.bub.tool.res .tk",
             "tokens": []
+          },
+          {
+            "channels": [
+              "color"
+            ],
+            "consumer": true,
+            "id": "6d19e6c39fdeaa90",
+            "important": false,
+            "references": [
+              "--ink"
+            ],
+            "selector": ".effort-value",
+            "tokens": [
+              "--ink"
+            ]
+          },
+          {
+            "channels": [
+              "stroke"
+            ],
+            "consumer": true,
+            "id": "da8ddaa20708c7fd",
+            "important": false,
+            "references": [
+              "--hair"
+            ],
+            "selector": ".effort-track",
+            "tokens": [
+              "--hair"
+            ]
+          },
+          {
+            "channels": [
+              "stroke"
+            ],
+            "consumer": true,
+            "id": "beec69d3708cac8a",
+            "important": false,
+            "references": [
+              "--hair"
+            ],
+            "selector": ".effort-guide",
+            "tokens": [
+              "--hair"
+            ]
+          },
+          {
+            "channels": [
+              "stroke"
+            ],
+            "consumer": false,
+            "id": "800749b926506400",
+            "important": false,
+            "references": [
+              "--amber"
+            ],
+            "selector": ".effort-progress",
+            "tokens": []
+          },
+          {
+            "channels": [
+              "fill"
+            ],
+            "consumer": true,
+            "id": "a6da25c977b33c26",
+            "important": false,
+            "references": [
+              "--ink-faint"
+            ],
+            "selector": ".effort-stop",
+            "tokens": [
+              "--ink-faint"
+            ]
+          },
+          {
+            "channels": [
+              "fill"
+            ],
+            "consumer": false,
+            "id": "92253475573f3603",
+            "important": false,
+            "references": [],
+            "selector": ".effort-halo",
+            "tokens": []
+          },
+          {
+            "channels": [
+              "stroke"
+            ],
+            "consumer": false,
+            "id": "84075e517df11061",
+            "important": false,
+            "references": [
+              "--amber"
+            ],
+            "selector": ".effort-halo",
+            "tokens": []
+          },
+          {
+            "channels": [
+              "fill"
+            ],
+            "consumer": true,
+            "id": "fb6383188b1901e6",
+            "important": false,
+            "references": [
+              "--panel-2"
+            ],
+            "selector": ".effort-ring",
+            "tokens": [
+              "--panel-2"
+            ]
+          },
+          {
+            "channels": [
+              "stroke"
+            ],
+            "consumer": false,
+            "id": "961664501dc26308",
+            "important": false,
+            "references": [
+              "--amber"
+            ],
+            "selector": ".effort-ring",
+            "tokens": []
+          },
+          {
+            "channels": [
+              "fill"
+            ],
+            "consumer": false,
+            "id": "0a896d1d90dd64f7",
+            "important": false,
+            "references": [
+              "--amber"
+            ],
+            "selector": ".effort-dot",
+            "tokens": []
+          },
+          {
+            "channels": [
+              "stroke"
+            ],
+            "consumer": true,
+            "id": "87cc8aa80040db24",
+            "important": false,
+            "references": [
+              "--ink-faint"
+            ],
+            "selector": ".effort-orbit.is-default .effort-halo,.effort-orbit.is-default .effort-ring",
+            "tokens": [
+              "--ink-faint"
+            ]
+          },
+          {
+            "channels": [
+              "fill"
+            ],
+            "consumer": true,
+            "id": "5946bcb7ce789cd7",
+            "important": false,
+            "references": [
+              "--ink-faint"
+            ],
+            "selector": ".effort-orbit.is-default .effort-dot",
+            "tokens": [
+              "--ink-faint"
+            ]
+          },
+          {
+            "channels": [
+              "color"
+            ],
+            "consumer": true,
+            "id": "f633c7484f83075e",
+            "important": false,
+            "references": [
+              "--ink-dim"
+            ],
+            "selector": ".effort-ends",
+            "tokens": [
+              "--ink-dim"
+            ]
+          },
+          {
+            "channels": [
+              "borderTopColor",
+              "borderRightColor",
+              "borderBottomColor",
+              "borderLeftColor"
+            ],
+            "consumer": false,
+            "id": "3b5da5639678e0dd",
+            "important": false,
+            "references": [],
+            "selector": "#spm-effort-row .effort-range",
+            "tokens": []
+          },
+          {
+            "channels": [
+              "color"
+            ],
+            "consumer": true,
+            "id": "d9a190c2cbbd6969",
+            "important": false,
+            "references": [
+              "--ink-dim"
+            ],
+            "selector": "#spm-effort-row .effort-caption",
+            "tokens": [
+              "--ink-dim"
+            ]
+          },
+          {
+            "channels": [
+              "borderTopColor",
+              "borderRightColor",
+              "borderBottomColor",
+              "borderLeftColor"
+            ],
+            "consumer": false,
+            "id": "e7989f5a9f591466",
+            "important": false,
+            "references": [],
+            "selector": "#spm-effort-row .effort-reset",
+            "tokens": []
+          },
+          {
+            "channels": [
+              "backgroundColor"
+            ],
+            "consumer": false,
+            "id": "2612692a992dfe70",
+            "important": false,
+            "references": [],
+            "selector": "#spm-effort-row .effort-reset",
+            "tokens": []
+          },
+          {
+            "channels": [
+              "color"
+            ],
+            "consumer": false,
+            "id": "efd35e8d36cc65b4",
+            "important": false,
+            "references": [
+              "--amber"
+            ],
+            "selector": "#spm-effort-row .effort-reset",
+            "tokens": []
+          },
+          {
+            "channels": [
+              "color"
+            ],
+            "consumer": true,
+            "id": "1d755b3e2ab43bbb",
+            "important": false,
+            "references": [
+              "--ink-dim"
+            ],
+            "selector": ".effort-not-supported",
+            "tokens": [
+              "--ink-dim"
+            ]
           }
         ],
         "records": [
@@ -65880,6 +66787,263 @@
             ],
             "selector": ".bub.tool .tk,.bub.tool.res .tk",
             "tokens": []
+          },
+          {
+            "channels": [
+              "color"
+            ],
+            "consumer": false,
+            "id": "6aa1d22ad7fdaadf",
+            "important": false,
+            "references": [
+              "--ink"
+            ],
+            "selector": ".effort-value",
+            "tokens": []
+          },
+          {
+            "channels": [
+              "stroke"
+            ],
+            "consumer": false,
+            "id": "9c5574d5d200445a",
+            "important": false,
+            "references": [
+              "--hair"
+            ],
+            "selector": ".effort-track",
+            "tokens": []
+          },
+          {
+            "channels": [
+              "stroke"
+            ],
+            "consumer": false,
+            "id": "d43226116eb309e7",
+            "important": false,
+            "references": [
+              "--hair"
+            ],
+            "selector": ".effort-guide",
+            "tokens": []
+          },
+          {
+            "channels": [
+              "stroke"
+            ],
+            "consumer": false,
+            "id": "f488905b0fada269",
+            "important": false,
+            "references": [
+              "--amber"
+            ],
+            "selector": ".effort-progress",
+            "tokens": []
+          },
+          {
+            "channels": [
+              "fill"
+            ],
+            "consumer": true,
+            "id": "ecc3e02a9e5a072a",
+            "important": false,
+            "references": [
+              "--ink-faint"
+            ],
+            "selector": ".effort-stop",
+            "tokens": [
+              "--ink-faint"
+            ]
+          },
+          {
+            "channels": [
+              "fill"
+            ],
+            "consumer": false,
+            "id": "c753caf5b2b8133a",
+            "important": false,
+            "references": [],
+            "selector": ".effort-halo",
+            "tokens": []
+          },
+          {
+            "channels": [
+              "stroke"
+            ],
+            "consumer": false,
+            "id": "d8e61129a04e4038",
+            "important": false,
+            "references": [
+              "--amber"
+            ],
+            "selector": ".effort-halo",
+            "tokens": []
+          },
+          {
+            "channels": [
+              "fill"
+            ],
+            "consumer": false,
+            "id": "3f65be75f7339506",
+            "important": false,
+            "references": [
+              "--panel-2"
+            ],
+            "selector": ".effort-ring",
+            "tokens": []
+          },
+          {
+            "channels": [
+              "stroke"
+            ],
+            "consumer": false,
+            "id": "5554582ac0f195ae",
+            "important": false,
+            "references": [
+              "--amber"
+            ],
+            "selector": ".effort-ring",
+            "tokens": []
+          },
+          {
+            "channels": [
+              "fill"
+            ],
+            "consumer": false,
+            "id": "f8c2001d3e290550",
+            "important": false,
+            "references": [
+              "--amber"
+            ],
+            "selector": ".effort-dot",
+            "tokens": []
+          },
+          {
+            "channels": [
+              "stroke"
+            ],
+            "consumer": true,
+            "id": "9b4359910ad6cbd5",
+            "important": false,
+            "references": [
+              "--ink-faint"
+            ],
+            "selector": ".effort-orbit.is-default .effort-halo,.effort-orbit.is-default .effort-ring",
+            "tokens": [
+              "--ink-faint"
+            ]
+          },
+          {
+            "channels": [
+              "fill"
+            ],
+            "consumer": true,
+            "id": "0a88a4aca04ac4ae",
+            "important": false,
+            "references": [
+              "--ink-faint"
+            ],
+            "selector": ".effort-orbit.is-default .effort-dot",
+            "tokens": [
+              "--ink-faint"
+            ]
+          },
+          {
+            "channels": [
+              "color"
+            ],
+            "consumer": true,
+            "id": "a153491cecbba43c",
+            "important": false,
+            "references": [
+              "--ink-dim"
+            ],
+            "selector": ".effort-ends",
+            "tokens": [
+              "--ink-dim"
+            ]
+          },
+          {
+            "channels": [
+              "borderTopColor",
+              "borderRightColor",
+              "borderBottomColor",
+              "borderLeftColor"
+            ],
+            "consumer": false,
+            "id": "57d0ded3d46813f6",
+            "important": false,
+            "references": [],
+            "selector": "#spm-effort-row .effort-range",
+            "tokens": []
+          },
+          {
+            "channels": [
+              "color"
+            ],
+            "consumer": true,
+            "id": "e0eabd4f5535fcc3",
+            "important": false,
+            "references": [
+              "--ink-dim"
+            ],
+            "selector": "#spm-effort-row .effort-caption",
+            "tokens": [
+              "--ink-dim"
+            ]
+          },
+          {
+            "channels": [
+              "borderTopColor",
+              "borderRightColor",
+              "borderBottomColor",
+              "borderLeftColor"
+            ],
+            "consumer": false,
+            "id": "c42cfe9b40de3782",
+            "important": false,
+            "references": [],
+            "selector": "#spm-effort-row .effort-reset",
+            "tokens": []
+          },
+          {
+            "channels": [
+              "backgroundColor"
+            ],
+            "consumer": false,
+            "id": "741158cabae00283",
+            "important": false,
+            "references": [],
+            "selector": "#spm-effort-row .effort-reset",
+            "tokens": []
+          },
+          {
+            "channels": [
+              "color"
+            ],
+            "consumer": false,
+            "id": "ae376c48729a7853",
+            "important": false,
+            "references": [
+              "--amber"
+            ],
+            "selector": "#spm-effort-row .effort-reset",
+            "tokens": []
+          },
+          {
+            "channels": [
+              "color"
+            ],
+            "consumer": true,
+            "id": "4c4b9ea25714b50e",
+            "important": false,
+            "references": [
+              "--ink-dim"
+            ],
+            "selector": ".effort-not-supported",
+            "tokens": [
+              "--ink-dim"
+            ]
           }
         ],
         "records": [
@@ -66135,7 +67299,8 @@
           "387cbf93494126ee",
           "b1f38117d10a4448",
           "5adb457414fba1e9",
-          "83e9b17fb0717b84"
+          "83e9b17fb0717b84",
+          "dc86d3bfb5cc8ae0"
         ],
         "unit": "declaration"
       },
@@ -66369,9 +67534,9 @@
     },
     "rules_digest": "df26f9d872ccd641021665fa8c09a5b071e42251b9bc7a4e272cccc6ebecebfb",
     "schema_version": 1,
-    "source_digest": "03757be80e806eab170a3eb4f5c16eb71b43dabf3e49c977f0fb8a741c2e628b"
+    "source_digest": "d8d1f67bbd9ce110f7773841c337360c9332866a6871214349cdbec0ee841dbc"
   },
   "schema_version": 1,
   "source": "dashboard/index.html",
-  "source_digest": "03757be80e806eab170a3eb4f5c16eb71b43dabf3e49c977f0fb8a741c2e628b"
+  "source_digest": "d8d1f67bbd9ce110f7773841c337360c9332866a6871214349cdbec0ee841dbc"
 }

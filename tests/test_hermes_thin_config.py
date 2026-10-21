@@ -7,6 +7,7 @@ import os
 from pathlib import Path
 import socket
 import subprocess
+import sys
 import tempfile
 import unittest
 from unittest.mock import patch
@@ -472,6 +473,39 @@ class NativeThinConfig(unittest.TestCase):
 
     def test_broken_plugin_warns_and_native_continues_without_added_gate(self):
         self.run_native(broken=True)
+
+
+def test_secret_service_ref_projects_to_native_route_and_guard_without_lookup(monkeypatch):
+    fixture = ThinConfig()
+    fixture.setUp()
+    try:
+        reference = {'store': 'secret-service', 'attributes': {'service': 'fixture', 'account': 'child'}}
+        fixture.manifest_data['backends']['deepseek']['credential_ref'] = reference
+        fixture.save(fixture.manifest, fixture.manifest_data)
+        with fixture.assertRaisesRegex(ValueError, '^credential_reference_conflict$'):
+            config.validate_input(fixture.document)
+        del fixture.profile_spec['key_cmd']
+        fixture.save(fixture.template, fixture.template_data)
+        # Metadata needs the route, not a key_cmd synthesized by generation.
+        fixture.assertEqual(config.profile_route(fixture.profile_spec, 'deepseek')['route']['api_mode'], 'chat_completions')
+        real_file, real_access = Path.is_file, os.access
+        monkeypatch.setattr(sys, 'platform', 'linux')
+        monkeypatch.setenv('DBUS_SESSION_BUS_ADDRESS', 'unix:path=/fixture/bus')
+        monkeypatch.setattr(Path, 'is_file', lambda p: str(p) == '/usr/bin/secret-tool' or real_file(p))
+        monkeypatch.setattr(os, 'access', lambda p, m: str(p) == '/usr/bin/secret-tool' or real_access(p, m))
+        plan = fixture.generate()
+        fixture.assertEqual(plan['env']['DBUS_SESSION_BUS_ADDRESS'], 'unix:path=/fixture/bus')
+        definitions = config.read(plan['env']['AGENTSTACK_LLM_KEY_DEFINITIONS'])['backends']['hermes']
+        fixture.assertEqual(definitions['credential_ref'], reference)
+        command = definitions['auth_command']
+        fixture.assertEqual(command[-4:], ['--manifest', str(fixture.manifest), '--backend', 'deepseek'])
+        fixture.assertNotIn('service', plan['env'])
+        overlay = config.read(Path(plan['config_dir']) / 'config.yaml')
+        native = overlay['custom_providers'][0] if overlay.get('custom_providers') else overlay['providers'][plan['argv'][3]]
+        import shlex
+        fixture.assertEqual(shlex.split(native['key_cmd']), command)
+    finally:
+        fixture.doCleanups()
 
 
 if __name__ == '__main__':

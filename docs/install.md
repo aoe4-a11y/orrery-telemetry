@@ -4,6 +4,36 @@
 
 ## dsh / Hermes の任意導入
 
+### Ubuntu WSL の Secret Service 参照（実機受け入れ前）
+
+Linux の標準 catalog は、manifest の `backends.<id>.credential_ref` に
+`{"store":"secret-service","attributes":{"service":"example-service","account":"example-account"}}`
+という非秘密参照を明示した経路を静的に検査します。資格の値は書きません。
+attributes の名前は英字で始まる英数字・`_`・`.`・`-`、値は非空の文字列です。
+制御文字、option と紛らわしい先頭 `-`、未知の store は拒否します。
+
+同じ backend の参照を dsh・Hermes・DeepSeek 残高の内部 reader が使います。
+既存の dsh `keychain` や Hermes `key_cmd` と併記すると
+`credential_reference_conflict` で止まります。新しい参照を使わない Mac の設定は維持します。
+reader は `/usr/bin/secret-tool` の lookup だけを行い、登録・unlock・平文保存・別資格への fallback はしません。
+利用者や agent が内部 reader を直接実行して鍵を表示する確認手順ではありません。
+
+Ubuntu WSL の Secret Service、同じユーザー session の D-Bus、collection の unlock は別途必要です。
+`DBUS_SESSION_BUS_ADDRESS` / `XDG_RUNTIME_DIR` は秘密値ではない接続 context として必要な取得 process にだけ引き継ぎます。
+`credential_reader_unavailable` は実行 file の不足、`credential_unavailable` は取得不可、
+`credential_timeout` は取得時間切れです。catalog の静的な可否は、鍵の存在や unlock を検査しません。
+残高の取得不可は会話の成功・失敗とは別に表示します。
+
+ここで確認済みなのは合成 store・設定生成・guard の対照です。実 WSL の版・arch・サービス環境、
+runtime の Linux 依存と認証・Mail・終了/resume は受け入れ前です。Secret Service/D-Bus の構築を
+動作済みの手順として案内するものではありません。Windows bridge、公開 login CLI、設定の自動移行は含みません。
+
+### 既存の導入と設定
+
+Claude Code / Codex CLI を使う人は、下の共通導入と各 CLI のログインの手順から始めます。API の model を dsh / Hermes で使う人は、先に[対応組合せと制限](managed-catalog.md)を確認してください。実機で確認した経路は現在 macOS の legacy mode で、WSL2 / Linux の共通導入手順だけでは使えません。
+
+起動までに用意するものは、任意導入する harness、接続先 backend の URL と正式な model ID、資格を取り出す参照、これらを結ぶ私有 manifest と harness 設定、作業 folder と親を使うかの選択です。installer は backend やログインを作らず、共通の provider ログイン機能は設計中です。利用者が設定を準備する工程と、runtime を導入する工程を分けてください。
+
 `install.sh --enable-dsh --dsh-node /absolute/node` はdsh 0.2.1-rc.2 / TUI 0.16.1と標準起動用のnative hook adapter、`--enable-hermes` は固定commit d923a5eb487a17c0a68801bba9ef0f56c81040a8のHermesを `harnesses/{dsh,hermes}/<世代>` へ導入します。両方なら2つのenableを指定します。既定ではどちらも取得せず、更新時は各々の保存済みenabledを継承します。Nodeは既存の24.2以上を絶対pathで指定し、本体は取得しません。取得はnpm/GitHubとHermesの固定PMに必要な配布元から行います。`--harness-cache PATH` はdshのtarball/npm offline cacheとHermesのlocal sourceを参照します（Hermes PMの依存取得は別です）。`--dry-run` は取得・書込なしです。
 
 Nodeの絶対pathは `AGENTSTACK_DSH_NODE` としてenv.shに保存され、通常の更新で引き継ぎます。旧導入で未保存の場合はdshの `current.json` から補完します。`--managed-spawn-config /absolute/manifest.json` は標準のDeepSeek・Local catalogと起動に使う私有manifestの参照だけを `AGENTSTACK_MANAGED_SPAWN_CONFIG` に保存し、dashboardのlaunchd/systemd/背景起動へ渡します。再起動・次のログイン・通常更新でも保持され、manifest本体や鍵はコピーしません。明示のオプション・環境変数が保存値より優先します。
@@ -11,6 +41,10 @@ Nodeの絶対pathは `AGENTSTACK_DSH_NODE` としてenv.shに保存され、通�
 標準catalogのmanifestを設定済みなら、dshのinstall/updateで固定runtimeからeffortの段と既定を鍵なし・通信なしで取得し、世代内の能力cacheへ保存します。modelやruntime変更後の古いcacheは使わず、未取得時はpickerがunknownになります。手書きのlow/highへ戻しません。未指定の起動はハーネス既定を使います。
 
 `--disable-dsh` / `--disable-hermes` は選択を無効化し、導入済みfileは保持します。通常のuninstallは所有receiptに記録したruntime世代とadapterを削除し、`harnesses/<harness>/profiles` の記憶・skillsは保持します。既存の手動 `hermes-managed` / Hermes homeは読まず触れず、外部Node、提供したcacheも保持します。鍵やログインは導入/移行しません。各harnessの `current.json` がruntimeの絶対参照を記録します。backend URL・model・Keychain service/accountは別途利用者が設定し、起動前に静的に検査します。導入のみでcatalogを利用可にはしません。
+
+設定後に catalog の利用可否を確認し、[cockpit の New Agent / Harness / Lineage から Mail を往復](getting-started.md#5-しりとりで通しの確認をする)させます。同梱 dashboard の NEW AGENT でも、catalog で available な DeepSeek / Local の model と Harness（dsh または Hermes）を選べます。画面を使わない起動の詳細は [API reference](api.md) を参照してください。catalog の候補表示は、資格・接続・tool・Mail の成功を確かめる試験ではありません。
+
+Hermes の子ごとの独立した記憶は実装中で、今の固定版では backend ごとの profile を共有します。会話の resume と記憶の分離は別の機能です。共通 Telegram 入口は設計中、Local の手動 effort は実 Local server での受け入れ前です（[現在の制限](managed-catalog.md#現在の制限)）。
 
 [README に戻る](../README.md) · [次: Launcher と identity](launchers.md)
 

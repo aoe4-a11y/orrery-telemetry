@@ -4,6 +4,35 @@
 
 ## Optional dsh / Hermes installation
 
+### Ubuntu WSL Secret Service references (real-machine acceptance pending)
+
+Linux catalog admission requires an explicit non-secret `backends.<id>.credential_ref` in the manifest:
+`{"store":"secret-service","attributes":{"service":"example-service","account":"example-account"}}`.
+Never put a key value in this reference. Attribute names start with an ASCII letter and use letters, digits,
+`_`, `.`, or `-`; values are nonempty strings. Control characters, leading option-like `-` values and unknown stores are rejected.
+
+dsh, Hermes and DeepSeek balance use this same reference through an internal reader.
+Combining it with the existing dsh `keychain` or Hermes `key_cmd` produces `credential_reference_conflict`.
+Mac configurations without the new reference retain their existing behavior.
+The reader only performs `/usr/bin/secret-tool lookup`; it does not register, unlock, persist a key or fall back to another credential.
+Do not run this internal reader to display a key as a verification step.
+
+Secret Service, the same user's session D-Bus and an unlocked collection must be prepared separately.
+`DBUS_SESSION_BUS_ADDRESS` and `XDG_RUNTIME_DIR` are non-secret connection context forwarded only to the relevant lookup process.
+`credential_reader_unavailable` means a missing executable, `credential_unavailable` a failed lookup and
+`credential_timeout` a lookup timeout. Static catalog checks do not look up keys or verify unlock state.
+Balance availability remains separate from conversation success.
+
+Checks use synthetic stores, generators and guards. Real WSL version/architecture/services, Linux runtime dependencies,
+authentication, Mail, exit and resume remain unaccepted. This is not a verified Secret Service/D-Bus setup guide.
+Windows bridging, a public login CLI and automatic configuration migration are outside this change.
+
+### Existing installation and configuration
+
+For Claude Code / Codex CLI, start with the common installation and each CLI's login below. For an API model through dsh / Hermes, first check the [supported combinations and limitations (Japanese)](managed-catalog.md). The real-machine checks currently cover macOS in legacy mode; the common WSL2 / Linux installation alone does not enable it.
+
+Before launching, prepare the optional harness, backend URL and formal model IDs, credential references, the private manifest and harness configuration connecting them, a work folder, and a choice of parent or standalone. The installer does not create backends or logins; common provider login is in design. Preparing these settings is a separate step from installing a runtime.
+
 `install.sh --enable-dsh --dsh-node /absolute/node` installs dsh 0.2.1-rc.2 / TUI 0.16.1 and its native hook adapter for standard spawning. `--enable-hermes` installs Hermes commit d923a5eb487a17c0a68801bba9ef0f56c81040a8. Each lives in `harnesses/{dsh,hermes}/<generation>`. Supply both enable flags for both harnesses. Neither is acquired by default; updates preserve each saved enabled choice. Supply an existing Node >=24.2 by absolute path; Node itself is not downloaded. Acquisition uses npm/GitHub and the distributions required by Hermes PM. `--harness-cache PATH` supplies dsh tarballs/npm offline cache and local Hermes source; Hermes PM may still acquire its dependencies. `--dry-run` downloads and writes nothing.
 
 The absolute Node path is saved as `AGENTSTACK_DSH_NODE` in env.sh and preserved on ordinary updates. Older installs recover an unsaved path from dsh’s `current.json`. `--managed-spawn-config /absolute/manifest.json` saves only the private manifest reference used by the standard DeepSeek/Local catalog and launcher as `AGENTSTACK_MANAGED_SPAWN_CONFIG` and passes it to dashboard launchd/systemd/background services. It survives restarts, subsequent logins and ordinary updates; the manifest and credentials are not copied. Explicit options/environment override saved values.
@@ -11,6 +40,10 @@ The absolute Node path is saved as `AGENTSTACK_DSH_NODE` in env.sh and preserved
 When a standard catalog manifest is configured, dsh installation/update extracts effort levels and defaults from the pinned runtime without credentials or network requests and stores a capability cache inside that generation. Stale model/runtime metadata is not reused; an unavailable cache leaves the picker unknown. It never falls back to handwritten low/high choices. Launching without an effort uses the harness default.
 
 `--disable-dsh` / `--disable-hermes` disable the selection and retain installed files. Normal uninstall removes receipt-owned runtime generations and adapters, retaining memories/skills in `harnesses/<harness>/profiles`. Manual `hermes-managed` and Hermes homes are neither read nor modified. External Node and supplied caches remain untouched. Credentials and logins are never installed or migrated. Each harness's `current.json` records its runtime references. Configure backend URL/model and Keychain service/account separately; startup performs static configuration validation. Installation alone does not make the catalog available.
+
+Once configured, check catalog availability, then [exchange Mail through cockpit New Agent / Harness / Lineage](getting-started.en.md#5-play-shiritori-as-an-end-to-end-check). The bundled dashboard NEW AGENT also lets you select a DeepSeek / Local model and Harness (dsh or Hermes) marked available in the catalog. See the [API reference](api.en.md) for a launch without the screen. Catalog visibility does not test credentials, connections, tools or Mail delivery.
+
+Independent per-child Hermes memory is in implementation; the current pinned version shares a profile per backend. Conversation resume and memory separation are different features. A common Telegram entry point is in design, and manual Local effort has not passed real Local server acceptance. See [current limitations (Japanese)](managed-catalog.md#現在の制限).
 
 [Back to README](../README.en.md) · [Next: Launchers and identity](launchers.en.md)
 

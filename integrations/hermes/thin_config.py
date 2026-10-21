@@ -15,6 +15,7 @@ import json
 import os
 from pathlib import Path
 import re
+import runpy
 import shlex
 import sys
 from urllib.parse import urlsplit
@@ -60,7 +61,9 @@ def validate_input(document):
     except ValueError as error:
         if str(error) in {'unknown_backend', 'model_mismatch', 'invalid_effort',
                           'builtin_provider_collision', 'invalid_runtime', 'invalid_route',
-                          'invalid_helper_model', 'invalid_resume_session_id'}:
+                          'invalid_helper_model', 'invalid_resume_session_id',
+                          'invalid_credential_ref', 'credential_reference_conflict',
+                          'unsupported_credential_store', 'credential_reader_unavailable'}:
             raise
         raise ValueError('invalid_runtime') from None
     except (OSError, KeyError, TypeError, StopIteration, SyntaxError, AttributeError):
@@ -68,7 +71,11 @@ def validate_input(document):
 
 
 def profile_route(spec, backend):
-    """Project a configured route as data for both generation and metadata."""
+    """Project route metadata; launch admission validates credentials separately.
+
+    Secret Service key_cmd comes from the manifest and is synthesized only by
+    _validate. Metadata must not require a legacy profile command to read mode.
+    """
     inherited = read(spec['template']) if spec.get('template') else {}
     provider = spec.get('provider') or inherited.get('model', {}).get('provider')
     if isinstance(provider, str):
@@ -84,8 +91,7 @@ def profile_route(spec, backend):
     mode = route.get('api_mode') or route.get('transport')
     command = route.get('key_cmd')
     if (url.scheme != 'https' or not url.hostname or url.username or url.password or url.query or url.fragment
-            or mode not in ('chat_completions', 'anthropic_messages')
-            or not isinstance(command, str) or not shlex.split(command)):
+            or mode not in ('chat_completions', 'anthropic_messages')):
         raise ValueError('invalid_route')
     # This pinned Anthropic converter discards DeepSeek's signed thinking.
     # The native OpenAI-compatible transport preserves reasoning across tools.
@@ -141,6 +147,22 @@ def _validate(document):
             or not all(os.access(path, os.X_OK) for path in (executable, python))):
         raise ValueError('invalid_runtime')
     product = Path(document['product_root']).resolve()
+    credential_ref = backend_definition.get('credential_ref')
+    credential_context = {}
+    if 'credential_ref' in backend_definition:
+        if route.get('key_cmd'):
+            raise ValueError('credential_reference_conflict')
+        reader_file = product / 'hooks/llm_secret_reader.py'
+        if not reader_file.is_file():
+            raise ValueError('credential_reader_unavailable')
+        reader = runpy.run_path(str(reader_file))
+        reader['validate_ref'](credential_ref)
+        reader['validate_environment']()
+        route['key_cmd'] = shlex.join(reader['command'](
+            product, document['manifest_file'], backend, str(python)))
+        credential_context = reader['context']()
+    if not isinstance(route.get('key_cmd'), str) or not shlex.split(route['key_cmd']):
+        raise ValueError('invalid_route')
     if not (product / 'integrations/hermes/thin_guard.py').is_file():
         raise ValueError('invalid_runtime')
     # Explicit operator context is preserved; no guessed trial defaults/caps.
@@ -153,7 +175,9 @@ def _validate(document):
             'route': route, 'source': str(source),
             'root': str(root), 'executable': str(executable), 'python': str(python),
             'profiles_root': str((root / 'profiles').resolve()), 'template_file': str(template_file),
-            'credential_files': [str(template_file), *([str(Path(spec['template']).resolve())] if spec.get('template') else [])]}
+            'credential_ref': credential_ref, 'credential_context': credential_context,
+            'credential_files': [str(template_file), str(Path(document['manifest_file']).resolve()),
+                                 *([str(Path(spec['template']).resolve())] if spec.get('template') else [])]}
 
 
 def _save(path, value):
@@ -359,7 +383,9 @@ def generate(document):
         defaults.settle_unanswered(profile, state)
         _save(state / 'overlay/config.yaml', overlay)
     definitions = state / 'credential-references.json'
-    _save(definitions, {'backends': {'hermes': {'auth_command': shlex.split(facts['route']['key_cmd'])}}})
+    _save(definitions, {'backends': {'hermes': {
+        'auth_command': shlex.split(facts['route']['key_cmd']),
+        **({'credential_ref': facts['credential_ref']} if facts['credential_ref'] is not None else {})}}})
     argv = [facts['executable'], 'chat', '--provider', native_provider, '--model', facts['model']]
     if document.get('effort') is not None:
         argv.extend(['--reasoning', document['effort']])
@@ -368,6 +394,7 @@ def generate(document):
     if prompt_text:
         argv.extend(['--query-file', str(prompt)])
     env = {'HERMES_HOME': str(profile), 'HERMES_MANAGED_DIR': str(state / 'overlay'),
+           **facts['credential_context'],
            'HERMES_BUNDLED_LOCALES': str(Path(facts['source']) / 'locales'),
            'AGENTSTACK_LLM_KEY_DEFINITIONS': str(definitions),
            'AGENTSTACK_NATIVE_SESSION_FILE': str(state / 'native-session.json'),
@@ -396,7 +423,9 @@ def main():
                    'inherited_mcp_conflict', 'owned_link_conflict', 'invalid_helper_model',
                    'invalid_resume_session_id', 'native_resume_profile_changed', 'native_provider_conflict',
                    'native_resume_profile_missing', 'native_resume_legacy_profile', 'native_resume_home_missing',
-                   'native_resume_history_missing'}
+                   'native_resume_history_missing',
+                   'invalid_credential_ref', 'credential_reference_conflict',
+                   'unsupported_credential_store', 'credential_reader_unavailable'}
         reason = str(error) if str(error) in allowed else 'invalid_input'
         print('HERMES_THIN_CONFIG_ERROR=' + reason, file=sys.stderr)
         raise SystemExit(1)
