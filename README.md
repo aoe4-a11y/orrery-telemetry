@@ -16,7 +16,11 @@
 
 provider は接続先、model はそこで使うモデル、harness は道具や会話を動かす CLI です。現在、API を使う標準の組合せは DeepSeek / Local × dsh / Hermes に限り、設定済みの model ごとに利用可否を検査します。任意の API と任意の harness の組合せを保証するものではありません。
 
-API を使う子の起動は現在 macOS の legacy mode 向けです。backend・資格の参照は手動準備が必要で、共通ログイン、子ごとの独立した Hermes 記憶、共通 Telegram 入口は未完成、Local の手動 effort は実接続の受け入れ前です。同梱 NEW AGENT は harness を送らないため、この子の起動には対応していません。cockpit を追加した環境の New Agent / Harness / Lineage での[確認手順](docs/getting-started.md#5-しりとりで通しの確認をする)を参照してください。
+設定済みの DeepSeek / Local は、同梱 NEW AGENT の Model と Harness（dsh / Hermes）から選べます。backend・runtime・資格の参照は手動準備が必要です。API 起動は legacy mode で、macOS の Keychain と Linux の明示した Secret Service 参照を扱います。Hermes の新しい子は project と正式名ごとの独立 HOME を使います。共通ログインと Telegram 入口は設計中、Local の手動 effort の実サーバー受け入れは未完です。設定条件と受け入れの範囲は[現在の制限](docs/managed-catalog.md#現在の制限)、画面は[Model / Harness の選択例](docs/dashboard.md#native-models-and-harnesses)を参照してください。
+
+![NEW AGENT で設定済み Local model と dsh / Hermes を選ぶ](docs/img/native-harness-picker.png)
+
+合成 catalog を製品 UI で表示した画面例です。[選択操作の GIF](docs/img/native-harness-selection.gif)は SPAWN の手前までです。
 
 ## Telemetry だけを入れる
 

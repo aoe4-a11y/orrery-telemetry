@@ -26,7 +26,7 @@
 
 model の作り手と API の接続先は同じとは限りません。Local に置いた DeepSeek model でも接続先は Local です。agent の名前（identity）、親子関係、作業 project、Mail の宛先は、この3つとは別です。model や harness を選んだだけでは親や連絡先は決まりません。
 
-API 起動は現在 macOS の legacy mode 向けで、WSL2 の下記手順は Claude Code / Codex CLI の経路です。任意 API × 任意 harness の対応は保証しません。共通ログインは設計中、子ごとの独立した Hermes 記憶は実装中、共通 Telegram 入口は設計中です。Local の手動 effort は能力公開までで、実 Local server での受け入れは未完です（[現在の制限](managed-catalog.md#現在の制限)）。
+API 起動は legacy mode です。macOS の Keychain と Linux の明示した Secret Service 参照を扱い、backend・runtime・資格の設定が別途必要です。任意 API × 任意 harness の対応は保証しません。Hermes の新しい子は project と正式名ごとの独立 HOME を使います。共通ログインと Telegram 入口は設計中、Local の手動 effort の実サーバー受け入れは未完です（[現在の制限](managed-catalog.md#現在の制限)）。[Model / Harness の画面例と操作 GIF](dashboard.md#native-models-and-harnesses)も参照してください。
 
 
 ## 言葉の説明
@@ -170,7 +170,7 @@ tmux session ── telemetry ──► dashboard
 | Linux | 利用報告あり。Ubuntu 24.04 / tmux 3.4 で install、dashboard、Codex agent が動いたという実機報告を受け、そこで見つかった 2 件（[#26](https://github.com/gyroid-eth/orrery-telemetry/issues/26)、[#27](https://github.com/gyroid-eth/orrery-telemetry/issues/27)）は修正済みです。`systemd --user` での常駐登録は作者側で未検証なので、結果は issue で報告してください |
 | Windows native（WSL2 なし） | 正式対応は WSL2 経由ですが、community の貢献で PowerShell から Mail と dashboard を起動する helper と、Codex child の native 起動が実験的に動きます（[起動 helper](windows-local.md)、[Codex launcher](windows-codex-launcher.md)）。方針は [#3](https://github.com/gyroid-eth/orrery-telemetry/issues/3) |
 
-上の表は共通基盤と既存 CLI 経路の対応環境です。DeepSeek / Local × dsh / Hermes の標準 catalog・起動は現在 macOS の legacy mode に限ります。
+上の表は共通基盤と既存 CLI 経路の対応環境です。DeepSeek / Local × dsh / Hermes は別途 backend・runtime・OS の資格参照を設定する legacy mode の経路です。画面の候補表示は実接続の成功を保証しないため、設定した組合せごとに起動と Mail の往復を確認してください。
 
 Python 3.11 以上、`git`、`tmux`、`uv` が必須です。上の CLI 起動手順にはログイン済みの Claude Code か Codex CLI が要り、API 起動には別途 dsh / Hermes と backend の設定が要ります。installer は共通の依存を書き込む前に検査して、足りなければ何も変えずに止まります。検査の詳細と任意の依存（`fswatch`、`fzf`、Ghostty、Obsidian）は[インストールの動作環境](install.md#動作環境)を参照してください。
 
