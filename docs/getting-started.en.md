@@ -113,7 +113,7 @@ If you start from Codex, make the child a Claude Code agent. Either way, the poi
 
 The same shiritori check also works with DeepSeek or Local children in an environment with cockpit added and a configured provider and harness. In cockpit New Agent, select a [configured provider](install.en.md) (DeepSeek or Local) and Harness (dsh or Hermes), select the Claude Code or Codex agent you will play with as the parent under Lineage, and create the child for three round trips.
 
-With Telemetry alone, the bundled dashboard NEW AGENT lists provider and model from the catalog but does not send a harness, so it cannot launch these children. For a launch without the screen, use `POST /api/spawn` in the [API reference](api.en.md), including its authentication and parent (parent or standalone) contract, and always specify `harness`.
+With Telemetry alone, the bundled dashboard NEW AGENT also lets you select a provider, model and Harness (dsh or Hermes) marked available in the catalog. For a launch without the screen, use `POST /api/spawn` in the [API reference](api.en.md), including its authentication and parent (parent or standalone) contract, and always specify `harness`.
 
 Have the parent start by sending the child “Play three shiritori round trips over ORRERY Mail, putting each turn’s word in the subject of each Mail” using ORRERY Mail `send_message`. Success looks the same: lines flow back and forth in NETWORK, and the last instruction on both DECK cards updates to the latest Mail subject (that turn’s word). Check dsh and Hermes separately; success with one does not verify the other.
 

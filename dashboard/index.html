@@ -2602,6 +2602,36 @@
     .tm-grow{display:none}
     .tm-exit-btn,.tm-open,.tm-x{order:6;flex:1 1 auto;
       padding:8px 6px;font-size:11px}}
+
+#spawnmd{--sans:system-ui,sans-serif;--ink:var(--bone);--ink-dim:var(--bone-dim);--ink-faint:var(--bone-dim);--hair:var(--line);--panel-2:var(--bg)}
+#spawnmd [hidden]{display:none!important}
+.spm-picker-columns{display:grid;grid-template-columns:minmax(100px,.8fr) minmax(180px,1.3fr) minmax(200px,1fr);gap:16px;width:100%}
+.spm-picker-columns section{min-width:0}.spm-picker-columns h3{margin:0 0 6px;font-size:14px}.spm-picker-columns p{font-size:11px;opacity:.65;margin:0 0 12px}
+.spm-picker-columns .spm-provider-tabs{display:flex;flex-direction:column}.spm-picker-columns .spm-models{max-height:320px;overflow:auto}
+#spawnmd .spm-efforts{display:block;width:100%}.spm-picker-columns .spm-effort-row{display:block;margin-top:20px}
+#spm-harnesses{display:flex;flex-wrap:wrap;gap:6px}#spm-helper{width:100%;margin:8px 0}#spawnmd .spm-frame{width:min(1000px,calc(100vw - 48px));display:flex;flex-direction:column;overflow:hidden}
+#spawnmd .spm-grid{min-height:0;overflow-y:auto}#spawnmd .spm-hd,#spawnmd .spm-foot{flex-shrink:0}
+@media(max-width:720px){.spm-picker-columns{grid-template-columns:1fr}.spm-picker-columns .spm-provider-tabs{flex-direction:row;flex-wrap:wrap}}
+
+.effort-orbit{position:relative;height:65px;border-radius:4px}
+.effort-orbit:has(input:focus-visible){outline:2px solid var(--amber);outline-offset:3px}
+.effort-value{position:absolute;top:0;transform:translateX(-50%);font:16px/1.2 var(--sans);color:var(--ink);white-space:nowrap}
+.effort-orbit svg{position:absolute;top:18px;display:block;width:100%;height:36px;overflow:visible}
+.effort-track{stroke:var(--hair);stroke-width:.8}
+.effort-guide{stroke:var(--hair);stroke-width:.4;opacity:.6}
+.effort-progress{stroke:var(--amber);stroke-width:1}
+.effort-stop{fill:var(--ink-faint)}
+.effort-halo{fill:none;stroke:var(--amber);stroke-width:.5;opacity:.35}
+.effort-ring{fill:var(--panel-2);stroke:var(--amber);stroke-width:1}
+.effort-dot{fill:var(--amber)}
+.effort-orbit.is-default .effort-halo,.effort-orbit.is-default .effort-ring{stroke:var(--ink-faint)}
+.effort-orbit.is-default .effort-dot{fill:var(--ink-faint)}
+.effort-ends{position:absolute;top:53px;left:0;right:0;display:flex;justify-content:space-between;font:11px/1 var(--sans);color:var(--ink-dim)}
+#spm-effort-row .effort-range{position:absolute;top:16px;left:0;width:100%;height:44px;opacity:0;margin:0;padding:0;border:0;cursor:ew-resize}
+.effort-foot{display:flex;align-items:center;justify-content:space-between;gap:8px;min-height:24px}
+#spm-effort-row .effort-caption{margin:0;font:11px/1.4 var(--sans);color:var(--ink-dim)}
+#spm-effort-row .effort-reset{min-height:24px;border:0;background:none;color:var(--amber);font:11px var(--sans);letter-spacing:0;text-transform:none;padding:3px 0 3px 5px;cursor:pointer}
+.effort-not-supported{display:block;font:12px/1.5 var(--sans);color:var(--ink-dim);padding:4px 0}
 </style>
 <link rel="stylesheet" href="theme_light.css">
 <link rel="stylesheet" href="help_map.css">
@@ -2915,19 +2945,21 @@ OFF = legacy snapshot+comet mode">
           <div class="spm-lab">engine</div>
           <span class="spm-section-meta" id="spm-engine-note">provider · model</span>
         </div>
-        <div class="spm-provider-tabs" id="spm-providers"
-             role="tablist" aria-label="Provider"></div>
-        <div class="spm-models" id="spm-models" role="radiogroup"
-             aria-label="Model">
-          <div class="spm-load">loading engine catalog</div>
-        </div>
-        <div class="spm-hint" id="spm-model-note" aria-live="polite" hidden></div>
-        <div class="spm-effort-row" id="spm-effort-row" hidden>
-          <span class="spm-effort-label">EFFORT</span>
-          <div class="spm-efforts" id="spm-efforts"
-               role="radiogroup" aria-label="Reasoning effort"></div>
-          <span class="spm-effort-hint" id="spm-effort-hint"
-                aria-live="polite" hidden></span>
+        <div class="spm-picker-columns">
+          <section><h3>Model</h3><p>Choose a family</p>
+            <div class="spm-provider-tabs" id="spm-providers" role="tablist" aria-label="Model families"></div></section>
+          <section><h3>Models</h3><p>Available from your catalog</p>
+            <div class="spm-models" id="spm-models" role="radiogroup" aria-label="Model"></div>
+            <div class="spm-hint" id="spm-model-note" aria-live="polite" hidden></div></section>
+          <section><h3>Harness</h3><p id="spm-harness-hint">For the selected model</p>
+            <div id="spm-harnesses" aria-label="Harness choices"></div>
+            <div id="spm-helper-field" hidden><label for="spm-helper">Helper model</label>
+              <select id="spm-helper"><option value="same">Same as main</option></select>
+              <p>Default: Same as main</p></div>
+            <div class="spm-effort-row" id="spm-effort-row" hidden><span class="spm-effort-label">Effort</span>
+              <div class="spm-efforts" id="spm-efforts" role="group" aria-label="Reasoning effort"></div>
+              <span class="spm-effort-hint" id="spm-effort-hint" aria-live="polite" hidden></span></div>
+          </section>
         </div>
       </div>
       <div class="spm-row full spm-section">
@@ -2987,6 +3019,9 @@ OFF = legacy snapshot+comet mode">
                      style="margin-top:0">
             </div>
           </div>
+          <div class="spm-row full"><label class="spm-lab">Terminal</label>
+            <label class="spm-check"><input type="checkbox" id="spm-terminal"><span>Open a Ghostty window</span></label>
+            <div class="spm-hint">Untouched follows your launch settings.</div></div>
           <div class="spm-row full" id="spm-chrome-row" style="display:none">
             <label class="spm-lab">browser</label>
             <label class="spm-check">
@@ -17233,6 +17268,271 @@ OFF = legacy snapshot+comet mode">
           ],
           "selector": ".bub.tool .tk,.bub.tool.res .tk",
           "tokens": []
+        },
+        {
+          "channels": [
+            "color"
+          ],
+          "consumer": true,
+          "id": "6d19e6c39fdeaa90",
+          "important": false,
+          "references": [
+            "--ink"
+          ],
+          "selector": ".effort-value",
+          "tokens": [
+            "--ink"
+          ]
+        },
+        {
+          "channels": [
+            "stroke"
+          ],
+          "consumer": true,
+          "id": "da8ddaa20708c7fd",
+          "important": false,
+          "references": [
+            "--hair"
+          ],
+          "selector": ".effort-track",
+          "tokens": [
+            "--hair"
+          ]
+        },
+        {
+          "channels": [
+            "stroke"
+          ],
+          "consumer": true,
+          "id": "beec69d3708cac8a",
+          "important": false,
+          "references": [
+            "--hair"
+          ],
+          "selector": ".effort-guide",
+          "tokens": [
+            "--hair"
+          ]
+        },
+        {
+          "channels": [
+            "stroke"
+          ],
+          "consumer": false,
+          "id": "800749b926506400",
+          "important": false,
+          "references": [
+            "--amber"
+          ],
+          "selector": ".effort-progress",
+          "tokens": []
+        },
+        {
+          "channels": [
+            "fill"
+          ],
+          "consumer": true,
+          "id": "a6da25c977b33c26",
+          "important": false,
+          "references": [
+            "--ink-faint"
+          ],
+          "selector": ".effort-stop",
+          "tokens": [
+            "--ink-faint"
+          ]
+        },
+        {
+          "channels": [
+            "fill"
+          ],
+          "consumer": false,
+          "id": "92253475573f3603",
+          "important": false,
+          "references": [],
+          "selector": ".effort-halo",
+          "tokens": []
+        },
+        {
+          "channels": [
+            "stroke"
+          ],
+          "consumer": false,
+          "id": "84075e517df11061",
+          "important": false,
+          "references": [
+            "--amber"
+          ],
+          "selector": ".effort-halo",
+          "tokens": []
+        },
+        {
+          "channels": [
+            "fill"
+          ],
+          "consumer": true,
+          "id": "fb6383188b1901e6",
+          "important": false,
+          "references": [
+            "--panel-2"
+          ],
+          "selector": ".effort-ring",
+          "tokens": [
+            "--panel-2"
+          ]
+        },
+        {
+          "channels": [
+            "stroke"
+          ],
+          "consumer": false,
+          "id": "961664501dc26308",
+          "important": false,
+          "references": [
+            "--amber"
+          ],
+          "selector": ".effort-ring",
+          "tokens": []
+        },
+        {
+          "channels": [
+            "fill"
+          ],
+          "consumer": false,
+          "id": "0a896d1d90dd64f7",
+          "important": false,
+          "references": [
+            "--amber"
+          ],
+          "selector": ".effort-dot",
+          "tokens": []
+        },
+        {
+          "channels": [
+            "stroke"
+          ],
+          "consumer": true,
+          "id": "87cc8aa80040db24",
+          "important": false,
+          "references": [
+            "--ink-faint"
+          ],
+          "selector": ".effort-orbit.is-default .effort-halo,.effort-orbit.is-default .effort-ring",
+          "tokens": [
+            "--ink-faint"
+          ]
+        },
+        {
+          "channels": [
+            "fill"
+          ],
+          "consumer": true,
+          "id": "5946bcb7ce789cd7",
+          "important": false,
+          "references": [
+            "--ink-faint"
+          ],
+          "selector": ".effort-orbit.is-default .effort-dot",
+          "tokens": [
+            "--ink-faint"
+          ]
+        },
+        {
+          "channels": [
+            "color"
+          ],
+          "consumer": true,
+          "id": "f633c7484f83075e",
+          "important": false,
+          "references": [
+            "--ink-dim"
+          ],
+          "selector": ".effort-ends",
+          "tokens": [
+            "--ink-dim"
+          ]
+        },
+        {
+          "channels": [
+            "borderTopColor",
+            "borderRightColor",
+            "borderBottomColor",
+            "borderLeftColor"
+          ],
+          "consumer": false,
+          "id": "3b5da5639678e0dd",
+          "important": false,
+          "references": [],
+          "selector": "#spm-effort-row .effort-range",
+          "tokens": []
+        },
+        {
+          "channels": [
+            "color"
+          ],
+          "consumer": true,
+          "id": "d9a190c2cbbd6969",
+          "important": false,
+          "references": [
+            "--ink-dim"
+          ],
+          "selector": "#spm-effort-row .effort-caption",
+          "tokens": [
+            "--ink-dim"
+          ]
+        },
+        {
+          "channels": [
+            "borderTopColor",
+            "borderRightColor",
+            "borderBottomColor",
+            "borderLeftColor"
+          ],
+          "consumer": false,
+          "id": "e7989f5a9f591466",
+          "important": false,
+          "references": [],
+          "selector": "#spm-effort-row .effort-reset",
+          "tokens": []
+        },
+        {
+          "channels": [
+            "backgroundColor"
+          ],
+          "consumer": false,
+          "id": "2612692a992dfe70",
+          "important": false,
+          "references": [],
+          "selector": "#spm-effort-row .effort-reset",
+          "tokens": []
+        },
+        {
+          "channels": [
+            "color"
+          ],
+          "consumer": false,
+          "id": "efd35e8d36cc65b4",
+          "important": false,
+          "references": [
+            "--amber"
+          ],
+          "selector": "#spm-effort-row .effort-reset",
+          "tokens": []
+        },
+        {
+          "channels": [
+            "color"
+          ],
+          "consumer": true,
+          "id": "1d755b3e2ab43bbb",
+          "important": false,
+          "references": [
+            "--ink-dim"
+          ],
+          "selector": ".effort-not-supported",
+          "tokens": [
+            "--ink-dim"
+          ]
         }
       ],
       "records": [
@@ -30938,6 +31238,263 @@ OFF = legacy snapshot+comet mode">
           ],
           "selector": ".bub.tool .tk,.bub.tool.res .tk",
           "tokens": []
+        },
+        {
+          "channels": [
+            "color"
+          ],
+          "consumer": false,
+          "id": "6aa1d22ad7fdaadf",
+          "important": false,
+          "references": [
+            "--ink"
+          ],
+          "selector": ".effort-value",
+          "tokens": []
+        },
+        {
+          "channels": [
+            "stroke"
+          ],
+          "consumer": false,
+          "id": "9c5574d5d200445a",
+          "important": false,
+          "references": [
+            "--hair"
+          ],
+          "selector": ".effort-track",
+          "tokens": []
+        },
+        {
+          "channels": [
+            "stroke"
+          ],
+          "consumer": false,
+          "id": "d43226116eb309e7",
+          "important": false,
+          "references": [
+            "--hair"
+          ],
+          "selector": ".effort-guide",
+          "tokens": []
+        },
+        {
+          "channels": [
+            "stroke"
+          ],
+          "consumer": false,
+          "id": "f488905b0fada269",
+          "important": false,
+          "references": [
+            "--amber"
+          ],
+          "selector": ".effort-progress",
+          "tokens": []
+        },
+        {
+          "channels": [
+            "fill"
+          ],
+          "consumer": true,
+          "id": "ecc3e02a9e5a072a",
+          "important": false,
+          "references": [
+            "--ink-faint"
+          ],
+          "selector": ".effort-stop",
+          "tokens": [
+            "--ink-faint"
+          ]
+        },
+        {
+          "channels": [
+            "fill"
+          ],
+          "consumer": false,
+          "id": "c753caf5b2b8133a",
+          "important": false,
+          "references": [],
+          "selector": ".effort-halo",
+          "tokens": []
+        },
+        {
+          "channels": [
+            "stroke"
+          ],
+          "consumer": false,
+          "id": "d8e61129a04e4038",
+          "important": false,
+          "references": [
+            "--amber"
+          ],
+          "selector": ".effort-halo",
+          "tokens": []
+        },
+        {
+          "channels": [
+            "fill"
+          ],
+          "consumer": false,
+          "id": "3f65be75f7339506",
+          "important": false,
+          "references": [
+            "--panel-2"
+          ],
+          "selector": ".effort-ring",
+          "tokens": []
+        },
+        {
+          "channels": [
+            "stroke"
+          ],
+          "consumer": false,
+          "id": "5554582ac0f195ae",
+          "important": false,
+          "references": [
+            "--amber"
+          ],
+          "selector": ".effort-ring",
+          "tokens": []
+        },
+        {
+          "channels": [
+            "fill"
+          ],
+          "consumer": false,
+          "id": "f8c2001d3e290550",
+          "important": false,
+          "references": [
+            "--amber"
+          ],
+          "selector": ".effort-dot",
+          "tokens": []
+        },
+        {
+          "channels": [
+            "stroke"
+          ],
+          "consumer": true,
+          "id": "9b4359910ad6cbd5",
+          "important": false,
+          "references": [
+            "--ink-faint"
+          ],
+          "selector": ".effort-orbit.is-default .effort-halo,.effort-orbit.is-default .effort-ring",
+          "tokens": [
+            "--ink-faint"
+          ]
+        },
+        {
+          "channels": [
+            "fill"
+          ],
+          "consumer": true,
+          "id": "0a88a4aca04ac4ae",
+          "important": false,
+          "references": [
+            "--ink-faint"
+          ],
+          "selector": ".effort-orbit.is-default .effort-dot",
+          "tokens": [
+            "--ink-faint"
+          ]
+        },
+        {
+          "channels": [
+            "color"
+          ],
+          "consumer": true,
+          "id": "a153491cecbba43c",
+          "important": false,
+          "references": [
+            "--ink-dim"
+          ],
+          "selector": ".effort-ends",
+          "tokens": [
+            "--ink-dim"
+          ]
+        },
+        {
+          "channels": [
+            "borderTopColor",
+            "borderRightColor",
+            "borderBottomColor",
+            "borderLeftColor"
+          ],
+          "consumer": false,
+          "id": "57d0ded3d46813f6",
+          "important": false,
+          "references": [],
+          "selector": "#spm-effort-row .effort-range",
+          "tokens": []
+        },
+        {
+          "channels": [
+            "color"
+          ],
+          "consumer": true,
+          "id": "e0eabd4f5535fcc3",
+          "important": false,
+          "references": [
+            "--ink-dim"
+          ],
+          "selector": "#spm-effort-row .effort-caption",
+          "tokens": [
+            "--ink-dim"
+          ]
+        },
+        {
+          "channels": [
+            "borderTopColor",
+            "borderRightColor",
+            "borderBottomColor",
+            "borderLeftColor"
+          ],
+          "consumer": false,
+          "id": "c42cfe9b40de3782",
+          "important": false,
+          "references": [],
+          "selector": "#spm-effort-row .effort-reset",
+          "tokens": []
+        },
+        {
+          "channels": [
+            "backgroundColor"
+          ],
+          "consumer": false,
+          "id": "741158cabae00283",
+          "important": false,
+          "references": [],
+          "selector": "#spm-effort-row .effort-reset",
+          "tokens": []
+        },
+        {
+          "channels": [
+            "color"
+          ],
+          "consumer": false,
+          "id": "ae376c48729a7853",
+          "important": false,
+          "references": [
+            "--amber"
+          ],
+          "selector": "#spm-effort-row .effort-reset",
+          "tokens": []
+        },
+        {
+          "channels": [
+            "color"
+          ],
+          "consumer": true,
+          "id": "4c4b9ea25714b50e",
+          "important": false,
+          "references": [
+            "--ink-dim"
+          ],
+          "selector": ".effort-not-supported",
+          "tokens": [
+            "--ink-dim"
+          ]
         }
       ],
       "records": [
@@ -31193,7 +31750,8 @@ OFF = legacy snapshot+comet mode">
         "387cbf93494126ee",
         "b1f38117d10a4448",
         "5adb457414fba1e9",
-        "83e9b17fb0717b84"
+        "83e9b17fb0717b84",
+        "dc86d3bfb5cc8ae0"
       ],
       "unit": "declaration"
     },
@@ -31427,7 +31985,7 @@ OFF = legacy snapshot+comet mode">
   },
   "rules_digest": "df26f9d872ccd641021665fa8c09a5b071e42251b9bc7a4e272cccc6ebecebfb",
   "schema_version": 1,
-  "source_digest": "03757be80e806eab170a3eb4f5c16eb71b43dabf3e49c977f0fb8a741c2e628b"
+  "source_digest": "d8d1f67bbd9ce110f7773841c337360c9332866a6871214349cdbec0ee841dbc"
 }
 </script>
 <script>
@@ -37418,6 +37976,118 @@ const SPM=id=>document.getElementById(id);
 const SPM_DIR_KEY='agentdash.spawn.dir';
 const SPM_TASK_DRAFT_KEY='agentdash.spawn.task-draft';
 const SPM_ADVANCED_KEY='agentdash.spawn.advanced';
+/* Catalog-only model choices. No local server inventory is invented here. */
+(function(root,factory){
+  const api=factory();
+  if(typeof module==='object'&&module.exports)module.exports=api;
+  else root.SpawnPicker=api;
+})(typeof globalThis!=='undefined'?globalThis:this,()=>{
+  const HARNESS={
+    'claude-code':{label:'Claude Code',asset:'anthropic.svg'},
+    codex:{label:'Codex',asset:'openai.svg'},
+    hermes:{label:'Hermes',asset:'hermes.png'},
+    dsh:{label:'dsh',asset:'dsh.svg'},
+  };
+  function harnessKey(id){
+    const key=String(id||'').trim().toLowerCase().split('/').pop();
+    return ({claude:'claude-code',claudecode:'claude-code','codex-cli':'codex','dsh-tui':'dsh'})[key]||key;
+  }
+  function harnessInfo(id){return HARNESS[harnessKey(id)]||{label:id,asset:null};}
+  function locality(provider,model){return (model&&model.locality||provider.locality)==='local'?'local':'cloud';}
+  function family(provider,model){
+    if(locality(provider,model)==='local')return 'local';
+    const key=String(model&&model.provider||provider.id||'').toLowerCase();
+    if(['claude','anthropic','claude-code'].includes(key))return 'claude';
+    if(['codex','openai','codex-cli'].includes(key))return 'codex';
+    if(key.includes('deepseek'))return 'deepseek';
+    return key;
+  }
+  function entries(catalog){return (catalog.providers||[]).flatMap(provider=>(provider.models||[])
+    .filter(model=>model&&model.id).map(model=>({provider,model,key:JSON.stringify([provider.id,model.id]),family:family(provider,model)})));}
+  function value(provider,model,key){return model&&Object.hasOwn(model,key)?model[key]:provider[key];}
+  function harnesses(provider,model){
+    const supplied=value(provider,model,'harnesses');
+    const fallback=provider.program||({claude:'claude-code',codex:'codex-cli'})[provider.id]||provider.id;
+    const offered=Array.isArray(supplied)?supplied:[{id:fallback,available:true,default:true}];
+    const result=offered.filter(h=>h&&h.id).map(h=>({...h,label:h.label||harnessInfo(h.id).label,available:h.available===true}));
+    return result;
+  }
+  function helperModels(provider,model,harness){
+    const selected=harnesses(provider,model).find(h=>h.id===harness);
+    const list=selected&&Object.hasOwn(selected,'helper_models')?selected.helper_models:value(provider,model,'helper_models');
+    return Array.isArray(list)?list.filter(m=>typeof m==='string'||m&&m.id).map(m=>typeof m==='string'?{id:m,label:m}:m):[];
+  }
+  function metadata(provider,model){
+    return ['server','quantization','context'].map(key=>value(provider,model,key)).filter(v=>v!==undefined&&v!==null&&v!=='').join(' / ');
+  }
+  function recent(storage,key){
+    try{const list=JSON.parse(storage.getItem(key)||'[]');return Array.isArray(list)?list.filter(v=>typeof v==='string').slice(0,8):[];}catch(_){return [];}
+  }
+  function remember(storage,key,entryKey){
+    try{storage.setItem(key,JSON.stringify([entryKey,...recent(storage,key).filter(k=>k!==entryKey)].slice(0,8)));}catch(_){}
+  }
+  function rosterHarness(agent){
+    const id=agent.harness||agent.program||agent.cmd||'';
+    const key=harnessKey(id),model=String(agent.model_raw||agent.model||'').toLowerCase();
+    const local=String(agent.locality||agent.provider||'').toLowerCase()==='local';
+    const maker=String(agent.provider||'').toLowerCase();
+    if(!local&&((key==='claude-code'&&(['anthropic','claude'].includes(maker)||/claude|opus|sonnet|haiku|fable|mythos/.test(model)))||
+       (key==='codex'&&(['openai','codex'].includes(maker)||/gpt|codex/.test(model)))))return null;
+    if(!id||agent.category&&agent.category!=='agent')return null;
+    return {id:key,...harnessInfo(id)};
+  }
+  return {harnessKey,harnessInfo,locality,family,entries,value,harnesses,helperModels,metadata,recent,remember,rosterHarness};
+});
+
+/* Optional effort stays separate from the slider's neutral display position. */
+window.EffortSlider={
+  mount(host,{levels,value,onChange}){
+    host.replaceChildren();
+    const choices=[...new Set((levels||[]).filter(v=>typeof v==='string'&&v))];
+    const element=(tag,className,text)=>{const e=document.createElement(tag);e.className=className;if(text)e.textContent=text;return e;};
+    if(!choices.length){host.append(element('span','effort-not-supported','Not supported'));return;}
+    const title=v=>v==='xhigh'?'X-high':v[0].toUpperCase()+v.slice(1);
+    let selected=choices.includes(value)?value:null;
+    const control=element('div','effort-orbit'),output=element('output','effort-value');
+    const input=element('input','effort-range');input.type='range';input.name='spawnEffort';
+    input.min=0;input.max=choices.length-1;input.step=1;input.setAttribute('aria-label','Effort');
+    const ns='http://www.w3.org/2000/svg',svg=document.createElementNS(ns,'svg');
+    svg.setAttribute('viewBox','0 0 300 36');svg.setAttribute('preserveAspectRatio','none');svg.setAttribute('aria-hidden','true');
+    const shape=(tag,attrs)=>{const e=document.createElementNS(ns,tag);Object.entries(attrs).forEach(([k,v])=>e.setAttribute(k,v));svg.append(e);return e;};
+    const path='M14 24 Q150 10 286 24';
+    shape('path',{d:path,class:'effort-track',fill:'none'});
+    shape('path',{d:'M14 29 Q150 15 286 29',class:'effort-guide',fill:'none'});
+    const progress=shape('path',{d:path,class:'effort-progress',fill:'none',pathLength:100});
+    const position=i=>14+(choices.length>1?i/(choices.length-1):.5)*272;
+    const y=x=>17+7*((x-150)/136)**2;
+    choices.forEach((choice,i)=>shape('circle',{cx:position(i),cy:y(position(i)),r:1.8,class:'effort-stop'}));
+    const halo=shape('circle',{r:8,class:'effort-halo'}),ring=shape('circle',{r:4.5,class:'effort-ring'}),dot=shape('circle',{r:1.7,class:'effort-dot'});
+    const ends=element('div','effort-ends');ends.append(element('span','',title(choices[0])),element('span','',title(choices.at(-1))));
+    const foot=element('div','effort-foot'),caption=element('span','effort-caption'),reset=element('button','effort-reset','Use default');reset.type='button';
+    foot.append(caption,reset);control.append(output,svg,ends,input);host.append(control,foot);
+    function paint(){
+      const neutral=selected===null,index=neutral?(choices.length-1)/2:choices.indexOf(selected),x=position(index);
+      control.classList.toggle('is-default',neutral);
+      input.value=neutral?Math.floor(choices.length/2):index;
+      input.setAttribute('aria-valuetext',neutral?'Default':title(selected));
+      output.textContent=neutral?'Default':title(selected);
+      output.style.left=`clamp(36px, ${x/3}%, calc(100% - 36px))`;
+      [halo,ring,dot].forEach(e=>{e.setAttribute('cx',x);e.setAttribute('cy',y(x));});
+      progress.setAttribute('stroke-dasharray',(neutral||choices.length===1?0:index/(choices.length-1)*100)+' 100');
+      caption.textContent=neutral?'Uses your settings':'Custom setting';reset.hidden=neutral;
+    }
+    function choose(){selected=choices[Number(input.value)];paint();onChange(selected);}
+    input.addEventListener('input',choose);
+    // A click on the neutral stop also explicitly chooses that effort.
+    input.addEventListener('pointerup',()=>{if(selected===null)choose();});
+    reset.addEventListener('click',()=>{selected=null;paint();onChange(null);input.focus({preventScroll:true});});
+    paint();
+  },
+};
+
+
+let spmSelectedHarness='';
+let spmTerminalExplicit=false;
 let spmBusy=false,spmReady=false,spmLoadSeq=0;
 let spmSelectedName='',spmSelectedProvider='',spmSelectedModel='';
 let spmSelectedEffort='',spmProviders=[];
@@ -37919,7 +38589,7 @@ function normalizeSpawnProviders(catalog){
       .map(model=>{
         if(typeof model==='string')return {id:model,label:model,default:false,badge:''};
         const modelId=String(model&&model.id||'').trim();
-        return {id:modelId,label:String(model&&model.label||modelId).trim(),
+        return {...model,id:modelId,label:String(model&&model.label||modelId).trim(),
           default:Boolean(model&&model.default),
           badge:String(model&&model.badge||'').trim()};
       }).filter(model=>model.id);
@@ -37932,7 +38602,7 @@ function normalizeSpawnProviders(catalog){
     const rawCapabilities=provider&&provider.capabilities;
     const capabilities=(rawCapabilities&&typeof rawCapabilities==='object'&&
       !Array.isArray(rawCapabilities))?rawCapabilities:{};
-    return {id,label:String(provider&&provider.label||id).trim(),
+    return {...provider,id,label:String(provider&&provider.label||id).trim(),
       models,defaultModel,efforts,
       modelEfforts:provider&&provider.model_efforts||null,
       modelEffortDefaults:provider&&provider.model_effort_defaults||{},
@@ -37988,12 +38658,14 @@ function spawnProviderRequirementsMissing(){
   const provider=spmProviders.find(item=>item.id===spmSelectedProvider);
   if(provider&&provider.modelError)return provider.modelError;
   if(!spmSelectedModel)return 'select a model for this provider';
+  const selected=spawnSelectedHarness(provider);
+  if(!selected||!selected.available)return 'Choose an available model and Harness';
   const caps=spawnSelectedProviderCapabilities();
   const input=SPM('spm-resources');
   if(caps.resources_required&&
      !(input&&input.value.split(',').some(item=>item.trim())))
     return 'resources are required for this provider';
-  if(caps.effort_required&&!spmSelectedEffort)
+  if(caps.effort_required&&(!spmEffortExplicit||!spmSelectedEffort))
     return 'select an effort for this provider';
   return '';
 }
@@ -38094,7 +38766,7 @@ function renderSpawnProviders(providers){
   root.innerHTML=providers.map(provider=>
     `<button type="button" class="spm-provider-tab" role="tab" `+
     `data-provider="${esc(provider.id)}" aria-selected="false">`+
-    `${esc(provider.label||provider.id)}</button>`
+    `${esc(provider.locality==='local'?'Local models':provider.label||provider.id)}</button>`
   ).join('');
   root.querySelectorAll('.spm-provider-tab').forEach(btn=>{
     btn.onclick=()=>selectSpawnProvider(btn.dataset.provider);
@@ -38167,60 +38839,73 @@ function selectSpawnModel(model){
     if(fold)fold.open=true;
   });
   const provider=spmProviders.find(item=>item.id===spmSelectedProvider);
+  renderSpawnHarnesses(provider);
+}
+
+function spawnSelectedModel(provider){
+  return provider&&(provider.models||[]).find(model=>model.id===spmSelectedModel)||null;
+}
+function spawnSelectedHarness(provider){
+  const model=spawnSelectedModel(provider);
+  return provider&&model?SpawnPicker.harnesses(provider,model).find(h=>h.id===spmSelectedHarness)||null:null;
+}
+function renderSpawnHarnesses(provider){
+  const model=spawnSelectedModel(provider),root=SPM('spm-harnesses');
+  const choices=provider&&model?SpawnPicker.harnesses(provider,model):[];
+  if(!choices.some(h=>h.id===spmSelectedHarness&&h.available))
+    spmSelectedHarness=(choices.find(h=>h.default&&h.available)||choices.find(h=>h.available)||{}).id||'';
+  root.innerHTML=choices.map(h=>`<button type="button" class="spm-chip ${h.id===spmSelectedHarness?'on':''}" data-harness="${esc(h.id)}" aria-pressed="${h.id===spmSelectedHarness}" ${h.available?'':'disabled'}>${esc((h.default?'Default: ':'')+h.label)}${h.available?'':' · Coming soon'}</button>`).join('');
+  root.querySelectorAll('[data-harness]').forEach(button=>{button.onclick=()=>{
+    spmSelectedHarness=button.dataset.harness;spmSelectedEffort='';spmEffortExplicit=false;
+    renderSpawnHarnesses(provider);
+  };});
+  SPM('spm-harness-hint').textContent=model?'For '+model.id:'Choose a model first';
+  const select=SPM('spm-helper'),previous=select.value;
+  const helpers=provider&&model?SpawnPicker.helperModels(provider,model,spmSelectedHarness):[];
+  const alternatives=helpers.filter(h=>h.id!=='same'&&h.id!==model.id);
+  select.innerHTML='<option value="same">Same as main</option>'+alternatives.map(h=>`<option value="${esc(h.id)}">${esc(h.label||h.id)}</option>`).join('');
+  if(alternatives.some(h=>h.id===previous))select.value=previous;
+  SPM('spm-helper-field').hidden=!alternatives.length;select.disabled=!alternatives.length;
   renderSpawnEfforts(provider);
 }
-
+function spawnEffortInfo(provider){
+  const model=spawnSelectedModel(provider),harness=spawnSelectedHarness(provider);
+  if(harness&&Object.hasOwn(harness,'efforts'))return {levels:harness.efforts,fallback:harness.default_effort,source:harness.effort_source};
+  const ownDefault=model&&Object.hasOwn(model,'effort_default');
+  const modelDefault=ownDefault?model.effort_default:provider&&provider.defaultEffort;
+  if(model&&Object.hasOwn(model,'efforts'))return {levels:model.efforts,fallback:modelDefault};
+  if(provider&&provider.modelEfforts)return {levels:provider.modelEfforts[spmSelectedModel],fallback:ownDefault?model.effort_default:provider.modelEffortDefaults[spmSelectedModel]};
+  return {levels:provider&&provider.efforts,fallback:modelDefault};
+}
+function resolveSpawnEffort(levels,value,fallback){
+  const allowed=Array.isArray(levels)?levels:[];
+  if(value!==null&&value!==undefined)return allowed.includes(value)?value:null;
+  return allowed.includes(fallback)?fallback:null;
+}
 function spawnModelEfforts(provider){
-  if(provider&&provider.modelEfforts){
-    const values=provider.modelEfforts[spmSelectedModel];
-    return Array.isArray(values)?values.filter(value=>typeof value==='string'):[];
-  }
-  return provider&&Array.isArray(provider.efforts)?provider.efforts:[];
+  const levels=spawnEffortInfo(provider).levels;
+  return Array.isArray(levels)?levels:[];
 }
-
+function spawnEffectiveEffort(provider){
+  const info=spawnEffortInfo(provider);
+  if(provider&&provider.capabilities&&provider.capabilities.effort_required&&!spmEffortExplicit)return null;
+  return resolveSpawnEffort(info.levels,spmEffortExplicit?spmSelectedEffort:null,info.fallback);
+}
 function renderSpawnEfforts(provider){
-  const row=SPM('spm-effort-row');
-  const root=SPM('spm-efforts');
-  const hint=SPM('spm-effort-hint');
-  const efforts=spawnModelEfforts(provider);
-  row.hidden=!efforts.length;
-  root.innerHTML=efforts.map(effort=>
-    `<button type="button" class="spm-chip spm-effort-chip" `+
-    `data-effort="${esc(effort)}" role="radio" aria-checked="false" `+
-    `title="${esc(SPM_EFFORT_HINTS[effort]
-      ? effort+' · '+SPM_EFFORT_HINTS[effort]:'')}">`+
-    `${esc(effort)}</button>`
-  ).join('');
-  hint.hidden=true;hint.textContent='';
-  root.querySelectorAll('.spm-effort-chip').forEach(btn=>{
-    btn.onclick=()=>selectSpawnEffort(btn.dataset.effort);
-  });
-  const effortRequired=!!(provider&&provider.capabilities&&provider.capabilities.effort_required);
-  const defaultEffort=provider&&provider.modelEfforts
-    ?provider.modelEffortDefaults[spmSelectedModel]:provider&&provider.defaultEffort;
-  const preserve=!!(provider&&provider.modelEfforts&&spmEffortExplicit&&
-    efforts.includes(spmSelectedEffort));
-  const fallback=effortRequired?'':(preserve?spmSelectedEffort:(
-    efforts.includes(defaultEffort)?defaultEffort:(efforts[0]||'')));
-  selectSpawnEffort(fallback,preserve);
+  const info=spawnEffortInfo(provider),levels=spawnModelEfforts(provider);
+  if(!levels.includes(spmSelectedEffort)){spmSelectedEffort='';spmEffortExplicit=false;}
+  SPM('spm-effort-row').hidden=false;
+  SPM('spm-effort-hint').hidden=true;
+  EffortSlider.mount(SPM('spm-efforts'),{levels,value:spmEffortExplicit?spmSelectedEffort:null,onChange:value=>{
+    spmSelectedEffort=value||'';spmEffortExplicit=value!==null;
+    paintSpawnEffortDefault(provider);renderSpawnEngineNote();updateSpawnButton();
+  }});
+  if(!levels.length&&info.source==='unknown')SPM('spm-efforts').textContent='Uses harness default';
+  paintSpawnEffortDefault(provider);renderSpawnEngineNote();updateSpawnButton();
 }
-
-function selectSpawnEffort(effort,explicit=true){
-  const valid=[...SPM('spm-efforts').querySelectorAll('.spm-effort-chip')]
-    .some(btn=>btn.dataset.effort===effort);
-  spmSelectedEffort=valid?effort:'';
-  spmEffortExplicit=valid&&explicit;
-  SPM('spm-efforts').querySelectorAll('.spm-effort-chip').forEach(btn=>{
-    const on=btn.dataset.effort===spmSelectedEffort;
-    btn.classList.toggle('on',on);
-    btn.setAttribute('aria-checked',on?'true':'false');
-  });
-  const hint=SPM('spm-effort-hint');
-  const copy=SPM_EFFORT_HINTS[spmSelectedEffort]||'';
-  hint.hidden=!copy;
-  hint.textContent=copy?`${spmSelectedEffort} · ${copy}`:'';
-  renderSpawnEngineNote();
-  updateSpawnButton();
+function paintSpawnEffortDefault(provider){
+  const caption=SPM('spm-efforts').querySelector('.effort-caption');
+  if(caption&&!spmEffortExplicit){const value=spawnEffectiveEffort(provider);caption.textContent=value?'Uses catalog default: '+value:'Uses your settings';}
 }
 
 function renderSpawnEngineNote(){
@@ -38320,6 +39005,9 @@ function openSpawnModal(){
   SPM('spm-worktree-base').value='';
   spmBusy=false;spmReady=false;spmSelectedName='';
   spmSelectedProvider='';spmSelectedModel='';spmSelectedEffort='';
+  spmSelectedHarness='';spmTerminalExplicit=false;
+  SPM('spm-terminal').checked=false;SPM('spm-terminal').onchange=()=>{spmTerminalExplicit=true;};
+  SPM('spm-harnesses').innerHTML='';SPM('spm-helper-field').hidden=true;
   spmProviders=[];spmAdjectives=[];spmSuggestedName='';
   spmSuggestedPrefix='';spmSuggestedScientist='';
   spmIdentitySeq++;spmIdentityState='auto';spmIdentityError='';
@@ -38404,7 +39092,13 @@ function buildSpawnPayload(){
      spmIdentityState==='verified'&&
      spmNameStatus.get(spmSelectedName)==='available')
     payload.name=spmSuggestedName;
-  if(spmSelectedEffort)payload.effort=spmSelectedEffort;
+  const provider=spmProviders.find(item=>item.id===spmSelectedProvider);
+  if(['deepseek','strata'].includes(payload.provider))payload.harness=spmSelectedHarness;
+  const helper=SPM('spm-helper');
+  if(helper&&!helper.disabled&&helper.value!=='same')payload.helper_model=helper.value;
+  const effort=spawnEffectiveEffort(provider);
+  if(effort)payload.effort=effort;
+  if(spmTerminalExplicit)payload.headless=!SPM('spm-terminal').checked;
   const resources=(SPM('spm-resources')&&SPM('spm-resources').value||'').trim();
   if(spawnProviderAcceptsResources(spawnSelectedProviderCapabilities())&&resources)
     payload.resources=resources;
@@ -38437,7 +39131,9 @@ async function submitSpawn(){
   const provider=spmProviders.find(item=>item.id===payload.provider);
   if(provider&&provider.modelError){setSpawnStat(provider.modelError,'err');return;}
   if(!payload.model){setSpawnStat('model is required','err');return;}
-  if(spawnModelEfforts(provider).length&&!payload.effort){
+  const missing=spawnProviderRequirementsMissing();
+  if(missing){setSpawnStat(missing,'err');return;}
+  if(provider&&provider.capabilities&&provider.capabilities.effort_required&&!payload.effort){
     setSpawnStat('effort is required for this provider','err');return;
   }
   spmBusy=true;
