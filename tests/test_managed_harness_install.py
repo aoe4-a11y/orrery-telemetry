@@ -32,7 +32,7 @@ class InstallTests(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
         self.addCleanup(self.tmp.cleanup)
-        self.home = Path(self.tmp.name)
+        self.home = Path(self.tmp.name).resolve()
         self.install = self.home / '.agentstack'
         self.enterContext(patch.object(installer, 'run', return_value=installer.HERMES_COMMIT))
 
