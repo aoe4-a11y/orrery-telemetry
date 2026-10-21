@@ -91,6 +91,18 @@ class TelemetryDefaults(unittest.TestCase):
                 self.assertFalse(defaults.project_mcp(self.profile, selected))
                 self.assertEqual(self.path.read_bytes(), result)
 
+    def test_block_mcp_numeric_name_remains_string(self):
+        raw = '# keep header\nmodel: "keep" # comment\nmcp_servers:\n  old: {command: /fixture/old}\nmemory: {enabled: true}\n'
+        self.path.write_bytes(raw.encode())
+        selected = {'old': {'command': '/fixture/old'}, '123': {'command': '/fixture/new', 'enabled': True}}
+        self.assertTrue(defaults.project_mcp(self.profile, selected))
+        result = self.path.read_bytes()
+        self.assertEqual(read_yaml(result)['mcp_servers'], selected)
+        self.assertIn(b'model: "keep" # comment\n', result)
+        self.assertIn(b'memory: {enabled: true}\n', result)
+        self.assertFalse(defaults.project_mcp(self.profile, selected))
+        self.assertEqual(self.path.read_bytes(), result)
+
     def test_foreign_config_symlink_is_not_read_or_replaced(self):
         foreign = self.root / 'foreign.yaml'
         foreign.write_text('model: private\n')

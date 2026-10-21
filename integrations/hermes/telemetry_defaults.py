@@ -48,7 +48,7 @@ def _edits(text, node, fields):
             end = node.end_mark.index
             indent = node.value[0][0].start_mark.column
             addition = ('\n' if end and text[end - 1] != '\n' else '') + ''.join(
-                ' ' * indent + key + ': ' + json.dumps(value) + '\n' for key, value in missing.items())
+                ' ' * indent + (key if _yaml_parser().load(key) == key else json.dumps(key)) + ': ' + json.dumps(value) + '\n' for key, value in missing.items())
         edits.append((end, end, addition))
     return edits
 

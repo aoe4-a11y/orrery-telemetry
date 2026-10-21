@@ -14,7 +14,7 @@ with native `key_cmd`; provider credentials remain Hermes's responsibility.
 Each child uses a private provider name and minimal route in its overlay, so
 old endpoint aliases, inline keys and named credential pools in the persistent
 profile cannot override the selected route. Route projection does not rewrite the profile model route or copy its auth store. Legacy model credential pointers are cleared only in
-the child overlay; memory and skills remain in the fixed backend profile.
+the child overlay; memory and skills remain in the stable private HOME for each project and canonical child name.
 Auxiliary tasks and delegation use that same private provider, with old direct
 endpoint and credential pointers cleared in the overlay. Existing helper
 settings cannot pair the selected credential with a previous endpoint.
@@ -45,7 +45,7 @@ thinking survives subsequent tool requests, including when effort is omitted.
 Main, auxiliary and delegation routes share this selection; Strata and custom
 hosts keep their configured transport. No reasoning level or token cap is added.
 
-Memory and skills persist in the fixed backend profile. Each child uses the
+Memory and skills persist in the stable private HOME for each project and canonical child name. Each child uses the
 official `HERMES_MANAGED_DIR` overlay for its MCP entries and instructions;
 profile configuration is not swapped or cloned. The selected MCP section is also
 projected into the same private profile as described below. Product skills are links to
