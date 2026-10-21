@@ -34,7 +34,7 @@ provider ID は deepseek/strata、harness ID は dsh/hermes。manifest の同じ
 
 ## effort の能力と既定
 
-manifestの手書きefforts/default_effortを能力の根拠にはしません。選択modelのharness entryがefforts/default_effort/effort_sourceを持ち、pickerと明示POSTの検証は同じentryを使います。未操作ではeffortを送らず、ハーネス既定を使います。provider共通配列は既定の利用可能harnessからの互換投影だけです。
+manifestの手書きefforts/default_effortを能力の根拠にはしません。選択modelのharness entryがefforts/default_effort/effort_sourceを持ち、pickerと明示POSTの検証は同じentryを使います。同梱 NEW AGENT と追加の New Agent の画面では、未操作・Use default のとき、catalog が報告した有効な具体 effort を送り、既定が null・不明・候補外なら effort を省略します。候補先頭を既定と推測しません。API で effort 自体を省略した場合は、ハーネスの設定を保持します。provider共通配列は既定の利用可能harnessからの互換投影だけです。
 
 **dsh**: install/updateは保存済み又は指定した manifestのmodelを対象に、固定Node・runtimeのローカルresolveModelInfoから段と既定を取得します。鍵・profile・discovery・モデルAPIを使わず、runtime世代のevidence/effort-capabilities.jsonへ保存します。runtime/modelが変わったcache・取得失敗はunknown（null/null/unknown）。選択肢だけを無効にし、未指定の起動を妨げません。opt-in offでは取得/投影しません。
 
