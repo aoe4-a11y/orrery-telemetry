@@ -111,7 +111,9 @@ class ThinConfig(unittest.TestCase):
         again = self.generate(state_dir=str(self.base / 'again'))
         self.assertEqual(again['profile_home'], first['profile_home'])
         self.assertIn('User instructions', config.read(Path(again['config_dir']) / 'config.yaml')['agent']['system_prompt'])
-        self.assertNotIn('mcp_servers', config.read(profile / 'config.yaml'))
+        self.assertEqual(config.read(profile / 'config.yaml')['mcp_servers'], {
+            'orrery_mail': {'enabled': True, 'command': '/fixture/proxy',
+                            'args': ['--bound-token-file', '/fixture/token-reference']}})
 
     def test_preexisting_private_provider_slug_is_not_merged(self):
         first = self.generate()
@@ -260,7 +262,7 @@ class ThinConfig(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, '^inherited_mcp_conflict$'):
             self.generate(mcp_selection={'inherit': False})
 
-    def test_selected_mcp_servers_replace_inheritance_without_rewriting_profile(self):
+    def test_selected_mcp_servers_project_raw_without_rewriting_other_profile_fields(self):
         profile = self.profile
         old = {'telemetry': {'shared_metrics': {'enabled': False, 'send': False, 'offer_version': 2}},
                'mcp_servers': {'orrery-mail': {'command': '/stale/retired-child-proxy'},
@@ -275,8 +277,14 @@ class ThinConfig(unittest.TestCase):
         self.assertEqual(overlay['mcp_servers']['orrery-mail'], {'enabled': False})
         self.assertEqual(overlay['mcp_servers']['orrery_mail']['command'], '/fixture/proxy')
         self.assertEqual(overlay['mcp_servers']['unrelated'], {'enabled': False})
-        self.assertEqual(overlay['mcp_servers']['chosen'], {'command': '/selected/native-server'})
-        self.assertEqual((profile / 'config.yaml').read_bytes(), before)
+        self.assertEqual(overlay['mcp_servers']['chosen'], {'enabled': True, 'command': '/selected/native-server'})
+        revised = (profile / 'config.yaml').read_bytes()
+        self.assertEqual(revised.split(b'"mcp_servers"')[0], before.split(b'"mcp_servers"')[0])
+        raw = config.read(profile / 'config.yaml')['mcp_servers']
+        self.assertEqual(raw['chosen'], {'enabled': True, 'command': '/selected/native-server'})
+        self.assertEqual(raw['unrelated'], {'command': '/keep/native-server', 'enabled': False})
+        self.assertEqual(raw['orrery-mail'], {'command': '/stale/retired-child-proxy', 'enabled': False})
+        self.assertEqual(raw['orrery_mail'], {'enabled': True, 'command': '/fixture/proxy'})
 
     def test_packaging_locale_reference_is_from_selected_source(self):
         plan = self.generate()
@@ -309,7 +317,38 @@ class ThinConfig(unittest.TestCase):
             'command': '/old/proxy', 'args': ['old-reference']}}})
         plan = self.generate()
         overlay = config.read(Path(plan['config_dir']) / 'config.yaml')
-        self.assertEqual(overlay['mcp_servers']['orrery_mail'], config.read(self.base / 'mcp.json')['mcpServers']['orrery_mail'])
+        self.assertEqual(overlay['mcp_servers']['orrery_mail'], {'enabled': True, **config.read(self.base / 'mcp.json')['mcpServers']['orrery_mail']})
+
+    def test_raw_mcp_reselection_updates_refs_and_honors_explicit_disabled(self):
+        first = self.generate()
+        profile = Path(first['profile_home'])
+        path = profile / 'config.yaml'
+        self.save(self.base / 'mcp.json', {'mcpServers': {}})
+        disabled = self.generate()
+        self.assertEqual(config.read(path)['mcp_servers']['orrery_mail']['enabled'], False)
+        self.assertEqual(config.read(Path(disabled['config_dir']) / 'config.yaml')['mcp_servers']['orrery_mail'], {'enabled': False})
+        selected = {'command': '/updated/proxy', 'args': ['new-reference']}
+        self.save(self.base / 'mcp.json', {'mcpServers': {'orrery_mail': selected}})
+        # Presence is the pre-existing static resume precondition, not native history evidence.
+        (profile / 'state.db').write_bytes(b'synthetic history presence fixture')
+        resumed = self.generate(resume_session_id='fixture-native-id', native_profile_env={'HERMES_HOME': str(profile)})
+        self.assertEqual(resumed['env']['HERMES_HOME'], str(profile))
+        self.assertEqual(resumed['argv'][-2:], ['--query-file', str(self.base / 'prompt')])
+        self.assertEqual(resumed['argv'][resumed['argv'].index('--resume') + 1], 'fixture-native-id')
+        self.assertEqual(config.read(path)['mcp_servers']['orrery_mail'], {'enabled': True, **selected})
+        self.save(self.base / 'mcp.json', {'mcpServers': {'orrery_mail': {**selected, 'enabled': False}}})
+        self.generate()
+        self.assertIs(config.read(path)['mcp_servers']['orrery_mail']['enabled'], False)
+
+    def test_invalid_raw_mcp_map_is_rejected_without_profile_writes(self):
+        for value in (None, [], 'invalid', {'fixture': None}):
+            with self.subTest(value=value):
+                path = self.profile / 'config.yaml'
+                self.save(path, {'mcp_servers': value})
+                before = path.read_bytes()
+                with self.assertRaisesRegex(ValueError, '^invalid_mcp_config$'):
+                    self.generate()
+                self.assertEqual(path.read_bytes(), before)
 
     def test_product_delegate_is_linked_into_native_skills(self):
         plan = self.generate()

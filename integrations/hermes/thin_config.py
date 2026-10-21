@@ -328,19 +328,27 @@ def generate(document):
             # Portable plugins can append MCP servers after config is loaded.
             # No plugin import/preflight or silent expansion of the selection.
             raise ValueError('inherited_mcp_conflict')
-        mcp = dict(servers)
+        if any(not isinstance(value, dict) for value in servers.values()):
+            raise ValueError('unsupported_mcp_selection')
+        # Make the native default explicit so a previously disabled server can
+        # be selected again. An explicit disabled selection stays disabled.
+        mcp = {name: {'enabled': True, **value} for name, value in servers.items()}
         inherited = existing.get('mcp_servers', {})
-        for name, definition in servers.items():
+        if not isinstance(inherited, dict) or any(not isinstance(value, dict) for value in inherited.values()):
+            raise ValueError('invalid_mcp_config')
+        for name, definition in mcp.items():
             if name in inherited and _effective_mcp(inherited[name], definition) != definition:
                 state.mkdir(parents=True, exist_ok=True, mode=0o700)
                 with (state / 'config-generation.log').open('a', encoding='utf-8') as handle:
                     handle.write(json.dumps({'event': 'inherited_mcp_conflict', 'mcp_server': name}) + '\n')
                 raise ValueError('inherited_mcp_conflict')
+        raw_mcp = dict(mcp)
         # Like the standard launcher's strict MCP config, expose only product
-        # Mail and explicitly selected servers. Preserve the persistent profile.
+        # Mail and explicitly selected servers. Retain disabled definitions for reselection.
         for name in existing.get('mcp_servers', {}):
             if name not in mcp:
                 mcp[name] = {'enabled': False}
+                raw_mcp[name] = {**inherited[name], 'enabled': False}
         plugin = profile / 'plugins' / PLUGIN
         plugin.mkdir(parents=True, exist_ok=True, mode=0o700)
         manifest = {'name': PLUGIN, 'version': '1.0.0', 'description': 'Common ORRERY native tool guards',
@@ -381,6 +389,7 @@ def generate(document):
         defaults = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(defaults)
         defaults.settle_unanswered(profile, state)
+        defaults.project_mcp(profile, raw_mcp)
         _save(state / 'overlay/config.yaml', overlay)
     definitions = state / 'credential-references.json'
     _save(definitions, {'backends': {'hermes': {
@@ -419,7 +428,7 @@ def main():
         _save(args.out, generate(read(args.input)))
     except Exception as error:
         allowed = {'unknown_backend', 'model_mismatch', 'invalid_effort', 'builtin_provider_collision',
-                   'invalid_runtime', 'invalid_route', 'invalid_input', 'invalid_telemetry_config', 'unsupported_mcp_selection',
+                   'invalid_runtime', 'invalid_route', 'invalid_input', 'invalid_telemetry_config', 'invalid_mcp_config', 'unsupported_mcp_selection',
                    'inherited_mcp_conflict', 'owned_link_conflict', 'invalid_helper_model',
                    'invalid_resume_session_id', 'native_resume_profile_changed', 'native_provider_conflict',
                    'native_resume_profile_missing', 'native_resume_legacy_profile', 'native_resume_home_missing',
