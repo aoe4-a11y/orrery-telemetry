@@ -161,3 +161,37 @@ def test_network_projection_keeps_locality_and_raw_model():
     script = 'const g={},n={model:"display",model_raw:"qwen3",provider:"strata",locality:"local"};' + assignment + 'process.stdout.write(JSON.stringify(g));'
     row = _node(script)
     assert row['model_raw'] == 'qwen3' and row['locality'] == 'local'
+
+
+def test_network_badge_rebuilds_when_only_resolved_local_maker_changes():
+    tick = HTML[HTML.index('async function netTick(){'):]
+    tick = tick[:tick.index('\n}\n') + 2]
+    script = HARNESS + (ROOT / 'dashboard/network_node.js').read_text() + """
+const {providerKeyFor}=window.OrreryNetworkNode;
+const info={innerHTML:'',textContent:''};
+document.getElementById=()=>info;
+const gmap=new Map(),gEls={node:new Map()};
+let gWin='all',gWinLabel='',graphStateAt,gedges=[],gspawn=[],netRenderKey='';
+let drag=null,pan=null,fitPending=false,viewUserAdjusted=true,simHot=0;
+const netDims=()=>({w:800,h:600}),refreshPanelButtons=()=>{},esc=String;
+const runSim=()=>{},fitView=()=>{},scheduleFit=()=>{};
+const builds=[];
+function buildEls(){builds.push(snapshot(window.OrreryNetworkNode.render('Fixture',gmap.get('Fixture'),{avatar:()=>null})));}
+const row={name:'Fixture',provider:'fixture',model:'same display',model_raw:'qwen3',locality:'cloud'};
+const fetch=async()=>({status:200,json:async()=>({nodes:[{...row}],edges:[],spawn:[]})});
+""" + tick + """
+(async()=>{
+ const counts=[];
+ for(const patch of [{},{locality:'local'},{model_raw:'unknown'},{},{model_raw:'qwen3'},{locality:'cloud'}]){
+  Object.assign(row,patch);await netTick();counts.push(builds.length);
+ }
+ process.stdout.write(JSON.stringify({counts,builds,caught:info.textContent}));
+})().catch(error=>{console.error(error);process.exit(1)});
+"""
+    result = _node(script)
+    assert result['caught'] == ''
+    assert result['counts'] == [1, 2, 3, 3, 4, 5]
+    for tree, local, qwen in zip(result['builds'], [False, True, True, True, False], [False, True, False, True, False]):
+        dom = json.dumps(tree)
+        assert ('provider-local-ring' in dom) is local
+        assert ('qwen.svg' in dom) is qwen

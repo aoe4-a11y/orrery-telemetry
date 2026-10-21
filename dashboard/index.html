@@ -34727,7 +34727,7 @@ async function netTick(){
       g.resumeCapability,g.mail_status,g.mail_reason,
       g.provider_stall?.kind||'',g.provider_stall?.notification_status||'',
       typeof g.ctxUsed==='number'?Math.round(g.ctxUsed):null,
-      g.model||'',g.provider||'',g.deg,
+      g.model||'',g.provider||'',providerKeyFor(g),g.deg,
       g.annot&&g.annot.emoji||'',g.annot&&g.annot.role||''
     ]).sort((a,b)=>a[0].localeCompare(b[0]));
     const edgeKey=gedges.map(e=>[e.source,e.target,+e.count||0])
