@@ -319,7 +319,7 @@ scientist rail の `available` は bare surname ではなく、134 adjective の
 - Claude は Sonnet / Opus / Haiku
 - Codex の既定は起動対象 CLI が 0.159.0 以上なら `gpt-6.1-sol`、古い版なら `gpt-6-sol`（版不明なら新鮮な catalog で判定）。旧世代は `gpt-6-sol` など正式 ID で指定できます
 - Codex の effort 候補は model catalog の `model_efforts` / `model_effort_defaults` に従います。明示 effort の最終可否は Codex CLI が判定します
-- DeepSeek / Local は設定済み catalog の Model と Harness（dsh / Hermes）から選びます。model を選んで利用可能な harness を指定し、利用不可の項目では理由を確認します。Helper と Effort は選んだ model / harness の能力に従います。[設定手順](install.md)と[API reference](api.md)も参照してください。
+- DeepSeek / Local は設定済み catalog の Model と Harness（dsh / Hermes）から選びます。model を選んで利用可能な harness を指定し、利用不可の項目は「Coming soon」と表示され、選択できません。Helper と Effort は選んだ model / harness の能力に従います。[設定手順](install.md)と[API reference](api.md)も参照してください。
 
 server の provider / model / effort allow-list を catalog と validation の両方に使います。
 
