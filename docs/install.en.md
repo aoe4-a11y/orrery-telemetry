@@ -4,6 +4,12 @@
 
 ## Optional dsh / Hermes installation
 
+### Prepare settings from bundled examples
+
+Installation distributes [instructions and four inactive examples](../examples/native-harnesses/README.en.md) under `examples/native-harnesses/`. For installed runtimes it validates owned receipts/current references and reports an inactive `resolved/<snapshot-id>/` snapshot (B). For missing runtimes, model changes or adjustments, an existing agent can help with non-secret settings (A). Adjust the three peer-file absolute references after copying, then confirm the destination and backend. Secret input and activation require the person. Examples always have `enabled: false`; existing examples/private settings are not overwritten or automatically enabled.
+
+The guide separates Mac Keychain references from Linux Secret Service `credential_ref`. Static Linux preparation does not establish real WSL secret retrieval, connectivity, Mail, exit or resume acceptance. Uninstall/purge removes only recorded, unchanged examples; edited/unrecorded files and private copies are retained.
+
 ### Ubuntu WSL Secret Service references (real-machine acceptance pending)
 
 Linux catalog admission requires an explicit non-secret `backends.<id>.credential_ref` in the manifest:
