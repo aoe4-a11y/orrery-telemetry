@@ -34,6 +34,14 @@ def main():
             raise ValueError('live code drift before rehearsal: '+rel)
         dst=stack/rel;dst.parent.mkdir(parents=True,exist_ok=True);dst.write_bytes(raw)
         shutil.copymode(original,dst);seeded.append(rel)
+    for row in inventory['rows']:
+        rel=row['installed']
+        if rel.startswith('env.sh.bak'):
+            original=pathlib.Path('/Users/huyuhutaru/.agentstack')/rel
+            text=original.read_text()
+            if any(re.match(r'export [A-Z_]*(TOKEN|SECRET|PASSWORD)[A-Z_]*=',line) for line in text.splitlines()):
+                raise ValueError('credential export in env history; refusing copy')
+            shutil.copy2(original,stack/rel);seeded.append(rel)
     # Runtime scripts are explicit code inputs, never a recursive runtime copy.
     for row in inventory['rows']:
         rel=row['installed']
@@ -81,10 +89,16 @@ def main():
     result={'home':str(home),'mail_port':mail_port,'dashboard_port':dashboard_port,'seeded':len(seeded),'mode':'real isolated native Mail and dashboard; fake no-service Linux manager; scoped approvals skipped'}
     try:
         install=subprocess.run(['/bin/bash',str(ROOT/'scripts/install-fleet-upgrade.sh'),'--rehearsal-root',str(a.root)],cwd=ROOT,env=env)
-        result['installer_exit']=install.returncode
+        result['wrapper_exit']=install.returncode
+        wrapper_result=a.root/'wrapper-result.json'
+        if wrapper_result.is_file():result.update(json.loads(wrapper_result.read_text()))
+        else:result['installer_exit']=install.returncode
         if install.returncode:raise RuntimeError('isolated installer failed')
         health=_wait_health(mail_url);result['mail_health']='ready';result['mail_database_matches']=health.get('database_url','').endswith(str(stack/'mail/storage.sqlite3'))
         comparisons=[]
+        for row in inventory['rows']:
+            if row['installed'].startswith('env.sh.bak'):
+                comparisons.append({'path':row['installed'],'match':sha(stack/row['installed'])==row['sha256'],'kind':'env-history-exact'})
         import difflib
         differences=[]
         for row in inventory['rows']:
@@ -93,6 +107,9 @@ def main():
                 continue
             if not installed.exists() and not installed.is_symlink():
                 comparisons.append({'path':rel,'match':False,'reason':'missing'});continue
+            if rel.startswith('integrations/codex_app/') and not rel.startswith(('integrations/codex_app/src/','integrations/codex_app/plugin/')):
+                comparisons.append({'path':rel,'match':sha(installed)==row['sha256'],'kind':'existing-optional-install-retained','expected_sha256':row['sha256'],'installed_sha256':sha(installed)})
+                continue
             expected=ROOT/row['source'] if row.get('source') else None
             if row.get('disposition')=='versioned-compatibility-default':
                 expected=None # dispatcher checked against explicit identity below
@@ -119,6 +136,8 @@ def main():
         (ROOT/'docs/orrery-up-2/live-to-install.diff').write_text(''.join(differences))
         result['comparisons']=comparisons;result['comparison_failed']=sum(not x['match'] for x in comparisons)
         generated=(stack/'env.sh').read_text()
+        old_env=pathlib.Path('/Users/huyuhutaru/.agentstack/env.sh').read_text().replace('/Users/huyuhutaru',str(home)).replace(str(home)+'/tools/examforge',str(project)).replace('/Volumes/',str(home)+'/Volumes/')
+        (ROOT/'docs/orrery-up-2/env-preservation.diff').write_text(''.join(difflib.unified_diff(old_env.splitlines(True),generated.splitlines(True),fromfile='before/env.sh',tofile='after/env.sh')))
         result['native_tls_bin_retained']=('export AGENTSTACK_CODEX_BIN='+str(native_tls)) in generated
         result['native_tls_comments_retained']=all(line in generated for line in pathlib.Path('/Users/huyuhutaru/.agentstack/env.sh').read_text().splitlines() if line.startswith('# 2026-10-22 head:') or line.startswith('# 席の Codex'))
         manifest=json.loads((stack/'install-state.json').read_text())

@@ -213,16 +213,28 @@ class AgentStackProxy:
         agent_id: str | None = None,
         limit: int = 20,
         urgent_only: bool = False,
-        include_bodies: bool = False,
+        include_bodies: bool = True,
         since_ts: str | None = None,
         topic: str | None = None,
+        message_id: int | None = None,
+        body_offset: int = 0,
+        body_limit: int = 2000,
     ) -> list[dict[str, Any]]:
         binding, owner_token = self._resolve(session_id, agent_id)
         if not _is_integer(limit) or not 1 <= limit <= 1000:
             raise ProxyError("limit must be between 1 and 1000")
         _optional_text(since_ts, "since_ts", 128)
         _optional_text(topic, "topic", 64)
-        return self.agent_mail.fetch_inbox(
+        if message_id is not None and (not _is_integer(message_id) or message_id < 1):
+            raise ProxyError("message_id must be a positive integer")
+        if not _is_integer(body_offset) or body_offset < 0:
+            raise ProxyError("body_offset must be a nonnegative integer")
+        if not _is_integer(body_limit) or not 1 <= body_limit <= 4000:
+            raise ProxyError("body_limit must be between 1 and 4000")
+        if body_offset and message_id is None:
+            raise ProxyError("body_offset requires message_id")
+        exact = {"message_id": message_id} if message_id is not None else {}
+        messages = self.agent_mail.fetch_inbox(
             project_key=binding["project_key"],
             agent_name=binding["agent_name"],
             registration_token=owner_token,
@@ -231,7 +243,34 @@ class AgentStackProxy:
             include_bodies=_boolean(include_bodies, "include_bodies"),
             since_ts=since_ts,
             topic=topic,
+            **exact,
         )
+
+        # Bound model-visible body output rather than letting the tool host silently
+        # discard a middle message. Every excerpt carries its exact-ID recovery.
+        visible_limit = min(body_limit, max(1, 6000 // max(1, len(messages))))
+        result = []
+        for item in messages:
+            message = dict(item)
+            body = message.get("body_md")
+            if isinstance(body, str):
+                end = min(len(body), body_offset + visible_limit)
+                message["body_md"] = body[body_offset:end]
+                message["body_offset"] = body_offset
+                message["body_total_chars"] = len(body)
+                message["body_truncated"] = body_offset > 0 or end < len(body)
+                message["body_next_offset"] = end if end < len(body) else None
+                if message["body_truncated"]:
+                    message["body_retrieval"] = (
+                        f"Body excerpt only. Fetch full text with fetch_inbox(message_id={message['id']}, "
+                        "include_bodies=true, body_offset=0); concatenate body_md chunks "
+                        "using body_next_offset until it is null."
+                    )
+            else:
+                message["body_omitted"] = True
+                message["body_retrieval"] = f"Fetch full text with fetch_inbox(message_id={message['id']}, include_bodies=true)."
+            result.append(message)
+        return result
 
     def send_message(
         self,
@@ -853,7 +892,7 @@ TOOL_DEFINITIONS = [
     },
     {
         "name": "fetch_inbox",
-        "description": "Fetch this bound agent's inbox without exposing credentials.",
+        "description": "Fetch recipient-owned messages. Use message_id from notifications for full text, including old messages. Bodies are bounded excerpts; concatenate chunks using body_next_offset until null. Omit since_ts and urgent_only for exact retrieval.",
         "inputSchema": _schema(
             {
                 "limit": {"type": "integer", "minimum": 1, "maximum": 1000},
@@ -861,6 +900,9 @@ TOOL_DEFINITIONS = [
                 "include_bodies": {"type": "boolean"},
                 "since_ts": {"type": ["string", "null"]},
                 "topic": {"type": ["string", "null"]},
+                "message_id": {"type": ["integer", "null"], "minimum": 1},
+                "body_offset": {"type": "integer", "minimum": 0},
+                "body_limit": {"type": "integer", "minimum": 1, "maximum": 4000},
             },
             [],
         ),

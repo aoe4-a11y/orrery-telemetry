@@ -208,6 +208,7 @@ class AgentMailClient:
         include_bodies: bool = False,
         since_ts: str | None = None,
         topic: str | None = None,
+        message_id: int | None = None,
     ) -> list[dict[str, Any]]:
         arguments: dict[str, Any] = {
             "project_key": project_key,
@@ -219,6 +220,10 @@ class AgentMailClient:
         self._with_owner_token("fetch_inbox", arguments, registration_token)
         _put_optional(arguments, "since_ts", since_ts)
         _put_optional(arguments, "topic", topic)
+        if message_id is not None:
+            if "message_id" not in self._advertised_parameters("fetch_inbox"):
+                raise AgentMailError("mail server does not support exact message retrieval; deploy the matching mail server before using message_id")
+            arguments["message_id"] = message_id
         value = self._call_tool("fetch_inbox", arguments)
         if isinstance(value, dict) and set(value) == {"result"}:
             value = value["result"]

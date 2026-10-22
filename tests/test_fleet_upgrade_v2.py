@@ -65,7 +65,7 @@ case "${1:-}" in
  --version) echo 'codex-cli 0.159.3'; exit 0 ;;
  --help) echo ' --ask-for-approval <POLICY>'; exit 0 ;;
 esac
-python3 -c 'import json,os; from pathlib import Path; Path(os.environ["TLS_ENV_PROOF"]).write_text(json.dumps({"ssl_cert_file_present":"SSL_CERT_FILE" in os.environ,"codex_ca_certificate_present":"CODEX_CA_CERTIFICATE" in os.environ}))'
+python3 -c 'import json,os; from pathlib import Path; (Path.home()/"tls-process-env.json").write_text(json.dumps({"ssl_cert_file_present":"SSL_CERT_FILE" in os.environ,"codex_ca_certificate_present":"CODEX_CA_CERTIFICATE" in os.environ}))'
 printf 'gpt-6.1-sol medium fixture\n? for shortcuts\n› '
 while IFS= read -r line; do printf '\n%s\n› ' "$line"; done
 ''')
@@ -98,6 +98,9 @@ while IFS= read -r line; do printf '\n%s\n› ' "$line"; done
         command=[str(stack/'hooks/spawn_child.sh'),'--codex','--model','gpt-6.1-sol','--effort','medium','--pre-registered',NAME,'--child-token-file',str(handoff),'--embed-task','--task-file',str(task),str(project)]
     result=None
     try:
+        subprocess.run([str(fake/'tmux'),'new-session','-d','-s','FixtureEnvSeed','/bin/cat'],env=env,check=True)
+        positive=subprocess.check_output([str(fake/'tmux'),'show-environment','-g','SSL_CERT_FILE'],env=env,text=True)
+        assert positive.startswith('SSL_CERT_FILE=')
         result=subprocess.run(command,cwd=project,env=env,capture_output=True,text=True,timeout=60)
         assert result.returncode==0,(entry,new,result.stdout,result.stderr)
         pane=subprocess.run([str(fake/'tmux'),'list-panes','-t','='+NAME,'-F','#{session_name}|#{pane_current_command}|#{pane_dead}'],env=env,capture_output=True,text=True,check=True).stdout.strip()
@@ -107,10 +110,12 @@ while IFS= read -r line; do printf '\n%s\n› ' "$line"; done
         assert token.read_text()=='isolated-test-owner'
         return {'token_name':token.name,'token_mode':stat.S_IMODE(token.stat().st_mode),'state_name':state.name,
                 'state_mode':stat.S_IMODE(state.stat().st_mode),'state_keys':sorted(data),'state_identity':data['agent_name'],
+                'server_certificate_variable_positive_control':positive.startswith('SSL_CERT_FILE='),
                 'child_process_environment':json.loads((home/'tls-process-env.json').read_text()),
                 'pane_session':pane.split('|')[0],'pane_alive':pane.endswith('|0'),'launcher_exit':result.returncode}
     finally:
         subprocess.run([str(fake/'tmux'),'kill-session','-t','='+NAME],env=env,capture_output=True)
+        subprocess.run([str(fake/'tmux'),'kill-session','-t','=FixtureEnvSeed'],env=env,capture_output=True)
 
 @pytest.mark.parametrize('entry',['restart-seat','spawn-codex','spawn_child'])
 def test_three_entrances_preserve_current_generation_identity(tmp_path,entry):

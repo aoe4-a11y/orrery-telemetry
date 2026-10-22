@@ -4,14 +4,14 @@
 
 [前: 委任と child agent](delegation.md) · [README に戻る](../README.md) · [次: Codex App 統合](codex-app.md)
 
-`hooks/` には、Claude Code の lifecycle event から自動実行される hook と、launcher・dashboard・skill が明示的に呼ぶ運用 helper、event hook が source / 起動する内部 library・worker が同居しています。Claude Code event hook は9件です。
+`hooks/` には、Claude Code の lifecycle event から自動実行される hook と、launcher・dashboard・skill が明示的に呼ぶ運用 helper、event hook が source / 起動する内部 library・worker が同居しています。Claude Code event hook は11件です。
 
 [`hooks/settings.template.json`](../hooks/settings.template.json) は event と command の対応を定義し、[`hooks/README.md`](../hooks/README.md) は settings merge の安全方針を定義します。この文書は、実際にいつ起動し、何を保証するかを説明する利用者向け reference です。
 
 
 停止した子の道具を変更する `agentstack-resume` は `/api/jump` を呼びます。`child_resume.py` が変更世代と生成設定の復元を管理します。[道具変更](delegation.md#停止した子の道具を変更して-resume-する)を参照してください。
 
-## Claude Code event hook（9件）
+## Claude Code event hook（11件）
 
 installer が `settings.template.json` を `~/.claude/settings.json` へ merge すると、次の event で自動実行されます。
 

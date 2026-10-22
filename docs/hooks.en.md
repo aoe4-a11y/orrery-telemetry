@@ -4,14 +4,14 @@
 
 [Previous: Delegation and child agents](delegation.en.md) · [Back to README](../README.en.md) · [Next: Codex App integration](codex-app.en.md)
 
-`hooks/` contains hooks that run automatically from Claude Code lifecycle events, operational helpers called explicitly by launchers, the dashboard, and skills, and the internal libraries and workers sourced or started by event hooks. There are nine Claude Code event hooks.
+`hooks/` contains hooks that run automatically from Claude Code lifecycle events, operational helpers called explicitly by launchers, the dashboard, and skills, and the internal libraries and workers sourced or started by event hooks. There are eleven Claude Code event hooks.
 
 [`hooks/settings.template.json`](../hooks/settings.template.json) defines event-to-command mappings, and [`hooks/README.md`](../hooks/README.md) defines the safety policy for settings merges. This document is the user reference explaining when each component actually runs and what it guarantees.
 
 
 `agentstack-resume` changes a stopped child through `/api/jump`; `child_resume.py` owns the change generation and generated-setting rollback. See [tool changes](delegation.en.md#resume-a-stopped-child-with-different-tools).
 
-## Claude Code event hooks (9)
+## Claude Code event hooks (11)
 
 After the installer merges `settings.template.json` into `~/.claude/settings.json`, the following events run automatically.
 

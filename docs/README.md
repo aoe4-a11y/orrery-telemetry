@@ -83,3 +83,14 @@ Telemetry 自体の操作は、header の `HELP MAP`（NETWORK では `SETTINGS`
 
 - [Native context と helper model](native-capabilities.md) — dsh / Hermes の context 読取とモデル別の能力。
 - [Native catalog and effort capabilities](managed-catalog.md)
+
+- [Fleet artifact: orrery-up-1/guide.md](orrery-up-1/guide.md)
+- [Fleet artifact: orrery-up-1/live-code/integrations/codex_app/README.md](orrery-up-1/live-code/integrations/codex_app/README.md)
+- [Fleet artifact: orrery-up-1/live-code/integrations/codex_app/marketplace/plugins/agentstack-codex-app/schemas/README.md](orrery-up-1/live-code/integrations/codex_app/marketplace/plugins/agentstack-codex-app/schemas/README.md)
+- [Fleet artifact: orrery-up-1/live-code/integrations/codex_app/marketplace/plugins/agentstack-codex-app/skills/coordinate/SKILL.md](orrery-up-1/live-code/integrations/codex_app/marketplace/plugins/agentstack-codex-app/skills/coordinate/SKILL.md)
+- [Fleet artifact: orrery-up-1/migration-map.md](orrery-up-1/migration-map.md)
+- [Fleet artifact: orrery-up-1/receipt.md](orrery-up-1/receipt.md)
+
+- [Fleet artifact: orrery-up-2/guide.md](orrery-up-2/guide.md)
+- [Fleet artifact: orrery-up-2/receipt.md](orrery-up-2/receipt.md)
+- [Fleet artifact: orrery-up-2/upstream-changes.md](orrery-up-2/upstream-changes.md)

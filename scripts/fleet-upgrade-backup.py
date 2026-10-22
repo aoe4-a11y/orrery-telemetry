@@ -44,7 +44,8 @@ def snapshot(home, dest, project_key=None, codex_home=None):
     # Save this installation's service definitions; exclude every other owner's label.
     for p in (home/'Library/LaunchAgents').glob('org.agentstack*.plist'):
         if p.is_file():copy(p,p.relative_to(home))
-    manifest={'home':str(home),'records':records,'excluded':['.agentstack/mail','.agentstack/runtime','.agentstack/mail-service']}
+    shutil.copy2(pathlib.Path(__file__),dest/'restore-tool.py.txt')
+    manifest={'restore_tool_sha256':digest(dest/'restore-tool.py.txt'),'home':str(home),'records':records,'excluded':['.agentstack/mail','.agentstack/runtime','.agentstack/mail-service']}
     (dest/'manifest.json').write_text(json.dumps(manifest,indent=2)+'\n');os.chmod(dest/'manifest.json',0o600)
     return len(records)
 

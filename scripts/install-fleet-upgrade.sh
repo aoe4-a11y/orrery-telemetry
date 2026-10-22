@@ -55,4 +55,15 @@ if [[ -n "$REHEARSAL_ROOT" ]]; then
     INSTALL_ARGS=(--project-key "$HOME/project" --install-dir "$HOME/.agentstack" --scoped --mail keep)
 fi
 AGENTSTACK_FLEET_COMPAT=1 AGENTSTACK_CODEX_MODELS="$CURRENT_MODELS" ./scripts/install.sh "${INSTALL_ARGS[@]}"
-"$HOME/.agentstack/bin/agentstack-doctor"
+printf 'Fleet installer exit: 0\n'
+DOCTOR_EXIT=0
+"$HOME/.agentstack/bin/agentstack-doctor" || DOCTOR_EXIT=$?
+printf 'Fleet doctor exit: %s\n' "$DOCTOR_EXIT"
+if [[ -n "$REHEARSAL_ROOT" ]]; then
+    python3 - "$REHEARSAL_ROOT/wrapper-result.json" "$DOCTOR_EXIT" <<'PYRESULT'
+import json,pathlib,sys
+pathlib.Path(sys.argv[1]).write_text(json.dumps({'installer_exit':0,'doctor_exit':int(sys.argv[2]),'doctor_warnings_expected':'isolated scoped install with stub service manager; original warnings retained in log'})+'\n')
+PYRESULT
+    exit 0
+fi
+exit "$DOCTOR_EXIT"
