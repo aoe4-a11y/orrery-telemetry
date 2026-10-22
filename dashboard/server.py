@@ -6523,7 +6523,9 @@ def _runtime_activity(text: str) -> tuple[str, str]:
         if prompt is None or re.match(r"\d+\.\s", prompt.group(1) or ""):
             continue
         suffix = lines[index + 1:]
-        if (any(_STATUSLINE_HINT_RE.search(row) or row.strip().startswith("? for shortcuts")
+        # Claude Code 2.1.308 may show only its permissions-mode footer.
+        # Treat it as composer chrome just like the older context/shortcuts rows.
+        if (any(_STATUSLINE_HINT_RE.search(row) or row.strip().startswith(("? for shortcuts", "⏵"))
                 for row in suffix) and all(chrome(row) for row in suffix)):
             composer = index
             break
