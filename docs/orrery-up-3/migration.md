@@ -34,3 +34,5 @@
 新規 `scripts/run-mail-fetch-upgrade-from-ref.sh` は head 専用の未実行入口。UP2 の `--mail keep` 固定 wrapper を変更せず、`--mail update` を明示する。確認対象と未測定範囲は `guide.md` を参照。
 
 README・AGENTS・Claude/Codex の managed 指示・install/hook docs を確認した。起動/承認の製品フローは変わらず、既存 `docs/hooks.md` の exact 取得案内と本表・guide で補う。配布の新規設定項目は増やしていない。
+
+package 単独の完走で見つけた 3 赤も修正した（`9091cd8`）。`packages/agentstack_mail/tests/conftest.py` は repo `tests/` の共通 helper を import path に明示して S2b の動的 fixture 読込みを成立させる。`test_namespace_contract_plan.py` は frozen namespace v1 に optional legacy `message_id` 拡張 fixture を明示的に足して全項目の等値比較を維持する。required へ昇格していないことも検査し、subset 比較には変えていない。製品の API 追加は `05f280e`、旧 namespace 比較試験の導入は `96c5fc7`。S2b helper import の導入は `711f913`（package 単独で収集する時に不足し、repo 全体の collection に依存していた）。
