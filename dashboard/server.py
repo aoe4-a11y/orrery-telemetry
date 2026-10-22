@@ -6564,7 +6564,11 @@ def _runtime_activity(text: str) -> tuple[str, str]:
             # Codex uses the same timed interrupt UI for MCP initialization.
             if (width == 1 and candidate[0] in "•▌●"
                     and _ACTIVE_T_RE.search(candidate) and _WORK_RE.search(candidate)
-                    and candidate.endswith("esc to interrupt)")):
+                    # Codex appends live background-terminal controls after the
+                    # interrupt hint. Keep the timed spinner and known suffix;
+                    # a prose mention of the hint is still not a work marker.
+                    and re.search(r"esc to interrupt\)(?: · \d+ background terminals? running(?: · [^\n]*)?)?$",
+                                  candidate)):
                 return "work", candidate
             if width > 1 and len(label[0].strip()) == 1:
                 candidate = label[0].strip() + " " + " ".join(row.strip() for row in label[1:])
