@@ -1,0 +1,16 @@
+{
+  "tag": "2026.10.22",
+  "tag_sha": "15c00c54c9774c390bdafe332603292b506d76d2",
+  "upstream_tree": "a1dd01bc211f12b4320932260711234125bd180c",
+  "control_root": "/Users/huyuhutaru/.dev-storage-governor/examforge/20261022T063810Z-build-cache-e4007ade/upstream-baseline",
+  "product_source_differences": [
+    {
+      "path": "tests/conftest.py",
+      "state": "fixture-only",
+      "upstream_sha256": "9fa821aed3be19be8833a5a065546e5ce4524810178cc57887da9a4ba42e8187",
+      "control_sha256": "d06a60649fa04f26d3033a1084211b594a12467c02becca026b46b2510bc36f6"
+    }
+  ],
+  "control_git_commit": "5f233bd3555383e6d6431c3d40295d03a31857e8",
+  "purpose": "repeat all upstream test files containing initial red tests; process cleanup refusal fixture only"
+}

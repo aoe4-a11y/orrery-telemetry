@@ -22,6 +22,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import pytest
 
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
@@ -770,3 +771,15 @@ def test_every_launcher_loads_env_sh_only_through_ags_load_env():
         text = (ROOT / "bin" / name).read_text(encoding="utf-8")
         assert '\nags_load_env "$@"\n' in text, name
         assert "env.sh\"" not in text and "/env.sh" not in text, name
+
+
+@pytest.mark.parametrize("value", ["workspace-write", "danger-full-access", "read-only"])
+def test_codex_sandbox_explicit_value_survives_resolution(tmp_path,value):
+    home,_=_previous_install(tmp_path)
+    assert _resolve_like_the_installer(home,"CODEX_SANDBOX_SETTING",env={"AGENTSTACK_CODEX_SANDBOX":value})==[value]
+
+def test_codex_sandbox_from_old_unclassified_env_is_kept(tmp_path):
+    home,_=_previous_install(tmp_path)
+    path=home/".agentstack/env.sh"
+    path.write_text(re.sub(r"^export AGENTSTACK_CODEX_SANDBOX=.*$", "export AGENTSTACK_CODEX_SANDBOX=read-only", path.read_text(), flags=re.M))
+    assert _resolve_like_the_installer(home,"CODEX_SANDBOX_SETTING")==["read-only"]

@@ -16,6 +16,7 @@
       "ssl_cert_file_present": false,
       "codex_ca_certificate_present": false
     },
+    "pane_name_and_mode": "SunnyCurie:0.0|0|",
     "pane_session": "SunnyCurie",
     "pane_alive": true,
     "launcher_exit": 0
@@ -36,6 +37,7 @@
       "ssl_cert_file_present": false,
       "codex_ca_certificate_present": false
     },
+    "pane_name_and_mode": "SunnyCurie:0.0|0|",
     "pane_session": "SunnyCurie",
     "pane_alive": true,
     "launcher_exit": 0

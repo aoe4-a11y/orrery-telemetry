@@ -1,0 +1,31 @@
+import importlib.util,json,shutil,os
+from pathlib import Path
+root=Path('/Users/huyuhutaru/.dev-storage-governor/examforge/20261022T063810Z-build-cache-e4007ade/source')
+spec=importlib.util.spec_from_file_location('fleet_test',root/'tests/test_fleet_upgrade_v2.py');m=importlib.util.module_from_spec(spec);spec.loader.exec_module(m)
+original=m.stage
+inventory=json.loads((root/'docs/orrery-up-2/inventory.json').read_text())
+def stage(home,new):
+ stack=original(home,new)
+ if not new:
+  for row in inventory['rows']:
+   rel=row['installed']
+   if not rel.startswith(('bin/','hooks/')) or row.get('kind')!='file' or not row.get('sha256'):continue
+   source=Path('/Users/huyuhutaru/.agentstack')/rel
+   target=stack/rel;target.parent.mkdir(parents=True,exist_ok=True)
+   if target.is_symlink():target.unlink()
+   raw=source.read_bytes()
+   import hashlib
+   assert hashlib.sha256(raw).hexdigest()==row['sha256'],rel
+   raw=raw.replace(b'/Users/huyuhutaru/.agentstack',str(stack).encode())
+   target.write_bytes(raw);shutil.copymode(source,target)
+ return stack
+m.stage=stage
+base=root.parent/'old-dependency-parity';base.mkdir(exist_ok=True)
+results=[]
+for entry in ('restart-seat','spawn-codex','spawn_child'):
+ old=m.run_arm(base/entry/'old',entry,False)
+ new=m.run_arm(base/entry/'new',entry,True)
+ assert old==new,(entry,old,new)
+ results.append({'entry':entry,'equal':True,'old_all_bin_hooks':'live captured hashes with isolated install prefix','old':old,'new':new})
+(root/'docs/orrery-up-2/parity-old-dependencies.json').write_text(json.dumps(results,indent=2)+'\n')
+print(json.dumps({'entrances':3,'equal':3}))

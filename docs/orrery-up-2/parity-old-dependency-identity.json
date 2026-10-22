@@ -1,0 +1,5 @@
+{
+  "reproducer": "docs/orrery-up-2/parity-old-dependencies.py.txt",
+  "sha256": "c04b8f709c27729b68eb01414c487352e0985e9bd4de7391812e5915575ba2e2",
+  "evidence": "three entrances; old full bin/hooks from whitelisted live inventory hashes; new installed candidate; synthetic CLI/Mail; real isolated tmux"
+}

@@ -1,7 +1,7 @@
 {
   "home": "/Users/huyuhutaru/.dev-storage-governor/examforge/20261022T063810Z-build-cache-e4007ade/rehearsal/rehearsal-home",
-  "mail_port": 51962,
-  "dashboard_port": 51963,
+  "mail_port": 53318,
+  "dashboard_port": 53319,
   "seeded": 358,
   "mode": "real isolated native Mail and dashboard; fake no-service Linux manager; scoped approvals skipped",
   "wrapper_exit": 0,
@@ -433,8 +433,8 @@
     },
     {
       "path": "bin/orrery-audit-evidence",
-      "expected_sha256": "00787c6dc3745b65915c89795c8d56782d551fee89e5999e7f70eb203abe92db",
-      "installed_sha256": "00787c6dc3745b65915c89795c8d56782d551fee89e5999e7f70eb203abe92db",
+      "expected_sha256": "18d34a4d0d026e33494967635438e0d07650a4b919e1575f78d12afd38bb0194",
+      "installed_sha256": "18d34a4d0d026e33494967635438e0d07650a4b919e1575f78d12afd38bb0194",
       "match": true
     },
     {
@@ -493,8 +493,8 @@
     },
     {
       "path": "bin/test_agentstack_jobend.py",
-      "expected_sha256": "48dde7e44a9134b5858730c772d675046e8c8bc17b649e6f1077b1ac7e714906",
-      "installed_sha256": "48dde7e44a9134b5858730c772d675046e8c8bc17b649e6f1077b1ac7e714906",
+      "expected_sha256": "f8facb00c3d3e49cea41e256a63f7fbe5c8c644458c172afc85f92ae79ab81f2",
+      "installed_sha256": "f8facb00c3d3e49cea41e256a63f7fbe5c8c644458c172afc85f92ae79ab81f2",
       "match": true
     },
     {
@@ -505,8 +505,8 @@
     },
     {
       "path": "bin/test_agentstack_orphan.py",
-      "expected_sha256": "e30d9526178d9a9730306560fd9c50a147664a30937ddd7e92c1095d3f346485",
-      "installed_sha256": "e30d9526178d9a9730306560fd9c50a147664a30937ddd7e92c1095d3f346485",
+      "expected_sha256": "e0c69cdbe79824f41da94070896481b5eefd4105f99c64e9c787cd6838d5018e",
+      "installed_sha256": "e0c69cdbe79824f41da94070896481b5eefd4105f99c64e9c787cd6838d5018e",
       "match": true
     },
     {
@@ -535,8 +535,8 @@
     },
     {
       "path": "bin/test_agentstack_unstick_seats.py",
-      "expected_sha256": "cc54506fd6c48cd58e742f0d2837c3bac33db4a01cc1bd3e2fda33373e56602e",
-      "installed_sha256": "cc54506fd6c48cd58e742f0d2837c3bac33db4a01cc1bd3e2fda33373e56602e",
+      "expected_sha256": "9fdd279b8ed0b6c9d1e643b323b0631cd2afa5f4b5f9014e370f86edab40b191",
+      "installed_sha256": "9fdd279b8ed0b6c9d1e643b323b0631cd2afa5f4b5f9014e370f86edab40b191",
       "match": true
     },
     {
@@ -1368,8 +1368,8 @@
     },
     {
       "path": "hooks/project-context.sh",
-      "expected_sha256": "e24403e8186c5040ac8d579705bb2fde81e84e2f06a69b158bde403fe3b796e4",
-      "installed_sha256": "e24403e8186c5040ac8d579705bb2fde81e84e2f06a69b158bde403fe3b796e4",
+      "expected_sha256": "0b799d256d8b70a18ca2d77dd642f24a6b7da49ccd6844374b3f78233f3f88dd",
+      "installed_sha256": "0b799d256d8b70a18ca2d77dd642f24a6b7da49ccd6844374b3f78233f3f88dd",
       "match": true
     },
     {
@@ -1481,8 +1481,8 @@
     },
     {
       "path": "hooks/watch_agent_mail_signals.sh",
-      "expected_sha256": "830f5c869b1d4e71aae94b612e92913b89f000478d05668c15e1f8d4100f84c4",
-      "installed_sha256": "830f5c869b1d4e71aae94b612e92913b89f000478d05668c15e1f8d4100f84c4",
+      "expected_sha256": "daee6e0e7591f308919b1384cdcaaa91811b591f3449e6fdb62fbad1f34857a5",
+      "installed_sha256": "daee6e0e7591f308919b1384cdcaaa91811b591f3449e6fdb62fbad1f34857a5",
       "match": true
     },
     {
@@ -2006,8 +2006,8 @@
     {
       "path": "hooks/spawn_child.upstream.sh",
       "kind": "upstream-core-preserved",
-      "expected_sha256": "0f08f6e5cfeb9859c11e85c0af93caf8590b794befa0ec896d4defd358e27ca4",
-      "installed_sha256": "0f08f6e5cfeb9859c11e85c0af93caf8590b794befa0ec896d4defd358e27ca4",
+      "expected_sha256": "c8082adfd15d95424bf20be12ebc8dae65f7fca62f6a03f346863565dceeb700",
+      "installed_sha256": "c8082adfd15d95424bf20be12ebc8dae65f7fca62f6a03f346863565dceeb700",
       "match": true
     },
     {

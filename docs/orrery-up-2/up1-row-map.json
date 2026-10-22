@@ -1,0 +1,2530 @@
+[
+  {
+    "up1_line": 15,
+    "up1_row_sha256": "128cf84395b8608e60f6df6d80ff5cc1386cee0bbdf45738111ae51d29d9ab4f",
+    "installed": "hooks/spawn_child.sh",
+    "up2_installed": "hooks/spawn_child.sh",
+    "migration_commit": "3125c0b423470b865f79a66e3adc0d0a870d9e04",
+    "preservation": "現行世代bytesを保存し既定dispatcherから実行。本家coreは.upstream別path"
+  },
+  {
+    "up1_line": 16,
+    "up1_row_sha256": "e4c81400a334710be7c001f6dab8d920062afce87312bad23fba037c4b9a1e85",
+    "installed": "hooks/watch_agent_mail_signals.sh",
+    "up2_installed": "hooks/watch_agent_mail_signals.sh",
+    "migration_commit": "1d42c7235e59c53376e20033c72360f6fa2693fd",
+    "preservation": "delta-manually-ported"
+  },
+  {
+    "up1_line": 17,
+    "up1_row_sha256": "f2eb8d1a17caa1e4bc0176e5d15cbd7364c82fd89670372a106e34a681d855bf",
+    "installed": "hooks/settings.template.json",
+    "up2_installed": "hooks/settings.template.json",
+    "migration_commit": "c709d2a9d3f57f3fe68efe34641d325f7dde01e2",
+    "preservation": "retained-by-up1-merge"
+  },
+  {
+    "up1_line": 18,
+    "up1_row_sha256": "36b323ecccd9c726642da968beec2bbe5674131281b16c0e195995573a851594",
+    "installed": "bin/lib/agentstack-scientists.sh",
+    "up2_installed": "bin/lib/agentstack-scientists.sh",
+    "migration_commit": "ef51345b2e3d26bfc19c12e926e4d1e5a257e52c",
+    "preservation": "retained-by-up1-merge"
+  },
+  {
+    "up1_line": 19,
+    "up1_row_sha256": "632b300a4c5178ace84cb887a41367f1730b258c76e4ece30484596015a2033c",
+    "installed": "bin/agentstack-doctor",
+    "up2_installed": "bin/agentstack-doctor",
+    "migration_commit": "c709d2a9d3f57f3fe68efe34641d325f7dde01e2",
+    "preservation": "retained-by-up1-merge"
+  },
+  {
+    "up1_line": 20,
+    "up1_row_sha256": "d37f4762bb26150718794cd286148327cc59852236e6e9998fb4fd53443d7096",
+    "installed": "bin/agentstack-restart-seat",
+    "up2_installed": "bin/agentstack-restart-seat",
+    "migration_commit": "3125c0b423470b865f79a66e3adc0d0a870d9e04",
+    "preservation": "delta-manually-ported"
+  },
+  {
+    "up1_line": 21,
+    "up1_row_sha256": "2255c277c4fbab476cfdb3d1ec8ea9f0426108054d34a8fce5a87fc80ed9faed",
+    "installed": "bin/agentstack-spawn-codex",
+    "up2_installed": "bin/agentstack-spawn-codex",
+    "migration_commit": "3125c0b423470b865f79a66e3adc0d0a870d9e04",
+    "preservation": "delta-manually-ported"
+  },
+  {
+    "up1_line": 22,
+    "up1_row_sha256": "71759edd4bd8ec7a693a24f6ef33a96a246ce76c9fada28b5a53de96960e8b7f",
+    "installed": "integrations/codex_app/marketplace/plugins/agentstack-codex-app/src/agentstack_codex_app/mcp_server.py",
+    "up2_installed": "integrations/codex_app/marketplace/plugins/agentstack-codex-app/src/agentstack_codex_app/mcp_server.py",
+    "migration_commit": "1d42c7235e59c53376e20033c72360f6fa2693fd",
+    "preservation": "既存optional配置を非上書きで保持。対応sourceは参照のみ（隔離diffで旧bytes一致）"
+  },
+  {
+    "up1_line": 23,
+    "up1_row_sha256": "c80ff83223534c7b95245824bec10997a6b1abfe4c4ced4c4548f12113b77490",
+    "installed": "integrations/codex_app/marketplace/plugins/agentstack-codex-app/src/agentstack_codex_app/agent_mail_client.py",
+    "up2_installed": "integrations/codex_app/marketplace/plugins/agentstack-codex-app/src/agentstack_codex_app/agent_mail_client.py",
+    "migration_commit": "1d42c7235e59c53376e20033c72360f6fa2693fd",
+    "preservation": "本家の600字上限とredaction付きerror表示を採用（引用参照）"
+  },
+  {
+    "up1_line": 36,
+    "up1_row_sha256": "4d1b68559c274aa322f561a0cc6490789ba0a241e0b7c3f07ad0c863422fde3b",
+    "installed": "VERSION",
+    "up2_installed": "VERSION",
+    "migration_commit": "26b7f66828eb9488d2dd6f4f0634a661676c10d9",
+    "preservation": "retained-by-up1-merge"
+  },
+  {
+    "up1_line": 37,
+    "up1_row_sha256": "daca9b6684050bb1e2c4b51407ef0818c52bfa816e8ceee55d8aa8ed1fcf9365",
+    "installed": "bin/__pycache__/agentstack-supervisor.cpython-314.pyc",
+    "up2_installed": "bin/__pycache__/agentstack-supervisor.cpython-314.pyc",
+    "migration_commit": "1d42c7235e59c53376e20033c72360f6fa2693fd",
+    "preservation": "生成物または外部設定をinstaller範囲外で保持。コードの再導入なし"
+  },
+  {
+    "up1_line": 38,
+    "up1_row_sha256": "2c95e217b5259d1f32d3401b2e90f464374eed453ad1ba563546ac1c6a49b494",
+    "installed": "bin/agent-start",
+    "up2_installed": "bin/agent-start",
+    "migration_commit": "aacac5f227885732a62c97dd3af3d53465d1bd5a",
+    "preservation": "retained-by-up1-merge"
+  },
+  {
+    "up1_line": 39,
+    "up1_row_sha256": "44433bb1fe06a3d5fa417854504ec561deda3e6320fa9f33d61a841dd1d4996d",
+    "installed": "bin/agent-start-codex",
+    "up2_installed": "bin/agent-start-codex",
+    "migration_commit": "2b35b4b2d0ff1a10d2739344a6f66e6fb9440e98",
+    "preservation": "retained-by-up1-merge"
+  },
+  {
+    "up1_line": 40,
+    "up1_row_sha256": "a0b533abd25b41dfa2feb63203be708eadf893c640aa6ca77028e4782cbb81b4",
+    "installed": "bin/agentstack-await-reply",
+    "up2_installed": "bin/agentstack-await-reply",
+    "migration_commit": "3125c0b423470b865f79a66e3adc0d0a870d9e04",
+    "preservation": "delta-manually-ported"
+  },
+  {
+    "up1_line": 41,
+    "up1_row_sha256": "32226bde564bfa380c6a35500407c3b8f6d2d940e04957c416ab1d708e24834d",
+    "installed": "bin/agentstack-check-seats",
+    "up2_installed": "bin/agentstack-check-seats",
+    "migration_commit": "ef51345b2e3d26bfc19c12e926e4d1e5a257e52c",
+    "preservation": "retained-by-up1-merge"
+  },
+  {
+    "up1_line": 42,
+    "up1_row_sha256": "e60af6188c724aa82e89c6d8b4decc650a411fdd96df506e869fb846c229ffec",
+    "installed": "bin/agentstack-claude-setup",
+    "up2_installed": "bin/agentstack-claude-setup",
+    "migration_commit": "d0bf1bddd00589bf81fbe00777fe89648e07cdef",
+    "preservation": "retained-by-up1-merge"
+  },
+  {
+    "up1_line": 43,
+    "up1_row_sha256": "be7d0f68fd8e1c78dad11f263acb588af34a9f75b83b6e767400871e5d171981",
+    "installed": "bin/agentstack-codex-bootstrap",
+    "up2_installed": "bin/agentstack-codex-bootstrap",
+    "migration_commit": "aacac5f227885732a62c97dd3af3d53465d1bd5a",
+    "preservation": "retained-by-up1-merge"
+  },
+  {
+    "up1_line": 44,
+    "up1_row_sha256": "6001d554ab5c695098f6b77660d0d3dbcbb0e8e5e11496f4ad4b322ed876bf42",
+    "installed": "bin/agentstack-codex-setup",
+    "up2_installed": "bin/agentstack-codex-setup",
+    "migration_commit": "d0bf1bddd00589bf81fbe00777fe89648e07cdef",
+    "preservation": "retained-by-up1-merge"
+  },
+  {
+    "up1_line": 45,
+    "up1_row_sha256": "70b87056dbd0946f99a31c2e4044872fbf71715aeebadeee7748694d135849d5",
+    "installed": "bin/agentstack-doctor",
+    "up2_installed": "bin/agentstack-doctor",
+    "migration_commit": "c709d2a9d3f57f3fe68efe34641d325f7dde01e2",
+    "preservation": "retained-by-up1-merge"
+  },
+  {
+    "up1_line": 46,
+    "up1_row_sha256": "f4c3199a9aa46a822c82d1835bc44de07a238efcec011fed03205244a8ebfd49",
+    "installed": "bin/agentstack-doctor.bak-20260920-tmux-tcc",
+    "up2_installed": "bin/agentstack-doctor.bak-20260920-tmux-tcc",
+    "migration_commit": "ef51345b2e3d26bfc19c12e926e4d1e5a257e52c",
+    "preservation": "retained-by-up1-merge"
+  },
+  {
+    "up1_line": 47,
+    "up1_row_sha256": "2ccc693fa17dd44bfee4515f202624ba5a3deaed9087ad6546590c08f323ffdc",
+    "installed": "bin/agentstack-doctor.bak-argv4",
+    "up2_installed": "bin/agentstack-doctor.bak-argv4",
+    "migration_commit": "ef51345b2e3d26bfc19c12e926e4d1e5a257e52c",
+    "preservation": "retained-by-up1-merge"
+  },
+  {
+    "up1_line": 48,
+    "up1_row_sha256": "daecd1c2743c90823e9d853f33032db433d60c6bce3a9fc7d8daf5a6e35e8179",
+    "installed": "bin/agentstack-mailctl",
+    "up2_installed": "bin/agentstack-mailctl",
+    "migration_commit": "c5fd343ff299afebba9063c3ddf9988c88512b65",
+    "preservation": "retained-by-up1-merge"
+  },
+  {
+    "up1_line": 49,
+    "up1_row_sha256": "398025a794a33cdcd2834a2cc0c82b1b3a8c4d1913d1faeee74f2ab4bbd490bd",
+    "installed": "bin/agentstack-memory-guard",
+    "up2_installed": "bin/agentstack-memory-guard",
+    "migration_commit": "ef51345b2e3d26bfc19c12e926e4d1e5a257e52c",
+    "preservation": "retained-by-up1-merge"
+  },
+  {
+    "up1_line": 50,
+    "up1_row_sha256": "66c4c7f620a70c02d3a1bc1c2b253a7a36112685af82743e27662e0f632c0d5d",
+    "installed": "bin/agentstack-memory-guard.bak-20260926-v1",
+    "up2_installed": "bin/agentstack-memory-guard.bak-20260926-v1",
+    "migration_commit": "ef51345b2e3d26bfc19c12e926e4d1e5a257e52c",
+    "preservation": "retained-by-up1-merge"
+  },
+  {
+    "up1_line": 51,
+    "up1_row_sha256": "67c4fae6941ebfc73a7cc77ad19b004a33ddcdd20e042011c09c48f0a69e2f63",
+    "installed": "bin/agentstack-memory-guard.bak-20260926-v2",
+    "up2_installed": "bin/agentstack-memory-guard.bak-20260926-v2",
+    "migration_commit": "ef51345b2e3d26bfc19c12e926e4d1e5a257e52c",
+    "preservation": "retained-by-up1-merge"
+  },
+  {
+    "up1_line": 52,
+    "up1_row_sha256": "7dcaaa75d3ed83714103153d8ab845f144417a407226e4242cee848a5aa599c0",
+    "installed": "bin/agentstack-merge-claude-mcp",
+    "up2_installed": "bin/agentstack-merge-claude-mcp",
+    "migration_commit": "6ea80867abe42b0882e54e897e80b86be2d9164e",
+    "preservation": "retained-by-up1-merge"
+  },
+  {
+    "up1_line": 53,
+    "up1_row_sha256": "7a028365d808018fe13f2b7d94a65dfe1e5c0ed493c571ba3561376eea86f349",
+    "installed": "bin/agentstack-merge-settings",
+    "up2_installed": "bin/agentstack-merge-settings",
+    "migration_commit": "a86980d9e27fd30f78cd08e36ad6ca2ad8a05384",
+    "preservation": "retained-by-up1-merge"
+  },
+  {
+    "up1_line": 54,
+    "up1_row_sha256": "7763532d66ebb0a2f9d27fb7b33e5ff89131eca910c1b4102bbb35ef52033f59",
+    "installed": "bin/agentstack-owner-checkin.py",
+    "up2_installed": "bin/agentstack-owner-checkin.py",
+    "migration_commit": "ef51345b2e3d26bfc19c12e926e4d1e5a257e52c",
+    "preservation": "retained-by-up1-merge"
+  },
+  {
+    "up1_line": 55,
+    "up1_row_sha256": "13cda31b70f12da6d4e406e6608f6c447a832eebd9ac8f5051f151e482dc2e90",
+    "installed": "bin/agentstack-preregister-child",
+    "up2_installed": "bin/agentstack-preregister-child",
+    "migration_commit": "3125c0b423470b865f79a66e3adc0d0a870d9e04",
+    "preservation": "現行世代bytesを保存し既定dispatcherから実行。本家coreは.upstream別path"
+  },
+  {
+    "up1_line": 56,
+    "up1_row_sha256": "100ed73814984377cb4cf547f41b4cdb2f154c5a784c9b91f410d9da93f8ac21",
+    "installed": "bin/agentstack-reap-idle-seats",
+    "up2_installed": "bin/agentstack-reap-idle-seats",
+    "migration_commit": "3125c0b423470b865f79a66e3adc0d0a870d9e04",
+    "preservation": "delta-merged"
+  },
+  {
+    "up1_line": 57,
+    "up1_row_sha256": "e53b49d093bd82c145ed144db5835e319cd0f0cac4c4716694026a797d1b10c3",
+    "installed": "bin/agentstack-reap-idle-seats.bak-20260920-two-strikes",
+    "up2_installed": "bin/agentstack-reap-idle-seats.bak-20260920-two-strikes",
+    "migration_commit": "ef51345b2e3d26bfc19c12e926e4d1e5a257e52c",
+    "preservation": "retained-by-up1-merge"
+  },
+  {
+    "up1_line": 58,
+    "up1_row_sha256": "9fcedb6bc3646150d029e5fa2a8a5fef2fcc7ee9f2db84f36ddd4c4e84838660",
+    "installed": "bin/agentstack-reregister",
+    "up2_installed": "bin/agentstack-reregister",
+    "migration_commit": "2b35b4b2d0ff1a10d2739344a6f66e6fb9440e98",
+    "preservation": "retained-by-up1-merge"
+  },
+  {
+    "up1_line": 59,
+    "up1_row_sha256": "95f8b6c7f2479e3c4a6c7a204dbfef3d35864cc9007a40ea170e970bda8df0cd",
+    "installed": "bin/agentstack-restart-seat",
+    "up2_installed": "bin/agentstack-restart-seat",
+    "migration_commit": "3125c0b423470b865f79a66e3adc0d0a870d9e04",
+    "preservation": "delta-manually-ported"
+  },
+  {
+    "up1_line": 60,
+    "up1_row_sha256": "bf8895971142ed473418ce2d8458ce22bf2e389ff2b7ede6eb0d7a21d83fdd10",
+    "installed": "bin/agentstack-rule-mirror-check",
+    "up2_installed": "bin/agentstack-rule-mirror-check",
+    "migration_commit": "3125c0b423470b865f79a66e3adc0d0a870d9e04",
+    "preservation": "delta-merged"
+  },
+  {
+    "up1_line": 61,
+    "up1_row_sha256": "0e2e1e87922b6a8134570ad81efb40d53be585b89aedc766c9c0e8cbff997996",
+    "installed": "bin/agentstack-seat-cost.py",
+    "up2_installed": "bin/agentstack-seat-cost.py",
+    "migration_commit": "ef51345b2e3d26bfc19c12e926e4d1e5a257e52c",
+    "preservation": "retained-by-up1-merge"
+  },
+  {
+    "up1_line": 62,
+    "up1_row_sha256": "f4dd19f13a02a11ea0de365e01e84c103c61520038e683578a54961b62263be7",
+    "installed": "bin/agentstack-seat-stall-watch.py",
+    "up2_installed": "bin/agentstack-seat-stall-watch.py",
+    "migration_commit": "3125c0b423470b865f79a66e3adc0d0a870d9e04",
+    "preservation": "delta-merged"
+  },
+  {
+    "up1_line": 63,
+    "up1_row_sha256": "8e2de8342bf8cefecabf8549903b29dab3e4ff79ffeabc117ecee002ec3a9afa",
+    "installed": "bin/agentstack-selftest",
+    "up2_installed": "bin/agentstack-selftest",
+    "migration_commit": "bb4195c97d799dfae200710fc264ae80511b6d3b",
+    "preservation": "retained-by-up1-merge"
+  },
+  {
+    "up1_line": 64,
+    "up1_row_sha256": "63ba2bc598e7ef710ec4f1e269c9c8f85d438b9fb6c9bcb47d827ac3e47d5b91",
+    "installed": "bin/agentstack-spawn-codex",
+    "up2_installed": "bin/agentstack-spawn-codex",
+    "migration_commit": "3125c0b423470b865f79a66e3adc0d0a870d9e04",
+    "preservation": "delta-manually-ported"
+  },
+  {
+    "up1_line": 65,
+    "up1_row_sha256": "3f0aa26ebd17eb97f6497dcc18e25329c13224eda79b66d0ed505048430fc098",
+    "installed": "bin/agentstack-supervisor.py",
+    "up2_installed": "bin/agentstack-supervisor.py",
+    "migration_commit": "ef51345b2e3d26bfc19c12e926e4d1e5a257e52c",
+    "preservation": "retained-by-up1-merge"
+  },
+  {
+    "up1_line": 66,
+    "up1_row_sha256": "f2833a019ff2a722d06c4376f0b6c29b01a09a69fc0f878da1954859aa8da06c",
+    "installed": "bin/agentstack-supervisor.py.bak-20260912",
+    "up2_installed": "bin/agentstack-supervisor.py.bak-20260912",
+    "migration_commit": "ef51345b2e3d26bfc19c12e926e4d1e5a257e52c",
+    "preservation": "retained-by-up1-merge"
+  },
+  {
+    "up1_line": 67,
+    "up1_row_sha256": "6306a20f7af5e6ff28ce35a1acea5925065feb2228d4c8758c2f2027e8c1d9fa",
+    "installed": "bin/agentstack-supervisor.py.bak-20260918-nudge-cap",
+    "up2_installed": "bin/agentstack-supervisor.py.bak-20260918-nudge-cap",
+    "migration_commit": "ef51345b2e3d26bfc19c12e926e4d1e5a257e52c",
+    "preservation": "retained-by-up1-merge"
+  },
+  {
+    "up1_line": 68,
+    "up1_row_sha256": "910c4b96d0589bf2e19a67f36e9e413c3b4bfc974e0186d276236f9cd052e565",
+    "installed": "bin/agentstack-supervisor.py.bak-20260920-R062",
+    "up2_installed": "bin/agentstack-supervisor.py.bak-20260920-R062",
+    "migration_commit": "ef51345b2e3d26bfc19c12e926e4d1e5a257e52c",
+    "preservation": "retained-by-up1-merge"
+  },
+  {
+    "up1_line": 69,
+    "up1_row_sha256": "3775c97cc578f318b489981352ad3ab43d569964176247b90b8b0366114e6c55",
+    "installed": "bin/agentstack-supervisor.py.bak-20260921-heartbeat",
+    "up2_installed": "bin/agentstack-supervisor.py.bak-20260921-heartbeat",
+    "migration_commit": "ef51345b2e3d26bfc19c12e926e4d1e5a257e52c",
+    "preservation": "retained-by-up1-merge"
+  },
+  {
+    "up1_line": 70,
+    "up1_row_sha256": "8016be502eca00cbdb489a343f61f9c3682a172e69714d97f3bceda15c5c143f",
+    "installed": "bin/agentstack-supervisor.py.bak-20260923-R068",
+    "up2_installed": "bin/agentstack-supervisor.py.bak-20260923-R068",
+    "migration_commit": "ef51345b2e3d26bfc19c12e926e4d1e5a257e52c",
+    "preservation": "retained-by-up1-merge"
+  },
+  {
+    "up1_line": 71,
+    "up1_row_sha256": "e46ca57ebbc83bdd7f11b76a23ad8ab6325a932728e5dfa84c2e2569c660167f",
+    "installed": "bin/agentstack-supervisor.py.bak-20260923-autoack",
+    "up2_installed": "bin/agentstack-supervisor.py.bak-20260923-autoack",
+    "migration_commit": "ef51345b2e3d26bfc19c12e926e4d1e5a257e52c",
+    "preservation": "retained-by-up1-merge"
+  },
+  {
+    "up1_line": 72,
+    "up1_row_sha256": "befaa2ed273a2a9466c83fb206143577a6bef9b08cdd6c6c3a4339fc700332a2",
+    "installed": "bin/agentstack-supervisor.py.bak-20260923-autoack2",
+    "up2_installed": "bin/agentstack-supervisor.py.bak-20260923-autoack2",
+    "migration_commit": "ef51345b2e3d26bfc19c12e926e4d1e5a257e52c",
+    "preservation": "retained-by-up1-merge"
+  },
+  {
+    "up1_line": 73,
+    "up1_row_sha256": "6caf99534ce1226b7941bc5aeba7465acfef5350bf5dc72fad85a9a22655de48",
+    "installed": "bin/agentstack-supervisor.py.bak-20260923-codexto",
+    "up2_installed": "bin/agentstack-supervisor.py.bak-20260923-codexto",
+    "migration_commit": "ef51345b2e3d26bfc19c12e926e4d1e5a257e52c",
+    "preservation": "retained-by-up1-merge"
+  },
+  {
+    "up1_line": 74,
+    "up1_row_sha256": "92cbe673f6603ac855da7631cb2df7be575981dccd4f2c21c347673f392619ef",
+    "installed": "bin/agentstack-supervisor.py.bak-20260923-dispatchnudge",
+    "up2_installed": "bin/agentstack-supervisor.py.bak-20260923-dispatchnudge",
+    "migration_commit": "ef51345b2e3d26bfc19c12e926e4d1e5a257e52c",
+    "preservation": "retained-by-up1-merge"
+  },
+  {
+    "up1_line": 75,
+    "up1_row_sha256": "f9ce601b27715b6f36f1fa6abcf7c8af44340fff6eee26181dbddebd4a0638e9",
+    "installed": "bin/agentstack-supervisor.py.bak-20260923-nudgeid",
+    "up2_installed": "bin/agentstack-supervisor.py.bak-20260923-nudgeid",
+    "migration_commit": "ef51345b2e3d26bfc19c12e926e4d1e5a257e52c",
+    "preservation": "retained-by-up1-merge"
+  },
+  {
+    "up1_line": 76,
+    "up1_row_sha256": "a33a4a87c16a097690e437d1c8767cce7f12309927ac1196fed4c607d2990b27",
+    "installed": "bin/agentstack-supervisor.py.bak-20260923-stale24h",
+    "up2_installed": "bin/agentstack-supervisor.py.bak-20260923-stale24h",
+    "migration_commit": "ef51345b2e3d26bfc19c12e926e4d1e5a257e52c",
+    "preservation": "retained-by-up1-merge"
+  },
+  {
+    "up1_line": 77,
+    "up1_row_sha256": "7c646147a5155b65d8510627786008853b284e653863603ad6091525c842f595",
+    "installed": "bin/agentstack-supervisor.py.bak-20260923-throttle",
+    "up2_installed": "bin/agentstack-supervisor.py.bak-20260923-throttle",
+    "migration_commit": "ef51345b2e3d26bfc19c12e926e4d1e5a257e52c",
+    "preservation": "retained-by-up1-merge"
+  },
+  {
+    "up1_line": 78,
+    "up1_row_sha256": "463f09fe60af45a980650476f11204fca5c6f49634554d7abab95ed11dbcc940",
+    "installed": "bin/agentstack-supervisor.py.bak-20260923-window15",
+    "up2_installed": "bin/agentstack-supervisor.py.bak-20260923-window15",
+    "migration_commit": "ef51345b2e3d26bfc19c12e926e4d1e5a257e52c",
+    "preservation": "retained-by-up1-merge"
+  },
+  {
+    "up1_line": 79,
+    "up1_row_sha256": "74d4acd9eb8fac5f67bc274ce3e17506d3b3cc43735e85e01d1461f57e7ee3e9",
+    "installed": "bin/agentstack-tmux-server-migrate",
+    "up2_installed": "bin/agentstack-tmux-server-migrate",
+    "migration_commit": "ef51345b2e3d26bfc19c12e926e4d1e5a257e52c",
+    "preservation": "retained-by-up1-merge"
+  },
+  {
+    "up1_line": 80,
+    "up1_row_sha256": "c518abf88731f150584b8726254bc9964e90c8c42bb27c46d43d144fddbe25d2",
+    "installed": "bin/agentstack-uninstall",
+    "up2_installed": "bin/agentstack-uninstall",
+    "migration_commit": "73e8cc8537f2363af290e72b494d54e4f62157b6",
+    "preservation": "retained-by-up1-merge"
+  },
+  {
+    "up1_line": 81,
+    "up1_row_sha256": "db9e2868f2286ee9953e66a12d90d14460135da2cdf586b1f256995019f3256c",
+    "installed": "bin/agentstack-unstick-seats.sh",
+    "up2_installed": "bin/agentstack-unstick-seats.sh",
+    "migration_commit": "3125c0b423470b865f79a66e3adc0d0a870d9e04",
+    "preservation": "delta-merged"
+  },
+  {
+    "up1_line": 82,
+    "up1_row_sha256": "7f476009352cc9fac411279a72ed395de11aa1da2ff8366e00530f35d3b82c65",
+    "installed": "bin/codex-stats",
+    "up2_installed": "bin/codex-stats",
+    "migration_commit": "ef51345b2e3d26bfc19c12e926e4d1e5a257e52c",
+    "preservation": "retained-by-up1-merge"
+  },
+  {
+    "up1_line": 83,
+    "up1_row_sha256": "6ca31e03b0024f92350c922df2a1f332f053a2988c5f90c36cc79a735a90674c",
+    "installed": "bin/head-send",
+    "up2_installed": "bin/head-send",
+    "migration_commit": "3125c0b423470b865f79a66e3adc0d0a870d9e04",
+    "preservation": "delta-merged"
+  },
+  {
+    "up1_line": 84,
+    "up1_row_sha256": "9631c011908a6ee5dfa5a53789a617fd8b3a49b7f4e613d8b45248fe6b8817a9",
+    "installed": "bin/lib/__pycache__/mcp_endpoint.cpython-314.pyc",
+    "up2_installed": "bin/lib/__pycache__/mcp_endpoint.cpython-314.pyc",
+    "migration_commit": "1d42c7235e59c53376e20033c72360f6fa2693fd",
+    "preservation": "生成物または外部設定をinstaller範囲外で保持。コードの再導入なし"
+  },
+  {
+    "up1_line": 85,
+    "up1_row_sha256": "c82ad4166dbc0c7f237e82a9a574a1b5d95480d67d81e4852a54ec8faa4efc8a",
+    "installed": "bin/lib/agentstack-launch.sh",
+    "up2_installed": "bin/lib/agentstack-launch.sh",
+    "migration_commit": "2b35b4b2d0ff1a10d2739344a6f66e6fb9440e98",
+    "preservation": "retained-by-up1-merge"
+  },
+  {
+    "up1_line": 86,
+    "up1_row_sha256": "e34c853986908f49ce70d05e67e70e617dc06459246e9b4a66068558669a45ca",
+    "installed": "bin/lib/agentstack-register.sh",
+    "up2_installed": "bin/lib/agentstack-register.sh",
+    "migration_commit": "3125c0b423470b865f79a66e3adc0d0a870d9e04",
+    "preservation": "delta-merged"
+  },
+  {
+    "up1_line": 87,
+    "up1_row_sha256": "22b9ec9006c988ce842b8dcdb9909e92d4093fe5c24e2aee1795d7cc0a66944c",
+    "installed": "bin/lib/agentstack-scientists.sh",
+    "up2_installed": "bin/lib/agentstack-scientists.sh",
+    "migration_commit": "ef51345b2e3d26bfc19c12e926e4d1e5a257e52c",
+    "preservation": "retained-by-up1-merge"
+  },
+  {
+    "up1_line": 88,
+    "up1_row_sha256": "8ebd511f25954863ef70ebc2f427db2daa918bf51e7b7db836457096a531009f",
+    "installed": "bin/lib/agentstack-scientists.sh.bak-20260920-nohyphen",
+    "up2_installed": "bin/lib/agentstack-scientists.sh.bak-20260920-nohyphen",
+    "migration_commit": "ef51345b2e3d26bfc19c12e926e4d1e5a257e52c",
+    "preservation": "retained-by-up1-merge"
+  },
+  {
+    "up1_line": 89,
+    "up1_row_sha256": "fbae9ff83fd9dee5f4c1852e8c31b8e8b2f64ee7dcade9da5ee7be49f4d6201e",
+    "installed": "bin/lib/mcp_endpoint.py",
+    "up2_installed": "bin/lib/mcp_endpoint.py",
+    "migration_commit": "6ea80867abe42b0882e54e897e80b86be2d9164e",
+    "preservation": "retained-by-up1-merge"
+  },
+  {
+    "up1_line": 90,
+    "up1_row_sha256": "ede662d40e6487fc05db25b7603bdf48d097031b1ebe1018726952602b048800",
+    "installed": "bin/orrery-audit-evidence",
+    "up2_installed": "bin/orrery-audit-evidence",
+    "migration_commit": "1d42c7235e59c53376e20033c72360f6fa2693fd",
+    "preservation": "retained-by-up1-merge"
+  },
+  {
+    "up1_line": 91,
+    "up1_row_sha256": "a76db31e680ce414c94714de10e4be88f092e6fce0d95be51d695efa159dd747",
+    "installed": "bin/orrery-audit-evidence.bak-20260921-K4",
+    "up2_installed": "bin/orrery-audit-evidence.bak-20260921-K4",
+    "migration_commit": "ef51345b2e3d26bfc19c12e926e4d1e5a257e52c",
+    "preservation": "retained-by-up1-merge"
+  },
+  {
+    "up1_line": 92,
+    "up1_row_sha256": "494c808aba31fc2511e627c055c00bcf48949ddcfd8720937868ca9d5d6c6369",
+    "installed": "bin/orrery-audit-login",
+    "up2_installed": "bin/orrery-audit-login",
+    "migration_commit": "ef51345b2e3d26bfc19c12e926e4d1e5a257e52c",
+    "preservation": "retained-by-up1-merge"
+  },
+  {
+    "up1_line": 93,
+    "up1_row_sha256": "4a04e6a0af16d1d390e9ead9dbb602d45effb27d49b5674da51352d8a438b326",
+    "installed": "bin/orrery-audit-run",
+    "up2_installed": "bin/orrery-audit-run",
+    "migration_commit": "ef51345b2e3d26bfc19c12e926e4d1e5a257e52c",
+    "preservation": "retained-by-up1-merge"
+  },
+  {
+    "up1_line": 94,
+    "up1_row_sha256": "9b8ffb31d69c0b9056612fe6496840564f7729fc3589c1ce9408409a1b069800",
+    "installed": "bin/orrery-ci",
+    "up2_installed": "bin/orrery-ci",
+    "migration_commit": "ef51345b2e3d26bfc19c12e926e4d1e5a257e52c",
+    "preservation": "retained-by-up1-merge"
+  },
+  {
+    "up1_line": 95,
+    "up1_row_sha256": "b6bad3d0a4f43214035651cefe0d9164d206106e7a7a8fc3be01f4b7b0ac68c1",
+    "installed": "bin/orrery-head-tripwire",
+    "up2_installed": "bin/orrery-head-tripwire",
+    "migration_commit": "ef51345b2e3d26bfc19c12e926e4d1e5a257e52c",
+    "preservation": "retained-by-up1-merge"
+  },
+  {
+    "up1_line": 96,
+    "up1_row_sha256": "e6f7de4809d1ed16316be5e25161863c6c431f2456d459f1ee6ae8b200148e3c",
+    "installed": "bin/orrery-head-tripwire.bak-20260912",
+    "up2_installed": "bin/orrery-head-tripwire.bak-20260912",
+    "migration_commit": "ef51345b2e3d26bfc19c12e926e4d1e5a257e52c",
+    "preservation": "retained-by-up1-merge"
+  },
+  {
+    "up1_line": 97,
+    "up1_row_sha256": "963e10b27c45fbf726b8dec9c2886b1ecef92c43374622af0ba3777b57a8e9df",
+    "installed": "bin/owner-quote-index",
+    "up2_installed": "bin/owner-quote-index",
+    "migration_commit": "ef51345b2e3d26bfc19c12e926e4d1e5a257e52c",
+    "preservation": "retained-by-up1-merge"
+  },
+  {
+    "up1_line": 98,
+    "up1_row_sha256": "09d1188e33f0d8f634dd1255fdae6d664fa23d99d3faf81b1db76810090a2aaa",
+    "installed": "bin/owner-sheet-health",
+    "up2_installed": "bin/owner-sheet-health",
+    "migration_commit": "ef51345b2e3d26bfc19c12e926e4d1e5a257e52c",
+    "preservation": "retained-by-up1-merge"
+  },
+  {
+    "up1_line": 99,
+    "up1_row_sha256": "601d7fc30f7230796675cad2347d8d0bfb4ce43ae18290d77bab677e1654d358",
+    "installed": "bin/owner-sheet-server.py",
+    "up2_installed": "bin/owner-sheet-server.py",
+    "migration_commit": "ef51345b2e3d26bfc19c12e926e4d1e5a257e52c",
+    "preservation": "retained-by-up1-merge"
+  },
+  {
+    "up1_line": 100,
+    "up1_row_sha256": "2ebaab56108c6d5089f5f55271fdc8a2afd6306f629c13f6d9cd44447f812d22",
+    "installed": "bin/owner-sheet-server.py.bak-20260920",
+    "up2_installed": "bin/owner-sheet-server.py.bak-20260920",
+    "migration_commit": "ef51345b2e3d26bfc19c12e926e4d1e5a257e52c",
+    "preservation": "retained-by-up1-merge"
+  },
+  {
+    "up1_line": 101,
+    "up1_row_sha256": "2a0ca1c51169bbe88097c8f792234f408b566f88e8ca0a96f7f60256d9165ea0",
+    "installed": "bin/owner-sheet-server.py.bak-20260920-s2",
+    "up2_installed": "bin/owner-sheet-server.py.bak-20260920-s2",
+    "migration_commit": "ef51345b2e3d26bfc19c12e926e4d1e5a257e52c",
+    "preservation": "retained-by-up1-merge"
+  },
+  {
+    "up1_line": 102,
+    "up1_row_sha256": "aadeca3f922fc888365161c6d948e6f37da2fbe8d8f84bca4b31abad37cce037",
+    "installed": "bin/owner-sheet-server.py.bak-20260922-500",
+    "up2_installed": "bin/owner-sheet-server.py.bak-20260922-500",
+    "migration_commit": "ef51345b2e3d26bfc19c12e926e4d1e5a257e52c",
+    "preservation": "retained-by-up1-merge"
+  },
+  {
+    "up1_line": 103,
+    "up1_row_sha256": "f107da0ed4d9a225a1851a10bbb3d42c98646146e1f575086b30e9149f74aa49",
+    "installed": "bin/owner-sheet-server.py.bak-20260922-prev",
+    "up2_installed": "bin/owner-sheet-server.py.bak-20260922-prev",
+    "migration_commit": "ef51345b2e3d26bfc19c12e926e4d1e5a257e52c",
+    "preservation": "retained-by-up1-merge"
+  },
+  {
+    "up1_line": 104,
+    "up1_row_sha256": "145db19ba6ec43e9194473ca0a60efac4d45ccb0d1c1781f4bf44f94e80f4f62",
+    "installed": "bin/simulator-window-guard",
+    "up2_installed": "bin/simulator-window-guard",
+    "migration_commit": "ef51345b2e3d26bfc19c12e926e4d1e5a257e52c",
+    "preservation": "retained-by-up1-merge"
+  },
+  {
+    "up1_line": 105,
+    "up1_row_sha256": "2b251bb47a727e1d2a21b79874ea5d5c61f1f7c9c1d6ae98f24c21380e3f9a66",
+    "installed": "claude/CLAUDE.md",
+    "up2_installed": "claude/CLAUDE.md",
+    "migration_commit": "be072e98c7753455c6f1d93c08f14f89e4421791",
+    "preservation": "retained-by-up1-merge"
+  },
+  {
+    "up1_line": 106,
+    "up1_row_sha256": "79fede22a18653f6460b2b4d4af296e1b022bfe2905a06922518dc38adad2eb2",
+    "installed": "codex/AGENTS.md",
+    "up2_installed": "codex/AGENTS.md",
+    "migration_commit": "30491aefb9d424224d5d5d0d55a92c4c85ba9ccb",
+    "preservation": "retained-by-up1-merge"
+  },
+  {
+    "up1_line": 107,
+    "up1_row_sha256": "5fbd422cb704099646a6ec0290c803fcbbace0487e3067bbf640d0328879bc97",
+    "installed": "dashboard/__pycache__/graph_data.cpython-314.pyc",
+    "up2_installed": "dashboard/__pycache__/graph_data.cpython-314.pyc",
+    "migration_commit": "1d42c7235e59c53376e20033c72360f6fa2693fd",
+    "preservation": "生成物または外部設定をinstaller範囲外で保持。コードの再導入なし"
+  },
+  {
+    "up1_line": 108,
+    "up1_row_sha256": "15542fa8c089261b437c11da9957637faa1e0e2ffc66b8dd42a98ec46bd25494",
+    "installed": "dashboard/agentctl.sh",
+    "up2_installed": "dashboard/agentctl.sh",
+    "migration_commit": "c4fe39f8ab066ed8f40e632657d6beea82e94426",
+    "preservation": "retained-by-up1-merge"
+  },
+  {
+    "up1_line": 109,
+    "up1_row_sha256": "1a00aac998fa82ed1b211c0808aee60d3896f2e79b3b923af0deebba5705b9c9",
+    "installed": "dashboard/agentdashboard.plist.template",
+    "up2_installed": "dashboard/agentdashboard.plist.template",
+    "migration_commit": "c4fe39f8ab066ed8f40e632657d6beea82e94426",
+    "preservation": "retained-by-up1-merge"
+  },
+  {
+    "up1_line": 110,
+    "up1_row_sha256": "423a1159e480f77d7e91ef76691c57f74412c95271dbad3dcd695c3a7f9e92c8",
+    "installed": "dashboard/assets/anthropic.svg",
+    "up2_installed": "dashboard/assets/anthropic.svg",
+    "migration_commit": "a79fcd29c302a7b5968ab80b826f6cca73cdcc70",
+    "preservation": "retained-by-up1-merge"
+  },
+  {
+    "up1_line": 111,
+    "up1_row_sha256": "1b978cc163ff08ea37605e87907b827cc2614a637d73561bf44f0deccb23d043",
+    "installed": "dashboard/assets/openai.svg",
+    "up2_installed": "dashboard/assets/openai.svg",
+    "migration_commit": "a79fcd29c302a7b5968ab80b826f6cca73cdcc70",
+    "preservation": "retained-by-up1-merge"
+  },
+  {
+    "up1_line": 112,
+    "up1_row_sha256": "2d0858dae30958085ec9e64980d6202fb0e9850ffa22975b8f8109028fce5dea",
+    "installed": "dashboard/demo/PORTRAITS.txt",
+    "up2_installed": "dashboard/demo/PORTRAITS.txt",
+    "migration_commit": "05fe72252cb506b18f73edfa78733bfd4f0fdf83",
+    "preservation": "retained-by-up1-merge"
+  },
+  {
+    "up1_line": 113,
+    "up1_row_sha256": "d0926453104906be78d39217bf76802a0e778ec21ddc9dc93921c36415a2e7a2",
+    "installed": "dashboard/demo/PORTRAITS_CLEARED.txt",
+    "up2_installed": "dashboard/demo/PORTRAITS_CLEARED.txt",
+    "migration_commit": "05fe72252cb506b18f73edfa78733bfd4f0fdf83",
+    "preservation": "retained-by-up1-merge"
+  },
+  {
+    "up1_line": 114,
+    "up1_row_sha256": "eb632710d426317e00967518986041b392b345dff43e0ab22d5cd0f8a0de2a5f",
+    "installed": "dashboard/demo/STORY_CONTRACT.md",
+    "up2_installed": "dashboard/demo/STORY_CONTRACT.md",
+    "migration_commit": "05fe72252cb506b18f73edfa78733bfd4f0fdf83",
+    "preservation": "retained-by-up1-merge"
+  },
+  {
+    "up1_line": 115,
+    "up1_row_sha256": "340af50a191e63b08b6ce1ffc98289bb155586d46bb6ebb4d565f430a96c22d8",
+    "installed": "dashboard/demo/build.sh",
+    "up2_installed": "dashboard/demo/build.sh",
+    "migration_commit": "f588203a534c99ba39b358c03c3d84a7614f5e10",
+    "preservation": "retained-by-up1-merge"
+  },
+  {
+    "up1_line": 116,
+    "up1_row_sha256": "93b9293c4f9b6c905b033055ebb49ab42665274c98bc2bd18be404893023b397",
+    "installed": "dashboard/demo/demo_api.js",
+    "up2_installed": "dashboard/demo/demo_api.js",
+    "migration_commit": "1c21d6cc6dc302489af97303f976a168f057e3db",
+    "preservation": "retained-by-up1-merge"
+  },
+  {
+    "up1_line": 117,
+    "up1_row_sha256": "c6659987eac891e57def232822b3f4bbc20052eb9800c437ec22a2a542d4b7f9",
+    "installed": "dashboard/demo/demo_tour.js",
+    "up2_installed": "dashboard/demo/demo_tour.js",
+    "migration_commit": "21f2104dc290252d2f5aa7b2795c6c763452181c",
+    "preservation": "retained-by-up1-merge"
+  },
+  {
+    "up1_line": 118,
+    "up1_row_sha256": "794fa27d671737e3b502575ca46307d77ce356c55078a4aa5de1e80b38a07165",
+    "installed": "dashboard/demo/story_bugreport.js",
+    "up2_installed": "dashboard/demo/story_bugreport.js",
+    "migration_commit": "7c8ca587353e4bd25ada5c615e6bd5bd754b86c3",
+    "preservation": "retained-by-up1-merge"
+  },
+  {
+    "up1_line": 119,
+    "up1_row_sha256": "7fbdd27d0b35138540121003b10a3e14b2b6547924be64e2cd5bd34a06cde7ac",
+    "installed": "dashboard/demo/story_research.js",
+    "up2_installed": "dashboard/demo/story_research.js",
+    "migration_commit": "7c8ca587353e4bd25ada5c615e6bd5bd754b86c3",
+    "preservation": "retained-by-up1-merge"
+  },
+  {
+    "up1_line": 120,
+    "up1_row_sha256": "8ca417a615717130d65500e3f9b6914ef043a47b033ea79dd85d8ead61a5b2a8",
+    "installed": "dashboard/demo/test_demo_shapes.js",
+    "up2_installed": "dashboard/demo/test_demo_shapes.js",
+    "migration_commit": "a8bd8631903dd1eb4ee2121962cd2718d44ca285",
+    "preservation": "retained-by-up1-merge"
+  },
+  {
+    "up1_line": 121,
+    "up1_row_sha256": "3e59680f50b5a538c8c2c82cef15a17a463594d6df1c0f581e49e494e695525b",
+    "installed": "dashboard/graph_data.py",
+    "up2_installed": "dashboard/graph_data.py",
+    "migration_commit": "4f295d9870f1694a0decd68d271385d617891ac3",
+    "preservation": "retained-by-up1-merge"
+  },
+  {
+    "up1_line": 122,
+    "up1_row_sha256": "b1669282241c46a89c993e52ed4da236a9451c5dddcf807baa6e9f022bc2f166",
+    "installed": "dashboard/index.html",
+    "up2_installed": "dashboard/index.html",
+    "migration_commit": "116f91dba4eb42de232383c88eef8991b80bbda2",
+    "preservation": "retained-by-up1-merge"
+  },
+  {
+    "up1_line": 123,
+    "up1_row_sha256": "801edd8758c88797811f961ab2506f4fe2154fae69f9d74881634ebfa63983c0",
+    "installed": "dashboard/portraits_64/Archimedes.png",
+    "up2_installed": "dashboard/portraits_64/Archimedes.png",
+    "migration_commit": "832b706827f57b3e62242eba82bbdc9606f09033",
+    "preservation": "retained-by-up1-merge"
+  },
+  {
+    "up1_line": 124,
+    "up1_row_sha256": "5e61be63bd5311d33f496c6e58c4ae97c37c36b9e95bceec34946434f35fe585",
+    "installed": "dashboard/portraits_64/Arrhenius.png",
+    "up2_installed": "dashboard/portraits_64/Arrhenius.png",
+    "migration_commit": "a79fcd29c302a7b5968ab80b826f6cca73cdcc70",
+    "preservation": "retained-by-up1-merge"
+  },
+  {
+    "up1_line": 125,
+    "up1_row_sha256": "b78707086d1755088aa392102fb829abb485633328b236837f5fe558f67265c3",
+    "installed": "dashboard/portraits_64/Bell.png",
+    "up2_installed": "dashboard/portraits_64/Bell.png",
+    "migration_commit": "832b706827f57b3e62242eba82bbdc9606f09033",
+    "preservation": "retained-by-up1-merge"
+  },
+  {
+    "up1_line": 126,
+    "up1_row_sha256": "ffb0c52e0fcbb7e342c4951da72368bb8119a6bdb3a95cfbf0db4c32ad8becf6",
+    "installed": "dashboard/portraits_64/Bohr.png",
+    "up2_installed": "dashboard/portraits_64/Bohr.png",
+    "migration_commit": "a79fcd29c302a7b5968ab80b826f6cca73cdcc70",
+    "preservation": "retained-by-up1-merge"
+  },
+  {
+    "up1_line": 127,
+    "up1_row_sha256": "f686dcedf4686df88b6d327ef9ada5fe5881d539224a9040040b50de12c39bd7",
+    "installed": "dashboard/portraits_64/Boltzmann.png",
+    "up2_installed": "dashboard/portraits_64/Boltzmann.png",
+    "migration_commit": "a79fcd29c302a7b5968ab80b826f6cca73cdcc70",
+    "preservation": "retained-by-up1-merge"
+  },
+  {
+    "up1_line": 128,
+    "up1_row_sha256": "d2e31c638346389217910b9da0875de761428a679d28de2e19be5a3e9ff54240",
+    "installed": "dashboard/portraits_64/Bose.png",
+    "up2_installed": "dashboard/portraits_64/Bose.png",
+    "migration_commit": "832b706827f57b3e62242eba82bbdc9606f09033",
+    "preservation": "retained-by-up1-merge"
+  },
+  {
+    "up1_line": 129,
+    "up1_row_sha256": "b009259ce9a739af395e1d9dcc42727d55194a2016badec86cfff62663255929",
+    "installed": "dashboard/portraits_64/Copernicus.png",
+    "up2_installed": "dashboard/portraits_64/Copernicus.png",
+    "migration_commit": "832b706827f57b3e62242eba82bbdc9606f09033",
+    "preservation": "retained-by-up1-merge"
+  },
+  {
+    "up1_line": 130,
+    "up1_row_sha256": "6e197bf6e70583e2e32b6f0055fce58a66a29c07fec7b747ca8a8aeb0ca97414",
+    "installed": "dashboard/portraits_64/Curie.png",
+    "up2_installed": "dashboard/portraits_64/Curie.png",
+    "migration_commit": "a79fcd29c302a7b5968ab80b826f6cca73cdcc70",
+    "preservation": "retained-by-up1-merge"
+  },
+  {
+    "up1_line": 131,
+    "up1_row_sha256": "166b9e5ba2a383cc299bbe05cf71040acf0ec3de85b7408a516d80654fda2f0a",
+    "installed": "dashboard/portraits_64/Darwin.png",
+    "up2_installed": "dashboard/portraits_64/Darwin.png",
+    "migration_commit": "a79fcd29c302a7b5968ab80b826f6cca73cdcc70",
+    "preservation": "retained-by-up1-merge"
+  },
+  {
+    "up1_line": 132,
+    "up1_row_sha256": "33c14bb7425c030d900d84842e0203930f39f6b4e79f6dcf0eca0adb287d1baf",
+    "installed": "dashboard/portraits_64/Dirac.png",
+    "up2_installed": "dashboard/portraits_64/Dirac.png",
+    "migration_commit": "832b706827f57b3e62242eba82bbdc9606f09033",
+    "preservation": "retained-by-up1-merge"
+  },
+  {
+    "up1_line": 133,
+    "up1_row_sha256": "134575bfe4d352589006abceeda1ca9ad86cbf01686c454a7a9582e0c015bb3f",
+    "installed": "dashboard/portraits_64/Edison.png",
+    "up2_installed": "dashboard/portraits_64/Edison.png",
+    "migration_commit": "832b706827f57b3e62242eba82bbdc9606f09033",
+    "preservation": "retained-by-up1-merge"
+  },
+  {
+    "up1_line": 134,
+    "up1_row_sha256": "7ab4442de5324dd4d6f030b8e37c38631f26559b4f495dbacfbd9ad395fa7904",
+    "installed": "dashboard/portraits_64/Einstein.png",
+    "up2_installed": "dashboard/portraits_64/Einstein.png",
+    "migration_commit": "a79fcd29c302a7b5968ab80b826f6cca73cdcc70",
+    "preservation": "retained-by-up1-merge"
+  },
+  {
+    "up1_line": 135,
+    "up1_row_sha256": "db71dde8f1e7377f538501a3a51700036f029931bac293d2c4eb8a8d66ba5bd7",
+    "installed": "dashboard/portraits_64/Euler.png",
+    "up2_installed": "dashboard/portraits_64/Euler.png",
+    "migration_commit": "a79fcd29c302a7b5968ab80b826f6cca73cdcc70",
+    "preservation": "retained-by-up1-merge"
+  },
+  {
+    "up1_line": 136,
+    "up1_row_sha256": "219e27321146fb04cdd212940d24d38c352b5ae519b0aa0f1f964d52d31070dc",
+    "installed": "dashboard/portraits_64/Fabre.png",
+    "up2_installed": "dashboard/portraits_64/Fabre.png",
+    "migration_commit": "a79fcd29c302a7b5968ab80b826f6cca73cdcc70",
+    "preservation": "retained-by-up1-merge"
+  },
+  {
+    "up1_line": 137,
+    "up1_row_sha256": "69d0e9112b993323c1a78742e10c85e69485a3d7bdd258b48e3f43043dfbcc84",
+    "installed": "dashboard/portraits_64/Faraday.png",
+    "up2_installed": "dashboard/portraits_64/Faraday.png",
+    "migration_commit": "a79fcd29c302a7b5968ab80b826f6cca73cdcc70",
+    "preservation": "retained-by-up1-merge"
+  },
+  {
+    "up1_line": 138,
+    "up1_row_sha256": "0aab7f3c5021a35ee83e10494789e0c27138abad2588d611b36d6c0a84cd843b",
+    "installed": "dashboard/portraits_64/Fermi.png",
+    "up2_installed": "dashboard/portraits_64/Fermi.png",
+    "migration_commit": "832b706827f57b3e62242eba82bbdc9606f09033",
+    "preservation": "retained-by-up1-merge"
+  },
+  {
+    "up1_line": 139,
+    "up1_row_sha256": "7313e3d08348512170e68df1ed7aa1616f8ed3b60561b3b2d1745fdb31939a6a",
+    "installed": "dashboard/portraits_64/Feynman.png",
+    "up2_installed": "dashboard/portraits_64/Feynman.png",
+    "migration_commit": "a79fcd29c302a7b5968ab80b826f6cca73cdcc70",
+    "preservation": "retained-by-up1-merge"
+  },
+  {
+    "up1_line": 140,
+    "up1_row_sha256": "34505883b8c9f885016e4110fdd9138883c506370ca3efa5dbc6907c2a6a1938",
+    "installed": "dashboard/portraits_64/Franklin.png",
+    "up2_installed": "dashboard/portraits_64/Franklin.png",
+    "migration_commit": "832b706827f57b3e62242eba82bbdc9606f09033",
+    "preservation": "retained-by-up1-merge"
+  },
+  {
+    "up1_line": 141,
+    "up1_row_sha256": "b6ddc46ac7a4ea95f1261479a0033748105874885a7ad30496ca0c38375d4819",
+    "installed": "dashboard/portraits_64/Galileo.png",
+    "up2_installed": "dashboard/portraits_64/Galileo.png",
+    "migration_commit": "832b706827f57b3e62242eba82bbdc9606f09033",
+    "preservation": "retained-by-up1-merge"
+  },
+  {
+    "up1_line": 142,
+    "up1_row_sha256": "801de7545411e0340f71f019761a92bdec77fd6fe8f374e643a7e449dbe025d1",
+    "installed": "dashboard/portraits_64/Gauss.png",
+    "up2_installed": "dashboard/portraits_64/Gauss.png",
+    "migration_commit": "a79fcd29c302a7b5968ab80b826f6cca73cdcc70",
+    "preservation": "retained-by-up1-merge"
+  },
+  {
+    "up1_line": 143,
+    "up1_row_sha256": "9d4e5a2a6783c3c2e3f0d110b06c1d1fd710aa3b2bf35d7f1965d353b822d017",
+    "installed": "dashboard/portraits_64/Goodall.png",
+    "up2_installed": "dashboard/portraits_64/Goodall.png",
+    "migration_commit": "832b706827f57b3e62242eba82bbdc9606f09033",
+    "preservation": "retained-by-up1-merge"
+  },
+  {
+    "up1_line": 144,
+    "up1_row_sha256": "af3cc6654e2df77d1365551b12f34c490e79de6f3398f0201f7899b64268eb60",
+    "installed": "dashboard/portraits_64/Guericke.png",
+    "up2_installed": "dashboard/portraits_64/Guericke.png",
+    "migration_commit": "a79fcd29c302a7b5968ab80b826f6cca73cdcc70",
+    "preservation": "retained-by-up1-merge"
+  },
+  {
+    "up1_line": 145,
+    "up1_row_sha256": "181c7af63e012c68241ef151e5a1278ca91637fbefb240a8274b469762386eb7",
+    "installed": "dashboard/portraits_64/Hooke.png",
+    "up2_installed": "dashboard/portraits_64/Hooke.png",
+    "migration_commit": "a79fcd29c302a7b5968ab80b826f6cca73cdcc70",
+    "preservation": "retained-by-up1-merge"
+  },
+  {
+    "up1_line": 146,
+    "up1_row_sha256": "d4f477433834d11a620b42a1f36e9d4ccedc76e124821ab976e21b5ac83b3e07",
+    "installed": "dashboard/portraits_64/Hopper.png",
+    "up2_installed": "dashboard/portraits_64/Hopper.png",
+    "migration_commit": "832b706827f57b3e62242eba82bbdc9606f09033",
+    "preservation": "retained-by-up1-merge"
+  },
+  {
+    "up1_line": 147,
+    "up1_row_sha256": "5b4a2ee92a377ed872fe7131f1447c8ce28a1d268fd171e8d95d216170bf951a",
+    "installed": "dashboard/portraits_64/Hubble.png",
+    "up2_installed": "dashboard/portraits_64/Hubble.png",
+    "migration_commit": "a79fcd29c302a7b5968ab80b826f6cca73cdcc70",
+    "preservation": "retained-by-up1-merge"
+  },
+  {
+    "up1_line": 148,
+    "up1_row_sha256": "ff27864271013e5c9c42b38a5621be5d1aeb06202521fab3064657e1403b924a",
+    "installed": "dashboard/portraits_64/Kepler.png",
+    "up2_installed": "dashboard/portraits_64/Kepler.png",
+    "migration_commit": "a79fcd29c302a7b5968ab80b826f6cca73cdcc70",
+    "preservation": "retained-by-up1-merge"
+  },
+  {
+    "up1_line": 149,
+    "up1_row_sha256": "b67c449ba043c2cec1fb0b7bb868a631d13a414bc7e16d195b25d9ff83fd2ce3",
+    "installed": "dashboard/portraits_64/Koch.png",
+    "up2_installed": "dashboard/portraits_64/Koch.png",
+    "migration_commit": "832b706827f57b3e62242eba82bbdc9606f09033",
+    "preservation": "retained-by-up1-merge"
+  },
+  {
+    "up1_line": 150,
+    "up1_row_sha256": "6a97a36b3987e89a83088b334da49098ef1310a5d558c784fe06523ab857e67e",
+    "installed": "dashboard/portraits_64/Lamarr.png",
+    "up2_installed": "dashboard/portraits_64/Lamarr.png",
+    "migration_commit": "832b706827f57b3e62242eba82bbdc9606f09033",
+    "preservation": "retained-by-up1-merge"
+  },
+  {
+    "up1_line": 151,
+    "up1_row_sha256": "4b56eab39d057182b2f32bbc21143a8d136f34108af50ddf101eab9a0a1ff897",
+    "installed": "dashboard/portraits_64/Langmuir.png",
+    "up2_installed": "dashboard/portraits_64/Langmuir.png",
+    "migration_commit": "a79fcd29c302a7b5968ab80b826f6cca73cdcc70",
+    "preservation": "retained-by-up1-merge"
+  },
+  {
+    "up1_line": 152,
+    "up1_row_sha256": "086333be46cd8724391a20787399df1672942c1d33dd182a6a6cabb8abe8ec7c",
+    "installed": "dashboard/portraits_64/Lavoisier.png",
+    "up2_installed": "dashboard/portraits_64/Lavoisier.png",
+    "migration_commit": "832b706827f57b3e62242eba82bbdc9606f09033",
+    "preservation": "retained-by-up1-merge"
+  },
+  {
+    "up1_line": 153,
+    "up1_row_sha256": "fe08e3cdcf54d6a79132edb024f1dfd519473006bb51eb950261c621ca02c9e1",
+    "installed": "dashboard/portraits_64/Leeuwenhoek.png",
+    "up2_installed": "dashboard/portraits_64/Leeuwenhoek.png",
+    "migration_commit": "a79fcd29c302a7b5968ab80b826f6cca73cdcc70",
+    "preservation": "retained-by-up1-merge"
+  },
+  {
+    "up1_line": 154,
+    "up1_row_sha256": "20f41cc920e4d8761b1700eaef5b23cf0f61b53f38757de1244808636e1508c9",
+    "installed": "dashboard/portraits_64/Linnaeus.png",
+    "up2_installed": "dashboard/portraits_64/Linnaeus.png",
+    "migration_commit": "a79fcd29c302a7b5968ab80b826f6cca73cdcc70",
+    "preservation": "retained-by-up1-merge"
+  },
+  {
+    "up1_line": 155,
+    "up1_row_sha256": "16c6c314b65b4b5ab0edef503affb0d7300f6e511c719d75e7890b2f5803fe59",
+    "installed": "dashboard/portraits_64/Lovelace.png",
+    "up2_installed": "dashboard/portraits_64/Lovelace.png",
+    "migration_commit": "832b706827f57b3e62242eba82bbdc9606f09033",
+    "preservation": "retained-by-up1-merge"
+  },
+  {
+    "up1_line": 156,
+    "up1_row_sha256": "713d00ce4a54326f5fcc8a8cce6689c44de05dc9e4992b2004362e35391d6f31",
+    "installed": "dashboard/portraits_64/Maxwell.png",
+    "up2_installed": "dashboard/portraits_64/Maxwell.png",
+    "migration_commit": "a79fcd29c302a7b5968ab80b826f6cca73cdcc70",
+    "preservation": "retained-by-up1-merge"
+  },
+  {
+    "up1_line": 157,
+    "up1_row_sha256": "f183f0a23ac6d339112e70fc67dde5d74b777faa21ad1512a9a429965045bc91",
+    "installed": "dashboard/portraits_64/Mendel.png",
+    "up2_installed": "dashboard/portraits_64/Mendel.png",
+    "migration_commit": "a79fcd29c302a7b5968ab80b826f6cca73cdcc70",
+    "preservation": "retained-by-up1-merge"
+  },
+  {
+    "up1_line": 158,
+    "up1_row_sha256": "9794be57dd4ab2effea390cbdde9fc63221b66a9bb57d182a164fb92ab299f5d",
+    "installed": "dashboard/portraits_64/Mendeleev.png",
+    "up2_installed": "dashboard/portraits_64/Mendeleev.png",
+    "migration_commit": "832b706827f57b3e62242eba82bbdc9606f09033",
+    "preservation": "retained-by-up1-merge"
+  },
+  {
+    "up1_line": 159,
+    "up1_row_sha256": "eba76375e70f72014aeb141ea1baf6c18644b0dd548ef60d168c8eb4f125866e",
+    "installed": "dashboard/portraits_64/Newton.png",
+    "up2_installed": "dashboard/portraits_64/Newton.png",
+    "migration_commit": "a79fcd29c302a7b5968ab80b826f6cca73cdcc70",
+    "preservation": "retained-by-up1-merge"
+  },
+  {
+    "up1_line": 160,
+    "up1_row_sha256": "eb5e1587dfe8831f7d9d37710d7a86bc6c15bafcb2defea130fd402e866c6ce5",
+    "installed": "dashboard/portraits_64/Noether.png",
+    "up2_installed": "dashboard/portraits_64/Noether.png",
+    "migration_commit": "832b706827f57b3e62242eba82bbdc9606f09033",
+    "preservation": "retained-by-up1-merge"
+  },
+  {
+    "up1_line": 161,
+    "up1_row_sha256": "c319b26469f6916a07469eb2c75b01b40005ad2eee45f869fc99e5b826a83689",
+    "installed": "dashboard/portraits_64/Ostwald.png",
+    "up2_installed": "dashboard/portraits_64/Ostwald.png",
+    "migration_commit": "a79fcd29c302a7b5968ab80b826f6cca73cdcc70",
+    "preservation": "retained-by-up1-merge"
+  },
+  {
+    "up1_line": 162,
+    "up1_row_sha256": "1bef0e5ca45f8f0ac05e7dd64f077c4c1acf4acd2c23b85a4adff23fa59e4575",
+    "installed": "dashboard/portraits_64/Pascal.png",
+    "up2_installed": "dashboard/portraits_64/Pascal.png",
+    "migration_commit": "a79fcd29c302a7b5968ab80b826f6cca73cdcc70",
+    "preservation": "retained-by-up1-merge"
+  },
+  {
+    "up1_line": 163,
+    "up1_row_sha256": "926e968a912045ca544f7c70146615560b0c87d88242eee82808cc58e1dc7e7d",
+    "installed": "dashboard/portraits_64/Pasteur.png",
+    "up2_installed": "dashboard/portraits_64/Pasteur.png",
+    "migration_commit": "a79fcd29c302a7b5968ab80b826f6cca73cdcc70",
+    "preservation": "retained-by-up1-merge"
+  },
+  {
+    "up1_line": 164,
+    "up1_row_sha256": "7950cd703b90b3b29fcd071ab758474f401195a34434f946a910f8206b9a774a",
+    "installed": "dashboard/portraits_64/Pauling.png",
+    "up2_installed": "dashboard/portraits_64/Pauling.png",
+    "migration_commit": "832b706827f57b3e62242eba82bbdc9606f09033",
+    "preservation": "retained-by-up1-merge"
+  },
+  {
+    "up1_line": 165,
+    "up1_row_sha256": "e81461f8139525641d36d1db3e7d19f001dc7f0d0a20230599884a710e6bc340",
+    "installed": "dashboard/portraits_64/Planck.png",
+    "up2_installed": "dashboard/portraits_64/Planck.png",
+    "migration_commit": "a79fcd29c302a7b5968ab80b826f6cca73cdcc70",
+    "preservation": "retained-by-up1-merge"
+  },
+  {
+    "up1_line": 166,
+    "up1_row_sha256": "1a1b14c86161c930d60977bbbaea20a45948e17a0db1ffbb0759e62e8f942937",
+    "installed": "dashboard/portraits_64/Ramanujan.png",
+    "up2_installed": "dashboard/portraits_64/Ramanujan.png",
+    "migration_commit": "a79fcd29c302a7b5968ab80b826f6cca73cdcc70",
+    "preservation": "retained-by-up1-merge"
+  },
+  {
+    "up1_line": 167,
+    "up1_row_sha256": "d18348d7ada3052b8dd43c0951bc64966f510bba0e402844bd749b77313464cd",
+    "installed": "dashboard/portraits_64/Somerville.png",
+    "up2_installed": "dashboard/portraits_64/Somerville.png",
+    "migration_commit": "832b706827f57b3e62242eba82bbdc9606f09033",
+    "preservation": "retained-by-up1-merge"
+  },
+  {
+    "up1_line": 168,
+    "up1_row_sha256": "88c0aa06a4a5cfdc4184be21044df9f1ece5a21ded333efe56cf3adc1851d707",
+    "installed": "dashboard/portraits_64/Tesla.png",
+    "up2_installed": "dashboard/portraits_64/Tesla.png",
+    "migration_commit": "a79fcd29c302a7b5968ab80b826f6cca73cdcc70",
+    "preservation": "retained-by-up1-merge"
+  },
+  {
+    "up1_line": 169,
+    "up1_row_sha256": "5436c6b54d6d70f20eebd9a4c4e18a1e863a0b0bac0908087d6829364c813cc1",
+    "installed": "dashboard/portraits_64/Turing.png",
+    "up2_installed": "dashboard/portraits_64/Turing.png",
+    "migration_commit": "a79fcd29c302a7b5968ab80b826f6cca73cdcc70",
+    "preservation": "retained-by-up1-merge"
+  },
+  {
+    "up1_line": 170,
+    "up1_row_sha256": "ad4f1ba7d9b51744184bff944f5b755c79f78ab4cb9fed9b4225570d87ca3ecf",
+    "installed": "dashboard/portraits_64/Vesalius.png",
+    "up2_installed": "dashboard/portraits_64/Vesalius.png",
+    "migration_commit": "a79fcd29c302a7b5968ab80b826f6cca73cdcc70",
+    "preservation": "retained-by-up1-merge"
+  },
+  {
+    "up1_line": 171,
+    "up1_row_sha256": "a64f27709161478f82688f8928949ca25a878642654dd4e6628c185b02f2099c",
+    "installed": "dashboard/portraits_64/Watt.png",
+    "up2_installed": "dashboard/portraits_64/Watt.png",
+    "migration_commit": "832b706827f57b3e62242eba82bbdc9606f09033",
+    "preservation": "retained-by-up1-merge"
+  },
+  {
+    "up1_line": 172,
+    "up1_row_sha256": "2c0e40d170f520eec6161a54a3ae0a7b4f47d8f0a277f88b2a495b942ee93e67",
+    "installed": "dashboard/portraits_64/Yukawa.png",
+    "up2_installed": "dashboard/portraits_64/Yukawa.png",
+    "migration_commit": "832b706827f57b3e62242eba82bbdc9606f09033",
+    "preservation": "retained-by-up1-merge"
+  },
+  {
+    "up1_line": 173,
+    "up1_row_sha256": "bbab538814077c5af257535409267f1ec874a54a3b97a3e8db409ba89189e78e",
+    "installed": "dashboard/portraits_pixel/Archimedes.png",
+    "up2_installed": "dashboard/portraits_pixel/Archimedes.png",
+    "migration_commit": "832b706827f57b3e62242eba82bbdc9606f09033",
+    "preservation": "retained-by-up1-merge"
+  },
+  {
+    "up1_line": 174,
+    "up1_row_sha256": "8dbb83fec672ae9d9a96a3ccee1093a1759dfc3d7db8c7a27e22a68c9718c4f0",
+    "installed": "dashboard/portraits_pixel/Arrhenius.png",
+    "up2_installed": "dashboard/portraits_pixel/Arrhenius.png",
+    "migration_commit": "832b706827f57b3e62242eba82bbdc9606f09033",
+    "preservation": "retained-by-up1-merge"
+  },
+  {
+    "up1_line": 175,
+    "up1_row_sha256": "9ae8c28f6da32ed8a0fcc98426cfc411ac011c190400f24fab48584957233677",
+    "installed": "dashboard/portraits_pixel/Bell.png",
+    "up2_installed": "dashboard/portraits_pixel/Bell.png",
+    "migration_commit": "832b706827f57b3e62242eba82bbdc9606f09033",
+    "preservation": "retained-by-up1-merge"
+  },
+  {
+    "up1_line": 176,
+    "up1_row_sha256": "603a3c9a6a81676c41f38c33a6654a9a049bf2bb3f1204149aa9a1b0fa9f8b65",
+    "installed": "dashboard/portraits_pixel/Bohr.png",
+    "up2_installed": "dashboard/portraits_pixel/Bohr.png",
+    "migration_commit": "832b706827f57b3e62242eba82bbdc9606f09033",
+    "preservation": "retained-by-up1-merge"
+  },
+  {
+    "up1_line": 177,
+    "up1_row_sha256": "ea6c6b4fcaeff73b3736c73534e0780896067c180857451d2a11d670d9fba7c8",
+    "installed": "dashboard/portraits_pixel/Boltzmann.png",
+    "up2_installed": "dashboard/portraits_pixel/Boltzmann.png",
+    "migration_commit": "832b706827f57b3e62242eba82bbdc9606f09033",
+    "preservation": "retained-by-up1-merge"
+  },
+  {
+    "up1_line": 178,
+    "up1_row_sha256": "c2fc5e916793625c0e92684df8cda543e70ea8ff5d427ff74ed3fa7740e1c789",
+    "installed": "dashboard/portraits_pixel/Bose.png",
+    "up2_installed": "dashboard/portraits_pixel/Bose.png",
+    "migration_commit": "832b706827f57b3e62242eba82bbdc9606f09033",
+    "preservation": "retained-by-up1-merge"
+  },
+  {
+    "up1_line": 179,
+    "up1_row_sha256": "667c59bbb2dc75a9189a8ff02eef44b5f1cb5d755c6b2087dcbedccc0d6f72fe",
+    "installed": "dashboard/portraits_pixel/Copernicus.png",
+    "up2_installed": "dashboard/portraits_pixel/Copernicus.png",
+    "migration_commit": "832b706827f57b3e62242eba82bbdc9606f09033",
+    "preservation": "retained-by-up1-merge"
+  },
+  {
+    "up1_line": 180,
+    "up1_row_sha256": "19fdc8d78693f1f12d729752ea33884855b9e05922946a88aeeb68a5b5529e53",
+    "installed": "dashboard/portraits_pixel/Curie.png",
+    "up2_installed": "dashboard/portraits_pixel/Curie.png",
+    "migration_commit": "832b706827f57b3e62242eba82bbdc9606f09033",
+    "preservation": "retained-by-up1-merge"
+  },
+  {
+    "up1_line": 181,
+    "up1_row_sha256": "d045fcb32a00362a1768d600a0885c4e90d14534e14649c5e24ecee9641e559e",
+    "installed": "dashboard/portraits_pixel/Darwin.png",
+    "up2_installed": "dashboard/portraits_pixel/Darwin.png",
+    "migration_commit": "832b706827f57b3e62242eba82bbdc9606f09033",
+    "preservation": "retained-by-up1-merge"
+  },
+  {
+    "up1_line": 182,
+    "up1_row_sha256": "91a7796ff3986db15220f474f50397bde8c6aee5ecfe2baca5812b98eb07b6f3",
+    "installed": "dashboard/portraits_pixel/Dirac.png",
+    "up2_installed": "dashboard/portraits_pixel/Dirac.png",
+    "migration_commit": "832b706827f57b3e62242eba82bbdc9606f09033",
+    "preservation": "retained-by-up1-merge"
+  },
+  {
+    "up1_line": 183,
+    "up1_row_sha256": "05cbf4d7af58de52773c90bddeac3c367bb4b3fdefa571dd17ec8d6943adc66f",
+    "installed": "dashboard/portraits_pixel/Edison.png",
+    "up2_installed": "dashboard/portraits_pixel/Edison.png",
+    "migration_commit": "832b706827f57b3e62242eba82bbdc9606f09033",
+    "preservation": "retained-by-up1-merge"
+  },
+  {
+    "up1_line": 184,
+    "up1_row_sha256": "bbed44dabfd63fe8bdf8412591716b89bf02b8da60774871cd44f964863b52e2",
+    "installed": "dashboard/portraits_pixel/Einstein.png",
+    "up2_installed": "dashboard/portraits_pixel/Einstein.png",
+    "migration_commit": "832b706827f57b3e62242eba82bbdc9606f09033",
+    "preservation": "retained-by-up1-merge"
+  },
+  {
+    "up1_line": 185,
+    "up1_row_sha256": "b79bc653b16a1648d8d402f9478c84b65b810e70606974d066288f7c87fffcde",
+    "installed": "dashboard/portraits_pixel/Euler.png",
+    "up2_installed": "dashboard/portraits_pixel/Euler.png",
+    "migration_commit": "832b706827f57b3e62242eba82bbdc9606f09033",
+    "preservation": "retained-by-up1-merge"
+  },
+  {
+    "up1_line": 186,
+    "up1_row_sha256": "4aa7981186452a499404901be69d5b1203a74db6968c00f8807d0d4d3b883fd2",
+    "installed": "dashboard/portraits_pixel/Fabre.png",
+    "up2_installed": "dashboard/portraits_pixel/Fabre.png",
+    "migration_commit": "832b706827f57b3e62242eba82bbdc9606f09033",
+    "preservation": "retained-by-up1-merge"
+  },
+  {
+    "up1_line": 187,
+    "up1_row_sha256": "b5520f61efc0757de86b7ec6083e4ace5c1b4b150ee417a70125e20b572ecf07",
+    "installed": "dashboard/portraits_pixel/Faraday.png",
+    "up2_installed": "dashboard/portraits_pixel/Faraday.png",
+    "migration_commit": "832b706827f57b3e62242eba82bbdc9606f09033",
+    "preservation": "retained-by-up1-merge"
+  },
+  {
+    "up1_line": 188,
+    "up1_row_sha256": "acacc8a1984ebee82dbbf6f8214811af2e9a3122dae07013cd64a83e0d34d98c",
+    "installed": "dashboard/portraits_pixel/Fermi.png",
+    "up2_installed": "dashboard/portraits_pixel/Fermi.png",
+    "migration_commit": "832b706827f57b3e62242eba82bbdc9606f09033",
+    "preservation": "retained-by-up1-merge"
+  },
+  {
+    "up1_line": 189,
+    "up1_row_sha256": "ed916c1c248a04589841eaaea36848d68839cb82b856035c1a15ea894d167c2b",
+    "installed": "dashboard/portraits_pixel/Feynman.png",
+    "up2_installed": "dashboard/portraits_pixel/Feynman.png",
+    "migration_commit": "832b706827f57b3e62242eba82bbdc9606f09033",
+    "preservation": "retained-by-up1-merge"
+  },
+  {
+    "up1_line": 190,
+    "up1_row_sha256": "2262a608435929e58d01c8232511b16100915e59c92b2b9572e12d0c3e2737b6",
+    "installed": "dashboard/portraits_pixel/Franklin.png",
+    "up2_installed": "dashboard/portraits_pixel/Franklin.png",
+    "migration_commit": "832b706827f57b3e62242eba82bbdc9606f09033",
+    "preservation": "retained-by-up1-merge"
+  },
+  {
+    "up1_line": 191,
+    "up1_row_sha256": "a9c840de470d941ced5b6b110fbfd67663146f249208ce76ebcc2d34db4c8729",
+    "installed": "dashboard/portraits_pixel/Galileo.png",
+    "up2_installed": "dashboard/portraits_pixel/Galileo.png",
+    "migration_commit": "832b706827f57b3e62242eba82bbdc9606f09033",
+    "preservation": "retained-by-up1-merge"
+  },
+  {
+    "up1_line": 192,
+    "up1_row_sha256": "5f353a19cfd142075a89ea06aca37cccf0f9b7cbc573fbe9e76a62af5267ea9f",
+    "installed": "dashboard/portraits_pixel/Gauss.png",
+    "up2_installed": "dashboard/portraits_pixel/Gauss.png",
+    "migration_commit": "832b706827f57b3e62242eba82bbdc9606f09033",
+    "preservation": "retained-by-up1-merge"
+  },
+  {
+    "up1_line": 193,
+    "up1_row_sha256": "89bc4ebdb35ddc16a12677c2ac978856c79e0b5fea91dd37f3655bc0c0dc71e8",
+    "installed": "dashboard/portraits_pixel/Goodall.png",
+    "up2_installed": "dashboard/portraits_pixel/Goodall.png",
+    "migration_commit": "832b706827f57b3e62242eba82bbdc9606f09033",
+    "preservation": "retained-by-up1-merge"
+  },
+  {
+    "up1_line": 194,
+    "up1_row_sha256": "f5a62d73836fa311f5523a3b697b6ab815a6497e60d39764f81c02d9485145f8",
+    "installed": "dashboard/portraits_pixel/Guericke.png",
+    "up2_installed": "dashboard/portraits_pixel/Guericke.png",
+    "migration_commit": "832b706827f57b3e62242eba82bbdc9606f09033",
+    "preservation": "retained-by-up1-merge"
+  },
+  {
+    "up1_line": 195,
+    "up1_row_sha256": "7b701a0c4b844ffd5a5ea9bb5403a62121401bd113dedbc161dc02f16c1d0fb5",
+    "installed": "dashboard/portraits_pixel/Hooke.png",
+    "up2_installed": "dashboard/portraits_pixel/Hooke.png",
+    "migration_commit": "832b706827f57b3e62242eba82bbdc9606f09033",
+    "preservation": "retained-by-up1-merge"
+  },
+  {
+    "up1_line": 196,
+    "up1_row_sha256": "5079bd8eb793468092aa8ec17b3d262ce01974e0a0ed8ee6d4096bdd0ac5fd9b",
+    "installed": "dashboard/portraits_pixel/Hopper.png",
+    "up2_installed": "dashboard/portraits_pixel/Hopper.png",
+    "migration_commit": "832b706827f57b3e62242eba82bbdc9606f09033",
+    "preservation": "retained-by-up1-merge"
+  },
+  {
+    "up1_line": 197,
+    "up1_row_sha256": "ab777f1c3c1505ac32b4df3148b7cf4205f9db5d374ecb27007eeb9d27c862c2",
+    "installed": "dashboard/portraits_pixel/Hubble.png",
+    "up2_installed": "dashboard/portraits_pixel/Hubble.png",
+    "migration_commit": "832b706827f57b3e62242eba82bbdc9606f09033",
+    "preservation": "retained-by-up1-merge"
+  },
+  {
+    "up1_line": 198,
+    "up1_row_sha256": "56bbf656f19ec5d31fa086e34d6e3c5fb2fb8cb315a910e476a5dc534a609e79",
+    "installed": "dashboard/portraits_pixel/Kepler.png",
+    "up2_installed": "dashboard/portraits_pixel/Kepler.png",
+    "migration_commit": "832b706827f57b3e62242eba82bbdc9606f09033",
+    "preservation": "retained-by-up1-merge"
+  },
+  {
+    "up1_line": 199,
+    "up1_row_sha256": "e7801bec8fb8bb0efe6a57be8debdd869d5a050e48c7490753f8f1fac64cbf38",
+    "installed": "dashboard/portraits_pixel/Koch.png",
+    "up2_installed": "dashboard/portraits_pixel/Koch.png",
+    "migration_commit": "832b706827f57b3e62242eba82bbdc9606f09033",
+    "preservation": "retained-by-up1-merge"
+  },
+  {
+    "up1_line": 200,
+    "up1_row_sha256": "c1159ea49fda0430039b67f3d25ea70cdd8b847622af72193dd380f67637a9f3",
+    "installed": "dashboard/portraits_pixel/Lamarr.png",
+    "up2_installed": "dashboard/portraits_pixel/Lamarr.png",
+    "migration_commit": "832b706827f57b3e62242eba82bbdc9606f09033",
+    "preservation": "retained-by-up1-merge"
+  },
+  {
+    "up1_line": 201,
+    "up1_row_sha256": "8cdbc2b2a54e9436a563074a7c10b7882c9adaafb2a25506d7dba490d16b0f72",
+    "installed": "dashboard/portraits_pixel/Langmuir.png",
+    "up2_installed": "dashboard/portraits_pixel/Langmuir.png",
+    "migration_commit": "832b706827f57b3e62242eba82bbdc9606f09033",
+    "preservation": "retained-by-up1-merge"
+  },
+  {
+    "up1_line": 202,
+    "up1_row_sha256": "c7a04678bcf26b1062664fd93127b20f5c609dff8a7f7cb2f626b10a0ccb6d9a",
+    "installed": "dashboard/portraits_pixel/Lavoisier.png",
+    "up2_installed": "dashboard/portraits_pixel/Lavoisier.png",
+    "migration_commit": "832b706827f57b3e62242eba82bbdc9606f09033",
+    "preservation": "retained-by-up1-merge"
+  },
+  {
+    "up1_line": 203,
+    "up1_row_sha256": "516dd90e135f020e399b2eda6137fdf9a4b5cdb0e7cc49192a6dde2c87dbace7",
+    "installed": "dashboard/portraits_pixel/Leeuwenhoek.png",
+    "up2_installed": "dashboard/portraits_pixel/Leeuwenhoek.png",
+    "migration_commit": "832b706827f57b3e62242eba82bbdc9606f09033",
+    "preservation": "retained-by-up1-merge"
+  },
+  {
+    "up1_line": 204,
+    "up1_row_sha256": "6eff3ee17bb724ceacbffe6809730b9a1aefa28e69a2b09018d98ba1c19b115d",
+    "installed": "dashboard/portraits_pixel/Linnaeus.png",
+    "up2_installed": "dashboard/portraits_pixel/Linnaeus.png",
+    "migration_commit": "832b706827f57b3e62242eba82bbdc9606f09033",
+    "preservation": "retained-by-up1-merge"
+  },
+  {
+    "up1_line": 205,
+    "up1_row_sha256": "66ee937f263b0d4d2f514e6b99a773f783db2d8cd633cef554756453e9cba073",
+    "installed": "dashboard/portraits_pixel/Lovelace.png",
+    "up2_installed": "dashboard/portraits_pixel/Lovelace.png",
+    "migration_commit": "832b706827f57b3e62242eba82bbdc9606f09033",
+    "preservation": "retained-by-up1-merge"
+  },
+  {
+    "up1_line": 206,
+    "up1_row_sha256": "90313df4de71ed54e9ecee70b4c5ff302b57d97038450ffaa0b5726adc268e31",
+    "installed": "dashboard/portraits_pixel/Maxwell.png",
+    "up2_installed": "dashboard/portraits_pixel/Maxwell.png",
+    "migration_commit": "832b706827f57b3e62242eba82bbdc9606f09033",
+    "preservation": "retained-by-up1-merge"
+  },
+  {
+    "up1_line": 207,
+    "up1_row_sha256": "909312b96f2a92071e2a06a6c37eddb31685135b15450b503aa7340a4b96fe3a",
+    "installed": "dashboard/portraits_pixel/Mendel.png",
+    "up2_installed": "dashboard/portraits_pixel/Mendel.png",
+    "migration_commit": "832b706827f57b3e62242eba82bbdc9606f09033",
+    "preservation": "retained-by-up1-merge"
+  },
+  {
+    "up1_line": 208,
+    "up1_row_sha256": "52174c3d550afd49374ad1f5d8aecf1c521b6138843d2cb5a504352ad466f53c",
+    "installed": "dashboard/portraits_pixel/Mendeleev.png",
+    "up2_installed": "dashboard/portraits_pixel/Mendeleev.png",
+    "migration_commit": "832b706827f57b3e62242eba82bbdc9606f09033",
+    "preservation": "retained-by-up1-merge"
+  },
+  {
+    "up1_line": 209,
+    "up1_row_sha256": "f853dcb44eeb040a8dad7495200cf9b98d5af75be87d1c8f94e24a281d66ade8",
+    "installed": "dashboard/portraits_pixel/Newton.png",
+    "up2_installed": "dashboard/portraits_pixel/Newton.png",
+    "migration_commit": "832b706827f57b3e62242eba82bbdc9606f09033",
+    "preservation": "retained-by-up1-merge"
+  },
+  {
+    "up1_line": 210,
+    "up1_row_sha256": "875e2abbbd2768d336a8b20c3ea871996d4f0bae51332b3888360768c4ff61dd",
+    "installed": "dashboard/portraits_pixel/Noether.png",
+    "up2_installed": "dashboard/portraits_pixel/Noether.png",
+    "migration_commit": "832b706827f57b3e62242eba82bbdc9606f09033",
+    "preservation": "retained-by-up1-merge"
+  },
+  {
+    "up1_line": 211,
+    "up1_row_sha256": "52ee54403c9a8e940967c92b35f63b28f21a890956668a8e06dd7b0caf63ab52",
+    "installed": "dashboard/portraits_pixel/Ostwald.png",
+    "up2_installed": "dashboard/portraits_pixel/Ostwald.png",
+    "migration_commit": "832b706827f57b3e62242eba82bbdc9606f09033",
+    "preservation": "retained-by-up1-merge"
+  },
+  {
+    "up1_line": 212,
+    "up1_row_sha256": "0e87d777c90f64cf5f38dda2a41c700b9e4a69c63705b4cb0e3b2f32e06854ab",
+    "installed": "dashboard/portraits_pixel/Pascal.png",
+    "up2_installed": "dashboard/portraits_pixel/Pascal.png",
+    "migration_commit": "832b706827f57b3e62242eba82bbdc9606f09033",
+    "preservation": "retained-by-up1-merge"
+  },
+  {
+    "up1_line": 213,
+    "up1_row_sha256": "c0e0a96f63b01dc50c6cc92d4a9c652e7ddb4a69c2a9556529d256641a3c995c",
+    "installed": "dashboard/portraits_pixel/Pasteur.png",
+    "up2_installed": "dashboard/portraits_pixel/Pasteur.png",
+    "migration_commit": "832b706827f57b3e62242eba82bbdc9606f09033",
+    "preservation": "retained-by-up1-merge"
+  },
+  {
+    "up1_line": 214,
+    "up1_row_sha256": "3dea9b5ca0884aeb23d89ecc659e9ff6ad5ff2a365faa976a54c50a236672c38",
+    "installed": "dashboard/portraits_pixel/Pauling.png",
+    "up2_installed": "dashboard/portraits_pixel/Pauling.png",
+    "migration_commit": "832b706827f57b3e62242eba82bbdc9606f09033",
+    "preservation": "retained-by-up1-merge"
+  },
+  {
+    "up1_line": 215,
+    "up1_row_sha256": "7c3f36882fc3fda3946427d4aa45ba1e36f2cf4ceb730bff8f988eb3ebecdec6",
+    "installed": "dashboard/portraits_pixel/Planck.png",
+    "up2_installed": "dashboard/portraits_pixel/Planck.png",
+    "migration_commit": "832b706827f57b3e62242eba82bbdc9606f09033",
+    "preservation": "retained-by-up1-merge"
+  },
+  {
+    "up1_line": 216,
+    "up1_row_sha256": "31c68a59c2afdad9a0ff1774ef8c11ce0d21d994f01f49b9aade17975d4464e2",
+    "installed": "dashboard/portraits_pixel/Ramanujan.png",
+    "up2_installed": "dashboard/portraits_pixel/Ramanujan.png",
+    "migration_commit": "832b706827f57b3e62242eba82bbdc9606f09033",
+    "preservation": "retained-by-up1-merge"
+  },
+  {
+    "up1_line": 217,
+    "up1_row_sha256": "6f22d81fe71ba71193c1127422665dda6cc28a865a5a238e3a8feeb1c654afb9",
+    "installed": "dashboard/portraits_pixel/Somerville.png",
+    "up2_installed": "dashboard/portraits_pixel/Somerville.png",
+    "migration_commit": "832b706827f57b3e62242eba82bbdc9606f09033",
+    "preservation": "retained-by-up1-merge"
+  },
+  {
+    "up1_line": 218,
+    "up1_row_sha256": "ed1dcb0c3d80b5787350a6d4e15919c49ed15753adfed68dc3e3228435a142ea",
+    "installed": "dashboard/portraits_pixel/Tesla.png",
+    "up2_installed": "dashboard/portraits_pixel/Tesla.png",
+    "migration_commit": "832b706827f57b3e62242eba82bbdc9606f09033",
+    "preservation": "retained-by-up1-merge"
+  },
+  {
+    "up1_line": 219,
+    "up1_row_sha256": "71708126b40d368fc435f5c18a3440447c9795017d8279dcce7449ce6c771067",
+    "installed": "dashboard/portraits_pixel/Turing.png",
+    "up2_installed": "dashboard/portraits_pixel/Turing.png",
+    "migration_commit": "832b706827f57b3e62242eba82bbdc9606f09033",
+    "preservation": "retained-by-up1-merge"
+  },
+  {
+    "up1_line": 220,
+    "up1_row_sha256": "d36be13dd7fbe9acd34a27af8fc3cf5b8a8feaa32a9c08d0c45490659050615a",
+    "installed": "dashboard/portraits_pixel/Vesalius.png",
+    "up2_installed": "dashboard/portraits_pixel/Vesalius.png",
+    "migration_commit": "832b706827f57b3e62242eba82bbdc9606f09033",
+    "preservation": "retained-by-up1-merge"
+  },
+  {
+    "up1_line": 221,
+    "up1_row_sha256": "8336d0813e36ad72fee0d18755f9f3c7c1377ff35ee165486cc0581ad6d27279",
+    "installed": "dashboard/portraits_pixel/Watt.png",
+    "up2_installed": "dashboard/portraits_pixel/Watt.png",
+    "migration_commit": "832b706827f57b3e62242eba82bbdc9606f09033",
+    "preservation": "retained-by-up1-merge"
+  },
+  {
+    "up1_line": 222,
+    "up1_row_sha256": "f71f34d874647195447a5c9edde4c77a690f8036681a6532a65ef67ba983597a",
+    "installed": "dashboard/portraits_pixel/Yukawa.png",
+    "up2_installed": "dashboard/portraits_pixel/Yukawa.png",
+    "migration_commit": "832b706827f57b3e62242eba82bbdc9606f09033",
+    "preservation": "retained-by-up1-merge"
+  },
+  {
+    "up1_line": 223,
+    "up1_row_sha256": "5cc65feffb42cb2d30327bdca24cf25c4fc2acff832c44b49bec6469bd2c7e33",
+    "installed": "dashboard/providers/__init__.py",
+    "up2_installed": "dashboard/providers/__init__.py",
+    "migration_commit": "b333c9f62860c80b6fdf3bf0dd3797c98ebce15e",
+    "preservation": "retained-by-up1-merge"
+  },
+  {
+    "up1_line": 224,
+    "up1_row_sha256": "b2451b05fcfaf2bca9511c1a7690056ae035473ac3517d5a8379821c1e9fa3ac",
+    "installed": "dashboard/providers/__pycache__/__init__.cpython-314.pyc",
+    "up2_installed": "dashboard/providers/__pycache__/__init__.cpython-314.pyc",
+    "migration_commit": "1d42c7235e59c53376e20033c72360f6fa2693fd",
+    "preservation": "生成物または外部設定をinstaller範囲外で保持。コードの再導入なし"
+  },
+  {
+    "up1_line": 225,
+    "up1_row_sha256": "346dd996e7ceedc889f39df84a393f50e1ecf0e40bf33a5ce1b75c049bcb5dbf",
+    "installed": "dashboard/providers/__pycache__/base.cpython-314.pyc",
+    "up2_installed": "dashboard/providers/__pycache__/base.cpython-314.pyc",
+    "migration_commit": "1d42c7235e59c53376e20033c72360f6fa2693fd",
+    "preservation": "生成物または外部設定をinstaller範囲外で保持。コードの再導入なし"
+  },
+  {
+    "up1_line": 226,
+    "up1_row_sha256": "39899158fb8d8e693c944ee84f8dd6e27930c2a2d96ab93b388955af78743cba",
+    "installed": "dashboard/providers/__pycache__/codex_app.cpython-314.pyc",
+    "up2_installed": "dashboard/providers/__pycache__/codex_app.cpython-314.pyc",
+    "migration_commit": "1d42c7235e59c53376e20033c72360f6fa2693fd",
+    "preservation": "生成物または外部設定をinstaller範囲外で保持。コードの再導入なし"
+  },
+  {
+    "up1_line": 227,
+    "up1_row_sha256": "6dc5596c05c5702ea883c2d965d2c903f6c99f7ea63a061f649d8ed8ea235ed7",
+    "installed": "dashboard/providers/base.py",
+    "up2_installed": "dashboard/providers/base.py",
+    "migration_commit": "b333c9f62860c80b6fdf3bf0dd3797c98ebce15e",
+    "preservation": "retained-by-up1-merge"
+  },
+  {
+    "up1_line": 228,
+    "up1_row_sha256": "e13050d061a5e2b1e2a64fd385f3620ab6959167396656781385fabd275b6fb6",
+    "installed": "dashboard/providers/codex_app.py",
+    "up2_installed": "dashboard/providers/codex_app.py",
+    "migration_commit": "f466e6e4c3abe24cf1811dda9d7395d226639b2b",
+    "preservation": "retained-by-up1-merge"
+  },
+  {
+    "up1_line": 229,
+    "up1_row_sha256": "f22702110726f9a275b80f02f04b7729b7eca325e4d948fc07c2d495462c8b38",
+    "installed": "dashboard/providers/tmux.py",
+    "up2_installed": "dashboard/providers/tmux.py",
+    "migration_commit": "b333c9f62860c80b6fdf3bf0dd3797c98ebce15e",
+    "preservation": "retained-by-up1-merge"
+  },
+  {
+    "up1_line": 230,
+    "up1_row_sha256": "3f8139331c766ea6cf3d819a2e113fb3dcb7c63e32374e7399e8cffffb4dda84",
+    "installed": "dashboard/scientist_portraits.json",
+    "up2_installed": "dashboard/scientist_portraits.json",
+    "migration_commit": "05fe72252cb506b18f73edfa78733bfd4f0fdf83",
+    "preservation": "retained-by-up1-merge"
+  },
+  {
+    "up1_line": 231,
+    "up1_row_sha256": "180b6c121536962d9809306e8076e3f962e459b8d79108f73148174a2fee6d9c",
+    "installed": "dashboard/server.py",
+    "up2_installed": "dashboard/server.py",
+    "migration_commit": "3125c0b423470b865f79a66e3adc0d0a870d9e04",
+    "preservation": "delta-manually-ported"
+  },
+  {
+    "up1_line": 232,
+    "up1_row_sha256": "c2bc0e9f403ff1a29de6dedf9c97eed1f05f3a0a991d5a8ccb71752c46c8f045",
+    "installed": "dashboard/service_runner.py",
+    "up2_installed": "dashboard/service_runner.py",
+    "migration_commit": "f7b688604e8c7ff48086785aaf061a09a1fbd765",
+    "preservation": "retained-by-up1-merge"
+  },
+  {
+    "up1_line": 233,
+    "up1_row_sha256": "80d9ca6ce9be88877a5aa8c7166765819decbba784d491618e09b75e4914e561",
+    "installed": "dashboard/theme_controller.js",
+    "up2_installed": "dashboard/theme_controller.js",
+    "migration_commit": "301ad479877f545e941f3ec6d71fe7561c2d1eb7",
+    "preservation": "retained-by-up1-merge"
+  },
+  {
+    "up1_line": 234,
+    "up1_row_sha256": "3ef9faaa559789539357d2b334b73b8b42bab5742d44aca7135e6b2b3e9dec8a",
+    "installed": "dashboard/theme_core.js",
+    "up2_installed": "dashboard/theme_core.js",
+    "migration_commit": "1329c4b86e9b1d38596d1f6e86a6eb0f17663581",
+    "preservation": "retained-by-up1-merge"
+  },
+  {
+    "up1_line": 235,
+    "up1_row_sha256": "faf26ffe507d8b68bd027f40d4f9444cb8ab22b031f16ee737124250d8d3016f",
+    "installed": "dashboard/theme_effect_manifest.json",
+    "up2_installed": "dashboard/theme_effect_manifest.json",
+    "migration_commit": "d1f8e9dc1866a2e14c1a6898459d580b2a99c710",
+    "preservation": "retained-by-up1-merge"
+  },
+  {
+    "up1_line": 236,
+    "up1_row_sha256": "46f8d149a3895badc64e0ba7684bc7e357489b5a6140663e63172b873ec15f6b",
+    "installed": "dashboard/theme_light.css",
+    "up2_installed": "dashboard/theme_light.css",
+    "migration_commit": "f588203a534c99ba39b358c03c3d84a7614f5e10",
+    "preservation": "retained-by-up1-merge"
+  },
+  {
+    "up1_line": 237,
+    "up1_row_sha256": "a83cfba653d3af4e23a6e1fd946bd9d0b2b137c95a8afd14b0ad0f23356e5365",
+    "installed": "env.sh",
+    "up2_installed": "env.sh",
+    "migration_commit": "1d42c7235e59c53376e20033c72360f6fa2693fd",
+    "preservation": "literal-values-and-codex-comments-preserved"
+  },
+  {
+    "up1_line": 238,
+    "up1_row_sha256": "2097c83d784896f3662b6522c883effb042fdb71df639b7be179a6fcd6ad4869",
+    "installed": "hooks/README.md",
+    "up2_installed": "hooks/README.md",
+    "migration_commit": "cc20cac6200e2334f724e4cc8195e819bdc9c522",
+    "preservation": "retained-by-up1-merge"
+  },
+  {
+    "up1_line": 239,
+    "up1_row_sha256": "73dd69b5f65953f83059065c29d54a5cd157ed6c796febd8881a0be81de8c0ec",
+    "installed": "hooks/check-agent-registered.sh",
+    "up2_installed": "hooks/check-agent-registered.sh",
+    "migration_commit": "cf3976bd43e7467636cc881fe35a4b6a04665a43",
+    "preservation": "retained-by-up1-merge"
+  },
+  {
+    "up1_line": 240,
+    "up1_row_sha256": "250e9c1d558c3e587e8b375cf60c9e02c58beaadb5a21f3eab1d68936e24c936",
+    "installed": "hooks/check-file-reservation.sh",
+    "up2_installed": "hooks/check-file-reservation.sh",
+    "migration_commit": "9761888460ef3d8ffed5165a7c1c52f5812949a2",
+    "preservation": "retained-by-up1-merge"
+  },
+  {
+    "up1_line": 241,
+    "up1_row_sha256": "339b0273a42f206801f7b8c7091860bfa0c7eb30c5e5948891d2120e6b2761a1",
+    "installed": "hooks/cleanup-child-agent.sh",
+    "up2_installed": "hooks/cleanup-child-agent.sh",
+    "migration_commit": "3125c0b423470b865f79a66e3adc0d0a870d9e04",
+    "preservation": "現行世代bytesを保存し既定dispatcherから実行。本家coreは.upstream別path"
+  },
+  {
+    "up1_line": 242,
+    "up1_row_sha256": "2d3d2673addbb5c64eae1bd53ee2458d4ab411bd082279c92e32dc1be3bc048a",
+    "installed": "hooks/head-send-lint.py",
+    "up2_installed": "hooks/head-send-lint.py",
+    "migration_commit": "3125c0b423470b865f79a66e3adc0d0a870d9e04",
+    "preservation": "delta-merged"
+  },
+  {
+    "up1_line": 243,
+    "up1_row_sha256": "5662a0566621d178d2c9ed86768ca008260e9bb536396fea370f6e0298cfd1f2",
+    "installed": "hooks/invalidate-release-debounce.sh",
+    "up2_installed": "hooks/invalidate-release-debounce.sh",
+    "migration_commit": "9e9b78f064713be19a22d7385cbab3627157a18d",
+    "preservation": "retained-by-up1-merge"
+  },
+  {
+    "up1_line": 244,
+    "up1_row_sha256": "b15094e0641dc1211653cdf80c6c3f6c7862af51ea0bd00a7007399be471cf38",
+    "installed": "hooks/mark-agent-registered.sh",
+    "up2_installed": "hooks/mark-agent-registered.sh",
+    "migration_commit": "50a5f295aa444f25159fc330661f20401c5ae7bb",
+    "preservation": "retained-by-up1-merge"
+  },
+  {
+    "up1_line": 245,
+    "up1_row_sha256": "22d01c45a3b6443710aeb3547d89401c24dc0021611a49fa2d73885b205ae0bb",
+    "installed": "hooks/monitor_child_agent.sh",
+    "up2_installed": "hooks/monitor_child_agent.sh",
+    "migration_commit": "2f756d2fa7b52650bacd6d59fa159310d44984bc",
+    "preservation": "retained-by-up1-merge"
+  },
+  {
+    "up1_line": 246,
+    "up1_row_sha256": "c054aede62a2ab73f3d5dacdba58d54fa5e199d572f2e09141e437050492ca5c",
+    "installed": "hooks/project-context.sh",
+    "up2_installed": "hooks/project-context.sh",
+    "migration_commit": "1d42c7235e59c53376e20033c72360f6fa2693fd",
+    "preservation": "retained-by-up1-merge"
+  },
+  {
+    "up1_line": 247,
+    "up1_row_sha256": "3d70cafe0090728442bd5f1b7b436867bd22bb4d30e2702f646f9baeb6e674a7",
+    "installed": "hooks/record-session-index.py",
+    "up2_installed": "hooks/record-session-index.py",
+    "migration_commit": "5a8af700cb6655dde1361e9912a3c85bcc1d4fac",
+    "preservation": "retained-by-up1-merge"
+  },
+  {
+    "up1_line": 248,
+    "up1_row_sha256": "cbfe1969d8e913b74d8295d6a234745d4f98ade50458547ba4f4bf0cedb9ce14",
+    "installed": "hooks/release-all-reservations.sh",
+    "up2_installed": "hooks/release-all-reservations.sh",
+    "migration_commit": "ba715f0db7cd7c1fcdc28824ab630b129c584ec8",
+    "preservation": "retained-by-up1-merge"
+  },
+  {
+    "up1_line": 249,
+    "up1_row_sha256": "c72300024feea18f943a44920c0c212ee6771b8dff706764119d6f704e43be0a",
+    "installed": "hooks/release-file-reservation-worker.py",
+    "up2_installed": "hooks/release-file-reservation-worker.py",
+    "migration_commit": "9e9b78f064713be19a22d7385cbab3627157a18d",
+    "preservation": "retained-by-up1-merge"
+  },
+  {
+    "up1_line": 250,
+    "up1_row_sha256": "67b76800e6055c3d4813c8d77ecaf3df2b4252d591d8818fe0ad95591e743bd0",
+    "installed": "hooks/release-file-reservation.sh",
+    "up2_installed": "hooks/release-file-reservation.sh",
+    "migration_commit": "9bfb08074d604aa73a12e17a403a3d9929b40f45",
+    "preservation": "retained-by-up1-merge"
+  },
+  {
+    "up1_line": 251,
+    "up1_row_sha256": "163046679d6d37ee4b747fa861a3a07b06d27d51bd7595e934b794e9418efb41",
+    "installed": "hooks/reservation-common.sh",
+    "up2_installed": "hooks/reservation-common.sh",
+    "migration_commit": "9bfb08074d604aa73a12e17a403a3d9929b40f45",
+    "preservation": "retained-by-up1-merge"
+  },
+  {
+    "up1_line": 252,
+    "up1_row_sha256": "2179c6a8642c8d8b63fd9c47a9d427acfa931d06565937a33d0a932fef1eb925",
+    "installed": "hooks/resolve-agent-name.sh",
+    "up2_installed": "hooks/resolve-agent-name.sh",
+    "migration_commit": "ba715f0db7cd7c1fcdc28824ab630b129c584ec8",
+    "preservation": "retained-by-up1-merge"
+  },
+  {
+    "up1_line": 253,
+    "up1_row_sha256": "13d7023d967370f818fdc2053af7a247e9629e527f339b94021202a6f9f4fd3b",
+    "installed": "hooks/rotate_runtime_logs.sh",
+    "up2_installed": "hooks/rotate_runtime_logs.sh",
+    "migration_commit": "3125c0b423470b865f79a66e3adc0d0a870d9e04",
+    "preservation": "delta-merged"
+  },
+  {
+    "up1_line": 254,
+    "up1_row_sha256": "97b7098108068f479c297e43e79a38c2742cfbccb46bc6bbdf4cc6b9bfbbc585",
+    "installed": "hooks/session-identity-policy.sh",
+    "up2_installed": "hooks/session-identity-policy.sh",
+    "migration_commit": "12e78d1a21916d30b02664221337b017f4825998",
+    "preservation": "retained-by-up1-merge"
+  },
+  {
+    "up1_line": 255,
+    "up1_row_sha256": "53916fe8c229bb7310c48779dc97169140a07581d342f107b2192a80117de7d6",
+    "installed": "hooks/session-start-reminder.sh",
+    "up2_installed": "hooks/session-start-reminder.sh",
+    "migration_commit": "4f4616d144d053008a3696e65f7a64b07b7fa220",
+    "preservation": "retained-by-up1-merge"
+  },
+  {
+    "up1_line": 256,
+    "up1_row_sha256": "dc604e49febec1138a190079a35ed8aa712a47783fea63dcbca1d5af0d395f39",
+    "installed": "hooks/set-ghostty-title.sh",
+    "up2_installed": "hooks/set-ghostty-title.sh",
+    "migration_commit": "3125c0b423470b865f79a66e3adc0d0a870d9e04",
+    "preservation": "delta-merged"
+  },
+  {
+    "up1_line": 257,
+    "up1_row_sha256": "0275446a35e959da752232e82b0b954c2d260d59428294ecde5ba25304cedbf3",
+    "installed": "hooks/settings.template.json",
+    "up2_installed": "hooks/settings.template.json",
+    "migration_commit": "c709d2a9d3f57f3fe68efe34641d325f7dde01e2",
+    "preservation": "retained-by-up1-merge"
+  },
+  {
+    "up1_line": 258,
+    "up1_row_sha256": "1bcd4cbf50748f611bac1d3383b8cef76b34553ef6b5dac01659ae32fc7a634c",
+    "installed": "hooks/settings.template.json.bak-20260923-R068",
+    "up2_installed": "hooks/settings.template.json.bak-20260923-R068",
+    "migration_commit": "ef51345b2e3d26bfc19c12e926e4d1e5a257e52c",
+    "preservation": "retained-by-up1-merge"
+  },
+  {
+    "up1_line": 259,
+    "up1_row_sha256": "1ec287637ac3120feb67d11c3a7dfe7994bca0dbd650002861d1cd414a152a23",
+    "installed": "hooks/spawn_child.sh",
+    "up2_installed": "hooks/spawn_child.sh",
+    "migration_commit": "3125c0b423470b865f79a66e3adc0d0a870d9e04",
+    "preservation": "現行世代bytesを保存し既定dispatcherから実行。本家coreは.upstream別path"
+  },
+  {
+    "up1_line": 260,
+    "up1_row_sha256": "ecf2cabf856bef6d1c9a2534403ac923f7453c22174bd082a890edbff4c6c4c9",
+    "installed": "hooks/spawn_child.sh.bak-20260912-fullperm",
+    "up2_installed": "hooks/spawn_child.sh.bak-20260912-fullperm",
+    "migration_commit": "ef51345b2e3d26bfc19c12e926e4d1e5a257e52c",
+    "preservation": "retained-by-up1-merge"
+  },
+  {
+    "up1_line": 261,
+    "up1_row_sha256": "44185dbffb281c831eaf8a2b9855e5189bc42d8fad6c04781afeb5e999605651",
+    "installed": "hooks/spawn_child.sh.bak-20260920-R061",
+    "up2_installed": "hooks/spawn_child.sh.bak-20260920-R061",
+    "migration_commit": "ef51345b2e3d26bfc19c12e926e4d1e5a257e52c",
+    "preservation": "retained-by-up1-merge"
+  },
+  {
+    "up1_line": 262,
+    "up1_row_sha256": "522bf6818fc62e96b08a9cbd5baaaeb0b103dd26bc43333796fe5cf9d3f7b863",
+    "installed": "hooks/spawn_child.sh.bak-20260920-R062",
+    "up2_installed": "hooks/spawn_child.sh.bak-20260920-R062",
+    "migration_commit": "ef51345b2e3d26bfc19c12e926e4d1e5a257e52c",
+    "preservation": "retained-by-up1-merge"
+  },
+  {
+    "up1_line": 263,
+    "up1_row_sha256": "42d8c2e07204f6c81aa6648601b77523bcf32e8590eb6974125a76eedd02007c",
+    "installed": "hooks/spawn_child.sh.bak-20260923-opus55",
+    "up2_installed": "hooks/spawn_child.sh.bak-20260923-opus55",
+    "migration_commit": "ef51345b2e3d26bfc19c12e926e4d1e5a257e52c",
+    "preservation": "retained-by-up1-merge"
+  },
+  {
+    "up1_line": 264,
+    "up1_row_sha256": "c99dd02374e85ae9551f6021dbab8bd37161800e8687a86e2339a47bfba856b5",
+    "installed": "hooks/spawn_child.sh.bak-20260924-readycase",
+    "up2_installed": "hooks/spawn_child.sh.bak-20260924-readycase",
+    "migration_commit": "ef51345b2e3d26bfc19c12e926e4d1e5a257e52c",
+    "preservation": "retained-by-up1-merge"
+  },
+  {
+    "up1_line": 265,
+    "up1_row_sha256": "d56b1f4efa963982b659138f3ae7f8bb8bc437911693a0e02b508022539fbed0",
+    "installed": "hooks/spawn_child.sh.bak-20260925-update-token",
+    "up2_installed": "hooks/spawn_child.sh.bak-20260925-update-token",
+    "migration_commit": "ef51345b2e3d26bfc19c12e926e4d1e5a257e52c",
+    "preservation": "retained-by-up1-merge"
+  },
+  {
+    "up1_line": 266,
+    "up1_row_sha256": "ab426dcf20eb774ba092a0691fe06404fa79a458a9dc6e4c5c1acaabe172dfaa",
+    "installed": "hooks/spawn_child.sh.bak-20260929-sonnet55",
+    "up2_installed": "hooks/spawn_child.sh.bak-20260929-sonnet55",
+    "migration_commit": "ef51345b2e3d26bfc19c12e926e4d1e5a257e52c",
+    "preservation": "retained-by-up1-merge"
+  },
+  {
+    "up1_line": 267,
+    "up1_row_sha256": "f60309c97b47634c8ad02c11a7bb1ffae2b2ff0add46781527e709a911f51d42",
+    "installed": "hooks/spawn_child.sh.bak-20261001-codex0159-trust",
+    "up2_installed": "hooks/spawn_child.sh.bak-20261001-codex0159-trust",
+    "migration_commit": "ef51345b2e3d26bfc19c12e926e4d1e5a257e52c",
+    "preservation": "retained-by-up1-merge"
+  },
+  {
+    "up1_line": 268,
+    "up1_row_sha256": "a6019f7487705787053dbcfaf90e7ffbe8a5d24080422166bcf91ca41730d228",
+    "installed": "hooks/task-file-lint.py",
+    "up2_installed": "hooks/task-file-lint.py",
+    "migration_commit": "ef51345b2e3d26bfc19c12e926e4d1e5a257e52c",
+    "preservation": "retained-by-up1-merge"
+  },
+  {
+    "up1_line": 269,
+    "up1_row_sha256": "eafa3bd075c96b616187baef50a50e7e061a826e17f423a3de7ab85d0175f07a",
+    "installed": "hooks/usage-throttle-warn.py",
+    "up2_installed": "hooks/usage-throttle-warn.py",
+    "migration_commit": "ef51345b2e3d26bfc19c12e926e4d1e5a257e52c",
+    "preservation": "retained-by-up1-merge"
+  },
+  {
+    "up1_line": 270,
+    "up1_row_sha256": "ed25d2d8531f1e823843fe8d3ded2f06be83db8f6cd4a37216daf7351d97ebb0",
+    "installed": "hooks/watch_agent_mail_signals.sh",
+    "up2_installed": "hooks/watch_agent_mail_signals.sh",
+    "migration_commit": "1d42c7235e59c53376e20033c72360f6fa2693fd",
+    "preservation": "delta-manually-ported"
+  },
+  {
+    "up1_line": 271,
+    "up1_row_sha256": "58098d10327c78f17a769276cf8266052d6a8be516d4d9a5df63ddc8ad0e6b3f",
+    "installed": "hooks/watch_agent_mail_signals.sh.bak-20260912",
+    "up2_installed": "hooks/watch_agent_mail_signals.sh.bak-20260912",
+    "migration_commit": "ef51345b2e3d26bfc19c12e926e4d1e5a257e52c",
+    "preservation": "retained-by-up1-merge"
+  },
+  {
+    "up1_line": 272,
+    "up1_row_sha256": "caf877e5f9f7665d4126b16f96bc90c4a060729154ea75ed7eb223a13186c155",
+    "installed": "hooks/watch_agent_mail_signals.sh.bak-20260920-stale-signals",
+    "up2_installed": "hooks/watch_agent_mail_signals.sh.bak-20260920-stale-signals",
+    "migration_commit": "ef51345b2e3d26bfc19c12e926e4d1e5a257e52c",
+    "preservation": "retained-by-up1-merge"
+  },
+  {
+    "up1_line": 273,
+    "up1_row_sha256": "973bad2e8cbce55604a01f60178958d2135dfe43ce2796463ed9a618d31dde5a",
+    "installed": "install-state.json",
+    "up2_installed": "install-state.json",
+    "migration_commit": "1d42c7235e59c53376e20033c72360f6fa2693fd",
+    "preservation": "生成設定・既存optional配置を上書きせず保持（隔離diffを参照）"
+  },
+  {
+    "up1_line": 274,
+    "up1_row_sha256": "d948eabb5c56b3189650ca44f903be86b204c621e37293d6a4b124ba41a45b1c",
+    "installed": "integrations/codex_app/README.md",
+    "up2_installed": "integrations/codex_app/README.md",
+    "migration_commit": "1d42c7235e59c53376e20033c72360f6fa2693fd",
+    "preservation": "既存optional配置を非上書きで保持。対応sourceは参照のみ（隔離diffで旧bytes一致）"
+  },
+  {
+    "up1_line": 275,
+    "up1_row_sha256": "0625914e1e6d7cb56e48d58c42ed6c003c39f937493c98c7bda02360b828d4f3",
+    "installed": "integrations/codex_app/bin/doctor-codex-app-integration",
+    "up2_installed": "integrations/codex_app/bin/doctor-codex-app-integration",
+    "migration_commit": "1d42c7235e59c53376e20033c72360f6fa2693fd",
+    "preservation": "既存optional配置を非上書きで保持。対応sourceは参照のみ（隔離diffで旧bytes一致）"
+  },
+  {
+    "up1_line": 276,
+    "up1_row_sha256": "8342d556555185e0a3ea53bfafed93ef34c1592d59919ebd22228123c1d04210",
+    "installed": "integrations/codex_app/bin/run-bridge",
+    "up2_installed": "integrations/codex_app/bin/run-bridge",
+    "migration_commit": "1d42c7235e59c53376e20033c72360f6fa2693fd",
+    "preservation": "既存optional配置を非上書きで保持。対応sourceは参照のみ（隔離diffで旧bytes一致）"
+  },
+  {
+    "up1_line": 277,
+    "up1_row_sha256": "3441675662bc7f8398224e88996a12eba65e443f3bfc7eeaeed3e3acfa2e7594",
+    "installed": "integrations/codex_app/bin/uninstall-codex-app-integration",
+    "up2_installed": "integrations/codex_app/bin/uninstall-codex-app-integration",
+    "migration_commit": "1d42c7235e59c53376e20033c72360f6fa2693fd",
+    "preservation": "既存optional配置を非上書きで保持。対応sourceは参照のみ（隔離diffで旧bytes一致）"
+  },
+  {
+    "up1_line": 278,
+    "up1_row_sha256": "abbd707fe7e8bbd78f931e7b3f3230c741331f2f4fd397a06ab2290b9923bd17",
+    "installed": "integrations/codex_app/env.sh",
+    "up2_installed": "integrations/codex_app/env.sh",
+    "migration_commit": "1d42c7235e59c53376e20033c72360f6fa2693fd",
+    "preservation": "既存optional配置を非上書きで保持。対応sourceは参照のみ（隔離diffで旧bytes一致）"
+  },
+  {
+    "up1_line": 279,
+    "up1_row_sha256": "25a5c486b54035480afe961cef4179f19766c88c494e1bb49e42fbcc71e0597d",
+    "installed": "integrations/codex_app/env.sh.bak-20260927-wakepoll",
+    "up2_installed": "integrations/codex_app/env.sh.bak-20260927-wakepoll",
+    "migration_commit": "1d42c7235e59c53376e20033c72360f6fa2693fd",
+    "preservation": "既存optional配置を非上書きで保持。対応sourceは参照のみ（隔離diffで旧bytes一致）"
+  },
+  {
+    "up1_line": 280,
+    "up1_row_sha256": "c7aef0a1dca88a5473fe16a8ac17fa12a4dd393747f81db0154175887819a009",
+    "installed": "integrations/codex_app/env.sh.bak-headwiring-20260908T083501Z",
+    "up2_installed": "integrations/codex_app/env.sh.bak-headwiring-20260908T083501Z",
+    "migration_commit": "1d42c7235e59c53376e20033c72360f6fa2693fd",
+    "preservation": "既存optional配置を非上書きで保持。対応sourceは参照のみ（隔離diffで旧bytes一致）"
+  },
+  {
+    "up1_line": 281,
+    "up1_row_sha256": "d5b68ff055b55ecbe955943cb7ee9cc8a67c70e01443a1455093e8956a7829e9",
+    "installed": "integrations/codex_app/env.sh.bak-skipgit-20260904T204712Z",
+    "up2_installed": "integrations/codex_app/env.sh.bak-skipgit-20260904T204712Z",
+    "migration_commit": "1d42c7235e59c53376e20033c72360f6fa2693fd",
+    "preservation": "既存optional配置を非上書きで保持。対応sourceは参照のみ（隔離diffで旧bytes一致）"
+  },
+  {
+    "up1_line": 282,
+    "up1_row_sha256": "ed4b9e04b4d3c56d91f3612a2b7c5032ca128316a8968b0a68b6a4e806708a39",
+    "installed": "integrations/codex_app/env.sh.bak-skipgit-revert-20260905T051851Z",
+    "up2_installed": "integrations/codex_app/env.sh.bak-skipgit-revert-20260905T051851Z",
+    "migration_commit": "1d42c7235e59c53376e20033c72360f6fa2693fd",
+    "preservation": "既存optional配置を非上書きで保持。対応sourceは参照のみ（隔離diffで旧bytes一致）"
+  },
+  {
+    "up1_line": 283,
+    "up1_row_sha256": "a94d1e4a471f6ba01b1fa502940116758cc85ee998aabebf3d2bbc0de1ab842f",
+    "installed": "integrations/codex_app/env.sh.sample",
+    "up2_installed": "integrations/codex_app/env.sh.sample",
+    "migration_commit": "1d42c7235e59c53376e20033c72360f6fa2693fd",
+    "preservation": "既存optional配置を非上書きで保持。対応sourceは参照のみ（隔離diffで旧bytes一致）"
+  },
+  {
+    "up1_line": 284,
+    "up1_row_sha256": "1edacf7e689476a1cf5810df4d38cc2c8f713999f6755c0139e6a171a078fa1a",
+    "installed": "integrations/codex_app/export-manifest.txt",
+    "up2_installed": "integrations/codex_app/export-manifest.txt",
+    "migration_commit": "1d42c7235e59c53376e20033c72360f6fa2693fd",
+    "preservation": "既存optional配置を非上書きで保持。対応sourceは参照のみ（隔離diffで旧bytes一致）"
+  },
+  {
+    "up1_line": 285,
+    "up1_row_sha256": "25f6a32fe96a2b8c2e130dbe001c2e99d1dea67d96fc7885e866a072cd11a448",
+    "installed": "integrations/codex_app/install-state.json",
+    "up2_installed": "integrations/codex_app/install-state.json",
+    "migration_commit": "1d42c7235e59c53376e20033c72360f6fa2693fd",
+    "preservation": "既存optional配置を非上書きで保持。対応sourceは参照のみ（隔離diffで旧bytes一致）"
+  },
+  {
+    "up1_line": 286,
+    "up1_row_sha256": "c32b6438a36b7ca6d493ba3ec4db94c948caa7929540393c3e033cb22efc7190",
+    "installed": "integrations/codex_app/launchd/org.agentstack.codex-app-bridge.plist",
+    "up2_installed": "integrations/codex_app/launchd/org.agentstack.codex-app-bridge.plist",
+    "migration_commit": "1d42c7235e59c53376e20033c72360f6fa2693fd",
+    "preservation": "既存optional配置を非上書きで保持。対応sourceは参照のみ（隔離diffで旧bytes一致）"
+  },
+  {
+    "up1_line": 287,
+    "up1_row_sha256": "63ae7486df627b215a766ece8796e98f7a8f6145a4f24f20384e1a8f5bda391a",
+    "installed": "integrations/codex_app/launchd/org.agentstack.codex-app-bridge.plist.template",
+    "up2_installed": "integrations/codex_app/launchd/org.agentstack.codex-app-bridge.plist.template",
+    "migration_commit": "1d42c7235e59c53376e20033c72360f6fa2693fd",
+    "preservation": "既存optional配置を非上書きで保持。対応sourceは参照のみ（隔離diffで旧bytes一致）"
+  },
+  {
+    "up1_line": 288,
+    "up1_row_sha256": "092f3f8a56ca86ab0c37bf8db4191f162524faecca07787179f57cee16f41c89",
+    "installed": "integrations/codex_app/marketplace/.agents/plugins/marketplace.json",
+    "up2_installed": "integrations/codex_app/marketplace/.agents/plugins/marketplace.json",
+    "migration_commit": "1d42c7235e59c53376e20033c72360f6fa2693fd",
+    "preservation": "既存optional配置を非上書きで保持。対応sourceは参照のみ（隔離diffで旧bytes一致）"
+  },
+  {
+    "up1_line": 289,
+    "up1_row_sha256": "a8806c66a0e6d7d4e4622913856290654e54511d2e18c74025fe786f6cace899",
+    "installed": "integrations/codex_app/marketplace/plugins/agentstack-codex-app/.codex-plugin/plugin.json",
+    "up2_installed": "integrations/codex_app/marketplace/plugins/agentstack-codex-app/.codex-plugin/plugin.json",
+    "migration_commit": "1d42c7235e59c53376e20033c72360f6fa2693fd",
+    "preservation": "既存optional配置を非上書きで保持。対応sourceは参照のみ（隔離diffで旧bytes一致）"
+  },
+  {
+    "up1_line": 290,
+    "up1_row_sha256": "201a8f137960c367a52fa1dd0b0e4e649e72b57255bfea4cd372bbb0eba4abb1",
+    "installed": "integrations/codex_app/marketplace/plugins/agentstack-codex-app/.mcp.json",
+    "up2_installed": "integrations/codex_app/marketplace/plugins/agentstack-codex-app/.mcp.json",
+    "migration_commit": "1d42c7235e59c53376e20033c72360f6fa2693fd",
+    "preservation": "既存optional配置を非上書きで保持。対応sourceは参照のみ（隔離diffで旧bytes一致）"
+  },
+  {
+    "up1_line": 291,
+    "up1_row_sha256": "27965c0c1c7b40485214266fd116f7935086b486a937afa60e0bee5b23b12fcc",
+    "installed": "integrations/codex_app/marketplace/plugins/agentstack-codex-app/hooks/hooks.json",
+    "up2_installed": "integrations/codex_app/marketplace/plugins/agentstack-codex-app/hooks/hooks.json",
+    "migration_commit": "1d42c7235e59c53376e20033c72360f6fa2693fd",
+    "preservation": "既存optional配置を非上書きで保持。対応sourceは参照のみ（隔離diffで旧bytes一致）"
+  },
+  {
+    "up1_line": 292,
+    "up1_row_sha256": "580fa7d08843c611f4fa3b03fa8933d5c19d4f992cd2a3b9a93be590b6ff0be7",
+    "installed": "integrations/codex_app/marketplace/plugins/agentstack-codex-app/schemas/README.md",
+    "up2_installed": "integrations/codex_app/marketplace/plugins/agentstack-codex-app/schemas/README.md",
+    "migration_commit": "1d42c7235e59c53376e20033c72360f6fa2693fd",
+    "preservation": "既存optional配置を非上書きで保持。対応sourceは参照のみ（隔離diffで旧bytes一致）"
+  },
+  {
+    "up1_line": 293,
+    "up1_row_sha256": "eaf038d99aa2aae804f5cd3e98871989ecae3a5311e387084d934f49a1fdccc9",
+    "installed": "integrations/codex_app/marketplace/plugins/agentstack-codex-app/schemas/binding-record-v1.json",
+    "up2_installed": "integrations/codex_app/marketplace/plugins/agentstack-codex-app/schemas/binding-record-v1.json",
+    "migration_commit": "1d42c7235e59c53376e20033c72360f6fa2693fd",
+    "preservation": "既存optional配置を非上書きで保持。対応sourceは参照のみ（隔離diffで旧bytes一致）"
+  },
+  {
+    "up1_line": 294,
+    "up1_row_sha256": "a951d1d262e34619e100b48ee84190b31b1fd837f2eb0b8d57d561d6a20958dd",
+    "installed": "integrations/codex_app/marketplace/plugins/agentstack-codex-app/schemas/migrations/001_delivery_state.sql",
+    "up2_installed": "integrations/codex_app/marketplace/plugins/agentstack-codex-app/schemas/migrations/001_delivery_state.sql",
+    "migration_commit": "1d42c7235e59c53376e20033c72360f6fa2693fd",
+    "preservation": "既存optional配置を非上書きで保持。対応sourceは参照のみ（隔離diffで旧bytes一致）"
+  },
+  {
+    "up1_line": 295,
+    "up1_row_sha256": "bc5febecf1085d4ab6b6ac8caa94ddfcbffce5217ec1d0800d713b691575409d",
+    "installed": "integrations/codex_app/marketplace/plugins/agentstack-codex-app/schemas/runtime-event-v1.json",
+    "up2_installed": "integrations/codex_app/marketplace/plugins/agentstack-codex-app/schemas/runtime-event-v1.json",
+    "migration_commit": "1d42c7235e59c53376e20033c72360f6fa2693fd",
+    "preservation": "既存optional配置を非上書きで保持。対応sourceは参照のみ（隔離diffで旧bytes一致）"
+  },
+  {
+    "up1_line": 296,
+    "up1_row_sha256": "fcafb279f5416bdf2bbc6f4f8af0f6b8f95b26bb13d56ceaa9b32246ed0157a9",
+    "installed": "integrations/codex_app/marketplace/plugins/agentstack-codex-app/scripts/run-hook.sh",
+    "up2_installed": "integrations/codex_app/marketplace/plugins/agentstack-codex-app/scripts/run-hook.sh",
+    "migration_commit": "1d42c7235e59c53376e20033c72360f6fa2693fd",
+    "preservation": "既存optional配置を非上書きで保持。対応sourceは参照のみ（隔離diffで旧bytes一致）"
+  },
+  {
+    "up1_line": 297,
+    "up1_row_sha256": "870032816bb3e176a10c362fa7e170bffa2447233ec2a1fd68b9ee0809479d26",
+    "installed": "integrations/codex_app/marketplace/plugins/agentstack-codex-app/scripts/run-mcp.sh",
+    "up2_installed": "integrations/codex_app/marketplace/plugins/agentstack-codex-app/scripts/run-mcp.sh",
+    "migration_commit": "1d42c7235e59c53376e20033c72360f6fa2693fd",
+    "preservation": "既存optional配置を非上書きで保持。対応sourceは参照のみ（隔離diffで旧bytes一致）"
+  },
+  {
+    "up1_line": 298,
+    "up1_row_sha256": "4af952a9571c0fe1f67124615e6d7011cb65351beb59e87c3305488f1f2e2893",
+    "installed": "integrations/codex_app/marketplace/plugins/agentstack-codex-app/skills/coordinate/SKILL.md",
+    "up2_installed": "integrations/codex_app/marketplace/plugins/agentstack-codex-app/skills/coordinate/SKILL.md",
+    "migration_commit": "1d42c7235e59c53376e20033c72360f6fa2693fd",
+    "preservation": "既存optional配置を非上書きで保持。対応sourceは参照のみ（隔離diffで旧bytes一致）"
+  },
+  {
+    "up1_line": 299,
+    "up1_row_sha256": "eec6a10900cf5be4ac84d439929a45ad9b0b0a8f535bb5253b86faaac700fd72",
+    "installed": "integrations/codex_app/marketplace/plugins/agentstack-codex-app/src/agentstack_codex_app/__init__.py",
+    "up2_installed": "integrations/codex_app/marketplace/plugins/agentstack-codex-app/src/agentstack_codex_app/__init__.py",
+    "migration_commit": "1d42c7235e59c53376e20033c72360f6fa2693fd",
+    "preservation": "既存optional配置を非上書きで保持。対応sourceは参照のみ（隔離diffで旧bytes一致）"
+  },
+  {
+    "up1_line": 300,
+    "up1_row_sha256": "7b4dd7809fbb3d6002702e1498edb19d6eb4c5e169a73c3e456bd931d7a31d1a",
+    "installed": "integrations/codex_app/marketplace/plugins/agentstack-codex-app/src/agentstack_codex_app/agent_mail_client.py",
+    "up2_installed": "integrations/codex_app/marketplace/plugins/agentstack-codex-app/src/agentstack_codex_app/agent_mail_client.py",
+    "migration_commit": "1d42c7235e59c53376e20033c72360f6fa2693fd",
+    "preservation": "本家の600字上限とredaction付きerror表示を採用（引用参照）"
+  },
+  {
+    "up1_line": 301,
+    "up1_row_sha256": "4066228383b5700a2f56d3071de1e95e8c0b6fa4c9306652bc184ce26883694b",
+    "installed": "integrations/codex_app/marketplace/plugins/agentstack-codex-app/src/agentstack_codex_app/daemon.py",
+    "up2_installed": "integrations/codex_app/marketplace/plugins/agentstack-codex-app/src/agentstack_codex_app/daemon.py",
+    "migration_commit": "1d42c7235e59c53376e20033c72360f6fa2693fd",
+    "preservation": "既存optional配置を非上書きで保持。対応sourceは参照のみ（隔離diffで旧bytes一致）"
+  },
+  {
+    "up1_line": 302,
+    "up1_row_sha256": "f76a180f2a7ab29b77ec8b616384075037d92a814531f02697a060fbbcb61af4",
+    "installed": "integrations/codex_app/marketplace/plugins/agentstack-codex-app/src/agentstack_codex_app/delivery.py",
+    "up2_installed": "integrations/codex_app/marketplace/plugins/agentstack-codex-app/src/agentstack_codex_app/delivery.py",
+    "migration_commit": "1d42c7235e59c53376e20033c72360f6fa2693fd",
+    "preservation": "既存optional配置を非上書きで保持。対応sourceは参照のみ（隔離diffで旧bytes一致）"
+  },
+  {
+    "up1_line": 303,
+    "up1_row_sha256": "27cb375909c323912db48f8122f023c97714ca88c8b096eef327ba71a425e040",
+    "installed": "integrations/codex_app/marketplace/plugins/agentstack-codex-app/src/agentstack_codex_app/hook_entry.py",
+    "up2_installed": "integrations/codex_app/marketplace/plugins/agentstack-codex-app/src/agentstack_codex_app/hook_entry.py",
+    "migration_commit": "1d42c7235e59c53376e20033c72360f6fa2693fd",
+    "preservation": "既存optional配置を非上書きで保持。対応sourceは参照のみ（隔離diffで旧bytes一致）"
+  },
+  {
+    "up1_line": 304,
+    "up1_row_sha256": "73ae6564eff859a7c30895b22cc8e88bf1a33a74f683d4e3ac035b547903fa57",
+    "installed": "integrations/codex_app/marketplace/plugins/agentstack-codex-app/src/agentstack_codex_app/identity_store.py",
+    "up2_installed": "integrations/codex_app/marketplace/plugins/agentstack-codex-app/src/agentstack_codex_app/identity_store.py",
+    "migration_commit": "1d42c7235e59c53376e20033c72360f6fa2693fd",
+    "preservation": "既存optional配置を非上書きで保持。対応sourceは参照のみ（隔離diffで旧bytes一致）"
+  },
+  {
+    "up1_line": 305,
+    "up1_row_sha256": "02a961b2a5b0680a54b95c281e0aa20f64a2a605c8497844904bd70c1171e568",
+    "installed": "integrations/codex_app/marketplace/plugins/agentstack-codex-app/src/agentstack_codex_app/mcp_server.py",
+    "up2_installed": "integrations/codex_app/marketplace/plugins/agentstack-codex-app/src/agentstack_codex_app/mcp_server.py",
+    "migration_commit": "1d42c7235e59c53376e20033c72360f6fa2693fd",
+    "preservation": "既存optional配置を非上書きで保持。対応sourceは参照のみ（隔離diffで旧bytes一致）"
+  },
+  {
+    "up1_line": 306,
+    "up1_row_sha256": "80671f0f374898e5f590b2a00369d9ad1b92923fb3fc414100c1f0c80034f917",
+    "installed": "integrations/codex_app/marketplace/plugins/agentstack-codex-app/src/agentstack_codex_app/protocol.py",
+    "up2_installed": "integrations/codex_app/marketplace/plugins/agentstack-codex-app/src/agentstack_codex_app/protocol.py",
+    "migration_commit": "1d42c7235e59c53376e20033c72360f6fa2693fd",
+    "preservation": "既存optional配置を非上書きで保持。対応sourceは参照のみ（隔離diffで旧bytes一致）"
+  },
+  {
+    "up1_line": 307,
+    "up1_row_sha256": "fb7a59ab499fd4e3c0447a52d39b3b2aaa11f9bb5407db76bd04fb5f94efc8bf",
+    "installed": "integrations/codex_app/marketplace/plugins/agentstack-codex-app/src/agentstack_codex_app/snapshot.py",
+    "up2_installed": "integrations/codex_app/marketplace/plugins/agentstack-codex-app/src/agentstack_codex_app/snapshot.py",
+    "migration_commit": "1d42c7235e59c53376e20033c72360f6fa2693fd",
+    "preservation": "既存optional配置を非上書きで保持。対応sourceは参照のみ（隔離diffで旧bytes一致）"
+  },
+  {
+    "up1_line": 308,
+    "up1_row_sha256": "7a2c4ce2f46b4d71eadd38690cc3574f1cc78b9adc2a43d78e4f2d807b71e85c",
+    "installed": "integrations/codex_app/marketplace/plugins/agentstack-codex-app/src/agentstack_codex_app/wake.py",
+    "up2_installed": "integrations/codex_app/marketplace/plugins/agentstack-codex-app/src/agentstack_codex_app/wake.py",
+    "migration_commit": "1d42c7235e59c53376e20033c72360f6fa2693fd",
+    "preservation": "既存optional配置を非上書きで保持。対応sourceは参照のみ（隔離diffで旧bytes一致）"
+  },
+  {
+    "up1_line": 309,
+    "up1_row_sha256": "ed9daf758f4345a3b6e71d154d612b11435d77f90e9394c36835964f51f81137",
+    "installed": "integrations/codex_app/plugin/.codex-plugin/plugin.json",
+    "up2_installed": "integrations/codex_app/plugin/.codex-plugin/plugin.json",
+    "migration_commit": "e4462fa3cc61293cf5bc60594f098e7462e640f3",
+    "preservation": "retained-by-up1-merge"
+  },
+  {
+    "up1_line": 310,
+    "up1_row_sha256": "a767cb2ffb5595c56c35749354cd1118c22355b387f693354a8e5b2b675b087d",
+    "installed": "integrations/codex_app/plugin/.mcp.json",
+    "up2_installed": "integrations/codex_app/plugin/.mcp.json",
+    "migration_commit": "6a496d61f58ffc5db8c68df8a50cd4d9e45527db",
+    "preservation": "retained-by-up1-merge"
+  },
+  {
+    "up1_line": 311,
+    "up1_row_sha256": "cae51a435512ce15c121b35ed830d024a3e3c98a6379a00a8a71de9f96a40ed4",
+    "installed": "integrations/codex_app/plugin/hooks/hooks.json",
+    "up2_installed": "integrations/codex_app/plugin/hooks/hooks.json",
+    "migration_commit": "cc20cac6200e2334f724e4cc8195e819bdc9c522",
+    "preservation": "retained-by-up1-merge"
+  },
+  {
+    "up1_line": 312,
+    "up1_row_sha256": "7fd700de0f3bea10d0189cdca871185b3e63a23ff379529a2e0980ca45052686",
+    "installed": "integrations/codex_app/plugin/scripts/run-hook.sh",
+    "up2_installed": "integrations/codex_app/plugin/scripts/run-hook.sh",
+    "migration_commit": "c4f9310fd501222769656fcafe14fbca029c17c4",
+    "preservation": "retained-by-up1-merge"
+  },
+  {
+    "up1_line": 313,
+    "up1_row_sha256": "59dc2e67bd9577ad82597b995a9249e526b7b3b7712d92774d81724ab3a809a6",
+    "installed": "integrations/codex_app/plugin/scripts/run-mcp.sh",
+    "up2_installed": "integrations/codex_app/plugin/scripts/run-mcp.sh",
+    "migration_commit": "3670dce9fd51a2e9a62337ee07445c3601a8e077",
+    "preservation": "retained-by-up1-merge"
+  },
+  {
+    "up1_line": 314,
+    "up1_row_sha256": "30577835eb570356da1d16e552aa40a401c9259ad7af5715f088f5e50a8e8ae2",
+    "installed": "integrations/codex_app/plugin/skills/coordinate/SKILL.md",
+    "up2_installed": "integrations/codex_app/plugin/skills/coordinate/SKILL.md",
+    "migration_commit": "adc119aeec9d433a53bd2734c7160af3efab219b",
+    "preservation": "retained-by-up1-merge"
+  },
+  {
+    "up1_line": 315,
+    "up1_row_sha256": "d89eaf55b590fec12975b7614a3bb85cf9de103b6d51f933a1504d5891ecf494",
+    "installed": "integrations/codex_app/pyproject.toml",
+    "up2_installed": "integrations/codex_app/pyproject.toml",
+    "migration_commit": "1d42c7235e59c53376e20033c72360f6fa2693fd",
+    "preservation": "既存optional配置を非上書きで保持。対応sourceは参照のみ（隔離diffで旧bytes一致）"
+  },
+  {
+    "up1_line": 316,
+    "up1_row_sha256": "07b65d992dac433676799f24a482e7f651b5148359f358c76d1f944670648f64",
+    "installed": "integrations/codex_app/schemas/README.md",
+    "up2_installed": "integrations/codex_app/schemas/README.md",
+    "migration_commit": "1d42c7235e59c53376e20033c72360f6fa2693fd",
+    "preservation": "既存optional配置を非上書きで保持。対応sourceは参照のみ（隔離diffで旧bytes一致）"
+  },
+  {
+    "up1_line": 317,
+    "up1_row_sha256": "43fcaa37a750ebd88bddb73a91cce829a6b6f4672e57445ca921ec7a397339bc",
+    "installed": "integrations/codex_app/schemas/binding-record-v1.json",
+    "up2_installed": "integrations/codex_app/schemas/binding-record-v1.json",
+    "migration_commit": "1d42c7235e59c53376e20033c72360f6fa2693fd",
+    "preservation": "既存optional配置を非上書きで保持。対応sourceは参照のみ（隔離diffで旧bytes一致）"
+  },
+  {
+    "up1_line": 318,
+    "up1_row_sha256": "29722b410460b6fb9ad9c011d0310144067052ced192e67cbb00ded5fe82efbb",
+    "installed": "integrations/codex_app/schemas/migrations/001_delivery_state.sql",
+    "up2_installed": "integrations/codex_app/schemas/migrations/001_delivery_state.sql",
+    "migration_commit": "1d42c7235e59c53376e20033c72360f6fa2693fd",
+    "preservation": "既存optional配置を非上書きで保持。対応sourceは参照のみ（隔離diffで旧bytes一致）"
+  },
+  {
+    "up1_line": 319,
+    "up1_row_sha256": "603f66c38c9210b1a8ef28e57757b7106f004281cdb16566b20c2169ad589ab1",
+    "installed": "integrations/codex_app/schemas/runtime-event-v1.json",
+    "up2_installed": "integrations/codex_app/schemas/runtime-event-v1.json",
+    "migration_commit": "1d42c7235e59c53376e20033c72360f6fa2693fd",
+    "preservation": "既存optional配置を非上書きで保持。対応sourceは参照のみ（隔離diffで旧bytes一致）"
+  },
+  {
+    "up1_line": 320,
+    "up1_row_sha256": "d4913e7ad97f84904fb18d5eafb922a7619ddb5e8731b6f90c8ff4093b79b77f",
+    "installed": "integrations/codex_app/src/agentstack_codex_app/__init__.py",
+    "up2_installed": "integrations/codex_app/src/agentstack_codex_app/__init__.py",
+    "migration_commit": "b333c9f62860c80b6fdf3bf0dd3797c98ebce15e",
+    "preservation": "retained-by-up1-merge"
+  },
+  {
+    "up1_line": 321,
+    "up1_row_sha256": "db968bd0febc98b86462de9149b9bbfdb04fb3c569700afa0a7efdfe7e79b798",
+    "installed": "integrations/codex_app/src/agentstack_codex_app/agent_mail_client.py",
+    "up2_installed": "integrations/codex_app/src/agentstack_codex_app/agent_mail_client.py",
+    "migration_commit": "6fa4e24990359b0504e1cd8a7f92c731fe3980b4",
+    "preservation": "delta-merged"
+  },
+  {
+    "up1_line": 322,
+    "up1_row_sha256": "11606119f9802c3fdca6c0061c23feead25998c7f71de5a00bd60af6526a7ff5",
+    "installed": "integrations/codex_app/src/agentstack_codex_app/daemon.py",
+    "up2_installed": "integrations/codex_app/src/agentstack_codex_app/daemon.py",
+    "migration_commit": "fe06fe2741602c980e8794f8f4c5402faefc00d0",
+    "preservation": "retained-by-up1-merge"
+  },
+  {
+    "up1_line": 323,
+    "up1_row_sha256": "c58a97273b02974acd345427cc1e8f63bd96abc3ea910b6088bd1eb03674caf2",
+    "installed": "integrations/codex_app/src/agentstack_codex_app/delivery.py",
+    "up2_installed": "integrations/codex_app/src/agentstack_codex_app/delivery.py",
+    "migration_commit": "24d3040ec605c6714ba3b362861b1bfaac7c4f5d",
+    "preservation": "retained-by-up1-merge"
+  },
+  {
+    "up1_line": 324,
+    "up1_row_sha256": "315696e33a6fabc9b671a2f840b66eb9b4d426837ab4e9d6fa43dd2fed1e8143",
+    "installed": "integrations/codex_app/src/agentstack_codex_app/hook_entry.py",
+    "up2_installed": "integrations/codex_app/src/agentstack_codex_app/hook_entry.py",
+    "migration_commit": "bb4195c97d799dfae200710fc264ae80511b6d3b",
+    "preservation": "retained-by-up1-merge"
+  },
+  {
+    "up1_line": 325,
+    "up1_row_sha256": "041606bfa7037fcd1f18a3acce9f355c1cce519b3581d779ac39745a7ee7a5fa",
+    "installed": "integrations/codex_app/src/agentstack_codex_app/identity_store.py",
+    "up2_installed": "integrations/codex_app/src/agentstack_codex_app/identity_store.py",
+    "migration_commit": "a61f0edce855aebfebd54709d00844ffe9138817",
+    "preservation": "retained-by-up1-merge"
+  },
+  {
+    "up1_line": 326,
+    "up1_row_sha256": "eeb61c878c411fde699fc320a5b2da8d0ca5ca24deefe209b93a87ad85db1801",
+    "installed": "integrations/codex_app/src/agentstack_codex_app/mcp_server.py",
+    "up2_installed": "integrations/codex_app/src/agentstack_codex_app/mcp_server.py",
+    "migration_commit": "6fa4e24990359b0504e1cd8a7f92c731fe3980b4",
+    "preservation": "delta-merged"
+  },
+  {
+    "up1_line": 327,
+    "up1_row_sha256": "12cdd37f2fdab7c4de671ce6ecd008f7598acebc77cff1048afc961f84193eb9",
+    "installed": "integrations/codex_app/src/agentstack_codex_app/protocol.py",
+    "up2_installed": "integrations/codex_app/src/agentstack_codex_app/protocol.py",
+    "migration_commit": "b333c9f62860c80b6fdf3bf0dd3797c98ebce15e",
+    "preservation": "retained-by-up1-merge"
+  },
+  {
+    "up1_line": 328,
+    "up1_row_sha256": "67612a68ab53f00f0f638b8ea55af28d17c018f62a4e4cb03744e35a2047dfcf",
+    "installed": "integrations/codex_app/src/agentstack_codex_app/snapshot.py",
+    "up2_installed": "integrations/codex_app/src/agentstack_codex_app/snapshot.py",
+    "migration_commit": "a61f0edce855aebfebd54709d00844ffe9138817",
+    "preservation": "retained-by-up1-merge"
+  },
+  {
+    "up1_line": 329,
+    "up1_row_sha256": "bd6fe9ee32ea96cae7526c4ef0ec00485f96902f63dd484865f5038a8c547117",
+    "installed": "integrations/codex_app/src/agentstack_codex_app/wake.py",
+    "up2_installed": "integrations/codex_app/src/agentstack_codex_app/wake.py",
+    "migration_commit": "fe06fe2741602c980e8794f8f4c5402faefc00d0",
+    "preservation": "retained-by-up1-merge"
+  },
+  {
+    "up1_line": 330,
+    "up1_row_sha256": "8a86e42f264b9ee8558a2e04363f283e06da4a6527e20650ab18cc9162f615a9",
+    "installed": "mail-service/renders/95c14223266a8e8a599b6a68d84ca1f7e2026bb7-7e795c6f7e8c2856f78e/run-agentstack-mail.sh",
+    "up2_installed": "mail-service/renders/95c14223266a8e8a599b6a68d84ca1f7e2026bb7-7e795c6f7e8c2856f78e/run-agentstack-mail.sh",
+    "migration_commit": "1d42c7235e59c53376e20033c72360f6fa2693fd",
+    "preservation": "生成物または外部設定をinstaller範囲外で保持。コードの再導入なし"
+  },
+  {
+    "up1_line": 331,
+    "up1_row_sha256": "291fe1e1475669b109822204726078f166e6198c904bde46fc53a88a5321a7d0",
+    "installed": "mail-service/renders/95c14223266a8e8a599b6a68d84ca1f7e2026bb7-7e795c6f7e8c2856f78e/service.env",
+    "up2_installed": "mail-service/renders/95c14223266a8e8a599b6a68d84ca1f7e2026bb7-7e795c6f7e8c2856f78e/service.env",
+    "migration_commit": "1d42c7235e59c53376e20033c72360f6fa2693fd",
+    "preservation": "生成物または外部設定をinstaller範囲外で保持。コードの再導入なし"
+  },
+  {
+    "up1_line": 332,
+    "up1_row_sha256": "e3348802fcbca94cba789864390fd94bd319721f6b8796ce91b87185324eebf5",
+    "installed": "runtime/claude-mcp-merge-result.json",
+    "up2_installed": "runtime/claude-mcp-merge-result.json",
+    "migration_commit": "1d42c7235e59c53376e20033c72360f6fa2693fd",
+    "preservation": "生成物または外部設定をinstaller範囲外で保持。コードの再導入なし"
+  },
+  {
+    "up1_line": 333,
+    "up1_row_sha256": "4e4800a11912e8a317c77d5bab3903cfca4c3a7dbd1241b57a060c86712888fb",
+    "installed": "runtime/settings-merge-result.json",
+    "up2_installed": "runtime/settings-merge-result.json",
+    "migration_commit": "1d42c7235e59c53376e20033c72360f6fa2693fd",
+    "preservation": "生成物または外部設定をinstaller範囲外で保持。コードの再導入なし"
+  },
+  {
+    "up1_line": 334,
+    "up1_row_sha256": "2b84aadd279a5566f91e2880c6df46b34c4b9345e8fe10ee3230436bdbb2c816",
+    "installed": "skills/delegate/SKILL.md",
+    "up2_installed": "skills/delegate/SKILL.md",
+    "migration_commit": "52bc71f9356227f2dcd4c90ba55bc63811928156",
+    "preservation": "retained-by-up1-merge"
+  },
+  {
+    "up1_line": 335,
+    "up1_row_sha256": "8875dc25b2c01aaefbae976410e638e0b28c350173f59b074ef62f3fbbacc471",
+    "installed": "skills/log/SKILL.md",
+    "up2_installed": "skills/log/SKILL.md",
+    "migration_commit": "adc119aeec9d433a53bd2734c7160af3efab219b",
+    "preservation": "retained-by-up1-merge"
+  },
+  {
+    "up1_line": 353,
+    "up1_row_sha256": "0fe79b3c6d1d4d888ac0876a213dc89a6683f700a862008efe8ef7d5f91aa298",
+    "installed": "@home/.claude/skills/delegate",
+    "up2_installed": "@home/.claude/skills/delegate",
+    "migration_commit": "1d42c7235e59c53376e20033c72360f6fa2693fd",
+    "preservation": "生成物または外部設定をinstaller範囲外で保持。コードの再導入なし"
+  },
+  {
+    "up1_line": 354,
+    "up1_row_sha256": "4208e1680f3d90d11d7cff26485867ccf452a488a7382bb4e6cf314bcb5f44eb",
+    "installed": "@home/.claude/skills/log",
+    "up2_installed": "@home/.claude/skills/log",
+    "migration_commit": "1d42c7235e59c53376e20033c72360f6fa2693fd",
+    "preservation": "生成物または外部設定をinstaller範囲外で保持。コードの再導入なし"
+  },
+  {
+    "up1_line": 355,
+    "up1_row_sha256": "7e55cc8c7717ed723410a6be4145ba5962a0626102fbeb60883ccc5bfb48ca85",
+    "installed": "@home/Library/LaunchAgents/org.agentstack.agentdashboard.plist",
+    "up2_installed": "@home/Library/LaunchAgents/org.agentstack.agentdashboard.plist",
+    "migration_commit": "1d42c7235e59c53376e20033c72360f6fa2693fd",
+    "preservation": "生成物または外部設定をinstaller範囲外で保持。コードの再導入なし"
+  },
+  {
+    "up1_line": 356,
+    "up1_row_sha256": "4aad3bce6372056ef0ce5bc1f4ce35af5962316ae26c7ca9816b4d95ea3b06e5",
+    "installed": "@home/Library/LaunchAgents/org.agentstack.mail-watcher.plist",
+    "up2_installed": "@home/Library/LaunchAgents/org.agentstack.mail-watcher.plist",
+    "migration_commit": "1d42c7235e59c53376e20033c72360f6fa2693fd",
+    "preservation": "生成物または外部設定をinstaller範囲外で保持。コードの再導入なし"
+  },
+  {
+    "up1_line": 357,
+    "up1_row_sha256": "29e99433036906c8abc4f95abe80f0fc28ccbd7f63457fb45e10e9e375d180a8",
+    "installed": "@home/Library/LaunchAgents/org.agentstack.mail.plist",
+    "up2_installed": "@home/Library/LaunchAgents/org.agentstack.mail.plist",
+    "migration_commit": "1d42c7235e59c53376e20033c72360f6fa2693fd",
+    "preservation": "生成物または外部設定をinstaller範囲外で保持。コードの再導入なし"
+  },
+  {
+    "up1_line": 365,
+    "up1_row_sha256": "1450a202c4079a15edd3d60cae42903f97ec239c86704cd50631bfc5478f5017",
+    "installed": "config/head-send-lint.json",
+    "up2_installed": "config/head-send-lint.json",
+    "migration_commit": "a931cc39bf36611262ca77d9eba68114344877c5",
+    "preservation": "retained-by-up1-merge"
+  },
+  {
+    "up1_line": 366,
+    "up1_row_sha256": "edb7333f551c7f936876589d1bdcf446e77e67a0a6d074c6e8dbd79c5e1d3994",
+    "installed": "config/head-send-lint.json.bak-20260923-tune1",
+    "up2_installed": "config/head-send-lint.json.bak-20260923-tune1",
+    "migration_commit": "a931cc39bf36611262ca77d9eba68114344877c5",
+    "preservation": "retained-by-up1-merge"
+  }
+]

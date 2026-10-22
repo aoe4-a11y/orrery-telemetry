@@ -30,6 +30,18 @@ def stage(home,new):
     if new:
         payload_module().install(stack)
     else:
+        # Freeze every old dependency from the hash inventory, not the new core.
+        inventory=json.loads((ROOT/'docs/orrery-up-2/inventory.json').read_text())
+        for row in inventory['rows']:
+            rel=row['installed']
+            if not rel.startswith(('bin/','hooks/')) or row.get('kind')!='file' or not row.get('sha256'):continue
+            source=Path('/Users/huyuhutaru/.agentstack')/rel
+            raw=source.read_bytes()
+            assert hashlib.sha256(raw).hexdigest()==row['sha256'], rel
+            target=stack/rel;target.parent.mkdir(parents=True,exist_ok=True)
+            if target.is_symlink():target.unlink()
+            target.write_bytes(raw.replace(b'/Users/huyuhutaru/.agentstack',str(stack).encode()))
+            shutil.copymode(source,target)
         shutil.copytree(ROOT/'fleet'/RELEASE,stack/RELEASE,symlinks=True)
         for link in (stack/RELEASE).rglob('*'):
             if link.is_symlink():
@@ -105,6 +117,8 @@ while IFS= read -r line; do printf '\n%s\n› ' "$line"; done
         assert result.returncode==0,(entry,new,result.stdout,result.stderr)
         pane=subprocess.run([str(fake/'tmux'),'list-panes','-t','='+NAME,'-F','#{session_name}|#{pane_current_command}|#{pane_dead}'],env=env,capture_output=True,text=True,check=True).stdout.strip()
         assert pane.startswith(NAME+'|') and pane.endswith('|0'),pane
+        pane_mode=subprocess.check_output([str(fake/'tmux'),'list-panes','-t','='+NAME,'-F','#{session_name}:#{window_index}.#{pane_index}|#{pane_in_mode}|#{pane_mode}'],env=env,text=True).strip()
+        assert pane_mode==NAME+':0.0|0|',pane_mode
         data=json.loads(state.read_text())
         assert data['agent_name']==NAME and data['project_key']==str(project)
         assert token.read_text()=='isolated-test-owner'
@@ -112,7 +126,7 @@ while IFS= read -r line; do printf '\n%s\n› ' "$line"; done
                 'state_mode':stat.S_IMODE(state.stat().st_mode),'state_keys':sorted(data),'state_identity':data['agent_name'],
                 'server_certificate_variable_positive_control':positive.startswith('SSL_CERT_FILE='),
                 'child_process_environment':json.loads((home/'tls-process-env.json').read_text()),
-                'pane_session':pane.split('|')[0],'pane_alive':pane.endswith('|0'),'launcher_exit':result.returncode}
+                'pane_name_and_mode':pane_mode,'pane_session':pane.split('|')[0],'pane_alive':pane.endswith('|0'),'launcher_exit':result.returncode}
     finally:
         subprocess.run([str(fake/'tmux'),'kill-session','-t','='+NAME],env=env,capture_output=True)
         subprocess.run([str(fake/'tmux'),'kill-session','-t','=FixtureEnvSeed'],env=env,capture_output=True)

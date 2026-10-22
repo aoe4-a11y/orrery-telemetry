@@ -7,16 +7,16 @@
 -export AGENTSTACK_PORT=8770
 -export AGENTSTACK_LABEL_PREFIX=org.agentstack
 -export AGENTSTACK_MAIL_LAUNCHD_LABEL=''
-+export AGENTSTACK_PORT=51963
++export AGENTSTACK_PORT=53319
 +export AGENTSTACK_LABEL_PREFIX=org.agentstack.test.orrery-up-2
 +export AGENTSTACK_MAIL_LAUNCHD_LABEL=org.agentstack.test.orrery-up-2.mail-service
  export AGENTSTACK_MAIL_DB=/Users/huyuhutaru/.dev-storage-governor/examforge/20261022T063810Z-build-cache-e4007ade/rehearsal/rehearsal-home/.agentstack/mail/storage.sqlite3
 -export AGENTSTACK_MAIL_ENV=/Users/huyuhutaru/.dev-storage-governor/examforge/20261022T063810Z-build-cache-e4007ade/rehearsal/rehearsal-home/.agentstack/mail-service/renders/77ff2e9e-mail-fetch-1/service.env
-+export AGENTSTACK_MAIL_ENV=/Users/huyuhutaru/.dev-storage-governor/examforge/20261022T063810Z-build-cache-e4007ade/rehearsal/rehearsal-home/.agentstack/mail-service/renders/6fa4e24990359b0504e1cd8a7f92c731fe3980b4-6261a074f5c5f668e488/service.env
++export AGENTSTACK_MAIL_ENV=/Users/huyuhutaru/.dev-storage-governor/examforge/20261022T063810Z-build-cache-e4007ade/rehearsal/rehearsal-home/.agentstack/mail-service/renders/1d42c7235e59c53376e20033c72360f6fa2693fd-bdcaeb276205456d75d0/service.env
  export AGENTSTACK_MAIL_HOME=/Users/huyuhutaru/.dev-storage-governor/examforge/20261022T063810Z-build-cache-e4007ade/rehearsal/rehearsal-home/.agentstack/mail
  export AGENTSTACK_SIGNALS_DIR=/Users/huyuhutaru/.dev-storage-governor/examforge/20261022T063810Z-build-cache-e4007ade/rehearsal/rehearsal-home/.agentstack/mail/signals
 -export AGENTSTACK_MCP_URL=http://127.0.0.1:18765/mcp
-+export AGENTSTACK_MCP_URL=http://127.0.0.1:51962/mcp
++export AGENTSTACK_MCP_URL=http://127.0.0.1:53318/mcp
  export AGENTSTACK_CLAUDE_JSON=/Users/huyuhutaru/.dev-storage-governor/examforge/20261022T063810Z-build-cache-e4007ade/rehearsal/rehearsal-home/.claude.json
  export AGENTSTACK_TERMINAL=none
 +export AGENTSTACK_AUTO_OPEN_CHILD=0
@@ -54,7 +54,7 @@
  export AGENTSTACK_HOOKS_DIR=/Users/huyuhutaru/.dev-storage-governor/examforge/20261022T063810Z-build-cache-e4007ade/rehearsal/rehearsal-home/.agentstack/hooks
  export AGENTSTACK_SKILLS_DIR=/Users/huyuhutaru/.dev-storage-governor/examforge/20261022T063810Z-build-cache-e4007ade/rehearsal/rehearsal-home/.agentstack/skills
  export AGENTSTACK_RUNTIME_DIR=/Users/huyuhutaru/.dev-storage-governor/examforge/20261022T063810Z-build-cache-e4007ade/rehearsal/rehearsal-home/.agentstack/runtime
-+export AGENTSTACK_MAIL_ENROLL_BIN=/Users/huyuhutaru/.dev-storage-governor/examforge/20261022T063810Z-build-cache-e4007ade/rehearsal/rehearsal-home/.agentstack/mail-service/candidates/6fa4e24990359b0504e1cd8a7f92c731fe3980b4/venv/bin/agentstack-enroll
++export AGENTSTACK_MAIL_ENROLL_BIN=/Users/huyuhutaru/.dev-storage-governor/examforge/20261022T063810Z-build-cache-e4007ade/rehearsal/rehearsal-home/.agentstack/mail-service/candidates/1d42c7235e59c53376e20033c72360f6fa2693fd/venv/bin/agentstack-enroll
 +export AGENTSTACK_MAIL_MANAGEMENT_SOCKET=/tmp/orrery-mail-501/361e82d312f97a4bf89d.sock
 +export AGENTSTACK_PERSISTENT_PROFILES_DIR=/Users/huyuhutaru/.dev-storage-governor/examforge/20261022T063810Z-build-cache-e4007ade/rehearsal/rehearsal-home/.agentstack/profiles
  export AGENTSTACK_MANAGED_AGENTS_FILE=/Users/huyuhutaru/.dev-storage-governor/examforge/20261022T063810Z-build-cache-e4007ade/rehearsal/rehearsal-home/.agentstack/runtime/managed_agents.txt
@@ -69,7 +69,7 @@
 +export AGENTSTACK_RUNTIME_MODE=legacy
 +export AGENTSTACK_GLOBAL_SERVER_CONFIG=''
 +export AGENTSTACK_PATH=/Users/huyuhutaru/.dev-storage-governor/examforge/20261022T063810Z-build-cache-e4007ade/rehearsal/rehearsal-home/.local/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin
-+export AGENTSTACK_CHOSEN_SETTINGS='AGENTSTACK_PORT AGENTSTACK_LABEL_PREFIX AGENTSTACK_TERMINAL AGENTSTACK_MCP_URL AGENTSTACK_PYTHON AGENTSTACK_AUTO_OPEN_CHILD AGENTSTACK_SPAWN_DIRS AGENTSTACK_SPAWN_ROOTS AGENTSTACK_CODEX_MODELS AGENTSTACK_MAIL_STATE_ROOT AGENTSTACK_MAIL_DIR AGENTSTACK_CODEX_BIN'
++export AGENTSTACK_CHOSEN_SETTINGS='AGENTSTACK_PORT AGENTSTACK_LABEL_PREFIX AGENTSTACK_TERMINAL AGENTSTACK_MCP_URL AGENTSTACK_PYTHON AGENTSTACK_AUTO_OPEN_CHILD AGENTSTACK_SPAWN_DIRS AGENTSTACK_SPAWN_ROOTS AGENTSTACK_CODEX_SANDBOX AGENTSTACK_CODEX_MODELS AGENTSTACK_MAIL_STATE_ROOT AGENTSTACK_MAIL_DIR AGENTSTACK_CODEX_BIN'
 +export EXAMFORGE_MIN_FREE_MB=8000
 +export EXAMFORGE_HEAVY_SLOTS=2
 +export AGENTSTACK_LIFECYCLE_HOOKS_DIR=/Users/huyuhutaru/.dev-storage-governor/examforge/20261022T063810Z-build-cache-e4007ade/rehearsal/rehearsal-home/.agentstack/releases/seat-lifecycle/ee5880e3e23606e0f3252cbeed211868102f4595/hooks

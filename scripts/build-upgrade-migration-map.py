@@ -42,6 +42,9 @@ def main():
         else:
             row['migration_commit'] = commit('scripts/install.sh')
             row['preservation'] = '生成設定・既存optional配置を上書きせず保持（隔離diffを参照）'
+        if path.startswith('integrations/codex_app/') and not path.startswith(('integrations/codex_app/src/', 'integrations/codex_app/plugin/')):
+            row['preservation'] = '既存optional配置を非上書きで保持。対応sourceは参照のみ（隔離diffで旧bytes一致）'
+            row['migration_commit'] = commit('scripts/install.sh')
         if prior.get('disposition') == 'upstream-equivalent-safe-error-details':
             row['preservation'] = '本家の600字上限とredaction付きerror表示を採用（引用参照）'
         if row['disposition'] == 'versioned-compatibility-default':

@@ -2868,6 +2868,51 @@
 +    ags_global_entry "$@"
 +  fi
 +fi
+--- live/bin/orrery-audit-evidence
++++ installed/bin/orrery-audit-evidence
+@@ -98,7 +98,7 @@
+ PRIV_STATE="$(access_state "$PRIV")"; PUB_STATE="$(access_state "$PUB")"
+ if [ "$PRIV_STATE" = tcc ] || [ "$PUB_STATE" = tcc ]; then
+   echo "TCC 拒否（launchd）: この生成器を launchd（org.huyuhutaru.orrery-audit）配下で走らせた bash は"
+-  echo "  $PRIV → $PRIV_STATE / $PUB → $PUB_STATE（EPERM: Operation not permitted）。"
++  echo "  $PRIV → $PRIV_STATE / $PUB → ${PUB_STATE}（EPERM: Operation not permitted）。"
+   echo "  同じコマンドを対話 shell で実行すると読める（K-4 便9376 実測）。launchd の bash に Removable Volumes／"
+   echo "  Full Disk Access が与えられるまで、§5 の件数は launchd 経由では出ない。手動: orrery-audit-evidence <out.md>"
+ elif [ "$PRIV_STATE" != ok ]; then
+--- live/bin/test_agentstack_jobend.py
++++ installed/bin/test_agentstack_jobend.py
+@@ -200,7 +200,7 @@
+         here = Path(__file__).parent
+         baseline = here / 'before-watch.py.txt'
+         if not baseline.exists():
+-            baseline = here / 'agentstack-seat-stall-watch.py.bak-20261020-jobend'
++            baseline = here.parent / 'docs/orrery-up-2/live-code/bin/agentstack-seat-stall-watch.py.bak-20261020-jobend'
+         def functions(path):
+             tree = ast.parse(path.read_text())
+             return {n.name: n for n in tree.body if isinstance(n, ast.FunctionDef)}
+--- live/bin/test_agentstack_orphan.py
++++ installed/bin/test_agentstack_orphan.py
+@@ -198,7 +198,7 @@
+     def test_existing_watcher_functions_byte_ast_unchanged(self):
+         b=Path(__file__).parent
+         def funcs(p):return {x.name:ast.dump(x) for x in ast.parse(p.read_text()).body if isinstance(x,ast.FunctionDef)}
+-        old=funcs(b/'agentstack-seat-stall-watch.py.bak-20261021-orphan');new=funcs(b/'agentstack-seat-stall-watch.py')
++        old=funcs(b.parent/'docs/orrery-up-2/live-code/bin/agentstack-seat-stall-watch.py.bak-20261021-orphan');new=funcs(b/'agentstack-seat-stall-watch.py')
+         for name in old:
+             if name!='guarded_main':self.assertEqual(old[name],new[name],name)
+ 
+--- live/bin/test_agentstack_unstick_seats.py
++++ installed/bin/test_agentstack_unstick_seats.py
+@@ -234,7 +234,8 @@
+         module_path=str(SCRIPT.with_name('agentstack_unstick_seats.py'))
+         code="import importlib.util,json,os,sys,time; s=importlib.util.spec_from_file_location('native_watchdog',"+repr(module_path)+"); m=importlib.util.module_from_spec(s); s.loader.exec_module(m); w=object.__new__(m.Watchdog); w.test=False; print(json.dumps({'pid':os.getpid(),'version':list(sys.version_info[:3]),'value':w.monotonic(),'uptime':time.clock_gettime(time.CLOCK_UPTIME_RAW)}))"
+         evidence=[]
+-        for executable,version in [('/usr/bin/python3',[3,9,6]),('/opt/homebrew/bin/python3',[3,14,7])]:
++        for executable in ['/usr/bin/python3','/opt/homebrew/bin/python3']:
++            version=json.loads(subprocess.check_output([executable,'-c','import json,sys; print(json.dumps(list(sys.version_info[:3])))']))
+             samples=[]
+             for _ in range(2):
+                 child=subprocess.run([executable,'-c',code],capture_output=True,text=True)
 --- live/claude/CLAUDE.md
 +++ installed/claude/CLAUDE.md
 @@ -1,135 +1,218 @@
@@ -131954,7 +131999,7 @@
  
  pattern = re.compile(r"^\s*export\s+" + re.escape(name) + r"=(.*)$")
  for line in raw.splitlines():
-@@ -33,11 +37,131 @@
+@@ -33,11 +37,132 @@
      try:
          values = shlex.split(match.group(1), comments=True, posix=True)
      except ValueError:
@@ -132012,6 +132057,7 @@
 +AGENTSTACK_CODEX_CHILD_APPROVAL
 +AGENTSTACK_CODEX_CHILD_CONFIG_OVERLAY
 +AGENTSTACK_CODEX_NETWORK
++AGENTSTACK_CODEX_SANDBOX
 +AGENTSTACK_CHILD_DEFAULT_TOOLS
 +AGENTSTACK_CODEX_ADD_DIRS
 +AGENTSTACK_CHILD_RESUME_RETENTION_DAYS
@@ -133367,7 +133413,19 @@
  }
  
  # Match only the LAST composer row, not notification history or an accepted
-@@ -389,20 +599,17 @@
+@@ -349,8 +559,9 @@
+ # interrupt a working agent or flush its already-accepted tool-call queue.
+ inject_notification() (
+     local session_name="$1" agent_name="$2" marker="$3" prompt="$4"
+-    acquire_delivery_lease "$agent_name" "notification-pane" || return 4
+-    trap 'release_delivery_lease "$agent_name" "notification-pane"' EXIT
++    local pane_lease_owner
++    pane_lease_owner=$(acquire_delivery_lease "$agent_name" "notification-pane") || return 4
++    trap 'release_delivery_lease "$agent_name" "notification-pane" "$pane_lease_owner"' EXIT
+     local screen
+     screen=$(run_to "$TMUX_TIMEOUT" tmux capture-pane -t "$session_name" -p 2>/dev/null) || return 2
+     if printf '%s\n' "$screen" | notification_is_in_input "$marker"; then
+@@ -389,20 +600,17 @@
      local signal_file="$1" agent_name="$2" msg_key="$3"
      local from="$4" subject="$5" importance="$6" per_msg_file="$7"
      local body_snippet="${8:-}" body_truncated="${9:-0}"
@@ -133395,7 +133453,7 @@
          if (( per_msg_file == 1 )); then
              rm -f "${signal_file:?}" 2>/dev/null || true
              rmdir "$(dirname "${signal_file:?}")" 2>/dev/null || true
-@@ -410,15 +617,52 @@
+@@ -410,15 +618,52 @@
          return 0
      fi
  
@@ -133455,7 +133513,7 @@
              log "Dropped stale signal for session-less agent $agent_name (msg $msg_key, >24h)"
          fi
          return 0
-@@ -436,13 +680,13 @@
+@@ -436,13 +681,13 @@
      if [ "$rc" -ne 0 ]; then
          # capture が時間内に返らない = server stall。inject せず後で再試行。
          state_mark_result "$agent_name" "$msg_key" "capture_timeout" "watcher"
@@ -133471,7 +133529,7 @@
          return 0
      fi
  
-@@ -471,12 +715,26 @@
+@@ -471,12 +716,26 @@
              *) result_name="inject_failed" ;;
          esac
          state_mark_result "$agent_name" "$msg_key" "$result_name" "watcher"
@@ -133501,7 +133559,7 @@
      log "  Injected notification into '$agent_name' (session: $session_name)"
      # Per-message files are watcher-owned (each represents one delivery); unlink
      # them on success so identical msg_ids never re-fire. Legacy single-file
-@@ -500,14 +758,14 @@
+@@ -500,14 +759,14 @@
  }
  
  if command -v fswatch &>/dev/null; then

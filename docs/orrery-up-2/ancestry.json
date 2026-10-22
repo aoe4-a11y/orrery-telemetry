@@ -1,0 +1,15 @@
+{
+  "upstream_tag": {
+    "rev": "15c00c54c9774c390bdafe332603292b506d76d2",
+    "is_ancestor": true
+  },
+  "up1": {
+    "rev": "29070a0d6bbab0d0db6227a783f0f9b8b30eb5ae",
+    "is_ancestor": true
+  },
+  "original_fork": {
+    "rev": "e5039ff79663d99764d83e0cfa6961074ec60199",
+    "is_ancestor": true
+  },
+  "current_code_head": "1d42c7235e59c53376e20033c72360f6fa2693fd"
+}

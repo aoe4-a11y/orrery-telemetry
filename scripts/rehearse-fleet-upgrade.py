@@ -71,7 +71,7 @@ def main():
         dst=stack/rel;dst.parent.mkdir(parents=True,exist_ok=True);dst.write_text(text);dst.chmod(0o600)
     (stack/'install-state.json').write_text(json.dumps({'install_dir':str(stack),'owned_files':[str(stack/p) for p in seeded],'schema_version':1}))
     fake=a.root/'rehearsal-fake-bin';fake.mkdir(exist_ok=True)
-    for name,body in {'uname':'#!/bin/sh\necho Linux\n','systemctl':'#!/bin/sh\nexit 1\n','tmux':'#!/bin/sh\nexit 1\n','pkill':'#!/bin/sh\necho isolated-pkill-refused >&2\nexit 1\n','killall':'#!/bin/sh\necho isolated-killall-refused >&2\nexit 1\n'}.items():
+    for name,body in {'uname':'#!/bin/sh\necho Linux\n','systemctl':'#!/bin/sh\nexit 1\n','tmux':'#!/bin/sh\nexit 1\n','pkill':'#!/bin/sh\nprintf \"pkill refused\\n\" >> \"'+str(a.root/'process-cleanup-refusals.log')+'\"\nexit 1\n','killall':'#!/bin/sh\nprintf \"killall refused\\n\" >> \"'+str(a.root/'process-cleanup-refusals.log')+'\"\nexit 1\n'}.items():
         p=fake/name;p.write_text(body);p.chmod(0o755)
     mail_port=_free_port();dashboard_port=_free_port();mail_url=f'http://127.0.0.1:{mail_port}/mcp'
     env={k:v for k,v in os.environ.items() if not k.startswith(('AGENTSTACK_','AGS_','CHILD_','PARENT_')) and k not in ('AGENT_NAME','CODEX_HOME','PROJECT_KEY','MCP_AGENT_MAIL_TOKEN')}
@@ -150,13 +150,19 @@ def main():
         result['native_tls_comments_retained']=all(line in generated for line in pathlib.Path('/Users/huyuhutaru/.agentstack/env.sh').read_text().splitlines() if line.startswith('# 2026-10-22 head:') or line.startswith('# 席の Codex'))
         manifest=json.loads((stack/'install-state.json').read_text())
         result['native_tls_manifest_retained']=manifest['env']['AGENTSTACK_CODEX_BIN']==str(native_tls)
-        result['custom_exports_retained']=all('export '+k+'=' in generated for k in ['AGENTSTACK_CODEX_SANDBOX','EXAMFORGE_MIN_FREE_MB','EXAMFORGE_HEAVY_SLOTS'])
+        custom_keys=['AGENTSTACK_CODEX_SANDBOX','EXAMFORGE_MIN_FREE_MB','EXAMFORGE_HEAVY_SLOTS']
+        result['custom_exports_retained']=all(next((line for line in old_env.splitlines() if line.startswith('export '+key+'=')),None)==next((line for line in generated.splitlines() if line.startswith('export '+key+'=')),None) for key in custom_keys)
         result['optional_env_preserved']=(stack/'integrations/codex_app/env.sh').read_text().endswith('export AGENTSTACK_CODEX_APP_WAKE_POLL_SECONDS=2\n')
         result['version']=(stack/'VERSION').read_text().strip()
         import urllib.request
         with urllib.request.urlopen(f'http://127.0.0.1:{dashboard_port}/api/version',timeout=5) as response:
             result['dashboard_version']=json.load(response)
         result['rollback_snapshot']=str(a.root/'rollback/payload-before-upgrade')
+        audit=a.root/'process-cleanup-refusals.log'
+        result['process_cleanup_refusals']=audit.read_text().splitlines() if audit.is_file() else []
+        result['process_cleanup_stubs']={name:sha(fake/name) for name in ('pkill','killall')}
+        assert 'pkill refused' in result['process_cleanup_refusals'], 'dashboard startup did not reach the refusal stub'
+        (ROOT/'docs/orrery-up-2/process-cleanup-refusals.txt').write_text(audit.read_text())
         if result['comparison_failed'] or not result['custom_exports_retained'] or not all(result[k] for k in ('native_tls_bin_retained','native_tls_comments_retained','native_tls_manifest_retained')):raise RuntimeError('customization comparison failed')
     finally:
         stop_dashboard(home, label_prefix='org.agentstack.test.orrery-up-2')

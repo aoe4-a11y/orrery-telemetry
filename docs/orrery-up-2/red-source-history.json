@@ -1,0 +1,102 @@
+[
+  {
+    "category": "legacy_literal_notify",
+    "command": [
+      "git",
+      "log",
+      "--format=%H %s",
+      "--all",
+      "-S",
+      "inject_notification \"$session_name\"",
+      "--",
+      "hooks/watch_agent_mail_signals.sh"
+    ],
+    "history": [
+      "3125c0b423470b865f79a66e3adc0d0a870d9e04 Preserve post-Oct1 fleet tools and approved versioned spawn compatibility",
+      "5159d621e40f6ae65b26793e0a87e9e246f84d3a sync: preserve deployed hooks/watch_agent_mail_signals.sh in source",
+      "fb17fa82a6473dbfe0ffaa78303464a0078ede0a fix(mail): retrieve full recipient messages and recover retained notifications"
+    ]
+  },
+  {
+    "category": "sandbox_setting",
+    "command": [
+      "git",
+      "log",
+      "--format=%H %s",
+      "--all",
+      "-S",
+      "\"AGENTSTACK_CODEX_SANDBOX\":",
+      "--",
+      "scripts/install.sh"
+    ],
+    "history": [
+      "701b298edbeee86013773970d1d9a07210097b1a Carry fork sandbox override through modern spawn, resume and rendered service environment"
+    ]
+  },
+  {
+    "category": "embed_startup_rule",
+    "command": [
+      "git",
+      "log",
+      "--format=%H %s",
+      "--all",
+      "-S",
+      "起動時のタスク取得用",
+      "--",
+      "hooks/spawn_child.sh"
+    ],
+    "history": [
+      "8849a933840fe351f71379c0d85c2a4c027caab4 sync: preserve deployed hooks/spawn_child.sh in source",
+      "fb17fa82a6473dbfe0ffaa78303464a0078ede0a fix(mail): retrieve full recipient messages and recover retained notifications"
+    ]
+  },
+  {
+    "category": "update_escape",
+    "command": [
+      "git",
+      "log",
+      "--format=%H %s",
+      "--all",
+      "-S",
+      "tmux send-keys -t \"$session_name\" Escape",
+      "--",
+      "hooks/spawn_child.sh"
+    ],
+    "history": [
+      "1d42c7235e59c53376e20033c72360f6fa2693fd Preserve fleet notification protocols and isolate all upgrade verification",
+      "ef51345b2e3d26bfc19c12e926e4d1e5a257e52c Preserve fleet-local tools, backup generations and R-061/R-062 upgrade policy"
+    ]
+  },
+  {
+    "category": "inactive_examples",
+    "command": [
+      "git",
+      "log",
+      "--format=%H %s",
+      "--all",
+      "--diff-filter=A",
+      "--",
+      "scripts/lib/install_examples.py"
+    ],
+    "history": [
+      "73e8cc8537f2363af290e72b494d54e4f62157b6 検証済みruntime参照入りの非有効設定例と手順を配布"
+    ]
+  },
+  {
+    "category": "clock_version_assertion",
+    "command": [
+      "git",
+      "log",
+      "--format=%H %s",
+      "--all",
+      "-S",
+      "[3,14,7]",
+      "--",
+      "bin/test_agentstack_unstick_seats.py"
+    ],
+    "history": [
+      "1d42c7235e59c53376e20033c72360f6fa2693fd Preserve fleet notification protocols and isolate all upgrade verification",
+      "3125c0b423470b865f79a66e3adc0d0a870d9e04 Preserve post-Oct1 fleet tools and approved versioned spawn compatibility"
+    ]
+  }
+]
