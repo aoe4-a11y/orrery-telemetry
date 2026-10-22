@@ -160,7 +160,7 @@
     {
       "path": "/Users/huyuhutaru/.dev-storage-governor/examforge/20261022T084947Z-receipt-1639da14/upstream-control-bundle.json",
       "repository_path": "docs/orrery-up-2/upstream-control-bundle.json",
-      "sha256": "1c13fe0e6997b9c9624975f6728b082ac9d943b1c3719f740e7f6385c90c4ad0",
+      "sha256": "cb8963dfaa11f24bb9a929bf2c97a68ff58010496d804c19736ab67b8e95d0b8",
       "shows": "未pushの対照commitをR-095どおりbundleで退避しverify0"
     },
     {

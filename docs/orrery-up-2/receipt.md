@@ -68,7 +68,7 @@ python3 '<SNAPSHOT>/restore-tool.py.txt' restore --home /Users/huyuhutaru --dire
 | `/Users/huyuhutaru/.dev-storage-governor/examforge/20261022T084947Z-receipt-1639da14/safety-audit.json` | `9b2ef1ae13bd0f375530b49c65fdd512c19b2af4148e682e2e0854f9d001dd8c` | 既存pkillの発見・head裁定・最終stub測定を区別 |
 | `/Users/huyuhutaru/.dev-storage-governor/examforge/20261022T084947Z-receipt-1639da14/process-cleanup.json` | `9e72f0af3fd5effe3107219e6e3857d13ce2b3406a89ff07dee746ef23a8215a` | 残った隔離Mail2本と専用pane/watcherだけを停止 |
 | `/Users/huyuhutaru/.dev-storage-governor/examforge/20261022T084947Z-receipt-1639da14/process-audit-final.json` | `117222682e3a2850e5bcb535d5bcd1a09c4c11736b877337400789e3335a4772` | owned rootに依存するhelper processは0、実Mail18765のPIDを別記 |
-| `/Users/huyuhutaru/.dev-storage-governor/examforge/20261022T084947Z-receipt-1639da14/upstream-control-bundle.json` | `1c13fe0e6997b9c9624975f6728b082ac9d943b1c3719f740e7f6385c90c4ad0` | 未pushの対照commitをR-095どおりbundleで退避しverify0 |
+| `/Users/huyuhutaru/.dev-storage-governor/examforge/20261022T084947Z-receipt-1639da14/upstream-control-bundle.json` | `cb8963dfaa11f24bb9a929bf2c97a68ff58010496d804c19736ab67b8e95d0b8` | 未pushの対照commitをR-095どおりbundleで退避しverify0 |
 | `/Users/huyuhutaru/.dev-storage-governor/examforge/20261022T084947Z-receipt-1639da14/guide.md` | `79a55265d2330320ee07349f6eeebbf7ff463a265a58aef51a491304c5b5c540` | 殿の端末の開き方・1行・承認4件・報告文・戻し方3行 |
 
 ## 隔離doctorの警告（原文）
