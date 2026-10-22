@@ -20,7 +20,7 @@ provider は接続先、model はそこで使うモデル、harness は道具や
 
 ![NEW AGENT で設定済み Local model と dsh / Hermes を選ぶ](docs/img/native-harness-picker.png)
 
-合成 catalog を製品 UI で表示した画面例です。[選択操作の GIF](docs/img/native-harness-selection.gif)は SPAWN の手前までです。
+Telemetry 同梱 NEW AGENT の実画面です。正規の科学者名・肖像と、Claude / Codex / DeepSeek / Local models の選択を表示しています。[選択操作の GIF](docs/img/native-harness-selection.gif)は起動前までです。[cockpit の NEW AGENT](https://github.com/gyroid-eth/orrery/blob/master/docs/usage.md)とは別の画面です。
 
 ## Telemetry だけを入れる
 
