@@ -20,7 +20,7 @@ Configured DeepSeek / Local models can be selected through Model and Harness (ds
 
 ![Select a configured Local model and dsh / Hermes in NEW AGENT](docs/img/native-harness-picker.png)
 
-Fictional catalog data rendered by the product UI. [Watch the selection GIF](docs/img/native-harness-selection.gif); it stops before SPAWN.
+The actual bundled Telemetry NEW AGENT, showing the real scientist names, portraits, and Claude / Codex / DeepSeek / Local models choices. [Watch the selection GIF](docs/img/native-harness-selection.gif); it stops before launching. The [cockpit NEW AGENT](https://github.com/gyroid-eth/orrery/blob/master/docs/en/usage.md) is a separate screen.
 
 ## Install Telemetry only
 

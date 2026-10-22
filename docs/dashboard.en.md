@@ -308,7 +308,7 @@ This section describes the bundled Telemetry screen. Model / Harness uses the sa
 
 Choose a configured provider, its Model, and an available Harness. The selection GIF stops before SPAWN: [watch the Model / Harness selection](img/native-harness-selection.gif).
 
-The screenshots and GIF use fictional agents and data rendered by the product UI. They illustrate controls and badges, not credential setup or end-to-end acceptance of every combination.
+The NEW AGENT image and GIF show the actual bundled Telemetry screen, real catalog, scientist names and official portraits. They show Claude / Codex / DeepSeek / Local models and dsh / Hermes selection before launching, with the working directory and task cropped out. The [cockpit NEW AGENT](https://github.com/gyroid-eth/orrery/blob/master/docs/en/usage.md) is a different screen. The DECK / NETWORK examples below still use synthetic data. These images do not demonstrate credential setup or end-to-end acceptance of every combination.
 
 ![DECK examples for DeepSeek and Local Qwen with dsh and Hermes](img/native-local-deck.png)
 

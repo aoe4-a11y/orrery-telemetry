@@ -330,7 +330,7 @@ server の provider / model / effort allow-list を catalog と validation の�
 
 設定済みの provider、Model、利用可能な Harness を順に選びます。GIF は SPAWN の手前までです。[Model / Harness の選択操作を見る](img/native-harness-selection.gif)。
 
-スクリーンショットと GIF は、架空の agent とデータを製品 UI で表示した画面例です。資格の登録や、全組合せの通し受け入れが済んだことを示すものではありません。
+NEW AGENT の画像と GIF は、実際の catalog・科学者名・正規の肖像を使った Telemetry 同梱画面です。Claude / Codex / DeepSeek / Local models と dsh / Hermes の選択を起動前まで撮影し、作業ディレクトリと task は切り取っています。[cockpit の NEW AGENT](https://github.com/gyroid-eth/orrery/blob/master/docs/usage.md)とは画面が異なります。以下の DECK / NETWORK は引き続き合成データの表示例です。いずれも資格の登録や全組合せの通し受け入れを示すものではありません。
 
 ![DECK で DeepSeek と Local Qwen の dsh / Hermes agent を見分ける画面例](img/native-local-deck.png)
 
