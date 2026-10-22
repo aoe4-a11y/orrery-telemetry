@@ -25,3 +25,5 @@ installer は候補の build、専用 port と DB snapshot による事前検証
 最初の 2 件は `Type yes to continue`、後の 2 件は既知の既存 block があれば `Move known ORRERY instructions to the user file and remove old blocks? … [Y/n]`。後者の空回答は移動・除去への同意、`n` は既存 block を保持する選択。既に同一の項目や新規 target は確認が省略される場合がある。Mail の token・DB・登録は新しく作り直さない。完了時は installer exit、`mail-result:`、選択された candidate と service env の path、稼働 PID、exact fetch の再確認を head が記録する。`agentstack-doctor` の警告は原文を残す。source worktree の片づけ候補は入口が path・bytes・file 数を出力するので、稼働 Mail の candidate/venv と区別して処理する。
 
 この wrapper 自体は本番未実行。shell 構文検査と repo 試験、隔離 Mail の HTTP 証拠を受領書で示す。
+
+既存 Codex proxy は `agent_mail_client.py:123–149` で `tools/list` を process 内に cache する。旧 schema を既に cache した process は切替後も exact 非対応と判定し得る（同 file L224–225）。隔離 HTTP は新規 client の実測であり、既存 proxy への hot 反映は未測定。head は切替後に新規 proxy から exact 取得を確認し、既存 proxy の再接続・再起動が必要かも確認する。本駅は fleet の proxy を停止せず、cache refresh の新規実装も加えていない。
