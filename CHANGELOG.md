@@ -16,6 +16,10 @@ DeepSeek と Strata（Local/Qwen）を dsh / Hermes から選ぶ標準 NEW AGENT
 
 以下は PR 番号の降順に並べた変更の履歴です。途中段階の「managed」専用起動・backend 共有 HOME・当時の API 世代・後続予定は、その後の標準化と子別 HOME に置き換わっています。現在の導入方法と制限は [導入手順](docs/install.md)、[標準 catalog](docs/managed-catalog.md)、[native 機能の対応範囲](docs/native-capabilities.md) を参照してください。Windows の検証対象は Ubuntu WSL2 であり、Windows native 版とは区別します。
 
+### NEW AGENT の画像を実際の catalog と肖像へ差し替え
+
+同梱 Telemetry の画像と操作 GIF を、全4種類の接続先・正規の科学者名と肖像・dsh / Hermes を表示する実画面へ差し替えました。cockpit の起動画面とは別であることと、DECK / NETWORK の合成表示例との違いを日英の案内に明記しました。
+
 ### Model・Harnessの画面ガイドを追加
 
 DeepSeek / Local と dsh / Hermes の選び方を、New Agent・DECK・NETWORK のスクリーンショットと短い操作 GIF で確認できるようにしました。日英の README と画面案内を現在の選択 UI・子別 HOME・資格参照の説明へ同期しました。画像は架空データを製品 UI で表示した操作例で、資格の登録や全組合せの通し受け入れを保証するものではありません。
