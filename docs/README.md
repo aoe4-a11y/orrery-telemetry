@@ -103,3 +103,5 @@ Telemetry 自体の操作は、header の `HELP MAP`（NETWORK では `SETTINGS`
 - [ORRERY-UP-3 MAIL-FETCH-1 移植表](orrery-up-3/migration.md)
 
 - [ORRERY-UP-4 Claude footer 移植と更新入口](orrery-up-4/guide.md)
+
+- [ORRERY-UP-5 Codex background terminal 表示と更新入口](orrery-up-5/guide.md)

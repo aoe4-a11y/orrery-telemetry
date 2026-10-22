@@ -88,3 +88,5 @@ Documents without a translation are labelled with their original language. Image
 - [ORRERY-UP-3 MAIL-FETCH-1 migration table (Japanese)](orrery-up-3/migration.md)
 
 - [ORRERY-UP-4 Claude footer fix and upgrade entry (Japanese)](orrery-up-4/guide.md)
+
+- [ORRERY-UP-5 Codex background-terminal display and upgrade entry (Japanese)](orrery-up-5/guide.md)
