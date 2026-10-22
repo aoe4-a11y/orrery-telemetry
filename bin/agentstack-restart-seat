@@ -4,15 +4,25 @@
 # 既存席を「同じ名前・同じ身元」で建て直す。名前が変わらないので mail の履歴も切れない。
 # 使ってよい場面: 席の cwd が消えた / TUI が壊れた / 応答不能で復帰しない。
 set -euo pipefail
+ORIGINAL_ARGV=("$@")
+CALLER_PROJECT="${AGENTSTACK_PROJECT_KEY:-${PROJECT_KEY:-}}"
 [ -f "$HOME/.agentstack/env.sh" ] && source "$HOME/.agentstack/env.sh"
+export AGENTSTACK_HOME="${AGENTSTACK_HOME:-$HOME/.agentstack}"
 
 NAME="${1:?seat name (e.g. WarmArchimedes)}"
 TASK="${2:?task file (この席に渡す指示書。1行目が説明になる)}"
-MODEL="${3:-gpt-6.1-sol}"
+MODEL="${3:-gpt-5.6-terra}"
 EFFORT="${4:-medium}"
 WORKDIR="${5:-$HOME/tools/osce-trainer-main}"
 
-TOKEN="$HOME/.agentstack/runtime/agent_token_$NAME"
+STACK_HOME="${AGENTSTACK_HOME:-$HOME/.agentstack}"
+HOOKS_DIR="${AGENTSTACK_LIFECYCLE_HOOKS_DIR:-${AGENTSTACK_HOOKS_DIR:-$STACK_HOME/hooks}}"
+RUNTIME_DIR="${AGENTSTACK_RUNTIME_DIR:-$STACK_HOME/runtime}"
+LIFECYCLE="$HOOKS_DIR/seat_lifecycle.py"
+if ! python3 "$LIFECYCLE" held --runtime "$RUNTIME_DIR" --name "$NAME"; then
+  exec python3 "$LIFECYCLE" lock-exec --runtime "$RUNTIME_DIR" --name "$NAME" -- /bin/bash "$0" "${ORIGINAL_ARGV[@]}"
+fi
+TOKEN="$RUNTIME_DIR/agent_token_$NAME"
 [ -s "$TOKEN" ] || { echo "ERROR: token not found for $NAME ($TOKEN). 新規席なら agentstack-spawn-codex を使え" >&2; exit 1; }
 [ -r "$TASK" ]  || { echo "ERROR: task file not readable: $TASK" >&2; exit 1; }
 
@@ -27,46 +37,26 @@ esac
 [ -d "$WORKDIR" ] || { echo "ERROR: workdir が存在しません: $WORKDIR" >&2; exit 2; }
 
 export PARENT_AGENT="${PARENT_AGENT:-ProudTuring}"
-export AGENTSTACK_PROJECT_KEY="${AGENTSTACK_PROJECT_KEY:-/Users/huyuhutaru/tools/examforge}"
-
-# The new launcher requires a formal binding sidecar. Authenticate this exact
-# reserved identity through the canonical registration library BEFORE stopping
-# its existing pane. This upgrades legacy token-only handoffs without changing
-# the name or guessing a Mail id. No credential is printed or put in the sidecar.
-REGISTER_LIB="${AGENTSTACK_REGISTER_LIB:-$HOME/.agentstack/bin/lib/agentstack-register.sh}"
-[ -r "$REGISTER_LIB" ] || { echo "ERROR: registration library unavailable; existing seat kept running" >&2; exit 1; }
-source "$REGISTER_LIB"
-ags_mail_load_token
-CHILD_REGISTRATION_TOKEN="$(ags_load_registration_token "$NAME")"
-[ -n "$CHILD_REGISTRATION_TOKEN" ] || { echo "ERROR: existing owner credential unavailable; seat kept running" >&2; exit 1; }
-export CHILD_REGISTRATION_TOKEN
-if ! ags_register_session "$AGENTSTACK_PROJECT_KEY" codex "$MODEL" "" "$WORKDIR" "$NAME" reserved >/dev/null 2>&1; then
-  echo "ERROR: existing seat authentication failed; seat kept running" >&2
+if ! STATE_PROJECT="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["project_key"])' "$RUNTIME_DIR/child-agents/$NAME.json" 2>/dev/null)"; then
+  echo "ERROR: authoritative state project is unavailable; preserving seat $NAME" >&2
   exit 1
 fi
-[[ "${AGS_REGISTERED_AGENT_NAME:-}" == "$NAME" && "${AGS_REGISTERED_AGENT_ID:-}" =~ ^[1-9][0-9]*$ ]] || {
-  echo "ERROR: Mail did not confirm the original seat identity; seat kept running" >&2; exit 1;
-}
-"${AGENTSTACK_PYTHON:-python3}" - "$TOKEN.binding.json" "$AGS_REGISTERED_AGENT_ID" "$NAME" "$AGENTSTACK_PROJECT_KEY" <<'PY_BINDING'
-import json,os,pathlib,sys
-p=pathlib.Path(sys.argv[1])
-if p.is_symlink():raise SystemExit('ERROR: binding sidecar is a symlink; seat kept running')
-d={'agent_id':int(sys.argv[2]),'agent_name':sys.argv[3],'project_key':sys.argv[4],'program':'codex'}
-tmp=p.with_name(p.name+'.tmp.'+str(os.getpid()))
-fd=os.open(tmp,os.O_WRONLY|os.O_CREAT|os.O_EXCL,0o600)
-with os.fdopen(fd,'w') as f:
-    json.dump(d,f);f.flush();os.fsync(f.fileno())
-os.replace(tmp,p)
-PY_BINDING
+[[ -n "$STATE_PROJECT" ]] || { echo "ERROR: missing state project; preserving seat" >&2; exit 1; }
+[[ -z "$CALLER_PROJECT" || "$CALLER_PROJECT" == "$STATE_PROJECT" ]] || { echo "ERROR: project mismatch; preserving seat" >&2; exit 1; }
+export AGENTSTACK_PROJECT_KEY="$STATE_PROJECT"
+export PROJECT_KEY="$STATE_PROJECT"
+export AGENTSTACK_REFRESH_CHILD_CONFIG=1
+# Invalidate delayed cleanup from the previous launch before stopping it.
+python3 "$LIFECYCLE" invalidate --runtime "$RUNTIME_DIR" --name "$NAME"
 
-if tmux has-session -t "$NAME" 2>/dev/null; then
+if tmux has-session -t "=$NAME" 2>/dev/null; then
   echo "[restart] killing tmux session: $NAME （この席だけ。server は触らない・M-018）"
-  tmux kill-session -t "$NAME"
+  tmux kill-session -t "=$NAME"
   sleep 1
 fi
 
 cd "$WORKDIR"
-"$HOME/.agentstack/hooks/spawn_child.sh" --codex --model "$MODEL" --effort "$EFFORT" \
+"$HOOKS_DIR/spawn_child.sh" --codex --model "$MODEL" --effort "$EFFORT" \
   --pre-registered "$NAME" --child-token-file "$TOKEN" \
   --embed-task --task-file "$TASK" "$WORKDIR"
 

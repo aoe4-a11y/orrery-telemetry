@@ -215,7 +215,7 @@ VAULT = _env_path("AGENTSTACK_VAULT", "")
 PROJECT_KEY = _env_text("AGENTSTACK_PROJECT_KEY", "")
 LABEL_PREFIX = _env_text("AGENTSTACK_LABEL_PREFIX", "org.agentstack")
 TERMINAL_SETTING = _env_text("AGENTSTACK_TERMINAL", "auto").lower()
-HOOKS_DIR = _env_path("AGENTSTACK_HOOKS_DIR", "~/.agentstack/hooks")
+HOOKS_DIR = _env_path("AGENTSTACK_LIFECYCLE_HOOKS_DIR", _env_path("AGENTSTACK_HOOKS_DIR", "~/.agentstack/hooks"))
 RUNTIME_DIR = _env_path("AGENTSTACK_RUNTIME_DIR", "~/.agentstack/runtime")
 PERSISTENT_PROFILES_DIR = _env_path(
     "AGENTSTACK_PERSISTENT_PROFILES_DIR", "~/.agentstack/profiles"
@@ -8533,6 +8533,9 @@ def _spawn_launch(payload: dict, request: dict, spec: SpawnLaunchSpec,
     # 4) spawn_child.sh --pre-registered を background で起動
     token_file = ""
     token_created = False
+    fleet_legacy = os.environ.get("AGENTSTACK_FLEET_COMPAT") == "1" and provider in {"claude", "codex"}
+    token_identity = None
+    launch_attempt = secrets.token_hex(16)
     log_fh = None
     log_path = None
     log_start_offset = 0
@@ -8540,7 +8543,7 @@ def _spawn_launch(payload: dict, request: dict, spec: SpawnLaunchSpec,
     token_key = re.sub(r"[^A-Za-z0-9_.-]", "_", child_name)
     owner_credential = os.path.join(RUNTIME_DIR, f"agent_token_{token_key}")
 
-    def remove_spawn_credentials(keep_owner_credential: bool = False) -> None:
+    def remove_spawn_credentials_core(keep_owner_credential: bool = False) -> None:
         """Remove both the one-shot handoff and any launcher-persisted copies.
 
         ``keep_owner_credential`` removes only the one-shot handoff; callers
@@ -8565,6 +8568,26 @@ def _spawn_launch(payload: dict, request: dict, spec: SpawnLaunchSpec,
                     "failed to remove failed-spawn credential %s: %s", path, e)
         token_created = False
 
+
+    def remove_spawn_credentials_legacy(keep_owner_credential: bool = False) -> None:
+        """Only the handoff created by this request is ours to remove."""
+        nonlocal token_created
+        if token_created and token_file and token_identity is not None:
+            try:
+                current = os.lstat(token_file)
+                if (current.st_dev, current.st_ino) == token_identity:
+                    os.unlink(token_file)
+            except FileNotFoundError:
+                pass
+            except OSError as error:
+                logging.warning("failed to remove owned handoff: %s", error)
+        token_created = False
+
+
+    def remove_spawn_credentials(keep_owner_credential: bool = False) -> None:
+        if fleet_legacy:
+            return remove_spawn_credentials_legacy(keep_owner_credential)
+        return remove_spawn_credentials_core(keep_owner_credential)
     def retain_recovery_credential() -> tuple[str, dict]:
         """Keep one usable owner credential after a launcher's cleanup was killed.
 
@@ -8576,6 +8599,8 @@ def _spawn_launch(payload: dict, request: dict, spec: SpawnLaunchSpec,
         usable copy is left.  Returns the error clause and result fields.
         """
         nonlocal token_created
+        if fleet_legacy:
+            return "Fleet generation ownership kept; canonical identity preserved", {"recovery_state_retained": True}
         owner_state = _spawn_credential_state(owner_credential, effective_child_token)
         handoff_state = (
             _spawn_credential_state(token_file, effective_child_token)
@@ -8622,6 +8647,8 @@ def _spawn_launch(payload: dict, request: dict, spec: SpawnLaunchSpec,
 
     def kill_spawn_session() -> bool:
         nonlocal spawn_stop_confirmed
+        if fleet_legacy:
+            return kill_spawn_session_legacy()
         spawn_stop_confirmed = False
         if log_path is None:
             # Logging failed before the launcher started: no session ownership.
@@ -8670,18 +8697,44 @@ def _spawn_launch(payload: dict, request: dict, spec: SpawnLaunchSpec,
         return retained_registration_error(
             error + '; cleanup is unconfirmed; owner state and credential handoff were retained',
             cleanup_incomplete=True, cleanup_state='unknown', **fields)
+    def kill_spawn_session_legacy() -> bool:
+        # A delayed dashboard callback cannot kill a successor by name. The
+        # launcher journal must match this request and still own every object.
+        import importlib.util
+        helper = os.path.join(os.path.dirname(SPAWN_SCRIPT), "seat_lifecycle.py")
+        try:
+            spec = importlib.util.spec_from_file_location("dashboard_seat_lifecycle", helper)
+            lifecycle = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(lifecycle)
+            seat = lifecycle.Seat(RUNTIME_DIR, child_name)
+            with seat.locked(blocking=False):
+                value = seat.validate(seat.attempt_journal(launch_attempt))
+                if (value is None or value.get("attempt") != launch_attempt
+                        or not value.get("session_started")):
+                    return False
+                subprocess.run(["tmux", "kill-session", "-t", f"={child_name}"],
+                               capture_output=True, text=True)
+                seat.delete(value["journal"])
+                return True
+        except (OSError, ValueError, KeyError, TypeError, ImportError, AttributeError):
+            logging.warning("no matching launch ownership; preserving seat %s", child_name)
+
+        return False
+
 
     token_dir = os.path.join(RUNTIME_DIR, "spawn-tokens")
     try:
         os.makedirs(token_dir, mode=0o700, exist_ok=True)
         os.chmod(token_dir, 0o700)
         token_file = os.path.join(
-            token_dir, f"{child_name}.{secrets.token_hex(8)}.token")
+            token_dir, f"{child_name}.{secrets.token_hex(16)}.token")
         open_flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL
         if hasattr(os, "O_NOFOLLOW"):
             open_flags |= os.O_NOFOLLOW
         fd = os.open(token_file, open_flags, 0o600)
         token_created = True
+        opened = os.fstat(fd)
+        token_identity = (opened.st_dev, opened.st_ino)
         with os.fdopen(fd, "w") as f:
             f.write(effective_child_token)
             f.flush()
@@ -8706,6 +8759,10 @@ def _spawn_launch(payload: dict, request: dict, spec: SpawnLaunchSpec,
                 f.flush()
                 os.fsync(f.fileno())
             os.chmod(binding_file, 0o600)
+        if fleet_legacy:
+            sys.path.insert(0, os.path.dirname(SPAWN_SCRIPT))
+            from seat_lifecycle import bind_handoff
+            bind_handoff(Path(RUNTIME_DIR), Path(token_file), child_name, project_key)
     except Exception as e:  # noqa: BLE001
         remove_spawn_credentials()
         return retained_registration_error(f"spawn token write failed: {e}")
@@ -8731,6 +8788,7 @@ def _spawn_launch(payload: dict, request: dict, spec: SpawnLaunchSpec,
     else:
         env["PARENT_AGENT"] = parent
     env["PROJECT_KEY"] = project_key
+    env["AGENTSTACK_LAUNCH_ATTEMPT_ID"] = launch_attempt
     # launchd の最小 PATH には ~/.local/bin が無く、spawn_child.sh が tmux 内で
     # 起動する `zsh -lc` は非対話シェルのため ~/.zshrc を source せず claude が
     # PATH に乗らない (cold start で claude 即落ち → tmux session が cleanup-

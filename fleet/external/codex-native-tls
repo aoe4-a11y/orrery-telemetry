@@ -1,0 +1,8 @@
+#!/bin/sh
+# 2026-10-22 head ProudTuring: eMudhra intermediate CA key compromise.
+# Codex 0.163.0 switches to rustls with roots that still trust the compromised chain whenever
+# SSL_CERT_FILE or CODEX_CA_CERTIFICATE is set (codex-rs custom_ca.rs: use_rustls_tls +
+# add_root_certificate). Without them it uses macOS native TLS, which reports the chain revoked.
+# ~/.zshenv sets SSL_CERT_FILE for curl and Python, so strip both for Codex only.
+# Remove once a Codex release ships rustls-webpki >= 0.103.16 / webpki-roots >= 1.0.10.
+exec /usr/bin/env -u SSL_CERT_FILE -u CODEX_CA_CERTIFICATE /Users/huyuhutaru/.local/bin/codex "$@"

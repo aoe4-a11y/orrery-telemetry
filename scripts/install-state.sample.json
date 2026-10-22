@@ -89,7 +89,9 @@
     "AGENTSTACK_CODEX_BIN": "/home/alice/.local/bin/codex",
     "AGENTSTACK_AUTO_OPEN_CHILD": "1",
     "AGENTSTACK_TERMINAL": "auto",
-    "AGENTSTACK_CODEX_SANDBOX": "workspace-write"
+    "AGENTSTACK_CODEX_SANDBOX": "workspace-write",
+    "AGENTSTACK_MANAGED_SPAWN_CONFIG": "",
+    "AGENTSTACK_DSH_NODE": ""
   },
   "install_dir": "/home/alice/.agentstack",
   "instruction_receipts": [],
@@ -255,6 +257,11 @@
         "matcher": "Bash"
       },
       {
+        "command": "python3 /home/alice/.agentstack/hooks/head-send-lint.py",
+        "event": "PreToolUse",
+        "matcher": "mcp__orrery-mail__send_message"
+      },
+      {
         "command": "/bin/bash /home/alice/.agentstack/hooks/release-file-reservation.sh",
         "event": "PostToolUse",
         "matcher": "Edit|Write"
@@ -278,11 +285,6 @@
         "command": "/bin/bash /home/alice/.agentstack/hooks/release-all-reservations.sh",
         "event": "SessionEnd",
         "matcher": null
-      },
-      {
-        "command": "python3 /home/alice/.agentstack/hooks/head-send-lint.py",
-        "event": "PreToolUse",
-        "matcher": "mcp__orrery-mail__send_message"
       }
     ],
     "after_sha256": "example-after-sha256",
@@ -325,6 +327,11 @@
         "matcher": "Bash"
       },
       {
+        "command": "python3 /home/alice/.agentstack/hooks/head-send-lint.py",
+        "event": "PreToolUse",
+        "matcher": "mcp__orrery-mail__send_message"
+      },
+      {
         "command": "/bin/bash /home/alice/.agentstack/hooks/release-file-reservation.sh",
         "event": "PostToolUse",
         "matcher": "Edit|Write"
@@ -348,11 +355,6 @@
         "command": "/bin/bash /home/alice/.agentstack/hooks/release-all-reservations.sh",
         "event": "SessionEnd",
         "matcher": null
-      },
-      {
-        "command": "python3 /home/alice/.agentstack/hooks/head-send-lint.py",
-        "event": "PreToolUse",
-        "matcher": "mcp__orrery-mail__send_message"
       }
     ],
     "hooks_dir": "/home/alice/.agentstack/hooks",
@@ -360,6 +362,9 @@
     "operation": "merge",
     "permissions": {
       "added": {
+        "additionalDirectories": [
+          "/home/alice/.agentstack/skills"
+        ],
         "allow": [
           "mcp__orrery-mail__health_check",
           "mcp__orrery-mail__runtime_status",
@@ -389,20 +394,17 @@
           "mcp__orrery-mail__hard_delete_project",
           "mcp__orrery-mail__purge_old_messages",
           "Edit(//home/alice/.agentstack/skills/**)"
-        ],
-        "additionalDirectories": [
-          "/home/alice/.agentstack/skills"
         ]
       },
       "migrated_legacy": {
+        "additionalDirectories": [],
         "allow": [],
-        "deny": [],
-        "additionalDirectories": []
+        "deny": []
       },
       "skipped_existing": {
+        "additionalDirectories": [],
         "allow": [],
-        "deny": [],
-        "additionalDirectories": []
+        "deny": []
       }
     },
     "respected_removals": [],
@@ -434,5 +436,8 @@
     }
   ],
   "tier": "tier1",
-  "tool": "claude-agent-stack"
+  "tool": "claude-agent-stack",
+  "managed_harness_roots": [],
+  "example_files": [],
+  "example_dirs": []
 }

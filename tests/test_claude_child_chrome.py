@@ -243,7 +243,7 @@ def test_default_spawn_matches_the_pre_chrome_launcher_exactly(tmp_path):
     assert raw_inner.replace(ARGV_PROMPT, "").endswith(f"-lc '{PRE_CHROME_INNER}'")
 
 
-@pytest.mark.parametrize("warm_model", ["opus", "claude-sonnet-5"])
+@pytest.mark.parametrize("warm_model", ["opus", "sonnet"])
 def test_default_spawn_still_claims_a_ready_warm_session(tmp_path, warm_model):
     env, workdir = _launch_env(tmp_path)
     env["AGENTSTACK_HOOKS_DIR"] = str(_hooks_with_warm_pool(tmp_path))

@@ -3,7 +3,7 @@
 from __future__ import annotations
 import argparse,hashlib,json,os,pathlib,shutil,sys
 
-PAYLOAD=('config','bin','hooks','skills','dashboard','codex','claude','integrations/codex_app','VERSION','env.sh','install-state.json')
+PAYLOAD=('config','bin','hooks','skills','dashboard','codex','claude','integrations/codex_app','releases/seat-lifecycle','VERSION','env.sh','install-state.json')
 EXTERNAL=('.claude/settings.json','.claude.json','.claude/CLAUDE.md','.codex/AGENTS.md')
 
 def digest(p):return hashlib.sha256(p.read_bytes()).hexdigest()
@@ -28,6 +28,10 @@ def snapshot(home, dest, project_key=None, codex_home=None):
     for name in PAYLOAD:
         p=live/name
         if p.exists() or p.is_symlink():copy(p,pathlib.Path('.agentstack')/name)
+    # Runtime code is payload; never walk the credential/state namespace.
+    for name in ("auto-restart-on-handoff.sh", "head-evidence-export.py", "head-stop-guard.sh", "head-wait-event.sh", "retire-drain.sh", "storage-v6-propagate.py"):
+        p=live/"runtime"/name
+        if p.is_file():copy(p,pathlib.Path(".agentstack/runtime")/name)
     for name in EXTERNAL:
         p=home/name
         if p.is_file():copy(p,pathlib.Path(name))

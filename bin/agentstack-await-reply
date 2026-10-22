@@ -110,7 +110,7 @@ def _messages(response: dict) -> list[dict]:
     return []
 
 
-def _pick(messages: list[dict], sender: str | None, after_id: int | None) -> dict | None:
+def _pick(messages: list[dict], sender: str | None, after_id: int | None, exact_id: int | None = None) -> dict | None:
     candidates = []
     for message in messages:
         if not isinstance(message, dict):
@@ -119,6 +119,8 @@ def _pick(messages: list[dict], sender: str | None, after_id: int | None) -> dic
             continue
         message_id = message.get("id")
         if after_id is not None and (not isinstance(message_id, int) or message_id <= after_id):
+            continue
+        if exact_id is not None and message_id != exact_id:
             continue
         candidates.append(message)
     if not candidates:
@@ -157,7 +159,9 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--project-key", default=None)
     parser.add_argument("--from", dest="sender", default=None)
     parser.add_argument("--from-id", dest="sender_id", type=int, default=None)
-    parser.add_argument("--after-id", type=int, default=None)
+    recovery = parser.add_mutually_exclusive_group()
+    recovery.add_argument("--after-id", type=int, default=None)
+    recovery.add_argument("--message-id", type=int, default=None)
     parser.add_argument("--timeout", type=float, default=300.0)
     parser.add_argument("--interval", type=float, default=3.0)
     args = parser.parse_args(argv)
@@ -199,6 +203,8 @@ def main(argv: list[str] | None = None) -> int:
                 before = None
                 while time.monotonic() < global_deadline:
                     parameters = {'limit':20, 'include_bodies':True}
+                    if args.message_id is not None:
+                        parameters["before_id"] = args.message_id + 1
                     if before is not None:
                         parameters['before_id'] = before
                     page = client.call('fetch_inbox', parameters)
@@ -210,7 +216,7 @@ def main(argv: list[str] | None = None) -> int:
                     if args.after_id is None or len(page) < 20 or min(row['id'] for row in page) <= args.after_id:
                         break
                     before = min(row['id'] for row in page)
-                return rows if reached else None
+                return [r for r in rows if args.message_id is None or r.get('id') == args.message_id] if reached else None
             response = _call(
                 url,
                 "fetch_inbox",
@@ -219,6 +225,7 @@ def main(argv: list[str] | None = None) -> int:
                     "agent_name": args.agent_name,
                     "limit": 20,
                     "include_bodies": True,
+                    **({"message_id": args.message_id} if args.message_id is not None else {}),
                 },
             )
         except runtime_api['ClientError'] as exc:
@@ -230,13 +237,14 @@ def main(argv: list[str] | None = None) -> int:
             response = None
         except (urllib.error.URLError, OSError, ValueError):
             response = None
-        return _messages(response) if response is not None else None
+        rows = _messages(response) if response is not None else None
+        return [r for r in rows if args.message_id is None or r.get("id") == args.message_id] if rows is not None else None
     try:
         code, match = wait_for_reply(fetch, timeout=args.timeout, interval=args.interval,
                                      sender=None if client is not None else args.sender, after_id=args.after_id)
-    except runtime_api['ClientError'] as exc:
+    except (runtime_api['ClientError'], RuntimeError) as exc:
         print(f"agentstack-await-reply: {exc}", file=sys.stderr)
-        return 2
+        return 1
     if match is not None:
         print(json.dumps(match, ensure_ascii=False))
     elif code == 1:

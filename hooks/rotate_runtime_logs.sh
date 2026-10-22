@@ -16,6 +16,8 @@
 #   AGENTSTACK_LOG_ROTATE_THRESHOLD_BYTES  rotate when size >= this (50 MiB)
 #   AGENTSTACK_LOG_ROTATE_KEEP             archives to keep, NAME.log.1..N (3)
 #   AGENTSTACK_LOG_ROTATE_LOCK_DIR         mkdir lock shared by all runs
+#   AGENTSTACK_LOG_ROTATE_ARCHIVE_DIR      where the oldest archive goes before
+#                                          its slot is reused (see "Semantics")
 #
 # Semantics (read before deploying):
 #   * Threshold is checked once per run. Nothing rotates between runs, so a
@@ -27,7 +29,13 @@
 #     file; a writer that opened without O_APPEND would instead leave a sparse
 #     hole of NUL bytes up to its old offset.
 #   * Archives are plain copies: NAME.log.1 is the newest, NAME.log.KEEP the
-#     oldest and is deleted on the next rotation.
+#     oldest. Logs are records and are never deleted (storage v5.9, head
+#     2026-10-14 mail 24844): before NAME.log.KEEP is overwritten it is
+#     gzipped into AGENTSTACK_LOG_ROTATE_ARCHIVE_DIR as
+#     NAME.log.KEEP.<UTC>.<sha12>.gz, the gunzip SHA-256 is checked against
+#     the slot, and a tombstone line is appended to tombstones.jsonl there.
+#     Only then is the slot removed. If the archive dir is unset, missing or a
+#     symlink, or any step fails, that file is not rotated at all.
 #   * Symlinks (file or parent directory), paths that resolve outside DIR,
 #     and anything not ending in ".log" are skipped and reported.
 #   * Every archive slot (NAME.log.1..KEEP) is inspected before anything is
@@ -49,6 +57,7 @@ set -euo pipefail
 THRESHOLD="${AGENTSTACK_LOG_ROTATE_THRESHOLD_BYTES:-52428800}"
 KEEP="${AGENTSTACK_LOG_ROTATE_KEEP:-3}"
 LOCK_DIR="${AGENTSTACK_LOG_ROTATE_LOCK_DIR:-${TMPDIR:-/tmp}/orrery-runtime-log-rotate.lock}"
+ARCHIVE_DIR="${AGENTSTACK_LOG_ROTATE_ARCHIVE_DIR:-}"
 DRY_RUN=0
 LOCK_HELD=0
 
@@ -128,6 +137,46 @@ archive_slot_unsafe() {
     return 1
 }
 
+sha256_of() {
+    shasum -a 256 "$1" | cut -d' ' -f1
+}
+
+archive_dir_usable() {
+    [ -n "$ARCHIVE_DIR" ] && [ -d "$ARCHIVE_DIR" ] && [ ! -L "$ARCHIVE_DIR" ]
+}
+
+# archive_oldest SLOT NAME: gzip SLOT into ARCHIVE_DIR, verify the restored
+# SHA-256, write a tombstone line, then remove SLOT. Any failure leaves SLOT
+# in place and returns 1 so the caller does not rotate.
+archive_oldest() {
+    local slot="$1"
+    local name="$2"
+    archive_dir_usable || { log "skip $name: $name.$KEEP would be dropped and no usable AGENTSTACK_LOG_ROTATE_ARCHIVE_DIR is set"; return 1; }
+    local bytes sha stamp dest tmpgz restored gzsha
+    bytes=$(file_size "$slot")
+    sha=$(sha256_of "$slot")
+    stamp=$(date -u '+%Y%m%dT%H%M%SZ')
+    dest="$ARCHIVE_DIR/$(basename "$slot").$stamp.${sha:0:12}.gz"
+    if [ -e "$dest" ] || [ -L "$dest" ]; then
+        log "skip $name: archive target $dest already exists"; return 1
+    fi
+    tmpgz=$(mktemp "$ARCHIVE_DIR/.$name.archive.XXXXXX") || { log "skip $name: mktemp in archive dir failed"; return 1; }
+    if ! gzip -6 -c "$slot" > "$tmpgz"; then
+        rm -f "$tmpgz"; log "skip $name: gzip of $name.$KEEP failed"; return 1
+    fi
+    restored=$(gunzip -c "$tmpgz" | shasum -a 256 | cut -d' ' -f1)
+    if [ "$restored" != "$sha" ]; then
+        rm -f "$tmpgz"; log "skip $name: restored SHA $restored != $sha"; return 1
+    fi
+    mv -f "$tmpgz" "$dest"
+    gzsha=$(sha256_of "$dest")
+    printf '{"utc":"%s","path":"%s","bytes":%s,"sha256":"%s","class":"runtime-log-archive","kept_copy":"%s","kept_copy_sha256":"%s","reason":"rotate_runtime_logs.sh: oldest slot archived before reuse"}\n' \
+        "$stamp" "$slot" "$bytes" "$sha" "$dest" "$gzsha" >> "$ARCHIVE_DIR/tombstones.jsonl"
+    rm -f "$slot"
+    log "archived $name.$KEEP (${bytes} bytes, sha256 $sha) -> $dest"
+    return 0
+}
+
 rotate_one() {
     local file="$1"
     local root="$2"
@@ -158,6 +207,14 @@ rotate_one() {
         return 0
     fi
     if [ "$DRY_RUN" -eq 1 ]; then
+        if [ -e "$file.$KEEP" ]; then
+            if archive_dir_usable; then
+                log "would archive $name.$KEEP to $ARCHIVE_DIR (gzip, SHA-verified; deleted without archive: 0)"
+            else
+                log "would skip $name: $name.$KEEP has no usable archive dir (deleted without archive: 0)"
+                return 0
+            fi
+        fi
         log "would rotate $name (${size} bytes >= ${THRESHOLD})"
         return 0
     fi
@@ -182,6 +239,9 @@ rotate_one() {
     # rename the copy into slot 1. Only after the copy is in place is the
     # current file truncated.
     local tmp
+    if [ -e "$file.$KEEP" ]; then
+        archive_oldest "$file.$KEEP" "$name" || return 0
+    fi
     tmp=$(mktemp "$root/.$name.rotate.XXXXXX") || { log "skip $name: mktemp failed"; return 0; }
     if ! cp -p "$file" "$tmp"; then
         rm -f "$tmp"

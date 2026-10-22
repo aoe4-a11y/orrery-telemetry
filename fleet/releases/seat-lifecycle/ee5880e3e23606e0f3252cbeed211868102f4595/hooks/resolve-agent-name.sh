@@ -1,0 +1,1 @@
+/Users/huyuhutaru/.agentstack/hooks/resolve-agent-name.sh

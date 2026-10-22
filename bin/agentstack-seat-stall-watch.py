@@ -8,9 +8,14 @@ gets one [progress] mail to ProudTuring from the ops seat. The alert re-arms
 when the screen changes. Read-only towards the seats.
 """
 import datetime
+import fcntl
+from pathlib import Path
+from agentstack_stallself import notify_self
+from agentstack_jobend import save_state
 import hashlib
 import json
 import os
+import sys
 import sqlite3
 import subprocess
 import time
@@ -86,7 +91,22 @@ def send_approval(seat, tail):
     con.commit()
 
 
+def dry_skip(seat, reason):
+    if DRYRUN:
+        print(f"DRYRUN self skip seat={seat} reason={reason}")
+
+
 def main():
+    # OPS-JOBEND-1 runs independently of unchanged head stall/approval alerts.
+    try:
+        from agentstack_jobend import sweep
+        for job in sweep(dry_run=DRYRUN):
+            if not DRYRUN:
+                log("jobend " + job["status"] + " seat=" + job["seat"] + " id=" + job["id"])
+    except Exception as error:
+        log("jobend census failed: " + type(error).__name__)
+    if "--jobend-only" in sys.argv:
+        return
     try:
         state = json.load(open(STATE))
     except Exception:
@@ -102,6 +122,7 @@ def main():
     live = run(TMUX, "list-sessions", "-F", "#{session_name}").split()
     for seat in live:
         if seat not in seats or seat in (HEAD, OPS) or seat in ignored:
+            dry_skip(seat, "ignored" if seat in ignored else "not_monitored")
             continue
         screen = run(TMUX, "capture-pane", "-p", "-t", seat)
         digest = hashlib.sha256(screen.encode()).hexdigest()
@@ -115,18 +136,23 @@ def main():
                 send_approval(seat, tail)
             log(f"approval {seat}: {waiting[0]}")
             state[seat] = {"hash": digest, "since": now, "alerted": True, "approval_alerted": digest}
+            dry_skip(seat, "approval_screen")
             continue
         if not entry or entry["hash"] != digest:
+            dry_skip(seat, "new_or_changed_screen")
             state[seat] = {"hash": digest, "since": now, "alerted": False}
             continue
         minutes = int((now - entry["since"]) / 60)
         if entry["alerted"] or minutes < STALL_MIN:
+            dry_skip(seat, "already_alerted" if entry["alerted"] else "not_stalled")
             continue
         pane_pid = run(TMUX, "list-panes", "-t", seat, "-F", "#{pane_pid}").split()
         busy = any(word in command for pid in pane_pid for command in descendants(pid) for word in BUSY)
         if busy:
+            dry_skip(seat, "heavy_or_watcher_busy")
             continue
         tail = next((l.strip() for l in reversed(screen.splitlines()) if l.strip()), "")[:120].replace("`", "'")
+        notify_self(state, STATE, seat, minutes, tail, dry_run=DRYRUN, logger=log)
         if DRYRUN:
             print(f"DRYRUN alert {seat} {minutes} min: {tail}")
         else:
@@ -136,8 +162,41 @@ def main():
     for seat in list(state):
         if seat not in live:
             del state[seat]
-    json.dump(state, open(STATE, "w"))
+    if not DRYRUN:
+        save_state(Path(STATE), state)
+
+
+def guarded_main():
+    # A manual invocation and launchd must not both claim the same stop.
+    with open(STATE + ".lock", "a") as lock:
+        try:
+            fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError:
+            if DRYRUN:
+                print("DRYRUN self skip scope=watcher reason=watcher_lock_busy")
+            return
+        # M-071: current-retention maintenance on the existing cycle/lock.
+        if "--jobend-only" not in sys.argv and "--orphan-only" not in sys.argv:
+            try:
+                from agentstack_retainprune import sweep as retain_prune_sweep
+                event = retain_prune_sweep(dry_run=DRYRUN)
+                if not DRYRUN and event["kind"] != "healthy":
+                    log("retainprune " + event["kind"])
+            except Exception as error:
+                log("retainprune sweep failed: " + type(error).__name__)
+        # OPS-ORPHAN-1: independent advisory sweep, under the existing lock.
+        if "--jobend-only" not in sys.argv:
+            try:
+                from agentstack_orphan import sweep as orphan_sweep
+                for event in orphan_sweep(dry_run=DRYRUN):
+                    if not DRYRUN:
+                        log("orphan " + event["status"] + " pid=" + str(event["pid"]) + " id=" + event["id"])
+            except Exception as error:
+                log("orphan census failed: " + type(error).__name__)
+        if "--orphan-only" in sys.argv:
+            return
+        main()
 
 
 if __name__ == "__main__":
-    main()
+    guarded_main()

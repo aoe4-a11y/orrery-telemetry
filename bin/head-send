@@ -9,6 +9,7 @@ ap = argparse.ArgumentParser()
 ap.add_argument("--to", required=True); ap.add_argument("--subject", required=True)
 ap.add_argument("--body-file", required=True); ap.add_argument("--ack", action="store_true")
 ap.add_argument("--thread", default=None)
+ap.add_argument("--no-nudge", action="store_true", help="do not wake the recipient tmux seat")
 a = ap.parse_args()
 body = open(a.body_file, encoding="utf-8").read()
 if not a.subject.startswith("["):
@@ -24,3 +25,18 @@ for name in [n.strip() for n in a.to.split(",") if n.strip()]:
     if not r: con.rollback(); sys.exit(f"unknown agent {name}")
     cur.execute("insert into message_recipients(message_id, agent_id, kind) values (?,?,'to')", (mid, r[0]))
 con.commit(); print(f"sent id={mid} to={a.to}")
+
+# P-007 4 例目（2026-10-08）: 便は idle の席の入力欄に入らない。送った直後に席を起こす（文字と Enter は別の呼び出し）。
+if not a.no_nudge:
+    import subprocess, time
+    for name in [n.strip() for n in a.to.split(",") if n.strip()]:
+        if subprocess.run(["tmux", "has-session", "-t", name], capture_output=True).returncode != 0:
+            continue
+        pane = subprocess.run(["tmux", "capture-pane", "-p", "-t", name], capture_output=True, text=True).stdout
+        busy = ("esc to interrupt" in pane) or ("Working (" in pane)
+        msg = f"head から便 id={mid}（{a.subject[:40]}）が届いています。fetch_inbox で読んでください。"
+        subprocess.run(["tmux", "send-keys", "-t", name, "-l", msg])
+        time.sleep(0.4)
+        codex = "OpenAI Codex" in pane or "gpt-" in pane and "codex" in pane.lower()
+        subprocess.run(["tmux", "send-keys", "-t", name, "C-m" if codex else "Enter"])
+        print(f"nudged {name}{' (was busy: queued)' if busy else ''}")

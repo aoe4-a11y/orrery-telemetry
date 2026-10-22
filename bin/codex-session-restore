@@ -1,0 +1,141 @@
+#!/usr/bin/env python3
+"""Verified, reversible Codex record encoding. Authority: head25113/25115/25117."""
+import argparse,fcntl,gzip,hashlib,json,os,re,stat,sys,time,uuid
+from pathlib import Path
+CATALOG=Path('/Volumes/DevSSD-Private/DevStorageGovernor/artifacts/examforge/20261015T020435Z-records-b24218e2/records/entries')
+LIVE=Path('/Users/huyuhutaru/.codex/sessions')
+ROOTS=tuple(map(Path,[
+ '/Volumes/DevSSD-Private/DevStorageGovernor/artifacts/examforge/20261012T032321Z-private-evidence-9abcf5ad/sessions-raw',
+ '/Volumes/DevSSD-Private/DevStorageGovernor/artifacts/examforge/20261013T192759Z-private-evidence-45d53493/records/copies',
+ '/Volumes/DevSSD-Private/DevStorageGovernor/artifacts/orrery-telemetry/20261014T173010Z-private-evidence-177b78c0/records/codex-sessions-2026']))
+class Refused(RuntimeError):pass
+
+def sha(path):
+ with Path(path).open('rb') as stream:return hashlib.file_digest(stream,'sha256').hexdigest()
+def identity(p):
+ s=Path(p).lstat();return [s.st_dev,s.st_ino,s.st_mode,s.st_size,s.st_mtime_ns,s.st_ctime_ns]
+def exists(p):return os.path.lexists(p)
+def sync_dir(p):
+ fd=os.open(p,os.O_RDONLY)
+ try:os.fsync(fd)
+ finally:os.close(fd)
+def append(path,row):
+ with Path(path).open('a',encoding='utf-8') as f:f.write(json.dumps(row,sort_keys=True)+'\n');f.flush();os.fsync(f.fileno())
+def save_new(path,row):
+ with Path(path).open('x',encoding='utf-8') as f:f.write(json.dumps(row,sort_keys=True,indent=2)+'\n');f.flush();os.fsync(f.fileno())
+ sync_dir(Path(path).parent)
+def publish(temp,dest):
+ # link() is an atomic no-clobber publish, including dangling destinations.
+ os.link(temp,dest);sync_dir(Path(dest).parent);Path(temp).unlink();sync_dir(Path(temp).parent)
+def temp_for(path):return Path(str(path)+'.codex-gzip-tmp-'+uuid.uuid4().hex)
+def validate(row,roots=ROOTS,live=LIVE):
+ raw=Path(row['raw_path']);gz=Path(row['gzip_path'])
+ if not raw.is_absolute() or not any(raw.is_relative_to(b) for b in roots):raise Refused('source outside authorized groups')
+ if not re.fullmatch(r'rollout-[^/]+\.jsonl',raw.name) or gz!=Path(str(raw)+'.gz'):raise Refused('invalid rollout path')
+ if raw.parent.resolve()!=raw.parent or gz.is_symlink():raise Refused('source parent or archive is an alias')
+ if not re.fullmatch('[0-9a-f]{64}',row['raw_sha256']):raise Refused('invalid raw SHA')
+ for alias in row['aliases']:
+  p=Path(alias['path'])
+  if not p.is_relative_to(live) or p.name!=raw.name:raise Refused('invalid live alias')
+  if alias['kind'] not in {'file-link','directory-link'}:raise Refused('unknown alias kind')
+  for link in alias['dir_links']:
+   d=Path(link['path'])
+   if not d.is_symlink() or os.readlink(d)!=link['target'] or identity(d)!=link['identity']:raise Refused('directory alias changed')
+  if p.parent.resolve()!=Path(alias['parent_real']) or list((p.parent.stat().st_dev,p.parent.stat().st_ino))!=alias['parent_devino']:raise Refused('live alias parent changed')
+ return raw,gz
+
+def check_aliases_before(row):
+ raw=Path(row['raw_path']);gz=Path(row['gzip_path'])
+ for alias in row['aliases']:
+  p=Path(alias['path']);new=Path(str(p)+'.gz')
+  if alias['kind']=='file-link':
+   if not p.is_symlink() or os.readlink(p)!=alias['target'] or identity(p)!=alias['identity'] or p.resolve()!=raw:raise Refused('source file symlink changed')
+   if exists(new):raise Refused('new live gzip symlink already exists')
+  elif p.is_symlink() or p.resolve()!=raw:raise Refused('directory-linked raw changed')
+
+def encode(row,catalog=CATALOG,roots=ROOTS,live=LIVE):
+ raw,gz=validate(row,roots,live);check_aliases_before(row)
+ if raw.is_symlink() or not raw.is_file() or time.time_ns()-raw.stat().st_mtime_ns<=10080*60*10**9:raise Refused('raw type or age changed')
+ start=identity(raw)
+ if start!=row['identity']:raise Refused('raw identity changed')
+ if exists(gz):raise Refused('existing gzip is protected')
+ tmp=temp_for(gz);h=hashlib.sha256();size=0
+ with raw.open('rb') as src,tmp.open('xb') as dst:
+  with gzip.GzipFile(filename='',mode='wb',fileobj=dst,compresslevel=9,mtime=0) as z:
+   for chunk in iter(lambda:src.read(1024*1024),b''):h.update(chunk);size+=len(chunk);z.write(chunk)
+  dst.flush();os.fsync(dst.fileno())
+ if identity(raw)!=start or size!=row['raw_bytes'] or h.hexdigest()!=row['raw_sha256']:raise Refused('raw changed during encoding; stop')
+ decoded=hashlib.sha256();decoded_size=0
+ with gzip.open(tmp,'rb') as f:
+  for chunk in iter(lambda:f.read(1024*1024),b''):decoded.update(chunk);decoded_size+=len(chunk)
+ if decoded.hexdigest()!=row['raw_sha256'] or decoded_size!=row['raw_bytes']:raise Refused('gzip roundtrip mismatch; stop')
+ publish(tmp,gz)
+ full=dict(row,gzip_sha256=sha(gz),gzip_bytes=gz.stat().st_size,roundtrip_sha256=decoded.hexdigest(),authority=[25113,25115,25117])
+ catalog.mkdir(parents=True,exist_ok=True);entry=catalog/(row['key']+'.json');save_new(entry,full)
+ return full
+
+def swap_links(row,roots=ROOTS,live=LIVE):
+ raw,gz=validate(row,roots,live);check_aliases_before(row)
+ if sha(gz)!=row['gzip_sha256']:raise Refused('archive changed')
+ for alias in row['aliases']:
+  old=Path(alias['path']);new=Path(str(old)+'.gz')
+  if alias['kind']=='file-link':os.symlink(gz,new);sync_dir(new.parent)
+  if new.resolve()!=gz or sha(new)!=row['gzip_sha256']:raise Refused('gzip alias verification failed')
+ # Remove only literal-in-catalog original leaf symlinks, never directory links.
+ for alias in row['aliases']:
+  if alias['kind']=='file-link':
+   old=Path(alias['path'])
+   if not old.is_symlink() or identity(old)!=alias['identity'] or os.readlink(old)!=alias['target']:raise Refused('old alias changed')
+   old.unlink();sync_dir(old.parent)
+
+def remove_raw(row,journal,roots=ROOTS,live=LIVE):
+ raw,gz=validate(row,roots,live)
+ if identity(raw)!=row['identity'] or sha(raw)!=row['raw_sha256'] or sha(gz)!=row['gzip_sha256']:raise Refused('final byte witness changed')
+ for a in row['aliases']:
+  p=Path(str(a['path'])+'.gz')
+  if p.resolve()!=gz:raise Refused('final gzip alias changed')
+ tomb=dict(path=str(raw),bytes=row['raw_bytes'],sha256=row['raw_sha256'],**{'class':'record-permanent-gzip'},kept_copy=str(gz),kept_copy_sha256=row['gzip_sha256'],reason='head25113/25115/25117; R-087 storage v5.9; verified lossless encoding; permanent archive; codex-session-restore restores original path')
+ append(journal,tomb)
+ if identity(raw)!=row['identity']:raise Refused('raw changed after tombstone')
+ raw.unlink();sync_dir(raw.parent)
+ return tomb
+
+def restore(row,roots=ROOTS,live=LIVE,journal=None):
+ raw,gz=validate(row,roots,live)
+ if not gz.is_file() or sha(gz)!=row['gzip_sha256']:raise Refused('archive SHA mismatch')
+ for a in row['aliases']:
+  p=Path(a['path']);new=Path(str(p)+'.gz')
+  if a['kind']=='file-link':
+   if exists(p) and (not p.is_symlink() or p.resolve()!=raw):raise Refused('original alias occupied')
+   if exists(new) and (not new.is_symlink() or new.resolve()!=gz):raise Refused('gzip alias occupied')
+ if exists(raw):
+  if raw.is_symlink() or not raw.is_file() or sha(raw)!=row['raw_sha256']:raise Refused('existing raw differs; never overwrite')
+ else:
+  tmp=temp_for(raw);h=hashlib.sha256();size=0;archive_identity=identity(gz)
+  with gzip.open(gz,'rb') as src,tmp.open('xb') as dst:
+   for chunk in iter(lambda:src.read(1024*1024),b''):h.update(chunk);size+=len(chunk);dst.write(chunk)
+   dst.flush();os.fsync(dst.fileno())
+  if h.hexdigest()!=row['raw_sha256'] or size!=row['raw_bytes'] or identity(gz)!=archive_identity:raise Refused('restored bytes mismatch')
+  os.utime(tmp,ns=(row['identity'][4],row['identity'][4]));publish(tmp,raw)
+ if sha(raw)!=row['raw_sha256']:raise Refused('published raw SHA mismatch')
+ for a in row['aliases']:
+  p=Path(a['path']);new=Path(str(p)+'.gz')
+  if a['kind']=='file-link' and not exists(p):os.symlink(raw,p);sync_dir(p.parent)
+  if p.resolve()!=raw or sha(p)!=row['raw_sha256']:raise Refused('restored alias mismatch')
+  if a['kind']=='file-link' and new.is_symlink():new.unlink();sync_dir(new.parent)
+ result=dict(key=row['key'],raw_path=str(raw),sha256=sha(raw),aliases=[a['path'] for a in row['aliases']],gzip_preserved=str(gz),restored_at_ns=time.time_ns())
+ if journal:append(journal,result)
+ return result
+
+def cli():
+ p=argparse.ArgumentParser(description='Restore an archived Codex session by exact rollout basename or thread UUID; no inference/network.')
+ p.add_argument('session');a=p.parse_args();matches=[]
+ for path in sorted(CATALOG.glob('*.json')):
+  row=json.loads(path.read_text());name=Path(row['raw_path']).name
+  if a.session in {name,name+'.gz',row['thread_id']}:matches.append(row)
+ if len(matches)!=1:raise Refused('expected one archived record; found '+str(len(matches)))
+ with (CATALOG.parent/'restore.lock').open('a') as lock:
+  fcntl.flock(lock,fcntl.LOCK_EX);print(json.dumps(restore(matches[0],journal=CATALOG.parent/'restores.jsonl'),sort_keys=True))
+if __name__=='__main__':
+ try:cli()
+ except (Refused,OSError,ValueError) as error:print('restore refused: '+str(error),file=sys.stderr);raise SystemExit(2)

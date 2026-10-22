@@ -131,6 +131,19 @@ def check_owner_quotes(text, cfg):
     return findings
 
 
+TASK_PATH = re.compile(r"~/\.agentstack/runtime/tasks/([A-Za-z0-9._-]+\.md)")
+
+
+def check_task_files(text):
+    """M-069: a station mail must not point at a task file that does not exist yet."""
+    findings = []
+    for name in sorted(set(TASK_PATH.findall(text))):
+        path = os.path.expanduser("~/.agentstack/runtime/tasks/" + name)
+        if not os.path.isfile(path) or os.path.getsize(path) == 0:
+            findings.append(f"④ 駅の本文 {name} がまだ無い（書いてから送る・M-069）")
+    return findings
+
+
 def main():
     try:
         payload = json.loads(sys.stdin.read() or "{}")
@@ -150,7 +163,7 @@ def main():
         tool_input = payload.get("tool_input") or {}
         text = (tool_input.get("subject") or "") + "\n" + (tool_input.get("body_md") or "")
         findings = (check_counts(text, cfg) + check_ruling_terms(text, cfg)
-                    + check_owner_quotes(text, cfg))
+                    + check_owner_quotes(text, cfg) + check_task_files(text))
         if not findings:
             return 0
         head = "R-068 送信前検査（{}）: {} 件".format(

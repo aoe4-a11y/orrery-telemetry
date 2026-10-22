@@ -544,6 +544,48 @@ handle_signal_file() {
     deliver_worker "$signal_file" "$agent_name" "$msg_key" "$from" "$subject" "$importance" "$per_msg_file" "$body_snippet" "$body_truncated" "$lease_owner" &
 }
 
+# Match only the LAST composer row, not notification history or an accepted
+# "Messages to be submitted after next tool call" queue above an empty composer.
+notification_is_in_input() {
+    local marker="$1"
+    awk '/^[[:space:]]*[›❯] / { composer=NR }
+         { lines[NR]=$0 }
+         END { if (composer) for (i=composer; i<=NR; i++) print lines[i] }' |
+        grep -qF "$marker"
+}
+
+# A successful send-keys only means tmux accepted keys. Serialize a pane's
+# literal+submit pair and recover a visible retained notification once. Never
+# interrupt a working agent or flush its already-accepted tool-call queue.
+inject_notification() (
+    local session_name="$1" agent_name="$2" marker="$3" prompt="$4"
+    acquire_delivery_lease "$agent_name" "notification-pane" || return 4
+    trap 'release_delivery_lease "$agent_name" "notification-pane"' EXIT
+    local screen
+    screen=$(run_to "$TMUX_TIMEOUT" tmux capture-pane -t "$session_name" -p 2>/dev/null) || return 2
+    if printf '%s\n' "$screen" | notification_is_in_input "$marker"; then
+        : # Retry submission of the SAME visible draft; do not append it again.
+    elif printf '%s\n' "$screen" | notification_is_in_input "mail notification:"; then
+        return 4
+    else
+        run_to "$TMUX_TIMEOUT" tmux send-keys -t "$session_name" -l "$prompt" 2>/dev/null || return 1
+    fi
+    sleep 0.2
+    run_to "$TMUX_TIMEOUT" tmux send-keys -t "$session_name" C-m 2>/dev/null || return 3
+    sleep 0.2
+    screen=$(run_to "$TMUX_TIMEOUT" tmux capture-pane -t "$session_name" -p 2>/dev/null) || return 2
+    if printf '%s\n' "$screen" | notification_is_in_input "$marker"; then
+        sleep 0.8
+        run_to "$TMUX_TIMEOUT" tmux send-keys -t "$session_name" Enter 2>/dev/null || return 3
+        sleep 0.2
+        screen=$(run_to "$TMUX_TIMEOUT" tmux capture-pane -t "$session_name" -p 2>/dev/null) || return 2
+        if printf '%s\n' "$screen" | notification_is_in_input "$marker"; then
+            return 3
+        fi
+    fi
+    return 0
+)
+
 # deliver_worker: 1 signal の配送を完結させる background ジョブ。すべての tmux
 # 呼び出しを run_to で時間制限するため、ここがブロックしても本体ループには波及
 # しない。
@@ -569,8 +611,8 @@ deliver_worker() {
         state_mark_result "$agent_name" "$msg_key" "head_no_pane" "watcher"
         release_delivery_lease "$agent_name" "$msg_key" "$lease_owner"
         if (( per_msg_file == 1 )); then
-            rm -f "$signal_file" 2>/dev/null || true
-            rmdir "$(dirname "$signal_file")" 2>/dev/null || true
+            rm -f "${signal_file:?}" 2>/dev/null || true
+            rmdir "$(dirname "${signal_file:?}")" 2>/dev/null || true
         fi
         return 0
     fi
@@ -648,48 +690,31 @@ deliver_worker() {
         return 0
     fi
 
-    local prompt
-    if [[ -n "$body_snippet" && "$body_truncated" == "0" ]]; then
-        prompt="ORRERY Mail notification: message from ${from} [${importance}]: ${subject}. Body (complete; no inbox fetch needed): ${body_snippet}"
-    elif [[ -n "$body_snippet" ]]; then
-        prompt="ORRERY Mail notification: message from ${from} [${importance}]: ${subject}. Body preview: ${body_snippet} ... Fetch inbox to read the rest."
+    local prompt read_instruction
+    if [[ "$msg_key" =~ ^[0-9]+$ ]]; then
+        read_instruction="Fetch full text with fetch_inbox(message_id=${msg_key}, include_bodies=true); concatenate body_md chunks using body_next_offset until null. If the proxy schema lacks message_id, use agentstack-await-reply --agent-name ${agent_name} --message-id ${msg_key}; save its JSON and read body_md in bounded chunks."
     else
-        prompt="ORRERY Mail notification: message from ${from} [${importance}]: ${subject}. Please call fetch_inbox to read it."
+        read_instruction="Fetch inbox with include_bodies=true to read the message."
+    fi
+    if [[ -n "$body_snippet" && "$body_truncated" == "0" ]]; then
+        prompt="AgentStack mail notification: message_id=${msg_key}; message from ${from} [${importance}]: ${subject}. Body (complete; no inbox fetch needed): ${body_snippet}"
+    elif [[ -n "$body_snippet" ]]; then
+        prompt="AgentStack mail notification: message_id=${msg_key}; message from ${from} [${importance}]: ${subject}. Body preview: ${body_snippet} ... Body is truncated. Fetch inbox to read the rest: ${read_instruction}"
+    else
+        prompt="ORRERY Mail notification: message_id=${msg_key}; message from ${from} [${importance}]: ${subject}. Please call fetch_inbox to read it: ${read_instruction}"
     fi
 
-    # 本文は bracketed paste で渡す。send-keys -l は 1 文字ずつの打鍵として届くため、
-    # 受け側の読み取りが遅れる（機械の飽和など）と本文と C-m が同じ読み取りに入り、
-    # C-m が貼り付けの一部として扱われて submit されない。本文が入力欄に残り、
-    # 人が Enter を押すまで止まる。2026-09-27 に Codex と Claude Code の両方で、
-    # REPL を SIGSTOP した間に送って再現し、paste-buffer -p なら submit されることを確認。
-    # run_to は背景実行で stdin が /dev/null になるので、本文はファイル経由で渡す。
-    # The session may have been replaced during capture. Recheck immediately
-    # before constructing/injecting a notification into the resumed conversation.
-    mail_disabled=$(run_to "$TMUX_TIMEOUT" tmux show-environment -t "=$session_name" AGENTSTACK_MAIL_DISABLED 2>/dev/null) || mail_disabled=""
-    if [[ "$mail_disabled" == "AGENTSTACK_MAIL_DISABLED=1" ]]; then
-        release_delivery_lease "$agent_name" "$msg_key" "$lease_owner"
-        return 0
-    fi
-    local paste_file paste_buf="agentstack-notify-$$-${RANDOM}"
-    paste_file=$(mktemp "${TMPDIR:-/tmp}/agentstack-notify.XXXXXX") || paste_file=""
-    if [[ -z "$paste_file" ]] || ! printf '%s' "$prompt" > "$paste_file" \
-       || ! run_to "$TMUX_TIMEOUT" tmux load-buffer -b "$paste_buf" "$paste_file" 2>/dev/null \
-       || ! run_to "$TMUX_TIMEOUT" tmux paste-buffer -p -d -b "$paste_buf" -t "$session_name" 2>/dev/null; then
-        [[ -n "$paste_file" ]] && rm -f "$paste_file"
-        run_to "$TMUX_TIMEOUT" tmux delete-buffer -b "$paste_buf" 2>/dev/null || true
-        state_mark_result "$agent_name" "$msg_key" "inject_failed" "watcher"
-        release_delivery_lease "$agent_name" "$msg_key" "$lease_owner"
-        return 0
-    fi
-    rm -f "$paste_file"
-    sleep 0.2
-    # submit は Enter keysym ではなく C-m（Ctrl+M=CR）を使う。spawn_child.sh が
-    # Claude/Codex 両方の prompt 注入で C-m を使っており（proven-universal）、Codex
-    # REPL では Enter が submit されないことがある（2026-06-05 WildCurie が Enter で
-    # 固まった件）。Claude Code は Enter/C-m 両方 submit するので C-m に統一しても無回帰
-    # （捨て子 Claude で実測確認）。
-    if ! run_to "$TMUX_TIMEOUT" tmux send-keys -t "$session_name" C-m 2>/dev/null; then
-        state_mark_result "$agent_name" "$msg_key" "submit_failed" "watcher"
+    local inject_result=0
+    inject_notification "$session_name" "$agent_name" "mail notification: message_id=${msg_key};" "$prompt" || inject_result=$?
+    if [ "$inject_result" -ne 0 ]; then
+        local result_name
+        case "$inject_result" in
+            2) result_name="capture_timeout" ;;
+            3) result_name="submit_pending" ;;
+            4) result_name="pane_busy" ;;
+            *) result_name="inject_failed" ;;
+        esac
+        state_mark_result "$agent_name" "$msg_key" "$result_name" "watcher"
         release_delivery_lease "$agent_name" "$msg_key" "$lease_owner"
         return 0
     fi
