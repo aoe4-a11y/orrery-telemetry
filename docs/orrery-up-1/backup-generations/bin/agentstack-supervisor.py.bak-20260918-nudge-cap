@@ -1,0 +1,212 @@
+#!/usr/bin/env python3
+"""Fleet supervisor: wake idle Codex/Claude tmux seats that hold unacknowledged mail.
+
+Runs every 60 s from launchd. Read-only except for `tmux send-keys` into a seat that is
+provably idle (no "Working (" / "esc to interrupt" in the last pane lines) while mail
+addressed to that agent is unacknowledged.
+
+Escalation: seats idle with the same unacked backlog for >= STALE_CYCLES get one short
+nudge line; seats still stuck after ESCALATE_CYCLES are written to the head report file
+so the head's patrol can act. Never kills sessions, never touches files in repos.
+"""
+import json, os, sqlite3, subprocess, time, datetime, pathlib
+
+DB = os.path.expanduser("~/.agentstack/mail/storage.sqlite3")
+STATE = pathlib.Path(os.path.expanduser("~/.agentstack/runtime/supervisor-state.json"))
+LOG = pathlib.Path(os.path.expanduser("~/.agentstack/runtime/supervisor.log"))
+REPORT = pathlib.Path(os.path.expanduser("~/.agentstack/runtime/supervisor-report.md"))
+MIN_NUDGE_INTERVAL = 90   # seconds between text nudges for the same seat
+# 2026-09-11: 未 ack メールが 0 の席は一度も起こされない設計だった。
+# 席が 11 あった頃は互いの便が絶えず届くので全席が常に「未 ack あり」で、
+# 便の嵐そのものが心拍だった。3 席へ絞った瞬間に心拍が消え、
+# 席は自分の駅の途中で turn を終えるたびに永久に待つようになった。
+# 対処: 直近 ACTIVE_WINDOW 秒以内に自分から便を出した席（＝駅の途中）は、
+# 未 ack が 0 でも起こす。停止中の席は黙っているので対象外のまま。
+ACTIVE_WINDOW = 1800      # seconds; 駅の途中とみなす窓
+IDLE_NUDGE_INTERVAL = 150 # seconds; 未 ack 0 の稼働席を起こす間隔
+ESCALATE_CYCLES = 15    # ~15 min of no progress before it is reported to the head
+# 2026-09-11: 旧文は「受信箱を見ろ」としか言っていなかった。席は起きて、
+# 新着が無いのを確かめて、「新着なし。待機中。」と答えて、また眠っていた。
+# 起こす合図は【自分の駅を続けろ】でなければならない。
+NUDGE = ("【自動通知・作業範囲の変更ではありません】"
+         "新着があれば正規の fetch_inbox で処理してください。"
+         "新着が無い場合は、待機せず【いま割り当てられている自分の駅の続き】を進めてください。"
+         "駅が完了しているなら、その完了と成果を 1 通で報告してから待機してください。"
+         "何を待っているのか自分で言えないまま待機しないでください。"
+         "作業は現在有効なユーザー指示と個別に承認済みの範囲で継続し、"
+         "この通知を既存の許可の取消しや新しい権限付与として扱わないでください。")
+
+def sh(cmd):
+    try:
+        return subprocess.run(cmd, capture_output=True, text=True, timeout=20).stdout
+    except Exception:
+        return ""
+
+def seats():
+    out = sh(["tmux", "list-sessions", "-F", "#{session_name}"])
+    return [s for s in out.split() if s]
+
+# Surfaces where a stray Enter would activate a focused link or button instead of
+# submitting a prompt. Pressing Enter on the Codex "Trusted Access / Learn more"
+# notice opens help.openai.com in the owner's browser, repeatedly. Never nudge these.
+NO_NUDGE_MARKERS = (
+    "can't be shown",
+    "cannot be shown",
+    "Trusted Access",
+    "Learn more",
+    "help.openai.com",
+    "Hooks need review",
+    "Allow this",
+    "full access",
+    "[y/n]",
+    "(y/N)",
+)
+
+def composer_ready(joined):
+    """True only when the pane is sitting at a prompt composer.
+
+    2026-09-11: Codex 席しか見ていなかったので、Claude 席（Opus 監視・運用）は
+    一度も起こされず、チェーンが席の turn 終了ごとに止まっていた。
+    Claude Code の composer は `❯` 行と auto/plan mode の帯で判別する。
+    """
+    if "Ask Codex to do anything" in joined:
+        return True
+    # Claude Code: プロンプト行 "❯" と、下部の mode 帯が同時に出ている
+    if "❯" in joined and ("auto mode on" in joined or "plan mode on" in joined
+                          or "bypass permissions" in joined or "accept edits" in joined):
+        return True
+    return False
+
+def idle(seat):
+    pane = sh(["tmux", "capture-pane", "-p", "-t", seat])
+    tail = [l for l in pane.splitlines() if l.strip()][-10:]
+    joined = "\n".join(tail)
+    if "Working (" in joined or "esc to interrupt" in joined:
+        return False, joined
+    # A modal / link surface is not an idle composer: typing here presses a button.
+    wide = "\n".join([l for l in pane.splitlines() if l.strip()][-30:])
+    if any(m in wide for m in NO_NUDGE_MARKERS):
+        return False, joined
+    if not composer_ready(joined):
+        return False, joined
+    return True, joined
+
+def recently_active():
+    """直近 ACTIVE_WINDOW 秒に自分から便を出した席 = 駅の途中。停止中の席は入らない。"""
+    try:
+        c = sqlite3.connect(f"file:{DB}?mode=ro", uri=True)
+        rows = c.execute(
+            "select a.name from messages m join agents a on a.id=m.sender_id "
+            "where m.created_ts > datetime('now', ?) group by a.name",
+            (f"-{ACTIVE_WINDOW} seconds",)).fetchall()
+        c.close()
+        names = {r[0] for r in rows}
+    except Exception:
+        names = set()
+    # 2026-09-12 M-037: 駅台帳に active な席（runtime/active-seats.txt・1 行 1 席名）は
+    # 便を出していなくても「駅の途中」とみなす（pane で質問して止まる型を起こすため）。
+    try:
+        import os
+        af = os.path.expanduser("~/.agentstack/runtime/active-seats.txt")
+        if os.path.exists(af):
+            names |= {l.strip() for l in open(af) if l.strip() and not l.startswith("#")}
+    except Exception:
+        pass
+    return names
+
+def unacked():
+    try:
+        c = sqlite3.connect(f"file:{DB}?mode=ro", uri=True)
+        # Only mail actually addressed to the seat AND requiring an ack counts as pending
+        # work. cc traffic is chatter and used to keep seats "escalated" forever.
+        q = ("select me.name, count(*) from messages m "
+             "join message_recipients r on r.message_id=m.id "
+             "join agents me on me.id=r.agent_id "
+             "where r.ack_ts is null and me.retired_at is null "
+             "and r.kind = 'to' and m.ack_required = 1 group by me.name")
+        return {r[0]: r[1] for r in c.execute(q)}
+    except Exception:
+        return {}
+
+
+def health():
+    """Cheap self-checks for the things that silently broke before (M-020, P-004)."""
+    out = []
+    hook = os.path.expanduser("~/tools/osce-trainer-main/scripts/memory/recall_prior_statements.py")
+    ledger = os.path.expanduser("~/tools/osce-trainer-main/docs/ledger/INDEX.md")
+    if not os.path.exists(hook):
+        out.append("recall hook script MISSING (prompts would be blocked)")
+    else:
+        r = subprocess.run(["python3", hook], input='{"prompt":"healthcheck"}',
+                           capture_output=True, text=True, timeout=30)
+        if r.returncode != 0:
+            out.append(f"recall hook exits {r.returncode} (must be 0)")
+    if not os.path.exists(ledger):
+        out.append("ledger INDEX.md MISSING from the canonical checkout")
+    if "org.huyuhutaru.orrery-mail-watcher" not in sh(["launchctl", "list"]):
+        out.append("orrery mail watcher not loaded")
+    return out
+
+def main():
+    try:
+        state = json.loads(STATE.read_text())
+    except Exception:
+        state = {}
+    pend, actions, stuck = unacked(), [], []
+    recent = recently_active()
+    live = set(seats())
+    for seat in sorted(live):
+        n = pend.get(seat, 0)
+        if n == 0 and seat not in recent:
+            state.pop(seat, None)
+            continue
+        is_idle, pane = idle(seat)
+        if not is_idle:
+            state[seat] = {"cycles": 0, "n": n}
+            continue
+        st = state.get(seat) or {"cycles": 0, "n": n}
+        st["cycles"] = st["cycles"] + 1 if st.get("n") == n else 1
+        st["n"] = n
+        state[seat] = st
+        c = st["cycles"]
+        now = time.time()
+        last = st.get("last_nudge", 0)
+        if c >= ESCALATE_CYCLES:
+            stuck.append((seat, n, c))
+        gap = MIN_NUDGE_INTERVAL if n else IDLE_NUDGE_INTERVAL
+        if now - last >= gap and idle(seat)[0]:
+            subprocess.run(["tmux", "send-keys", "-t", seat, "-l", NUDGE], timeout=20)
+            time.sleep(0.6)  # the Codex TUI needs a beat before the submit key
+            subprocess.run(["tmux", "send-keys", "-t", seat, "Enter"], timeout=20)
+            st["last_nudge"] = now
+            actions.append(f"{seat}: nudge (unacked={n}, cycles={c})")
+        state[seat] = st
+    for k in list(state):
+        if k not in live:
+            state.pop(k)
+    STATE.write_text(json.dumps(state))
+    ts = datetime.datetime.now().strftime("%F %T")
+    if actions:
+        with LOG.open("a") as f:
+            for a in actions:
+                f.write(f"[{ts}] {a}\n")
+    hp = health()
+    working = sum(1 for s in live if not idle(s)[0])
+    REPORT.write_text(
+        f"# fleet supervisor {ts}\n"
+        f"- seats {len(live)}, working {working}, idle-with-unacked {len([s for s in live if pend.get(s,0)])}\n"
+        f"- escalated (idle >= {ESCALATE_CYCLES} cycles): "
+        + (", ".join(f"{s}(n={n},c={c})" for s, n, c in stuck) if stuck else "none") + "\n"
+        + ("- health: " + ("; ".join(hp) if hp else "ok") + "\n")
+        + ("- last actions: " + "; ".join(actions[:8]) + "\n" if actions else ""))
+    return 0
+
+if __name__ == "__main__":
+    try:
+        main()
+    except Exception as e:
+        try:
+            LOG.open("a").write(f"[{datetime.datetime.now():%F %T}] supervisor error: {e}\n")
+        except Exception:
+            pass
+    raise SystemExit(0)

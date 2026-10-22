@@ -85,6 +85,16 @@
             "command": "/bin/bash __AGENTSTACK_HOOKS_DIR__/deny-llm-key-read.sh"
           }
         ]
+      },
+      {
+        "matcher": "mcp__orrery-mail__send_message",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 __AGENTSTACK_HOOKS_DIR__/head-send-lint.py",
+            "timeout": 90
+          }
+        ]
       }
     ],
     "PostToolUse": [
@@ -103,6 +113,26 @@
           {
             "type": "command",
             "command": "/bin/bash __AGENTSTACK_HOOKS_DIR__/mark-agent-registered.sh"
+          }
+        ]
+      },
+      {
+        "matcher": "mcp__orrery-mail__send_message",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 __AGENTSTACK_HOOKS_DIR__/head-send-lint.py",
+            "timeout": 90
+          }
+        ]
+      },
+      {
+        "matcher": "Workflow",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 __AGENTSTACK_HOOKS_DIR__/usage-throttle-warn.py",
+            "timeout": 30
           }
         ]
       }

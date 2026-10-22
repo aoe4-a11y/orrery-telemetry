@@ -1,0 +1,31 @@
+{
+  "worktree": "/Users/huyuhutaru/tools/orrery-telemetry-wt-orrery-up-1",
+  "test_command": "PYTHONPATH=. .venv/bin/python -m pytest -q",
+  "codex_cli": "0.159.3",
+  "latest_tag": "2026.09.30.4",
+  "tag_sha": "27b9fb1b46bb24d28f1d6fdb3270b6d31bb5334a",
+  "fork_only": [
+    "e5039ff79663d99764d83e0cfa6961074ec60199",
+    "5e43de6083ab1b897330b631684033fa0511d423",
+    "cd092c441162b1ced76158ab08a214c6b94bf0c2",
+    "81c3fd94be26525d88f4e7a09ec41abe85908507"
+  ],
+  "diff_sha256": "9a2b2a6341dcdc51918f0ce655aed577d1dc156b108e2faeb7fd86ea4e11350c",
+  "first_full_tested_commit": "2b2ac5e",
+  "candidate_code_commit": "fb2cd26f9cdffe1666c440114f8b2c69fc4fe987",
+  "verification_state": "complete: isolated install exit0, focused2 exit0, full3204passed/33skipped/17subtests exit0",
+  "inventory_rows": 307,
+  "isolated_installed_commit": "fb2cd26f9cdffe1666c440114f8b2c69fc4fe987",
+  "latest_tested_commit": "36bf85a4ca054ec3a62736b526eeeb72cbc6fe10",
+  "full_test_exit": 0,
+  "full_test_passed": 3204,
+  "full_test_skipped": 33,
+  "full_test_subtests": 17,
+  "full_test_warnings": 7,
+  "full_test_seconds": 1136.42,
+  "source_changes_since_isolated_install": [
+    "tests/test_runtime_defaults.py",
+    "tests/test_spawn_v2.py"
+  ],
+  "installed_payload_changes_since_isolated_install": []
+}

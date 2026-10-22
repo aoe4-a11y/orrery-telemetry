@@ -410,6 +410,8 @@ export AGENTSTACK_TCC_DIRS="$HOME/Desktop:$HOME/Documents:$HOME/Downloads"
 
 ## Upgrade
 
+この fork の fleet 専用更新は [ORRERY-UP-1 の手順](orrery-up-1/guide.md) を使います。`scripts/install-fleet-upgrade.sh` は payload と設定の rollback snapshot を先に作り、`--assume-yes` なしで所有者が対話実行します。Mail と runtime を rollback snapshot の対象にしません。上流で管理していない既存 `env.sh` の export（例: `AGENTSTACK_CODEX_SANDBOX`、`EXAMFORGE_HEAVY_SLOTS`）も再 install 時に保持します。
+
 ```bash
 git pull
 ./scripts/install.sh

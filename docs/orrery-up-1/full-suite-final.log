@@ -1,0 +1,523 @@
+traffic: [ORRERY-UP-1-full-suite-final] waiting — mem 11345MB, disk 104GiB, slots in use: 2/2
+traffic: [ORRERY-UP-1-full-suite-final] waiting — mem 11709MB, disk 103GiB, slots in use: 2/2
+traffic: [ORRERY-UP-1-full-suite-final] waiting — mem 11388MB, disk 103GiB, slots in use: 2/2
+traffic: [ORRERY-UP-1-full-suite-final] waiting — mem 11952MB, disk 103GiB, slots in use: 2/2
+traffic: [ORRERY-UP-1-full-suite-final] waiting — mem 10549MB, disk 103GiB, slots in use: 2/2
+traffic: [ORRERY-UP-1-full-suite-final] waiting — mem 11649MB, disk 103GiB, slots in use: 2/2
+traffic: [ORRERY-UP-1-full-suite-final] waiting — mem 12207MB, disk 103GiB, slots in use: 2/2
+traffic: [ORRERY-UP-1-full-suite-final] waiting — mem 11903MB, disk 103GiB, slots in use: 2/2
+traffic: [ORRERY-UP-1-full-suite-final] waiting — mem 11677MB, disk 103GiB, slots in use: 2/2
+traffic: [ORRERY-UP-1-full-suite-final] waiting — mem 11600MB, disk 103GiB, slots in use: 2/2
+traffic: [ORRERY-UP-1-full-suite-final] waiting — mem 12135MB, disk 103GiB, slots in use: 2/2
+traffic: [ORRERY-UP-1-full-suite-final] waiting — mem 11304MB, disk 103GiB, slots in use: 2/2
+traffic: [ORRERY-UP-1-full-suite-final] waiting — mem 11922MB, disk 103GiB, slots in use: 2/2
+traffic: [ORRERY-UP-1-full-suite-final] waiting — mem 10937MB, disk 103GiB, slots in use: 2/2
+traffic: [ORRERY-UP-1-full-suite-final] waiting — mem 11682MB, disk 103GiB, slots in use: 2/2
+traffic: [ORRERY-UP-1-full-suite-final] waiting — mem 12035MB, disk 103GiB, slots in use: 2/2
+traffic: [ORRERY-UP-1-full-suite-final] waiting — mem 11314MB, disk 103GiB, slots in use: 2/2
+traffic: [ORRERY-UP-1-full-suite-final] waiting — mem 11905MB, disk 103GiB, slots in use: 2/2
+traffic: [ORRERY-UP-1-full-suite-final] waiting — mem 11437MB, disk 103GiB, slots in use: 2/2
+traffic: [ORRERY-UP-1-full-suite-final] waiting — mem 11341MB, disk 103GiB, slots in use: 2/2
+traffic: [ORRERY-UP-1-full-suite-final] waiting — mem 11538MB, disk 103GiB, slots in use: 2/2
+traffic: [ORRERY-UP-1-full-suite-final] waiting — mem 12119MB, disk 103GiB, slots in use: 2/2
+traffic: [ORRERY-UP-1-full-suite-final] waiting — mem 11406MB, disk 103GiB, slots in use: 2/2
+traffic: [ORRERY-UP-1-full-suite-final] waiting — mem 10882MB, disk 103GiB, slots in use: 2/2
+traffic: [ORRERY-UP-1-full-suite-final] waiting — mem 11893MB, disk 103GiB, slots in use: 2/2
+traffic: [ORRERY-UP-1-full-suite-final] waiting — mem 11595MB, disk 103GiB, slots in use: 2/2
+traffic: [ORRERY-UP-1-full-suite-final] waiting — mem 11897MB, disk 103GiB, slots in use: 2/2
+traffic: [ORRERY-UP-1-full-suite-final] waiting — mem 9857MB, disk 102GiB, slots in use: 2/2
+traffic: [ORRERY-UP-1-full-suite-final] waiting — mem 11370MB, disk 102GiB, slots in use: 2/2
+traffic: [ORRERY-UP-1-full-suite-final] running (slot slot-1, mem 11759MB, disk 102GiB)
+..........s............................................................. [  2%]
+.........................s..................................s........... [  4%]
+........................................................................ [  6%]
+........................................................................ [  8%]
+......................sss............................................... [ 11%]
+........................................................................ [ 13%]
+..sss................................................................... [ 15%]
+........................................................................ [ 17%]
+........................................................................ [ 20%]
+....................................................sssssss....sssssssss [ 22%]
+..............................................ss........................ [ 24%]
+..................................................s..................... [ 26%]
+........................................................................ [ 28%]
+...........s................................................. [ 30%]
+........................................................................ [ 33%]
+........................................................................ [ 35%]
+........................................................................ [ 37%]
+........................................................................ [ 39%]
+........................................................................ [ 41%]
+........................................................................ [ 44%]
+........................................................................ [ 46%]
+........................................................................ [ 48%]
+........................................................................ [ 50%]
+........................................................................ [ 53%]
+........................................................................ [ 55%]
+........................................................................ [ 57%]
+........................................................................ [ 59%]
+........................................................................ [ 61%]
+................................................s....................... [ 64%]
+........................................................................ [ 66%]
+........................................................................ [ 68%]
+........................................................................ [ 70%]
+........................................................................ [ 73%]
+........................................................................ [ 75%]
+.......ss..................................................s............ [ 77%]
+........................................................................ [ 79%]
+........................................................................ [ 81%]
+........................................................................ [ 84%]
+.................................................................. [ 86%]
+.........................................................F.............. [ 88%]
+........................................................................ [ 90%]
+........................................................................ [ 92%]
+...................................................F.................... [ 95%]
+........................................................................ [ 97%]
+........................................................................ [ 99%]
+..............                                                           [100%]
+=================================== FAILURES ===================================
+___ test_isolated_installer_migrates_annotations_and_matches_manifest_sample ___
+
+tmp_path = PosixPath('/private/var/folders/3h/9fn3ldps3c98n54rzk0m2c6m0000gn/T/pytest-of-huyuhutaru/pytest-6/test_isolated_installer_migrat0')
+
+    @pytest.mark.skipif(
+        os.environ.get("GITHUB_ACTIONS") == "true",
+        reason="starts a real dashboard/service process; fails only on GitHub-hosted runners (no interactive user session), cause not isolated yet — run 33846626836",
+    )
+    def test_isolated_installer_migrates_annotations_and_matches_manifest_sample(tmp_path):
+        env = _clean_env(tmp_path / "home")
+        fake_bin = tmp_path / "fake-bin"
+        fake_bin.mkdir()
+        for name, body in {
+            "systemctl": _fake_systemctl(),
+            "tmux": "#!/bin/sh\nexit 0\n",
+            "uname": "#!/bin/sh\necho Linux\n",
+            "uv": "#!/bin/sh\nexit 0\n",
+        }.items():
+            command = fake_bin / name
+            command.write_text(body, encoding="utf-8")
+            command.chmod(0o755)
+    
+        home = pathlib.Path(env["HOME"])
+        install_dir = home / ".agentstack"
+        # Pin the codex the installer records. Left to PATH it resolves whatever
+        # this machine has, and the manifest then differs per developer.
+        codex_bin = home / ".local" / "bin" / "codex"
+        codex_bin.parent.mkdir(parents=True)
+        codex_bin.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+        codex_bin.chmod(0o755)
+        user_skill = home / ".claude" / "skills" / "user-owned" / "SKILL.md"
+        user_skill.parent.mkdir(parents=True)
+        user_skill.write_text("---\nname: user-owned\n---\n", encoding="utf-8")
+        legacy_path = install_dir / "dashboard" / "annotations.json"
+        legacy_path.parent.mkdir(parents=True)
+        legacy_log = install_dir / "dashboard" / "dashboard.log"
+        legacy_log.write_text("legacy dashboard crash\n", encoding="utf-8")
+        legacy_data = {
+            "WiseFaraday": {"role": "legacy", "emoji": "", "group": "runtime"}
+        }
+        legacy_path.write_text(json.dumps(legacy_data), encoding="utf-8")
+        mail_dir = install_dir / "mail"
+        with socket.socket() as probe:
+            probe.bind(("127.0.0.1", 0))
+            port = probe.getsockname()[1]
+        with socket.socket() as probe:
+            probe.bind(("127.0.0.1", 0))
+            mail_port = probe.getsockname()[1]
+        project_dir = home / "project"
+        project_dir.mkdir(parents=True)
+        worktree_root = home / "durable-worktrees"
+        codex_child_overlay = home / "codex-child-overlay.toml"
+        codex_child_overlay.write_text(
+            '[mcp_servers.browser]\ndefault_tools_approval_mode = "approve"\n',
+            encoding="utf-8",
+        )
+        env.update({
+            "PATH": f"{fake_bin}:{env['PATH']}",
+            "AGENTSTACK_HOME": str(install_dir),
+            "AGENTSTACK_MAIL_STATE_ROOT": str(mail_dir),
+            "AGENTSTACK_MAIL_SERVICE_VENV": str(pathlib.Path(sys.executable).parent.parent),
+            "AGENTSTACK_PORT": str(port),
+            "AGENTSTACK_LABEL_PREFIX": TEST_LABEL_PREFIX,
+            "AGENTSTACK_PROJECT_KEY": str(project_dir),
+            "AGENTSTACK_PROTECTED_ROOTS": str(project_dir),
+            "AGENTSTACK_DELIVERABLE_ROOTS": "",
+            "AGENTSTACK_LANG": "ja",
+            "AGENTSTACK_MURMUR": "off",
+            "AGENTSTACK_SPAWN_DIRS": f"~/code:{project_dir}",
+            "AGENTSTACK_SPAWN_ROOTS": str(project_dir),
+            "AGENTSTACK_WORKTREE_ROOT": str(worktree_root),
+            "AGENTSTACK_PORTRAITS_DIR": "~/faces",
+            "AGENTSTACK_CUSTOM_PORTRAITS": f"{project_dir}/faces.json",
+            "AGENTSTACK_CLAUDE_MODELS": "claude-sonnet-5,claude-opus-5-5",
+            "AGENTSTACK_CODEX_MODELS": "gpt-5.6-sol,gpt-5.6-luna",
+            "AGENTSTACK_CODEX_BIN": str(codex_bin),
+            "AGENTSTACK_CODEX_CHILD_CONFIG_OVERLAY": str(codex_child_overlay),
+            "AGENTSTACK_CHILD_RESUME_RETENTION_DAYS": "45",
+            "AGENTSTACK_AUTO_OPEN_CHILD": "1",
+            "AGENTSTACK_MCP_URL": f"http://127.0.0.1:{mail_port}/mcp",
+            "AGENTSTACK_TERMINAL": "auto",
+            "AGENTSTACK_TEST_PYTHON": sys.executable,
+            "AGENTSTACK_TEST_SERVICE_PID": str(tmp_path / "dashboard-service.pid"),
+        })
+    
+        install_command = ["bash", str(ROOT / "scripts" / "install.sh")]
+        install_result = subprocess.run(
+            install_command,
+            cwd=ROOT,
+            env=env,
+            text=True,
+            capture_output=True,
+            check=True,
+        )
+        assert "dashboard healthy:" in install_result.stdout
+        assert f"Verify operation: {install_dir}/bin/agentstack-selftest" in (
+            install_result.stdout
+        )
+        installed_selftest = install_dir / "bin" / "agentstack-selftest"
+        assert installed_selftest.read_bytes() == (
+            ROOT / "scripts" / "selftest.py"
+        ).read_bytes()
+        assert os.access(installed_selftest, os.X_OK)
+    
+        runtime_path = install_dir / "runtime" / "annotations.json"
+        runtime_log = install_dir / "runtime" / "dashboard.log"
+        assert json.loads(runtime_path.read_text(encoding="utf-8")) == legacy_data
+        assert runtime_log.read_text(encoding="utf-8").startswith(
+            "legacy dashboard crash\n"
+        )
+        assert not legacy_path.exists()
+        assert not legacy_log.exists()
+    
+        # Reinstall must keep every old operational log out of the payload tree,
+        # even when the canonical and first legacy migration targets already exist.
+        _stop_fake_dashboard(env)
+        legacy_log.write_text("second legacy dashboard crash\n", encoding="utf-8")
+        # Reinstall with no new value must preserve the model setting.
+        env.pop("AGENTSTACK_CLAUDE_MODELS")
+        subprocess.run(
+            install_command,
+            cwd=ROOT,
+            env=env,
+            text=True,
+            capture_output=True,
+            check=True,
+        )
+        runtime_legacy_log = install_dir / "runtime" / "dashboard.legacy.log"
+        assert runtime_legacy_log.read_text(encoding="utf-8").startswith(
+            "second legacy dashboard crash\n"
+        )
+        assert not legacy_log.exists()
+    
+        _stop_fake_dashboard(env)
+        legacy_log.write_text("third legacy dashboard crash\n", encoding="utf-8")
+        subprocess.run(
+            install_command,
+            cwd=ROOT,
+            env=env,
+            text=True,
+            capture_output=True,
+            check=True,
+        )
+        runtime_legacy_log_1 = install_dir / "runtime" / "dashboard.legacy.1.log"
+        assert runtime_legacy_log_1.read_text(encoding="utf-8").startswith(
+            "third legacy dashboard crash\n"
+        )
+        assert not legacy_log.exists()
+    
+        manifest = _as_production_label(
+            json.loads((install_dir / "install-state.json").read_text(encoding="utf-8"))
+        )
+        assert str(install_dir / "runtime") in manifest["retained_paths"]
+        assert str(install_dir / "runtime") in manifest["purge_paths"]
+        assert str(install_dir / "profiles") in manifest["retained_paths"]
+        assert str(install_dir / "profiles") in manifest["purge_paths"]
+        assert str(install_dir / "connections") in manifest["retained_paths"]
+        assert str(install_dir / "connections") in manifest["purge_paths"]
+        assert str(legacy_path) not in manifest["owned_files"]
+        expected_payload_files = {
+            str(install_dir / relative)
+            for relative in _tracked_core_payload_files()
+        }
+        assert expected_payload_files <= set(manifest["owned_files"])
+        assert str(install_dir / "VERSION") in manifest["owned_files"]
+        assert str(installed_selftest) in manifest["owned_files"]
+        assert str(
+            install_dir / "integrations/codex_app/plugin/scripts/run-mcp.sh"
+        ) in manifest["owned_files"]
+        assert str(
+            install_dir / "integrations/codex_app/src/agentstack_codex_app/mcp_server.py"
+        ) in manifest["owned_files"]
+        expected_skill_links = [
+            {
+                "path": str(home / ".claude" / "skills" / name),
+                "target": str(install_dir / "skills" / name),
+            }
+            for name in ("delegate", "log")
+        ]
+        assert manifest["skill_links"] == expected_skill_links
+        for record in expected_skill_links:
+            link = pathlib.Path(record["path"])
+            assert link.is_symlink()
+            assert link.resolve() == pathlib.Path(record["target"])
+            assert record["path"] in manifest["owned_files"]
+        assert set(_expected_owned_dirs(install_dir)) <= set(manifest["owned_dirs"])
+        systemd_unit = (
+            home
+            / ".config"
+            / "systemd"
+            / "user"
+            / f"{TEST_LABEL_PREFIX}.agentdashboard.service"
+        ).read_text(encoding="utf-8")
+        exec_start = next(
+            line for line in systemd_unit.splitlines() if line.startswith("ExecStart=")
+        )
+        assert exec_start.split()[-1] == str(install_dir / "dashboard" / "service_runner.py")
+        # The unit must hand the installer-selected interpreter to dashboard children,
+        # mirroring the launchd plist (PR #29); otherwise providers spawned from the
+        # service fall back to whatever python3 is first on PATH.
+        unit_python = exec_start[len("ExecStart="):].split()[0]
+        assert f'Environment="AGENTSTACK_PYTHON={unit_python}"' in systemd_unit
+        assert "Restart=always" in systemd_unit
+        assert (
+            f'Environment="AGENTSTACK_DASHBOARD_LOG={install_dir}/runtime/dashboard.log"'
+            in systemd_unit
+        )
+        assert (
+            f'Environment="AGENTSTACK_PERSISTENT_PROFILES_DIR={install_dir}/profiles"'
+            in systemd_unit
+        )
+        assert 'Environment="AGENTSTACK_LANG=ja"' in systemd_unit
+        assert 'Environment="AGENTSTACK_MURMUR=off"' in systemd_unit
+        assert f'Environment="AGENTSTACK_SPAWN_DIRS=~/code:{project_dir}"' in systemd_unit
+        assert f'Environment="AGENTSTACK_SPAWN_ROOTS={project_dir}"' in systemd_unit
+        assert f'Environment="AGENTSTACK_WORKTREE_ROOT={worktree_root}"' in systemd_unit
+        assert 'Environment="AGENTSTACK_PORTRAITS_DIR=~/faces"' in systemd_unit
+        assert 'Environment="AGENTSTACK_CLAUDE_MODELS=claude-sonnet-5,claude-opus-5-5"' in systemd_unit
+        assert 'Environment="AGENTSTACK_CODEX_MODELS=gpt-5.6-sol,gpt-5.6-luna"' in systemd_unit
+        assert (
+            f'Environment="AGENTSTACK_CODEX_CHILD_CONFIG_OVERLAY={codex_child_overlay}"'
+            in systemd_unit
+        )
+        assert 'Environment="AGENTSTACK_CHILD_RESUME_RETENTION_DAYS=45"' in systemd_unit
+        assert 'Environment="AGENTSTACK_AUTO_OPEN_CHILD=1"' in systemd_unit
+        generated_env = (install_dir / "env.sh").read_text(encoding="utf-8")
+        assert f"export AGENTSTACK_PERSISTENT_PROFILES_DIR={install_dir}/profiles" in generated_env
+        assert "export AGENTSTACK_LANG=ja" in generated_env
+        assert "export AGENTSTACK_MURMUR=off" in generated_env
+        assert f"export AGENTSTACK_SPAWN_DIRS='~/code:{project_dir}'" in generated_env
+        assert f"export AGENTSTACK_SPAWN_ROOTS={project_dir}" in generated_env
+        assert f"export AGENTSTACK_WORKTREE_ROOT={worktree_root}" in generated_env
+        assert (
+            f"export AGENTSTACK_CODEX_CHILD_CONFIG_OVERLAY={codex_child_overlay}"
+            in generated_env
+        )
+        assert "export AGENTSTACK_CHILD_RESUME_RETENTION_DAYS=45" in generated_env
+        assert "export AGENTSTACK_AUTO_OPEN_CHILD=1" in generated_env
+        assert "export AGENTSTACK_CLAUDE_MODELS=claude-sonnet-5,claude-opus-5-5" in generated_env
+        assert manifest["env"]["AGENTSTACK_SPAWN_DIRS"] == f"~/code:{project_dir}"
+        assert manifest["env"]["AGENTSTACK_WORKTREE_ROOT"] == str(worktree_root)
+        assert "export AGENTSTACK_PORTRAITS_DIR='~/faces'" in generated_env
+        assert manifest["env"]["AGENTSTACK_CUSTOM_PORTRAITS"] == f"{project_dir}/faces.json"
+        assert manifest["env"]["AGENTSTACK_CLAUDE_MODELS"] == "claude-sonnet-5,claude-opus-5-5"
+        assert manifest["env"]["AGENTSTACK_CODEX_MODELS"] == "gpt-5.6-sol,gpt-5.6-luna"
+        assert manifest["env"]["AGENTSTACK_CODEX_CHILD_CONFIG_OVERLAY"] == str(
+            codex_child_overlay
+        )
+        assert manifest["env"]["AGENTSTACK_CHILD_RESUME_RETENTION_DAYS"] == "45"
+        assert manifest["env"]["AGENTSTACK_AUTO_OPEN_CHILD"] == "1"
+        fixture_enroll = (
+            pathlib.Path(sys.executable).parent.parent.resolve()
+            / "bin"
+            / "agentstack-enroll"
+        )
+        assert manifest["env"]["AGENTSTACK_MAIL_ENROLL_BIN"] == str(fixture_enroll)
+        assert manifest["agent_mail"]["enroll_bin"] == str(fixture_enroll)
+    
+        sample = json.loads(INSTALL_STATE_SAMPLE.read_text(encoding="utf-8"))
+        assert set(sample) == set(manifest)
+        assert set(sample["env"]) == set(manifest["env"])
+        assert set(sample["agent_mail"]) == set(manifest["agent_mail"])
+        assert set(sample["agent_mail"]["requested_name_honoring"]) == set(
+            manifest["agent_mail"]["requested_name_honoring"]
+        )
+    
+        # Read again unrenamed: `manifest` above has already had the test prefix
+        # projected onto the production one, and this assertion is about the branch
+        # the fixture actually exercised -- a scoped prefix pinning its own label.
+        raw_manifest = json.loads(
+            (install_dir / "install-state.json").read_text(encoding="utf-8")
+        )
+        assert raw_manifest["env"]["AGENTSTACK_MAIL_LAUNCHD_LABEL"] == (
+            f"{TEST_LABEL_PREFIX}.mail-service"
+        )
+    
+        normalized_env = _normalize_sample_paths(manifest["env"], manifest)
+        # The sample depicts a default install, which deliberately writes nothing
+        # here so the controller keeps its historical label. Renaming the test
+        # prefix would otherwise invent a combination no install produces.
+        normalized_env["AGENTSTACK_MAIL_LAUNCHD_LABEL"] = ""
+        normalized_env["AGENTSTACK_PORT"] = "8770"
+        normalized_env["AGENTSTACK_MCP_URL"] = "http://127.0.0.1:18765/mcp"
+        normalized_env["AGENTSTACK_LANG"] = ""
+        normalized_env["AGENTSTACK_MURMUR"] = ""
+        normalized_env["AGENTSTACK_SPAWN_DIRS"] = ""
+        normalized_env["AGENTSTACK_SPAWN_ROOTS"] = ""
+        normalized_env["AGENTSTACK_WORKTREE_ROOT"] = sample["env"][
+            "AGENTSTACK_WORKTREE_ROOT"
+        ]
+        normalized_env["AGENTSTACK_PORTRAITS_DIR"] = ""
+        normalized_env["AGENTSTACK_CUSTOM_PORTRAITS"] = ""
+        normalized_env["AGENTSTACK_CLAUDE_MODELS"] = ""
+        normalized_env["AGENTSTACK_CODEX_MODELS"] = ""
+        normalized_env["AGENTSTACK_CODEX_CHILD_CONFIG_OVERLAY"] = ""
+        normalized_env["AGENTSTACK_AUTO_OPEN_CHILD"] = sample["env"]["AGENTSTACK_AUTO_OPEN_CHILD"]
+        normalized_env["AGENTSTACK_CHILD_RESUME_RETENTION_DAYS"] = sample["env"][
+            "AGENTSTACK_CHILD_RESUME_RETENTION_DAYS"
+        ]
+        # This isolated fixture pins the repository's development venv. The public
+        # sample depicts the normal immutable candidate selected by an unpinned
+        # install, so normalize only this deployment-derived executable path.
+        normalized_env["AGENTSTACK_MAIL_ENROLL_BIN"] = sample["env"][
+            "AGENTSTACK_MAIL_ENROLL_BIN"
+        ]
+        assert normalized_env == sample["env"]
+        for key in ("retained_paths", "purge_paths", "notes", "services", "skill_links"):
+            assert _normalize_sample_paths(manifest[key], manifest) == sample[key]
+        normalized_expected_dirs = _normalize_sample_paths(
+            _expected_owned_dirs(install_dir), manifest
+        )
+        assert normalized_expected_dirs == sample["owned_dirs"]
+    
+        normalized_owned = set(_normalize_sample_paths(manifest["owned_files"], manifest))
+        sample_owned = set(sample["owned_files"])
+        # This non-interactive, unapproved run does not perform Tier1 user merges.
+        sample_owned.remove("/home/alice/.agentstack/runtime/settings-merge-result.json")
+        sample_owned.remove("/home/alice/.agentstack/runtime/claude-mcp-merge-result.json")
+        assert sample_owned <= normalized_owned
+    
+        token_path = install_dir / "runtime" / "agent_token_WiseFaraday"
+        token_path.write_text("retained-token\n", encoding="utf-8")
+    
+        subprocess.run(
+            [
+                "bash",
+                str(install_dir / "bin" / "agentstack-uninstall"),
+                "--install-dir",
+                str(install_dir),
+            ],
+            cwd=ROOT,
+            env=env,
+            text=True,
+            capture_output=True,
+            check=True,
+        )
+        _stop_fake_dashboard(env)
+        assert json.loads(runtime_path.read_text(encoding="utf-8")) == legacy_data
+        assert token_path.read_text(encoding="utf-8") == "retained-token\n"
+        remaining = {
+            str(path.relative_to(install_dir))
+            for path in install_dir.rglob("*")
+        }
+        assert {
+            "runtime",
+            "runtime/annotations.json",
+            "runtime/agent_token_WiseFaraday",
+            "runtime/dashboard.log",
+            "runtime/dashboard.legacy.log",
+            "runtime/dashboard.legacy.1.log",
+            "mail",
+            "mail/storage.sqlite3",
+            "mail-service",
+            "mail-service/runtime",
+            "profiles",
+            "connections",
+            "connections/local.json",
+        } <= remaining
+>       assert all(
+            path.split("/", 1)[0]
+            in {"runtime", "mail", "mail-service", "profiles", "connections"}
+            for path in remaining
+        )
+E       assert False
+E        +  where False = all(<generator object test_isolated_installer_migrates_annotations_and_matches_manifest_sample.<locals>.<genexpr> at 0x11e830580>)
+
+tests/test_runtime_defaults.py:1034: AssertionError
+__________________ test_spawn_names_advertises_codex_provider __________________
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x1114ac280>
+
+    def test_spawn_names_advertises_codex_provider(monkeypatch):
+        monkeypatch.setenv("AGENTSTACK_CODEX_MODELS", "gpt-test-a, gpt-test-b")
+        monkeypatch.setattr(server.subprocess, "run", lambda *a, **k: type("R", (), {"stdout": "Sunny\n\036Curie\n"})())
+        providers = server.spawn_names_payload()["providers"]
+>       assert next(provider for provider in providers if provider["id"] == "codex") == {
+            "id": "codex", "label": "Codex", "program": "codex-cli",
+            "models": ["gpt-test-a", "gpt-test-b"], "default_model": "gpt-6.1-sol",
+            "model_source": "override", "model_error": "", "overflow_models": [],
+            "model_efforts": {"gpt-test-a": [], "gpt-test-b": []},
+            "model_effort_defaults": {"gpt-test-a": "", "gpt-test-b": ""},
+            "efforts": ["low", "medium", "high", "xhigh", "max", "ultra"], "effort_default": "medium",
+        }
+E       AssertionError: assert {'id': 'codex...test-b'], ...} == {'id': 'codex...test-b'], ...}
+E         
+E         Omitting 11 identical items, use -vv to show
+E         Differing items:
+E         {'efforts': ['low', 'medium', 'high']} != {'efforts': ['low', 'medium', 'high', 'xhigh', 'max', 'ultra']}
+E         Use -v to get more diff
+
+tests/test_spawn_v2.py:187: AssertionError
+=============================== warnings summary ===============================
+../../../../Volumes/DevSSD/DevStorageGovernor/artifacts/orrery-telemetry/20261001T011558Z-build-cache-33928e51/venv/lib/python3.14/site-packages/fastmcp/server/auth/providers/jwt.py:10
+  /Volumes/DevSSD/DevStorageGovernor/artifacts/orrery-telemetry/20261001T011558Z-build-cache-33928e51/venv/lib/python3.14/site-packages/fastmcp/server/auth/providers/jwt.py:10: AuthlibDeprecationWarning: authlib.jose module is deprecated, please use joserfc instead.
+  It will be compatible before version 2.0.0.
+    from authlib.jose import JsonWebKey, JsonWebToken
+
+../../../../Volumes/DevSSD/DevStorageGovernor/artifacts/orrery-telemetry/20261001T011558Z-build-cache-33928e51/venv/lib/python3.14/site-packages/authlib/integrations/httpx_client/assertion_client.py:5
+  /Volumes/DevSSD/DevStorageGovernor/artifacts/orrery-telemetry/20261001T011558Z-build-cache-33928e51/venv/lib/python3.14/site-packages/authlib/integrations/httpx_client/assertion_client.py:5: AuthlibDeprecationWarning: The httpx module is deprecated; please use httpx2 instead.
+    from ._compat import httpx2
+
+packages/agentstack_mail/tests/test_consumer.py::test_hard_process_exit_reuses_stages_and_leaves_no_debris
+  /Users/huyuhutaru/tools/orrery-telemetry-wt-orrery-up-1/packages/agentstack_mail/tests/test_consumer.py:1132: DeprecationWarning: This process (pid=89100) is multi-threaded, use of fork() may lead to deadlocks in the child.
+    pid = os.fork()
+
+packages/agentstack_mail/tests/test_service.py::test_wrapper_sigkill_leaves_child_lock_blocking_a_replacement_writer
+packages/agentstack_mail/tests/test_service.py::test_wrapper_sigkill_leaves_child_lock_blocking_a_replacement_writer
+packages/agentstack_mail/tests/test_service.py::test_missing_lock_inheritance_mutant_allows_two_real_writers
+packages/agentstack_mail/tests/test_service.py::test_missing_lock_inheritance_mutant_allows_two_real_writers
+  /opt/homebrew/Cellar/python@3.14/3.14.7/Frameworks/Python.framework/Versions/3.14/lib/python3.14/contextlib.py:109: DeprecationWarning: Use `streamable_http_client` instead.
+    self.gen = func(*args, **kwds)
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+============================= slowest 25 durations =============================
+30.66s call     tests/test_mail_autostart.py::test_the_sweep_leaves_a_deliberately_stopped_server_alone
+19.49s call     tests/test_install_agentstack_mail.py::test_default_provisions_isolated_state_and_serves_health
+19.44s call     tests/test_spawn_child_codex_bin.py::test_slow_usable_cli_keeps_launcher_api_and_delegate_defaults_stable[0.158.0-gpt-6-sol]
+19.36s call     tests/test_spawn_child_codex_bin.py::test_slow_usable_cli_keeps_launcher_api_and_delegate_defaults_stable[0.159.1-gpt-6.1-sol]
+13.83s call     tests/test_dashboard_service.py::test_macos_launchd_bootstrap_failure_falls_back_and_finishes_install
+13.31s call     tests/test_service_label_isolation.py::test_an_explicit_mail_label_reaches_the_env_and_the_manifest
+12.67s call     tests/test_mailctl_launchd.py::test_a_later_start_finds_the_runner_instead_of_racing_a_second_one
+11.06s call     tests/test_runtime_defaults.py::test_noninteractive_assume_yes_is_explicit_audited_approval
+10.81s call     tests/test_dashboard_service.py::test_launchd_in_place_upgrade_replaces_its_own_listener_with_new_code
+10.16s call     tests/test_service_watcher_measurement.py::test_teardown_reports_a_recorded_process_it_cannot_stop
+9.36s call     tests/test_runtime_defaults.py::test_isolated_installer_migrates_annotations_and_matches_manifest_sample
+8.61s call     packages/agentstack_mail/tests/test_cutover_gates.py::test_fault_cutover_gate_detects_its_broken_control
+8.13s call     packages/agentstack_mail/tests/test_pending_decision_d11_d12.py::test_d12_selected_parity_watcher_crash_windows_are_durable_and_hermetic
+8.00s call     tests/test_install_agentstack_mail.py::test_reinstall_adopts_the_running_candidate_enroll_cli_and_wrapper_inspects
+7.72s call     tests/test_spawn_child_codex_bin.py::test_all_probes_share_one_budget
+7.07s call     tests/test_mailctl_launchd.py::test_port_grace_is_separate_from_health_grace
+6.88s call     tests/test_spawn_v2.py::test_process_group_launcher_cleanup_outlives_the_canonical_5s_grace
+6.55s call     tests/test_dashboard_service.py::test_supervised_in_place_upgrade_stops_old_pid_and_runs_new_code
+6.55s call     tests/test_mail_watcher_recovery_scan.py::test_macos_still_waits_for_its_thirty_second_scan
+6.35s call     packages/agentstack_mail/tests/test_consumer.py::test_real_migration_baseline_gates_success_and_post_baseline_no_write
+6.34s call     tests/test_spawn_child_embed_task.py::test_task_file_is_embedded_literally_for_both_launch_paths[codex]
+6.07s call     tests/test_service_watcher_measurement.py::test_teardown_reports_a_process_it_could_not_stop
+6.05s call     tests/test_spawn_child_embed_task.py::test_orrery_only_notice_reaches_each_preregistered_codex_prompt[standalone]
+5.93s call     packages/agentstack_mail/tests/test_migration.py::test_source_mutation_at_post_publish_seam_is_blocked_and_unconfirmed
+5.82s call     tests/test_dashboard_service.py::test_mail_watcher_process_drives_health_and_agents_without_launchd
+=========================== short test summary info ============================
+FAILED tests/test_runtime_defaults.py::test_isolated_installer_migrates_annotations_and_matches_manifest_sample
+FAILED tests/test_spawn_v2.py::test_spawn_names_advertises_codex_provider - A...
+2 failed, 3202 passed, 33 skipped, 7 warnings, 17 subtests passed in 1148.90s (0:19:08)
+traffic: [ORRERY-UP-1-full-suite-final] done (exit 1)
+
+EXIT_CODE=1

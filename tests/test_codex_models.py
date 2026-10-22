@@ -40,7 +40,8 @@ def cache(rows=None, *, age=0, **extra):
     return path
 
 
-def test_fresh_cache_adds_gpt6_and_unknown_future_models_without_changing_default():
+def test_fresh_cache_adds_gpt6_and_unknown_future_models_without_changing_default(monkeypatch):
+    monkeypatch.setenv("AGENTSTACK_ALLOW_XHIGH", "1")
     cache([row("gpt-9-future.1"), row("gpt-6-luna", ("low", "medium", "high", "xhigh", "max")), row()])
     catalog = models.resolve_catalog()
     assert catalog.source == "local_cache"
@@ -352,13 +353,15 @@ def test_explicit_aliases_are_separate_from_omitted_default():
 
 
 @pytest.mark.parametrize("model", ["gpt-6-luna", "gpt-5.6-luna", "gpt-5.5"])
-def test_explicit_effort_is_passed_through_when_metadata_is_narrower(model):
+def test_explicit_effort_is_passed_through_when_metadata_is_narrower(model, monkeypatch):
+    monkeypatch.setenv("AGENTSTACK_ALLOW_XHIGH", "1")
     assert models.resolve_effort(model, "ultra") == "ultra"
     assert models.resolve_effort(model, "xhigh") == "xhigh"
     assert models.resolve_effort(model, "max") == "max"
 
 
-def test_fresh_effort_metadata_overrides_bundled_and_uses_valid_default():
+def test_fresh_effort_metadata_overrides_bundled_and_uses_valid_default(monkeypatch):
+    monkeypatch.setenv("AGENTSTACK_ALLOW_XHIGH", "1")
     cache([row("gpt-6-sol", ("medium", "high"))])
     assert models.resolve_effort("gpt-6-sol") == "medium"
     assert models.resolve_effort("gpt-6-sol", "xhigh") == "xhigh"
@@ -372,7 +375,8 @@ def test_unknown_model_and_nonreasoning_model_omit_effort_by_default():
     assert models.resolve_effort("gpt-no-reasoning", "high") == "high"
 
 
-def test_cli_entrypoint_matches_python_policy():
+def test_cli_entrypoint_matches_python_policy(monkeypatch):
+    monkeypatch.setenv("AGENTSTACK_ALLOW_XHIGH", "1")
     helper = Path(models.__file__)
     result = subprocess.run([sys.executable, str(helper), "normalize", "luna"], capture_output=True, text=True)
     assert result.returncode == 0 and result.stdout.strip() == "gpt-6-luna"

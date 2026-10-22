@@ -1,0 +1,58 @@
+#!/bin/bash
+# Memory guard v2 (2026-09-26, head ProudTuring; M-049).
+# The Mac panicked twice (09-24 04:38, 09-25 22:48) with the compressor at 100%.
+# The 09-25 panic stackshot shows one ExamForge app process inside a Simulator at
+# 20.24 GiB resident while it compiled a 13-PDF set under a UI test: a Simulator app has
+# no iOS memory limit, so it can eat the whole Mac. v1 watched memory_pressure's "free
+# percentage", which still read 54% while the compressor was filling; it never fired.
+# v2, every 10 s (launchd):
+#  1. Any process running from a Simulator device (path contains /CoreSimulator/Devices/)
+#     above SIM_APP_MAX_MB resident is killed, as iOS jetsam would on a real iPad.
+#  2. If kern.memorystatus_level (the OS's own available-memory percentage) falls below
+#     LOW_LEVEL, all Simulators are shut down.
+#  Both write runtime/memory-hold; it clears once the level is back above CLEAR_LEVEL.
+SIM_APP_MAX_MB="${AGENTSTACK_SIM_APP_MAX_MB:-6144}"
+LOW_LEVEL="${AGENTSTACK_MEM_LOW_LEVEL:-30}"
+CLEAR_LEVEL="${AGENTSTACK_MEM_CLEAR_LEVEL:-55}"
+RUNTIME="$HOME/.agentstack/runtime"
+FLAG="$RUNTIME/memory-hold"
+LOG="$RUNTIME/memory-guard.log"
+now=$(/bin/date '+%Y-%m-%d %H:%M:%S')
+limit_kb=$((SIM_APP_MAX_MB * 1024))
+# Match on the executable path only (comm), never on arguments: a shell whose command
+# line merely mentions the path must not match (a 2026-09-26 test killed one).
+/bin/ps -axo pid=,rss=,comm= | /usr/bin/awk -v lim="$limit_kb" '$2 > lim && $3 ~ /\/CoreSimulator\/Devices\/[^ ]*\/data\// {print $1, $2}' |
+while read -r pid rss; do
+  cmd=$(/bin/ps -p "$pid" -o comm= 2>/dev/null | /usr/bin/cut -c1-200)
+  echo "$now KILL sim-app pid=$pid rss=$((rss/1024))MB > ${SIM_APP_MAX_MB}MB cmd=$cmd" >> "$LOG"
+  /bin/kill -9 "$pid" 2>>"$LOG"
+  echo "$now sim-app pid=$pid rss=$((rss/1024))MB killed" > "$FLAG"
+done
+# v3 (2026-09-26 05:5x): RSS misses memory that has been pushed into the compressor. An
+# xctrace Allocations recording (MEM-1) reached MEM 60G / CMPRS 59G while its RSS stayed
+# small, and the level fell to 29. Use top's MEM (footprint incl. compressed) as well:
+# Simulator processes above SIM_APP_MAX_MB, and xctrace above TOOL_MAX_MB, are killed.
+TOOL_MAX_MB="${AGENTSTACK_TOOL_MAX_MB:-12288}"
+/usr/bin/top -l 1 -o mem -n 25 -stats pid,mem 2>/dev/null | /usr/bin/awk 'NR>1 && $1 ~ /^[0-9]+$/ {m=$2; u=substr(m,length(m),1); v=m+0; if (u=="G") v*=1024; else if (u=="K") v/=1024; else if (u=="B") v/=1048576; print $1, int(v)}' |
+while read -r pid mb; do
+  path=$(/bin/ps -p "$pid" -o comm= 2>/dev/null)
+  [ -z "$path" ] && continue
+  if [ "$mb" -gt "$SIM_APP_MAX_MB" ] && printf '%s' "$path" | /usr/bin/grep -qE '/CoreSimulator/Devices/[^ ]*/data/'; then
+    echo "$now KILL sim-app(footprint) pid=$pid mem=${mb}MB > ${SIM_APP_MAX_MB}MB cmd=$(printf '%s' "$path" | /usr/bin/cut -c1-160)" >> "$LOG"
+    /bin/kill -9 "$pid" 2>>"$LOG"; echo "$now sim-app pid=$pid mem=${mb}MB killed" > "$FLAG"
+  elif [ "$mb" -gt "$TOOL_MAX_MB" ] && [ "$(/usr/bin/basename "$path")" = "xctrace" ]; then
+    echo "$now KILL xctrace(footprint) pid=$pid mem=${mb}MB > ${TOOL_MAX_MB}MB" >> "$LOG"
+    /bin/kill -9 "$pid" 2>>"$LOG"; echo "$now xctrace pid=$pid mem=${mb}MB killed" > "$FLAG"
+  fi
+done
+level=$(/usr/sbin/sysctl -n kern.memorystatus_level 2>/dev/null)
+[ -z "$level" ] && exit 0
+if [ "$level" -lt "$LOW_LEVEL" ]; then
+  booted=$(/usr/bin/xcrun simctl list devices booted 2>/dev/null | /usr/bin/grep -c "(Booted)")
+  echo "$now level=${level} < ${LOW_LEVEL} booted_sims=${booted} -> simctl shutdown all" >> "$LOG"
+  /usr/bin/xcrun simctl shutdown all >> "$LOG" 2>&1
+  echo "$now level=${level}" > "$FLAG"
+elif [ -f "$FLAG" ] && [ "$level" -ge "$CLEAR_LEVEL" ]; then
+  echo "$now level=${level} >= ${CLEAR_LEVEL} -> hold cleared" >> "$LOG"
+  rm -f "$FLAG"
+fi

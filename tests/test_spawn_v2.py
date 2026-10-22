@@ -242,6 +242,7 @@ def test_spawn_names_keeps_an_explicit_spawn_dirs_unchanged(monkeypatch):
 
 
 def test_spawn_names_advertises_codex_provider(monkeypatch):
+    monkeypatch.setenv("AGENTSTACK_CODEX_ALLOW_XHIGH", "0")
     monkeypatch.setenv("AGENTSTACK_CODEX_MODELS", "gpt-test-a, gpt-test-b")
     monkeypatch.setattr(server.subprocess, "run", lambda *a, **k: type("R", (), {"stdout": "Sunny\n\036Curie\n"})())
     providers = server.spawn_names_payload()["providers"]
@@ -252,7 +253,7 @@ def test_spawn_names_advertises_codex_provider(monkeypatch):
         "model_note": "",
         "model_efforts": {"gpt-test-a": [], "gpt-test-b": []},
         "model_effort_defaults": {"gpt-test-a": "", "gpt-test-b": ""},
-        "efforts": ["low", "medium", "high", "xhigh", "max", "ultra"], "effort_default": "xhigh",
+        "efforts": ["low", "medium", "high"], "effort_default": "medium",
     }
 
 
@@ -1401,6 +1402,7 @@ def test_codex_api_and_launcher_policy_agree(monkeypatch, tmp_path, model):
     assert captured[-1].effort == server.codex_models.resolve_effort(model)
     assert captured[-1].effort_arg == bool(captured[-1].effort)
     if model == "gpt-6-luna":
+        monkeypatch.setenv("AGENTSTACK_ALLOW_XHIGH", "1")
         assert server.do_spawn({**payload, "effort": "ultra"})["ok"]
         assert captured[-1].effort == "ultra"
 

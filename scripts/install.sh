@@ -800,6 +800,9 @@ resolve_setting CODEX_MODELS_SETTING AGENTSTACK_CODEX_MODELS
 # Pass the new settings as data, never interpolate them into Python source.
 export AGENTSTACK_CLAUDE_MODELS="$CLAUDE_MODELS_SETTING"
 
+AGENTSTACK_CODEX_SANDBOX="${AGENTSTACK_CODEX_SANDBOX:-$(agentstack_installed_env_value AGENTSTACK_CODEX_SANDBOX "$INSTALL_DIR/env.sh")}"
+AGENTSTACK_CODEX_SANDBOX="${AGENTSTACK_CODEX_SANDBOX:-workspace-write}"
+export AGENTSTACK_CODEX_SANDBOX
 HOOKS_DIR="$INSTALL_DIR/hooks"
 SKILLS_DIR="$INSTALL_DIR/skills"
 DASHBOARD_DIR="$INSTALL_DIR/dashboard"
@@ -2463,6 +2466,16 @@ install_payload() {
     copy_tree "$REPO_ROOT/codex" "$INSTALL_DIR/codex"
     copy_tree "$REPO_ROOT/claude" "$INSTALL_DIR/claude"
     install_child_mcp_proxy
+    # Fleet lint configuration is owner-controlled: seed only when absent.
+    # Never turn a core reinstall into an overwrite of local tuning.
+    plan "seed absent fleet lint config -> $INSTALL_DIR/config/head-send-lint.json"
+    if [[ "$DRY_RUN" != true ]]; then
+      mkdir -p "$INSTALL_DIR/config"
+      if [[ ! -e "$INSTALL_DIR/config/head-send-lint.json" && ! -L "$INSTALL_DIR/config/head-send-lint.json" ]]; then
+        cp "$REPO_ROOT/config/head-send-lint.json" "$INSTALL_DIR/config/head-send-lint.json"
+        chmod 600 "$INSTALL_DIR/config/head-send-lint.json"
+      fi
+    fi
   else
     plan "skip hooks copy for --dashboard-only"
     plan "skip skills copy for --dashboard-only"
@@ -2482,6 +2495,30 @@ install_payload() {
   if [[ "$DRY_RUN" != true ]]; then
     cp "$SCRIPT_DIR/uninstall.sh" "$BIN_DIR/agentstack-uninstall"
     cp "$SCRIPT_DIR/doctor.sh" "$BIN_DIR/agentstack-doctor"
+    # Fleet-local source additions, deliberately owned by this upgrade branch.
+    cp "$REPO_ROOT/bin/agentstack-check-seats" "$INSTALL_DIR/bin/agentstack-check-seats"
+    cp "$REPO_ROOT/bin/agentstack-memory-guard" "$INSTALL_DIR/bin/agentstack-memory-guard"
+    cp "$REPO_ROOT/bin/agentstack-owner-checkin.py" "$INSTALL_DIR/bin/agentstack-owner-checkin.py"
+    cp "$REPO_ROOT/bin/agentstack-reap-idle-seats" "$INSTALL_DIR/bin/agentstack-reap-idle-seats"
+    cp "$REPO_ROOT/bin/agentstack-restart-seat" "$INSTALL_DIR/bin/agentstack-restart-seat"
+    cp "$REPO_ROOT/bin/agentstack-rule-mirror-check" "$INSTALL_DIR/bin/agentstack-rule-mirror-check"
+    cp "$REPO_ROOT/bin/agentstack-seat-cost.py" "$INSTALL_DIR/bin/agentstack-seat-cost.py"
+    cp "$REPO_ROOT/bin/agentstack-seat-stall-watch.py" "$INSTALL_DIR/bin/agentstack-seat-stall-watch.py"
+    cp "$REPO_ROOT/bin/agentstack-spawn-codex" "$INSTALL_DIR/bin/agentstack-spawn-codex"
+    cp "$REPO_ROOT/bin/agentstack-supervisor.py" "$INSTALL_DIR/bin/agentstack-supervisor.py"
+    cp "$REPO_ROOT/bin/agentstack-tmux-server-migrate" "$INSTALL_DIR/bin/agentstack-tmux-server-migrate"
+    cp "$REPO_ROOT/bin/agentstack-unstick-seats.sh" "$INSTALL_DIR/bin/agentstack-unstick-seats.sh"
+    cp "$REPO_ROOT/bin/codex-stats" "$INSTALL_DIR/bin/codex-stats"
+    cp "$REPO_ROOT/bin/head-send" "$INSTALL_DIR/bin/head-send"
+    cp "$REPO_ROOT/bin/orrery-audit-evidence" "$INSTALL_DIR/bin/orrery-audit-evidence"
+    cp "$REPO_ROOT/bin/orrery-audit-login" "$INSTALL_DIR/bin/orrery-audit-login"
+    cp "$REPO_ROOT/bin/orrery-audit-run" "$INSTALL_DIR/bin/orrery-audit-run"
+    cp "$REPO_ROOT/bin/orrery-ci" "$INSTALL_DIR/bin/orrery-ci"
+    cp "$REPO_ROOT/bin/orrery-head-tripwire" "$INSTALL_DIR/bin/orrery-head-tripwire"
+    cp "$REPO_ROOT/bin/owner-quote-index" "$INSTALL_DIR/bin/owner-quote-index"
+    cp "$REPO_ROOT/bin/owner-sheet-health" "$INSTALL_DIR/bin/owner-sheet-health"
+    cp "$REPO_ROOT/bin/owner-sheet-server.py" "$INSTALL_DIR/bin/owner-sheet-server.py"
+    cp "$REPO_ROOT/bin/simulator-window-guard" "$INSTALL_DIR/bin/simulator-window-guard"
     cp "$SCRIPT_DIR/selftest.py" "$BIN_DIR/agentstack-selftest"
     cp "$MERGE_SETTINGS_SCRIPT" "$BIN_DIR/agentstack-merge-settings"
     cp "$MERGE_CLAUDE_MCP_SCRIPT" "$BIN_DIR/agentstack-merge-claude-mcp"
@@ -2845,6 +2882,7 @@ values = {
     "AGENTSTACK_CODEX_CHILD_CONFIG_OVERLAY": "$CODEX_CHILD_CONFIG_OVERLAY_SETTING",
     "AGENTSTACK_CODEX_NETWORK": "$CODEX_NETWORK_SETTING",
     "AGENTSTACK_CHILD_DEFAULT_TOOLS": "$CHILD_DEFAULT_TOOLS_SETTING",
+    "AGENTSTACK_CODEX_SANDBOX": "$AGENTSTACK_CODEX_SANDBOX",
     "AGENTSTACK_CODEX_ADD_DIRS": "$CODEX_ADD_DIRS_SETTING",
     "AGENTSTACK_CHILD_RESUME_RETENTION_DAYS": "$CHILD_RESUME_RETENTION_DAYS_SETTING",
     "AGENTSTACK_CODEX_BIN": "$CODEX_BIN_SETTING",
@@ -2874,6 +2912,22 @@ values = {
     # these are inherited by the next install.
     "AGENTSTACK_CHOSEN_SETTINGS": "$CHOSEN_SETTINGS",
 }
+# Retain fleet exports outside the upstream-managed key set. Parse values as
+# literals; never execute the old file or expose its values in installer output.
+if path.is_file():
+    for old_line in path.read_text(encoding="utf-8").splitlines():
+        if not old_line.startswith("export ") or "=" not in old_line:
+            continue
+        old_key, old_raw = old_line[7:].split("=", 1)
+        if not old_key.replace("_", "").isalnum() or old_key[0:1].isdigit():
+            continue
+        if old_key in values or old_key in {
+            "AGENTSTACK_MAIL_DIR", "AGENTSTACK_MAIL_STATE_ROOT", "AGENTSTACK_MAIL_HTTP_BEARER_MODE"
+        }:
+            continue
+        old_value = shlex.split(old_raw, comments=True, posix=True)
+        if len(old_value) == 1:
+            values[old_key] = old_value[0]
 values.update({
     "AGENTSTACK_MAIL_DIR": "$NATIVE_MAIL_SERVICE_ROOT",
     "AGENTSTACK_MAIL_STATE_ROOT": "$NATIVE_MAIL_STATE_ROOT",
@@ -4597,6 +4651,7 @@ env = {
     "AGENTSTACK_CODEX_CHILD_CONFIG_OVERLAY": "$CODEX_CHILD_CONFIG_OVERLAY_SETTING",
     "AGENTSTACK_CODEX_NETWORK": "$CODEX_NETWORK_SETTING",
     "AGENTSTACK_CHILD_DEFAULT_TOOLS": "$CHILD_DEFAULT_TOOLS_SETTING",
+    "AGENTSTACK_CODEX_SANDBOX": "$AGENTSTACK_CODEX_SANDBOX",
     "AGENTSTACK_CODEX_ADD_DIRS": "$CODEX_ADD_DIRS_SETTING",
     "AGENTSTACK_CHILD_RESUME_RETENTION_DAYS": "$CHILD_RESUME_RETENTION_DAYS_SETTING",
     "AGENTSTACK_CODEX_BIN": "$CODEX_BIN_SETTING",
@@ -5023,6 +5078,7 @@ manifest = {
         "AGENTSTACK_CODEX_CHILD_CONFIG_OVERLAY": "$CODEX_CHILD_CONFIG_OVERLAY_SETTING",
         "AGENTSTACK_CODEX_NETWORK": "$CODEX_NETWORK_SETTING",
         "AGENTSTACK_CHILD_DEFAULT_TOOLS": "$CHILD_DEFAULT_TOOLS_SETTING",
+    "AGENTSTACK_CODEX_SANDBOX": "$AGENTSTACK_CODEX_SANDBOX",
         "AGENTSTACK_CODEX_ADD_DIRS": "$CODEX_ADD_DIRS_SETTING",
         "AGENTSTACK_CHILD_RESUME_RETENTION_DAYS": "$CHILD_RESUME_RETENTION_DAYS_SETTING",
         "AGENTSTACK_CODEX_BIN": "$CODEX_BIN_SETTING",

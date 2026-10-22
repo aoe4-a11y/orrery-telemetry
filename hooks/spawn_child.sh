@@ -2306,6 +2306,15 @@ codex_watch_initial_task() {
                 ;;
         esac
         [[ "$bound" == true ]] && continue
+        if printf '%s' "$pane_text" | grep -qF "Update available"; then
+            tmux send-keys -t "$session_name" Escape
+            continue
+        fi
+        if codex_hooks_review_present "$pane_text"; then
+            trust_attempts=$((trust_attempts + 1))
+            codex_accept_hooks_review "$session_name" "$trust_attempts" "$trust_max" "$log_prefix" || return 1
+            continue
+        fi
         # A trust screen on the current screen comes first, whatever was seen
         # before: it is answered and the early end starts over.
         if codex_trust_screen_up "$pane_text"; then
@@ -2475,6 +2484,35 @@ write_child_mcp_config() {
 # the footer varies with terminal width, model and configuration. The reported
 # 90s hang came from a pane showing "gpt-5.5 xhigh · ~/obsidian", which has no
 # "% left" segment at all.
+# Codex 0.153 shows a second startup dialog when hooks are new or changed
+# ("Hooks need review"). The child's hooks are the same ones the operator already
+# trusted in the real home, so select "Trust all and continue".
+codex_hooks_review_present() {
+    printf '%s' "$1" | grep -qF "Hooks need review"
+}
+
+codex_accept_hooks_review() {
+    local session_name="$1" attempt="$2" max_attempts="$3" log_prefix="${4:-spawn_child}"
+    if (( attempt > max_attempts )); then
+        echo "[$log_prefix] Codex hooks-review dialog persisted after ${max_attempts} attempts; aborting" >&2
+        return 1
+    fi
+    local pane_text
+    pane_text="$(tmux capture-pane -t "$session_name" -p 2>/dev/null || true)"
+    if ! printf '%s' "$pane_text" | grep -qE '[›❯>][[:space:]]*2\. Trust all'; then
+        tmux send-keys -t "$session_name" Down
+        sleep 1
+        pane_text="$(tmux capture-pane -t "$session_name" -p 2>/dev/null || true)"
+    fi
+    if printf '%s' "$pane_text" | grep -qE '[›❯>][[:space:]]*2\. Trust all'; then
+        echo "[$log_prefix] Codex hooks-review dialog detected; selecting 'Trust all and continue' (${attempt}/${max_attempts})" >&2
+        tmux send-keys -t "$session_name" C-m
+        return 0
+    fi
+    echo "[$log_prefix] Codex hooks-review dialog detected but 'Trust all' row is not selected; not pressing Enter (${attempt}/${max_attempts})" >&2
+    return 0
+}
+
 codex_pane_ready() {
     local pane_text="$1" last_lines
     printf '%s' "$pane_text" | grep -qF "Use existing model" && return 1
@@ -2482,7 +2520,7 @@ codex_pane_ready() {
     printf '%s' "$last_lines" | grep -qE '% (left|context)' && return 0
     printf '%s' "$last_lines" | grep -qE 'for shortcuts' && return 0
     # Footer form "<model> <effort> · <cwd>" (no context segment).
-    printf '%s' "$last_lines" | grep -qE '(gpt|codex|o[0-9])[^ ]* .*·' && return 0
+    printf '%s' "$last_lines" | grep -qiE '(gpt|codex|o[0-9])[^ ]* .*·' && return 0
     # Bare input prompt.
     printf '%s' "$last_lines" | grep -qE '^[[:space:]]*[▌❯>][[:space:]]*$' && return 0
     return 1
@@ -2816,7 +2854,7 @@ build_embedded_task_prompt() {
     local spawned_at="$3"
     local project_key="$4"
     local task_text="$5"
-    printf 'あなたは %s（親: %s）。この起動は --embed-task mode です。ORRERY Mail への登録は親が完了済み・儀式不要です。ensure_project・register_agent・fetch_inbox は実行しないでください。現在時刻: %s。project_key は %s。以下のタスクが正本です。直ちに開始し、完了したら ORRERY Mail の send_message（Claude Code の SendMessage ではない）で %s に報告してください:\n\n%s' \
+    printf 'あなたは %s（親: %s）。この起動は --embed-task mode です。ORRERY Mail への登録は親が完了済み・儀式不要です。ensure_project・register_agent と起動時のタスク取得用 fetch_inbox は不要です。この省略は起動時だけです。起動後に便のpreview通知を受けたら fetch_inbox で全文を読み、指示とack_requiredを確認してください。現在時刻: %s。project_key は %s。便の規則（R-061）: 件名は [station]／[receipt]／[progress]／[blocked]／[plan]／[ack] のタグ 1 つで始める（無タグは [blocked] 扱い）・返信は元便のタグを継ぐ・ack_required の便は必ず ack する。以下のタスクが正本です。直ちに開始し、完了したら ORRERY Mail の send_message（Claude Code の SendMessage ではない）で %s に報告してください:\n\n%s' \
         "$child_name" "$parent_name" "$spawned_at" "$project_key" \
         "$parent_name" "$task_text"
 }
@@ -2835,7 +2873,7 @@ build_embedded_task_prompt() {
 # text travels in a private file (a tmux environment value has a size limit)
 # that the child's shell reads once and removes.
 claude_child_launch_command() {
-    local inner='export PATH="$HOME/.local/bin:$PATH"; MCP_ARGS=(); [[ -n "$CLAUDE_CHILD_MCP_CONFIG" ]] && MCP_ARGS=(--mcp-config "$CLAUDE_CHILD_MCP_CONFIG" --strict-mcp-config); "${CLAUDE_CHILD_BIN:-claude}" --model "$CLAUDE_CHILD_MODEL" "${MCP_ARGS[@]}"'
+    local inner='export PATH="$HOME/.local/bin:$PATH"; MCP_ARGS=(); [[ -n "$CLAUDE_CHILD_MCP_CONFIG" ]] && MCP_ARGS=(--mcp-config "$CLAUDE_CHILD_MCP_CONFIG" --strict-mcp-config); "${CLAUDE_CHILD_BIN:-claude}" --model "$CLAUDE_CHILD_MODEL" --dangerously-skip-permissions --add-dir "$HOME/.agentstack" --add-dir "$HOME/tools" --add-dir /Volumes/DevSSD "${MCP_ARGS[@]}"'
     if [[ -n "${CLAUDE_CHILD_TOOL_FLAGS:-}" ]]; then
         inner+=" $CLAUDE_CHILD_TOOL_FLAGS"
     fi
@@ -3370,7 +3408,7 @@ PY
     if [[ -n "$HARNESS" ]]; then
         TMUX_ENV_ARGS=(-e "AGENT_NAME=$CHILD_NAME" -e "CLAUDECODE=1" -e "AGENTSTACK_RESERVED_IDENTITY=1" -e "PROJECT_KEY=$PROJECT_KEY" -e "AGENTSTACK_PROJECT_KEY=$PROJECT_KEY" -e "AGENTSTACK_HOOKS_DIR=$HOOKS_DIR" -e "AGENTSTACK_RUNTIME_DIR=$RUNTIME_DIR" -e "AGENTSTACK_MCP_URL=$MCP_URL" -e "AGENTSTACK_MAIL_ENV=$MAIL_ENV" -e "AGENTSTACK_MAIL_HTTP_BEARER_MODE=$HTTP_BEARER_MODE" -e "AGENTSTACK_CHILD_RESUME_RETENTION_DAYS=$CHILD_RESUME_RETENTION_DAYS")
     else
-    TMUX_ENV_ARGS=(-e "CLAUDECODE=1" -e "AGENTSTACK_RESERVED_IDENTITY=1" -e "AGENT_NAME=$CHILD_NAME" -e "PROJECT_KEY=$PROJECT_KEY" -e "AGENTSTACK_PROJECT_KEY=$PROJECT_KEY" -e "AGENTSTACK_HOOKS_DIR=$HOOKS_DIR" -e "AGENTSTACK_RUNTIME_DIR=$RUNTIME_DIR" -e "AGENTSTACK_MCP_URL=$MCP_URL" -e "AGENTSTACK_MAIL_ENV=$MAIL_ENV" -e "AGENTSTACK_MAIL_HTTP_BEARER_MODE=$HTTP_BEARER_MODE" -e "AGENTSTACK_CHILD_RESUME_RETENTION_DAYS=$CHILD_RESUME_RETENTION_DAYS" -e "AGENTSTACK_TERMINAL=$TERMINAL_SETTING" -e "AGENTSTACK_AUTO_OPEN_CHILD=$AUTO_OPEN_CHILD" -e "AGENTSTACK_CODEX_APPROVAL=$(codex_approval_flags)" -e "AGENTSTACK_CODEX_NETWORK_FLAGS=$(codex_network_flags)")
+    TMUX_ENV_ARGS=(-e "CLAUDECODE=1" -e "AGENTSTACK_RESERVED_IDENTITY=1" -e "AGENT_NAME=$CHILD_NAME" -e "PROJECT_KEY=$PROJECT_KEY" -e "AGENTSTACK_PROJECT_KEY=$PROJECT_KEY" -e "AGENTSTACK_HOOKS_DIR=$HOOKS_DIR" -e "AGENTSTACK_RUNTIME_DIR=$RUNTIME_DIR" -e "AGENTSTACK_MCP_URL=$MCP_URL" -e "AGENTSTACK_MAIL_ENV=$MAIL_ENV" -e "AGENTSTACK_MAIL_HTTP_BEARER_MODE=$HTTP_BEARER_MODE" -e "AGENTSTACK_CHILD_RESUME_RETENTION_DAYS=$CHILD_RESUME_RETENTION_DAYS" -e "AGENTSTACK_TERMINAL=$TERMINAL_SETTING" -e "AGENTSTACK_AUTO_OPEN_CHILD=$AUTO_OPEN_CHILD" -e "AGENTSTACK_CODEX_SANDBOX=${AGENTSTACK_CODEX_SANDBOX:-workspace-write}" -e "AGENTSTACK_CODEX_APPROVAL=$(codex_approval_flags)" -e "AGENTSTACK_CODEX_NETWORK_FLAGS=$(codex_network_flags)")
     fi
     if [[ "$STANDALONE" != true ]]; then
         TMUX_ENV_ARGS+=(-e "PARENT_AGENT=$PARENT_NAME")
@@ -3488,7 +3526,7 @@ ${TASK}"
                     exit 1
                 fi
                 rm -f "$AGENTSTACK_CODEX_PROMPT_FILE"
-                env -u OPENAI_API_KEY "$AGENTSTACK_CODEX_BIN" -C "$PWD" --sandbox workspace-write $(printf "%s" "$AGENTSTACK_CODEX_APPROVAL") $(printf "%s" "$AGENTSTACK_CODEX_NETWORK_FLAGS") -c check_for_update_on_startup=false \
+                env -u OPENAI_API_KEY "$AGENTSTACK_CODEX_BIN" -C "$PWD" --sandbox "${AGENTSTACK_CODEX_SANDBOX:-workspace-write}" $(printf "%s" "$AGENTSTACK_CODEX_APPROVAL") $(printf "%s" "$AGENTSTACK_CODEX_NETWORK_FLAGS") -c check_for_update_on_startup=false \
                     "${EXTRA_ARGS[@]}" --model "$AGENTSTACK_CODEX_MODEL" -- "$AGENTSTACK_CODEX_TASK"
                 /bin/bash "$AGENTSTACK_HOOKS_DIR/cleanup-child-agent.sh"
             '"'"''
@@ -4260,7 +4298,7 @@ if [[ -z "$HARNESS" ]]; then prime_codex_bin; fi
 if [[ -n "$HARNESS" ]]; then
     TMUX_ENV_ARGS=(-e "AGENT_NAME=$CHILD_NAME" -e "CLAUDECODE=1" -e "AGENTSTACK_RESERVED_IDENTITY=1" -e "PROJECT_KEY=$PROJECT_KEY" -e "AGENTSTACK_PROJECT_KEY=$PROJECT_KEY" -e "AGENTSTACK_HOOKS_DIR=$HOOKS_DIR" -e "AGENTSTACK_RUNTIME_DIR=$RUNTIME_DIR" -e "AGENTSTACK_MCP_URL=$MCP_URL" -e "AGENTSTACK_MAIL_ENV=$MAIL_ENV" -e "AGENTSTACK_MAIL_HTTP_BEARER_MODE=$HTTP_BEARER_MODE" -e "AGENTSTACK_CHILD_RESUME_RETENTION_DAYS=$CHILD_RESUME_RETENTION_DAYS")
 else
-TMUX_ENV_ARGS=(-e "CLAUDECODE=1" -e "AGENTSTACK_RESERVED_IDENTITY=1" -e "AGENT_NAME=$CHILD_NAME" -e "PARENT_AGENT=$PARENT_NAME" -e "PROJECT_KEY=$PROJECT_KEY" -e "AGENTSTACK_PROJECT_KEY=$PROJECT_KEY" -e "AGENTSTACK_HOOKS_DIR=$HOOKS_DIR" -e "AGENTSTACK_RUNTIME_DIR=$RUNTIME_DIR" -e "AGENTSTACK_MCP_URL=$MCP_URL" -e "AGENTSTACK_MAIL_ENV=$MAIL_ENV" -e "AGENTSTACK_MAIL_HTTP_BEARER_MODE=$HTTP_BEARER_MODE" -e "AGENTSTACK_CHILD_RESUME_RETENTION_DAYS=$CHILD_RESUME_RETENTION_DAYS" -e "AGENTSTACK_TERMINAL=$TERMINAL_SETTING" -e "AGENTSTACK_AUTO_OPEN_CHILD=$AUTO_OPEN_CHILD" -e "AGENTSTACK_CODEX_APPROVAL=$(codex_approval_flags)" -e "AGENTSTACK_CODEX_NETWORK_FLAGS=$(codex_network_flags)")
+TMUX_ENV_ARGS=(-e "CLAUDECODE=1" -e "AGENTSTACK_RESERVED_IDENTITY=1" -e "AGENT_NAME=$CHILD_NAME" -e "PARENT_AGENT=$PARENT_NAME" -e "PROJECT_KEY=$PROJECT_KEY" -e "AGENTSTACK_PROJECT_KEY=$PROJECT_KEY" -e "AGENTSTACK_HOOKS_DIR=$HOOKS_DIR" -e "AGENTSTACK_RUNTIME_DIR=$RUNTIME_DIR" -e "AGENTSTACK_MCP_URL=$MCP_URL" -e "AGENTSTACK_MAIL_ENV=$MAIL_ENV" -e "AGENTSTACK_MAIL_HTTP_BEARER_MODE=$HTTP_BEARER_MODE" -e "AGENTSTACK_CHILD_RESUME_RETENTION_DAYS=$CHILD_RESUME_RETENTION_DAYS" -e "AGENTSTACK_TERMINAL=$TERMINAL_SETTING" -e "AGENTSTACK_AUTO_OPEN_CHILD=$AUTO_OPEN_CHILD" -e "AGENTSTACK_CODEX_SANDBOX=${AGENTSTACK_CODEX_SANDBOX:-workspace-write}" -e "AGENTSTACK_CODEX_APPROVAL=$(codex_approval_flags)" -e "AGENTSTACK_CODEX_NETWORK_FLAGS=$(codex_network_flags)")
 fi
 if [[ -n "$AGENTSTACK_HOME_DIR" ]]; then
     TMUX_ENV_ARGS+=(-e "AGENTSTACK_HOME=$AGENTSTACK_HOME_DIR")
@@ -4369,7 +4407,7 @@ elif [[ "$USE_CODEX" == true ]]; then
                 exit 1
             fi
             rm -f "$AGENTSTACK_CODEX_PROMPT_FILE"
-            env -u OPENAI_API_KEY "$AGENTSTACK_CODEX_BIN" -C "$PWD" --sandbox workspace-write $(printf "%s" "$AGENTSTACK_CODEX_APPROVAL") $(printf "%s" "$AGENTSTACK_CODEX_NETWORK_FLAGS") -c check_for_update_on_startup=false \
+            env -u OPENAI_API_KEY "$AGENTSTACK_CODEX_BIN" -C "$PWD" --sandbox "${AGENTSTACK_CODEX_SANDBOX:-workspace-write}" $(printf "%s" "$AGENTSTACK_CODEX_APPROVAL") $(printf "%s" "$AGENTSTACK_CODEX_NETWORK_FLAGS") -c check_for_update_on_startup=false \
                 "${EXTRA_ARGS[@]}" --model "$AGENTSTACK_CODEX_MODEL" -- "$AGENTSTACK_CODEX_TASK"
             /bin/bash "$AGENTSTACK_HOOKS_DIR/cleanup-child-agent.sh"
         '"'"''

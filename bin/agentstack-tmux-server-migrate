@@ -1,0 +1,39 @@
+#!/usr/bin/env bash
+# P-016: move the fleet tmux server from "whatever Claude session started it"
+# to a launchd-hosted server whose TCC identity is the tmux binary itself.
+# Preconditions: the owner granted Full Disk Access to the tmux binary, and
+# every seat is parked (kill-server takes all sessions with it, M-018).
+# Steps: kill-server -> bootstrap launchd job -> probe DevSSD-Private from the
+# new server -> on tcc-denied, bootout and report so the head can fall back to
+# starting the server from its own session.
+set -euo pipefail
+PLIST_SRC="$HOME/.agentstack/launchd/org.agentstack.tmux-server.plist.unloaded"
+PLIST_DST="$HOME/Library/LaunchAgents/org.agentstack.tmux-server.plist"
+LABEL="org.agentstack.tmux-server"
+probe() { tmux run-shell 'ls /Volumes/DevSSD-Private/DevStorageGovernor >/dev/null 2>&1 && echo tcc-ok || echo tcc-denied' 2>/dev/null | tr -d '[:space:]'; }
+case "${1:-}" in
+  --status)
+    echo "sessions: $(tmux list-sessions -F '#S' 2>/dev/null | tr '\n' ' ')"
+    echo "server: $(ps -axo pid,lstart,command | grep -E '[t]mux (new-session|-D)' | head -1)"
+    echo "launchd: $(launchctl print gui/$(id -u)/$LABEL >/dev/null 2>&1 && echo loaded || echo not-loaded)"
+    echo "probe: $(probe)"; exit 0;;
+  --migrate) ;;
+  *) echo "usage: $0 --status | --migrate" >&2; exit 2;;
+esac
+n=$(tmux list-sessions 2>/dev/null | wc -l | tr -d ' ')
+if [[ "$n" != "0" ]]; then
+  echo "refusing: $n live tmux session(s) — park and close seats first (M-018): $(tmux list-sessions -F '#S' | tr '\n' ' ')" >&2; exit 3
+fi
+tmux kill-server 2>/dev/null || true
+cp "$PLIST_SRC" "$PLIST_DST"
+launchctl bootout "gui/$(id -u)/$LABEL" 2>/dev/null || true
+launchctl bootstrap "gui/$(id -u)" "$PLIST_DST"
+sleep 2
+r=$(probe)
+echo "launchd tmux server probe: $r"
+if [[ "$r" != "tcc-ok" ]]; then
+  echo "tcc-denied under launchd: Full Disk Access is not effective for $(readlink -f /opt/homebrew/bin/tmux). Booting out; start the server from a granted session instead (P-016)." >&2
+  launchctl bootout "gui/$(id -u)/$LABEL" 2>/dev/null || true
+  rm -f "$PLIST_DST"; exit 4
+fi
+echo "ok: fleet tmux server is launchd-hosted ($LABEL) with DevSSD access; spawn seats normally."

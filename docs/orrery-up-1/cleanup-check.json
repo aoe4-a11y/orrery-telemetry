@@ -1,0 +1,13 @@
+{
+  "measured_at": "2026-10-01T04:43:30.791044+00:00",
+  "scope": [
+    "/Volumes/DevSSD/DevStorageGovernor/artifacts/orrery-telemetry/20261001T011558Z-build-cache-33928e51/rehearsal-home",
+    "/Users/huyuhutaru/tools/orrery-telemetry-wt-orrery-up-1"
+  ],
+  "live_matching_helper_processes": [],
+  "rehearsal_teardown_assertion": true,
+  "full_suite_service_teardown_passed": true,
+  "device_or_simulator_created": 0,
+  "appium_or_wda_started": 0,
+  "production_services_stopped": 0
+}

@@ -1,5 +1,7 @@
 # ORRERY Telemetry
 
+For this fork's preserved fleet customizations, upgrade and rollback, see [ORRERY-UP-1](docs/orrery-up-1/guide.md). The owner runs the install interactively in their own terminal.
+
 [日本語](README.md)
 
 Multiple coding agents can talk directly, divide the work, and check each other's results. ORRERY Telemetry shows their work and Mail round trips in one screen. Alongside Claude Code / Codex CLI, it supports agents running configured DeepSeek / Local models through dsh / Hermes. Pair it with [ORRERY cockpit](https://github.com/gyroid-eth/orrery) to use their terminals in the same workspace.

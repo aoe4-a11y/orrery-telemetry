@@ -1,0 +1,25 @@
+{
+  "scope": "/Volumes/DevSSD/DevStorageGovernor/artifacts/orrery-telemetry/20261001T011558Z-build-cache-33928e51/rehearsal-home",
+  "snapshot": "/Volumes/DevSSD/DevStorageGovernor/artifacts/orrery-telemetry/20261001T011558Z-build-cache-33928e51/rollback-proof-snapshot",
+  "commands": [
+    {
+      "operation": "snapshot",
+      "exit": 0,
+      "stdout": "{\"operation\": \"snapshot\", \"records\": 310, \"manifest\": \"/Volumes/DevSSD/DevStorageGovernor/artifacts/orrery-telemetry/20261001T011558Z-build-cache-33928e51/rollback-proof-snapshot/manifest.json\", \"manifest_sha256\": \"148aad2c9127ea92ae8463fd7d4e76b3866931ea686447941ee466793ae4f969\", \"mail_and_runtime\": \"untouched\"}\n",
+      "stderr": ""
+    },
+    {
+      "operation": "restore",
+      "exit": 0,
+      "stdout": "{\"operation\": \"restore\", \"records\": 310, \"manifest\": \"/Volumes/DevSSD/DevStorageGovernor/artifacts/orrery-telemetry/20261001T011558Z-build-cache-33928e51/rollback-proof-snapshot/manifest.json\", \"manifest_sha256\": \"148aad2c9127ea92ae8463fd7d4e76b3866931ea686447941ee466793ae4f969\", \"mail_and_runtime\": \"untouched\"}\n",
+      "stderr": ""
+    }
+  ],
+  "payload_restored": true,
+  "restored_file": "bin/agentstack-restart-seat",
+  "before_sha256": "83756f2ff85f828e748b14df084a9cb3e61e1e3f9c574c47caeab314509e0e4f",
+  "after_sha256": "83756f2ff85f828e748b14df084a9cb3e61e1e3f9c574c47caeab314509e0e4f",
+  "runtime_sentinel_retained": true,
+  "production_rollback": "未測定",
+  "verification_exit": 0
+}

@@ -1,5 +1,7 @@
 # ORRERY Telemetry
 
+この fork の fleet 改造を保持した更新手順・対応表は [ORRERY-UP-1](docs/orrery-up-1/guide.md) を参照してください。実 install は所有者の terminal で対話実行します。
+
 [English](README.en.md)
 
 複数の coding agent が直接話し、仕事を分担し、結果を確かめ合う。その働きと Mail の往復を一枚の画面で見渡せるのが ORRERY Telemetry です。Claude Code / Codex CLI に加え、設定済みの DeepSeek / Local の model を dsh / Hermes で動かす agent も扱います。端末も同じ画面で使う [ORRERY cockpit](https://github.com/gyroid-eth/orrery) と組み合わせて使えます。

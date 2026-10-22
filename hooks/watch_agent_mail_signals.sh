@@ -154,7 +154,7 @@ print(int(st.st_mtime))
 # A short body is included by newer mail servers. Keep it on one line before
 # passing it to tmux: an embedded newline would submit an incomplete prompt.
 snippet = (msg.get("body_snippet") or "").replace("\r", " ").replace("\n", " ⏎ ")
-print(snippet[:500])
+print(snippet[:1800])
 print("1" if msg.get("body_truncated") else "0")
 PY
 }
@@ -560,6 +560,21 @@ deliver_worker() {
     local lease_owner="${10:-}"
     local session_name="$agent_name"
 
+    # Fleet P-010: this head is driven by the operator, never by tmux mail wake.
+    local agent_is_head=0
+    case " ${AGENTSTACK_HEAD_AGENTS:-${AGENTSTACK_HEAD_AGENT:-ProudTuring} PinkTesla} " in
+        *" $agent_name "*) agent_is_head=1 ;;
+    esac
+    if [[ "$agent_is_head" == 1 ]]; then
+        state_mark_result "$agent_name" "$msg_key" "head_no_pane" "watcher"
+        release_delivery_lease "$agent_name" "$msg_key" "$lease_owner"
+        if (( per_msg_file == 1 )); then
+            rm -f "$signal_file" 2>/dev/null || true
+            rmdir "$(dirname "$signal_file")" 2>/dev/null || true
+        fi
+        return 0
+    fi
+
     # A persistent headless profile has no REPL pane to inject. Its wrapper
     # publishes a mode-0600 runtime manifest and execs a bridge that owns the
     # referenced Unix socket. The delivery helper returns success only after
@@ -603,6 +618,11 @@ deliver_worker() {
     if ! run_to "$TMUX_TIMEOUT" tmux has-session -t "$session_name" 2>/dev/null; then
         state_mark_result "$agent_name" "$msg_key" "session_not_found" "watcher"
         release_delivery_lease "$agent_name" "$msg_key" "$lease_owner"
+        if (( per_msg_file == 1 )) && [[ -n "$(find "$signal_file" -mmin +1440 2>/dev/null)" ]]; then
+            rm -f "$signal_file" 2>/dev/null || true
+            rmdir "$(dirname "$signal_file")" 2>/dev/null || true
+            log "Dropped stale signal for session-less agent $agent_name (msg $msg_key, >24h)"
+        fi
         return 0
     fi
 

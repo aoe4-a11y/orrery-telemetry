@@ -1,0 +1,43 @@
+#!/bin/bash
+# Close finished Codex child seats (owner ruling 2026-08-12: no idle RAM occupation).
+# FAIL-CLOSED (rewritten 2026-09-08 after ops review of the fail-open v1):
+#   - only sessions that have a managed child CODEX_HOME are candidates
+#   - any failure to read the mail DB, protection list, or a pane => abort/skip, never kill
+#   - a candidate must have a rollout file on disk (evidence lives on disk, not in the pane)
+#   - every closure is logged individually with a reason
+set -u
+DB="$HOME/.agentstack/mail/storage.sqlite3"
+PROTECT_FILE="$HOME/.agentstack/runtime/protected-seats.txt"
+CHILD_ROOT="$HOME/.agentstack/runtime/child-agents"
+LOG="$HOME/.agentstack/runtime/reap-seats.log"
+STRIKE_DIR="$HOME/.agentstack/runtime/reap-strikes"; mkdir -p "$STRIKE_DIR"
+DRY="${1:-}"
+ts() { date '+%F %T'; }
+say() { echo "$(ts) $*"; [ "$DRY" = "--dry-run" ] || echo "$(ts) $*" >> "$LOG"; }
+
+[ -r "$PROTECT_FILE" ] || { say "ABORT protection list unreadable: $PROTECT_FILE"; exit 0; }
+[ -r "$DB" ] || { say "ABORT mail DB unreadable"; exit 0; }
+pending=$(sqlite3 "file:$DB?mode=ro" "select distinct a.name from messages m
+  join message_recipients r on r.message_id=m.id join agents a on a.id=r.agent_id
+  where r.kind='to' and m.ack_required=1 and r.ack_ts is null" 2>/dev/null) || { say "ABORT mail DB query failed"; exit 0; }
+n=0
+for s in $(tmux list-sessions -F '#{session_name}' 2>/dev/null); do
+  grep -qx "$s" "$PROTECT_FILE" && continue
+  printf '%s\n' "$pending" | grep -qx "$s" && { say "keep $s: unacked mail"; continue; }
+  [ -d "$CHILD_ROOT/$s.codex-home" ] || { say "keep $s: not a managed child"; continue; }
+  ls "$CHILD_ROOT/$s.codex-home"/sessions/*/*/*/rollout-*.jsonl >/dev/null 2>&1 || { say "keep $s: no rollout on disk"; continue; }
+  pane=$(tmux capture-pane -p -t "$s" 2>/dev/null) || { say "keep $s: pane capture failed"; continue; }
+  tail8=$(printf '%s\n' "$pane" | grep -v '^\s*$' | tail -8)
+  printf '%s' "$tail8" | grep -qE 'Working \(|esc to interrupt' && { say "keep $s: working"; rm -f "$STRIKE_DIR/$s"; continue; }
+  printf '%s' "$tail8" | grep -q 'Ask Codex to do anything' || { say "keep $s: composer not visible (unknown state)"; continue; }
+  # 2026-09-20 (PinkTesla, R-058 ops): two strikes + recent-mail guard. A worker that just finished a turn
+  # is often about to receive its parent's next instruction (S30-1 RosyHopper was closed twice mid-station).
+  recent=$(sqlite3 "file:$DB?mode=ro" "select count(*) from messages m join message_recipients r on r.message_id=m.id
+    join agents a on a.id=r.agent_id where a.name='$s' and r.kind='to' and m.created_ts >= datetime('now','-20 minutes')" 2>/dev/null) || recent=1
+  [ "${recent:-1}" -eq 0 ] || { say "keep $s: mail addressed to it in the last 20 min"; rm -f "$STRIKE_DIR/$s"; continue; }
+  if [ ! -f "$STRIKE_DIR/$s" ]; then touch "$STRIKE_DIR/$s"; say "strike 1 $s: idle now, re-check next run"; continue; fi
+  if [ "$DRY" = "--dry-run" ]; then say "would close $s"; else tmux kill-session -t "$s" 2>/dev/null && { n=$((n+1)); rm -f "$STRIKE_DIR/$s"; say "closed $s: idle managed child (2 strikes, no mail 20 min), rollout saved"; }; fi
+done
+# clear strikes for sessions that no longer exist or were seen working
+for f in "$STRIKE_DIR"/*; do [ -e "$f" ] || continue; b=$(basename "$f"); tmux has-session -t "$b" 2>/dev/null || rm -f "$f"; done
+say "done closed=$n remaining=$(tmux list-sessions 2>/dev/null | wc -l | tr -d ' ')"

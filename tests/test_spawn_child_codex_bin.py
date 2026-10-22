@@ -68,6 +68,7 @@ def _resolve(tmp_path, *, path_dirs, env_bin=None, installed=None, wsl=False, li
     if installed is not None:
         (home / ".agentstack" / "env.sh").write_text(
             f"export AGENTSTACK_CODEX_BIN={shlex.quote(installed)}\n", encoding="utf-8")
+    child_shell = _script(tmp_path / "test-login-shell", '#!/bin/sh\nshift\nexec /bin/bash -c "$@"\n')
     text = SPAWN.read_text(encoding="utf-8")
     loader = _loader()
     script = (
@@ -79,6 +80,7 @@ def _resolve(tmp_path, *, path_dirs, env_bin=None, installed=None, wsl=False, li
         + f"WSL_WINDOWS_MOUNT_ROOT={shlex.quote(str(tmp_path / 'mnt'))}\n"
         + "CODEX_VERSION_TIMEOUT_SECONDS=10\n"
         + _extract("codex_search_path") + _extract("find_codex_bin") + _extract("resolve_codex_bin")
+        + 'codex_launch_search_path() { printf "%s\\n" "$PATH:$HOME/.local/bin:$HOME/.npm-global/bin:$HOME/.nodebrew/current/bin"; }\n'
         + "resolve_codex_bin\n"
     )
     if not lib:

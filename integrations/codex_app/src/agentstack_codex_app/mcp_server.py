@@ -218,8 +218,8 @@ class AgentStackProxy:
         topic: str | None = None,
     ) -> list[dict[str, Any]]:
         binding, owner_token = self._resolve(session_id, agent_id)
-        if not _is_integer(limit) or not 1 <= limit <= 100:
-            raise ProxyError("limit must be between 1 and 100")
+        if not _is_integer(limit) or not 1 <= limit <= 1000:
+            raise ProxyError("limit must be between 1 and 1000")
         _optional_text(since_ts, "since_ts", 128)
         _optional_text(topic, "topic", 64)
         return self.agent_mail.fetch_inbox(
@@ -856,7 +856,7 @@ TOOL_DEFINITIONS = [
         "description": "Fetch this bound agent's inbox without exposing credentials.",
         "inputSchema": _schema(
             {
-                "limit": {"type": "integer", "minimum": 1, "maximum": 100},
+                "limit": {"type": "integer", "minimum": 1, "maximum": 1000},
                 "urgent_only": {"type": "boolean"},
                 "include_bodies": {"type": "boolean"},
                 "since_ts": {"type": ["string", "null"]},

@@ -1,0 +1,23 @@
+#!/usr/bin/env bash
+# 席の死活を「便が来ない」ではなく実体で見る。誰でも読める read-only 点検。
+# Usage: agentstack-check-seats
+# 出力: 席名 / model / 状態 / cwd。状態が DEAD-CWD / NO-PANE の席は agentstack-restart-seat で建て直す。
+set -uo pipefail
+printf '%-18s %-16s %-12s %s\n' SEAT MODEL STATE CWD
+tmux list-sessions -F '#{session_name}' 2>/dev/null | sort | while read -r s; do
+  pane="$(tmux capture-pane -p -t "$s" 2>/dev/null || true)"
+  cwd="$(tmux display-message -p -t "$s" '#{pane_current_path}' 2>/dev/null || true)"
+  model="$(printf '%s' "$pane" | grep -oE '(gpt|claude)[-a-z0-9.]+ +(low|medium|high|xhigh)' | tail -1 | tr ' ' '/')"
+  # Claude 席は statusline に effort を出さない。mail DB の登録値を使う。
+  if [ -z "$model" ]; then
+    model="$(sqlite3 "$HOME/.agentstack/mail/storage.sqlite3" "select model from agents where name='$s' and retired_at is null limit 1;" 2>/dev/null)"
+  fi
+  state=OK
+  if printf '%s' "$pane" | grep -q 'invalid cwd'; then state=DEAD-CWD
+  elif [ -z "$cwd" ] || [ ! -d "$cwd" ]; then state=DEAD-CWD
+  elif printf '%s' "$pane" | grep -qE 'Working \(|esc to interrupt|Crunch|Quantumiz'; then state=WORKING
+  elif printf '%s' "$pane" | grep -qE 'Ask Codex to do anything|auto mode on'; then state=IDLE
+  else state=UNKNOWN; fi
+  case "$cwd" in */DevStorageGovernor/artifacts/*) state="$state!ARTIFACT-CWD";; esac
+  printf '%-18s %-16s %-12s %s\n' "$s" "${model:--}" "$state" "${cwd:-<gone>}"
+done

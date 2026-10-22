@@ -1,0 +1,104 @@
+#!/usr/bin/env python3
+"""owner-quote-index — R-068 (2)③ の照合用に「殿の実入力」の索引を作る（2026-09-23 KindPasteur・I-1）。
+
+Sources (config: ~/.agentstack/config/head-send-lint.json → owner_quote_sources):
+  - the head's Claude transcripts (session_index entries whose agent_name is the head):
+    only real typed prompts — tool results, task notifications, slash-command
+    wrappers, compaction summaries and meta lines are excluded;
+  - the owner's answers on the decision pages (owner-sheet scores.json: every string value);
+  - the ledger rulings, which record the owner's words verbatim.
+
+Output: owner_quote_index (plain text, one entry per paragraph). Local only; it holds the
+owner's words and must never be sent anywhere.
+"""
+import glob
+import json
+import os
+import sys
+
+CONFIG = os.path.expanduser("~/.agentstack/config/head-send-lint.json")
+SESSION_INDEX = os.path.expanduser("~/.agentstack/runtime/session_index")
+SKIP_PREFIXES = ("<", "This session is being continued", "# /loop", "[Image",
+                 "Continue from", "[Request interrupted", "Caveat:",
+                 "AgentStack mail notification", "【自動通知")
+
+
+def head_transcripts(head):
+    paths = set()
+    for name in os.listdir(SESSION_INDEX):
+        try:
+            with open(os.path.join(SESSION_INDEX, name), encoding="utf-8") as f:
+                entry = json.load(f)
+        except Exception:
+            continue
+        if entry.get("agent_name") == head and entry.get("transcript_path"):
+            paths.add(entry["transcript_path"])
+    return sorted(p for p in paths if os.path.exists(p))
+
+
+def prompts(path):
+    with open(path, encoding="utf-8", errors="replace") as f:
+        for line in f:
+            try:
+                d = json.loads(line)
+            except Exception:
+                continue
+            if d.get("type") != "user" or d.get("isMeta") or d.get("isCompactSummary"):
+                continue
+            content = (d.get("message") or {}).get("content")
+            if isinstance(content, list):
+                if any(isinstance(x, dict) and x.get("type") == "tool_result" for x in content):
+                    continue
+                content = "".join(x.get("text", "") for x in content
+                                  if isinstance(x, dict) and x.get("type") == "text")
+            if not isinstance(content, str):
+                continue
+            text = content.strip()
+            if text and not text.startswith(SKIP_PREFIXES):
+                yield text
+
+
+def strings(value):
+    if isinstance(value, str):
+        yield value
+    elif isinstance(value, dict):
+        for v in value.values():
+            yield from strings(v)
+    elif isinstance(value, list):
+        for v in value:
+            yield from strings(v)
+
+
+def main():
+    with open(CONFIG, encoding="utf-8") as f:
+        cfg = json.load(f)
+    sources = cfg["owner_quote_sources"]
+    entries = []
+    if sources.get("head_transcripts_from_session_index"):
+        for path in head_transcripts(cfg["head_name"]):
+            entries.extend(prompts(path))
+    for pattern in sources.get("owner_sheet_globs", []):
+        for path in glob.glob(os.path.expanduser(pattern)):
+            try:
+                with open(path, encoding="utf-8") as f:
+                    entries.extend(s for s in strings(json.load(f)) if len(s.strip()) >= 2)
+            except Exception:
+                continue
+    for path in glob.glob(os.path.expanduser(sources.get("ledger_rulings_glob", ""))):
+        try:
+            with open(path, encoding="utf-8") as f:
+                entries.append(f.read())
+        except Exception:
+            continue
+    out = os.path.expanduser(cfg["owner_quote_index"])
+    tmp = out + ".tmp"
+    with open(tmp, "w", encoding="utf-8") as f:
+        f.write("\n\n".join(entries))
+    os.chmod(tmp, 0o600)
+    os.replace(tmp, out)
+    print(f"owner-quote-index: {len(entries)} entries -> {out}")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

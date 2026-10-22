@@ -25,6 +25,8 @@ installer が `settings.template.json` を `~/.claude/settings.json` へ merge �
 | `PreToolUse` / reservation tools | [`invalidate-release-debounce.sh`](../hooks/invalidate-release-debounce.sh) | file reservation の取得・renew 直前 | 同じ agent/path に対する古い release worker の token を無効化し、新しい reservation が直後に消される競合を防止 |
 | `PostToolUse` / `Edit|Write` | [`release-file-reservation.sh`](../hooks/release-file-reservation.sh) | 成功した file edit の直後 | 既定90秒の grace 後に、guard と同じ project・identity・相対/絶対 path で reservation を release |
 | `PostToolUse` / `register_agent` | [`mark-agent-registered.sh`](../hooks/mark-agent-registered.sh) | `mcp__orrery-mail__register_agent` または互換 tool の応答直後 | 応答を検証し、明示した要求名との完全一致後だけ session flag、session index、pane / tmux metadata を更新 |
+| `PreToolUse` / `PostToolUse` / `send_message` | [`head-send-lint.py`](../hooks/head-send-lint.py) | head送信の前後 | R-068: 数字の基盤、裁定ID、殿引用をconfigの条件で検査。warn期限後は送信前にblock |
+| `PostToolUse` / `Workflow` | [`usage-throttle-warn.py`](../hooks/usage-throttle-warn.py) | headのWorkflow直後 | R-068: 週次usageが60%以上なら監査・振り返りWorkflowの停止を警告 |
 | `SessionEnd` | [`release-all-reservations.sh`](../hooks/release-all-reservations.sh) | Claude session 終了時 | 現在 identity の全 file reservation を release。identity 自体は retire しない |
 
 `Edit` / `Write` では2つの PreToolUse hook がともに走ります。登録済みでも reservation がなければ書けず、reservation があっても未登録 session なら書けません。成功後だけ PostToolUse release が arm され、失敗・block・protected root 外では何もしません。

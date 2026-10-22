@@ -47,7 +47,7 @@ def test_expanded_adjective_vocabulary_is_valid_and_single_sourced(monkeypatch):
     assert picked in adjectives
 
 
-def test_generated_agent_names_use_the_stock_safe_hyphen_separator():
+def test_generated_agent_names_use_the_fleet_adjective_scientist_form():
     scientists = subprocess.run(
         ["bash", "-c", 'source "$1" && ags_scientist_list', "scientists", str(LIB)],
         check=True, capture_output=True, text=True,
@@ -57,10 +57,9 @@ def test_generated_agent_names_use_the_stock_safe_hyphen_separator():
         check=True, capture_output=True, text=True,
     ).stdout.strip()
 
-    adjective, separator, scientist = generated.partition("-")
-    assert separator == "-"
-    assert adjective in _launcher_adjectives()
-    assert scientist in scientists
+    assert "-" not in generated
+    assert any(generated == adjective + scientist
+               for adjective in _launcher_adjectives() for scientist in scientists)
 
 
 def test_scientist_json_matches_agent_mail_canonical_set():

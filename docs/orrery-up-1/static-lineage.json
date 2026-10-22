@@ -1,0 +1,162 @@
+{
+  "static_checks": [
+    {
+      "path": "bin/agentstack-check-seats",
+      "check": "bash 3.2 syntax",
+      "exit": 0
+    },
+    {
+      "path": "bin/agentstack-memory-guard",
+      "check": "bash 3.2 syntax",
+      "exit": 0
+    },
+    {
+      "path": "bin/agentstack-owner-checkin.py",
+      "check": "python AST",
+      "exit": 0
+    },
+    {
+      "path": "bin/agentstack-reap-idle-seats",
+      "check": "bash 3.2 syntax",
+      "exit": 0
+    },
+    {
+      "path": "bin/agentstack-restart-seat",
+      "check": "bash 3.2 syntax",
+      "exit": 0
+    },
+    {
+      "path": "bin/agentstack-rule-mirror-check",
+      "check": "python AST",
+      "exit": 0
+    },
+    {
+      "path": "bin/agentstack-seat-cost.py",
+      "check": "python AST",
+      "exit": 0
+    },
+    {
+      "path": "bin/agentstack-seat-stall-watch.py",
+      "check": "python AST",
+      "exit": 0
+    },
+    {
+      "path": "bin/agentstack-spawn-codex",
+      "check": "bash 3.2 syntax",
+      "exit": 0
+    },
+    {
+      "path": "bin/agentstack-supervisor.py",
+      "check": "python AST",
+      "exit": 0
+    },
+    {
+      "path": "bin/agentstack-tmux-server-migrate",
+      "check": "bash 3.2 syntax",
+      "exit": 0
+    },
+    {
+      "path": "bin/agentstack-unstick-seats.sh",
+      "check": "bash 3.2 syntax",
+      "exit": 0
+    },
+    {
+      "path": "bin/codex-stats",
+      "check": "python AST",
+      "exit": 0
+    },
+    {
+      "path": "bin/head-send",
+      "check": "python AST",
+      "exit": 0
+    },
+    {
+      "path": "bin/orrery-audit-evidence",
+      "check": "bash 3.2 syntax",
+      "exit": 0
+    },
+    {
+      "path": "bin/orrery-audit-login",
+      "check": "bash 3.2 syntax",
+      "exit": 0
+    },
+    {
+      "path": "bin/orrery-audit-run",
+      "check": "bash 3.2 syntax",
+      "exit": 0
+    },
+    {
+      "path": "bin/orrery-ci",
+      "check": "bash 3.2 syntax",
+      "exit": 0
+    },
+    {
+      "path": "bin/orrery-head-tripwire",
+      "check": "python AST",
+      "exit": 0
+    },
+    {
+      "path": "bin/owner-quote-index",
+      "check": "python AST",
+      "exit": 0
+    },
+    {
+      "path": "bin/owner-sheet-health",
+      "check": "bash 3.2 syntax",
+      "exit": 0
+    },
+    {
+      "path": "bin/owner-sheet-server.py",
+      "check": "python AST",
+      "exit": 0
+    },
+    {
+      "path": "bin/simulator-window-guard",
+      "check": "bash 3.2 syntax",
+      "exit": 0
+    },
+    {
+      "path": "hooks/head-send-lint.py",
+      "check": "python AST",
+      "exit": 0
+    },
+    {
+      "path": "hooks/rotate_runtime_logs.sh",
+      "check": "bash 3.2 syntax",
+      "exit": 0
+    },
+    {
+      "path": "hooks/task-file-lint.py",
+      "check": "python AST",
+      "exit": 0
+    },
+    {
+      "path": "hooks/usage-throttle-warn.py",
+      "check": "python AST",
+      "exit": 0
+    }
+  ],
+  "lineage_checks": [
+    {
+      "ancestor": "2026.09.30.4",
+      "exit": 0
+    },
+    {
+      "ancestor": "81c3fd9",
+      "exit": 0
+    },
+    {
+      "ancestor": "cd092c4",
+      "exit": 0
+    },
+    {
+      "ancestor": "5e43de6",
+      "exit": 0
+    },
+    {
+      "ancestor": "e5039ff",
+      "exit": 0
+    }
+  ],
+  "head": "cb76a81acd9b3d8723fe6124962d2998bbb07a67"
+}

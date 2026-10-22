@@ -1,0 +1,10 @@
+{
+  "fork": "git@github.com:aoe4-a11y/orrery-telemetry.git",
+  "ref": "refs/heads/upgrade/orrery-up-1-20261001",
+  "remote_sha": "fb2cd26f9cdffe1666c440114f8b2c69fc4fe987",
+  "local_sha": "fb2cd26f9cdffe1666c440114f8b2c69fc4fe987",
+  "remote_lookup_exit": 0,
+  "push_exit": 0,
+  "verification_state": "candidate only; isolated install and final full suite pending",
+  "github_actions": "HEAD commit has [skip ci]; no Actions run requested"
+}

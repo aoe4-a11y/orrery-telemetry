@@ -1,0 +1,23 @@
+#!/bin/bash
+# Memory guard (2026-09-25, head ProudTuring). The Mac panicked on 2026-09-24 04:38 with
+# "Compressor ... 100% of compressed pages limit (BAD)" while four seats ran Simulators and
+# Xcode builds at once. Every 30 s (launchd): if system-wide free memory falls below
+# LOW_PCT, shut down all booted Simulators (recreatable; nothing is lost) and write a hold
+# flag that heavy jobs and the supervisor can read. The flag clears once memory recovers.
+LOW_PCT="${AGENTSTACK_MEM_LOW_PCT:-15}"
+CLEAR_PCT="${AGENTSTACK_MEM_CLEAR_PCT:-35}"
+RUNTIME="$HOME/.agentstack/runtime"
+FLAG="$RUNTIME/memory-hold"
+LOG="$RUNTIME/memory-guard.log"
+pct=$(/usr/bin/memory_pressure 2>/dev/null | /usr/bin/awk -F': ' '/free percentage/ {gsub("%","",$2); print $2}')
+[ -z "$pct" ] && exit 0
+now=$(/bin/date '+%Y-%m-%d %H:%M:%S')
+if [ "$pct" -lt "$LOW_PCT" ]; then
+  booted=$(/usr/bin/xcrun simctl list devices booted 2>/dev/null | /usr/bin/grep -c "(Booted)")
+  echo "$now free=${pct}% < ${LOW_PCT}% booted_sims=${booted} -> simctl shutdown all" >> "$LOG"
+  /usr/bin/xcrun simctl shutdown all >> "$LOG" 2>&1
+  echo "$now free=${pct}%" > "$FLAG"
+elif [ -f "$FLAG" ] && [ "$pct" -ge "$CLEAR_PCT" ]; then
+  echo "$now free=${pct}% >= ${CLEAR_PCT}% -> hold cleared" >> "$LOG"
+  rm -f "$FLAG"
+fi

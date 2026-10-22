@@ -1,0 +1,36 @@
+{
+  "_doc": "R-068 (2) head の送信前検査。head (ProudTuring) が直せる唯一の設定ファイル。hook: ~/.agentstack/hooks/head-send-lint.py。warn_until_jst までは PostToolUse で警告だけ、以後は PreToolUse で送信を止める。",
+  "head_name": "ProudTuring",
+  "warn_until_jst": "2026-09-26T23:59:59+09:00",
+  "count_patterns": [
+    "\\d+\\s*/\\s*(68|113|340|45|49)\\b",
+    "\\d+\\s*問",
+    "\\d+\\s*肢"
+  ],
+  "count_basis_patterns": {
+    "import_or_run": "(取り込み|run|取込|pack|基盤|canonical|d7ce8f79|T-1[0-9][a-z]?\\s*(run|の))",
+    "head": "(HEAD|本線|[0-9a-f]{7,40})",
+    "ios": "(iOS\\s*\\d+(\\.\\d+)?|Simulator\\s*\\d+)"
+  },
+  "count_basis_window_chars": 160,
+  "ruling_terms": {
+    "R-037": ["テキスト", "文章", "退避", "fallback", "フォールバック", "選択肢の文字"],
+    "R-036": ["記号ボタン"],
+    "R-038": ["問題ページ", "原本"],
+    "R-039": ["head.{0,12}build", "head.{0,12}Simulator"],
+    "R-041": ["販売条件"],
+    "R-067": ["BYOK", "外部 ?AI"],
+    "R-066": ["削除", "移設", "容量"],
+    "M-014": ["(文言|ボタン|タブ|画面).{0,8}(追加|足す|増や)"]
+  },
+  "owner_marker": "殿",
+  "owner_quote_max_gap_chars": 24,
+  "owner_quote_min_chars": 4,
+  "owner_quote_index": "~/.agentstack/runtime/owner-quote-index.txt",
+  "owner_quote_index_max_age_seconds": 600,
+  "owner_quote_sources": {
+    "head_transcripts_from_session_index": true,
+    "owner_sheet_globs": ["/Volumes/DevSSD-Private/owner-sheets/*/scores.json"],
+    "ledger_rulings_glob": "~/tools/osce-trainer-main/docs/ledger/rulings/*.md"
+  }
+}

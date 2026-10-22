@@ -1,0 +1,210 @@
+#!/usr/bin/env bash
+# 監査用の証拠束を作る（決定的・無料）。判断はしない。事実だけ集める。
+# 目的: 「報告されたこと」と「実際にあるもの」を突き合わせられる形で並べる。
+# Usage: orrery-audit-evidence [出力先.md]   (既定: ~/.agentstack/runtime/audit/latest.md)
+set -uo pipefail
+[ -f "$HOME/.agentstack/env.sh" ] && source "$HOME/.agentstack/env.sh"
+# K-4（便9376）実測: launchd 配下の `bash -lc` は /opt/homebrew/bin が PATH 末尾 → python3 が
+# /usr/bin/python3（jwt 無し）に解決され §4 が空振りした。対話 shell と同じ順序に揃える。
+export PATH="/opt/homebrew/bin:/opt/homebrew/sbin:$PATH"
+OUT="${1:-$HOME/.agentstack/runtime/audit/latest.md}"
+mkdir -p "$(dirname "$OUT")"
+DB="$HOME/.agentstack/mail/storage.sqlite3"
+MAIN="$HOME/tools/osce-trainer-main"
+REL="$HOME/tools/osce-trainer-release-1.0.20"
+KOK="$HOME/tools/kokushi-trainer"
+VAULT="$HOME/tools/kokushi-corpus-vault"
+EF="$HOME/tools/examforge"
+
+exec > "$OUT" 2>&1
+echo "# ORRERY 監査証拠束 — $(date '+%Y-%m-%d %H:%M %Z')"
+echo
+echo "> このファイルは事実だけを集めた束です。判断は含みません。"
+echo "> 使い方: 「誰かが完了と言ったこと」が「実際にあるもの」と一致しているかを突き合わせる。"
+echo
+
+echo "## 1. 席の死活（便の有無ではなく画面と cwd で見る）"
+echo '```'
+"$HOME/.agentstack/bin/agentstack-check-seats" 2>/dev/null || echo "(tmux 席なし = 全席 park)"
+echo '```'
+echo
+
+echo "## 2. 便の量と、成果物の量"
+echo '```'
+for h in 6 24 72; do
+  n=$(sqlite3 "$DB" "select count(*) from messages where created_ts>datetime('now','-$h hours');" 2>/dev/null)
+  kb=$(sqlite3 "$DB" "select coalesce(sum(length(body_md))/1024,0) from messages where created_ts>datetime('now','-$h hours');" 2>/dev/null)
+  echo "直近 ${h}h: 便 ${n} 通 / 本文 ${kb} KB"
+done
+echo
+echo "-- 送信者別（直近24h） --"
+sqlite3 -column "$DB" "select s.name, count(*) from messages m join agents s on s.id=m.sender_id where m.created_ts>datetime('now','-24 hours') group by s.name order by 2 desc limit 12;" 2>/dev/null
+echo '```'
+echo
+
+echo "## 3. 「完了」と言われた便（直近48h）— 実体があるか確かめる対象"
+echo '```'
+sqlite3 "$DB" "select m.id||' | '||datetime(m.created_ts,'localtime')||' | '||s.name||' | '||substr(m.subject,1,72)
+ from messages m join agents s on s.id=m.sender_id
+ where m.created_ts>datetime('now','-48 hours')
+ and (m.subject like '%完了%' or m.subject like '%complete%' or m.subject like '%受理%' or m.subject like '%PASS%'
+      or m.subject like '%GREEN%' or m.subject like '%緑%' or m.subject like '%done%' or m.subject like '%出荷%')
+ order by m.id desc limit 25;" 2>/dev/null
+echo '```'
+echo
+
+echo "## 4. 出荷の実体 — 公開されている版と、保存されているタグ"
+echo '```'
+echo "-- App Store（ASC 生 API） --"
+ASC_ERR="$(mktemp)"
+( cd "$HOME/tools/osce-trainer" && python3 scripts/release/asc_jwt.py \
+  "/apps/6765927901/appStoreVersions?limit=4&fields[appStoreVersions]=versionString,appStoreState" 2>"$ASC_ERR" \
+  | python3 -c "import sys,json;t=sys.stdin.read();t=t[t.index('{'):] if '{' in t else '{}';d=json.loads(t);[print(' ',a['attributes']['versionString'],a['attributes']['appStoreState']) for a in d.get('data',[])]" 2>>"$ASC_ERR" ) \
+  || echo "  (ASC 照会不可: python3=$(command -v python3) / $(grep -v '^ ' "$ASC_ERR" | tail -1 | cut -c1-160))"
+rm -f "$ASC_ERR"
+# K-4: ls-remote が間欠的に空を返しても黙らない。stderr の 1 行目か「0 件」を出す。
+remote_tags() { # DIR PATTERN N
+  local err out; err="$(mktemp)"
+  out="$(cd "$1" && git ls-remote --tags origin 2>"$err" | grep -oE "$2" | sort -uV | tail -"$3")"
+  if [ -n "$out" ]; then printf '%s\n' "$out"
+  elif [ -s "$err" ]; then echo "  (取得不可: $(head -1 "$err" | cut -c1-160))"
+  else echo "  (タグ 0 件: pattern=$2)"; fi
+  rm -f "$err"
+}
+echo "-- OSCE 出荷タグ（remote） --"
+remote_tags "$REL" 'osce-ios-v[0-9.]+-build[0-9]+' 6
+echo "-- kokushi tag / corpus vault tag（remote） --"
+remote_tags "$KOK" 'kokushi-v[0-9.]+b[0-9]+' 3
+remote_tags "$VAULT" 'kokushi-corpus-b[0-9]+' 3
+echo '```'
+echo "**照合の観点**: 公開されている版すべてに、対応する出荷タグが remote にあるか。無ければ再現不能な公開版である。"
+echo
+
+echo "## 5. ExamForge の出口（writer_completed／recorded の集計・件数のみ・本文と問 ID なし）"
+echo '```'
+PRIV="/Volumes/DevSSD-Private/DevStorageGovernor/artifacts/examforge"
+PUB="/Volumes/DevSSD/DevStorageGovernor/artifacts/examforge"
+# K-4（便9376）実測: launchd 配下の bash は /Volumes/DevSSD(-Private) の artifacts 配下で EPERM
+# （Operation not permitted＝TCC・P-016 と同型）。手動実行では読める。「<なし>」とは書かない（M-023）。
+access_state() {
+  if ! mount | grep -q " on ${1%%/DevStorageGovernor*} "; then echo "unmounted"; return; fi
+  local err; err="$(ls "$1" 2>&1 >/dev/null | head -1)"
+  case "$err" in
+    "") echo "ok";;
+    *"Operation not permitted"*) echo "tcc";;
+    *) echo "error: $err";;
+  esac
+}
+PRIV_STATE="$(access_state "$PRIV")"; PUB_STATE="$(access_state "$PUB")"
+if [ "$PRIV_STATE" = tcc ] || [ "$PUB_STATE" = tcc ]; then
+  echo "TCC 拒否（launchd）: この生成器を launchd（org.huyuhutaru.orrery-audit）配下で走らせた bash は"
+  echo "  $PRIV → $PRIV_STATE / $PUB → $PUB_STATE（EPERM: Operation not permitted）。"
+  echo "  同じコマンドを対話 shell で実行すると読める（K-4 便9376 実測）。launchd の bash に Removable Volumes／"
+  echo "  Full Disk Access が与えられるまで、§5 の件数は launchd 経由では出ない。手動: orrery-audit-evidence <out.md>"
+elif [ "$PRIV_STATE" != ok ]; then
+  echo "私的証拠 root を読めない: $PRIV → $PRIV_STATE"
+else
+  python3 - "$PRIV" "$PUB" <<'PYEOF'
+import glob, json, os, sys
+priv, pub = sys.argv[1], sys.argv[2]
+roots = sorted(glob.glob(os.path.join(priv, "*private-evidence*")), reverse=True)[:12]
+print(f"最新 {len(roots)} 個の private-evidence root の receipts/*.json（writer_completed / recorded を持つもの）:")
+tot_rows = tot_wc = tot_rec = n = 0
+for root in roots:
+    for rc in sorted(glob.glob(os.path.join(root, "receipts", "*.json"))):
+        try:
+            d = json.load(open(rc))
+        except Exception:
+            continue
+        # 受領書ごとに置き場所が違う（.run / 最上位 / .measurement …）ので、両鍵を持つ最初の dict を採る。
+        def find(o):
+            if isinstance(o, dict):
+                if "writer_completed" in o and "recorded" in o:
+                    return o
+                for v in o.values():
+                    r = find(v)
+                    if r is not None:
+                        return r
+            elif isinstance(o, list):
+                for v in o:
+                    r = find(v)
+                    if r is not None:
+                        return r
+            return None
+        run = find(d)
+        if run is None:
+            continue
+        rows = run.get("rows", run.get("verified_total", "?"))
+        wc, rec = run.get("writer_completed", 0), run.get("recorded", 0)
+        task = d.get("task", "?") if isinstance(d, dict) else "?"
+        print(f"  {task:<14} rows={rows!s:<4} writer_completed={wc!s:<4} recorded={rec}")
+        n += 1
+        if isinstance(rows, int): tot_rows += rows
+        tot_wc += int(wc or 0); tot_rec += int(rec or 0)
+print(f"  合計: 受領書 {n} 件 / rows {tot_rows} / writer_completed {tot_wc} / recorded {tot_rec}")
+# 製品経路の走行（V-x 型: private_terminal_counts.recorded / public_recorded）。件数だけ。問番号は出さない。
+# 製品経路の走行は稀なので窓を広げる（最新 40 root）。
+wide = sorted(glob.glob(os.path.join(priv, "*private-evidence*")), reverse=True)[:40]
+print(f"製品経路の受領書（最新 {len(wide)} root・private_terminal_counts.recorded / public_recorded を持つもの）:")
+m = 0
+for root in wide:
+    for rc in sorted(glob.glob(os.path.join(root, "receipts", "*.json"))):
+        try:
+            d = json.load(open(rc))
+        except Exception:
+            continue
+        if not isinstance(d, dict) or not isinstance(d.get("private_terminal_counts"), dict):
+            continue
+        pt = d["private_terminal_counts"]
+        print(f"  {d.get('station', d.get('task', '?')):<8} private recorded {pt.get('recorded', 0)}/{d.get('private_questions', '?')}"
+              f"  public recorded {d.get('public_recorded', '?')}/{d.get('public_questions', '?')}")
+        m += 1
+if m == 0:
+    print("  (該当 0 件)")
+outs = []
+for base in (priv, pub):
+    outs += glob.glob(os.path.join(base, "*", "*", "w4d-*output*.json"))
+outs.sort(key=lambda p: os.path.getmtime(p), reverse=True)
+print(f"W-4d 系 w4d-*output*.json: {len(outs)} 件（最新 3 件の記録件数）")
+for p in outs[:3]:
+    try:
+        d = json.load(open(p))
+    except Exception:
+        print(f"  {os.path.basename(p)}: 読めない"); continue
+    parts = []
+    if isinstance(d, dict):
+        for k in ("public", "private"):
+            v = d.get(k)
+            if isinstance(v, list):
+                parts.append(f"{k} recorded {sum(1 for r in v if isinstance(r, dict) and r.get('recorded'))}/{len(v)}")
+    elif isinstance(d, list):
+        parts.append(f"rows recorded {sum(1 for r in d if isinstance(r, dict) and r.get('recorded'))}/{len(d)}")
+    print(f"  {os.path.basename(os.path.dirname(os.path.dirname(p)))[-32:]}/{os.path.basename(p)}: " + (", ".join(parts) or "形式不明"))
+PYEOF
+fi
+echo '```'
+echo "**照合の観点**: writer_completed（writer が最後まで書けた問数）と recorded（保存まで到達した問数）が 0 のまま続く駅は出口に出ていない。import PASS・保存成功は出口ではない（M-027）。"
+echo
+
+echo "## 6. 台帳と資産の埋まり具合"
+echo '```'
+for f in INDEX ASSETS PRODUCTS; do
+  p="$MAIN/docs/ledger/$f.md"
+  [ -f "$p" ] && echo "$f.md: $(wc -l < "$p" | tr -d ' ') 行 / 最終更新 $(stat -f %Sm -t '%m-%d %H:%M' "$p")" || echo "$f.md: 不在"
+done
+echo "資産 INDEX の判定内訳:"
+grep -oE '\[(成立|否定|要再検証)\]' "$MAIN/docs/ledger/ASSETS.md" 2>/dev/null | sort | uniq -c | sed 's/^/  /'
+echo "資産 INDEX の節:"
+grep -E '^## ' "$MAIN/docs/ledger/ASSETS.md" 2>/dev/null | sed 's/^/  /'
+echo '```'
+echo "**照合の観点**: 節が空のジャンルは、席が毎回ゼロから設計している可能性がある（M-030）。"
+echo
+
+echo "## 7. 引継ぎ正本の鮮度"
+echo '```'
+HS="$MAIN/docs/handoff/HEAD_STATE.md"
+[ -f "$HS" ] && { echo "HEAD_STATE.md: $(wc -l < "$HS" | tr -d ' ') 行 / 最終更新 $(stat -f %Sm -t '%m-%d %H:%M' "$HS")"; echo "--- 冒頭 6 行 ---"; head -6 "$HS"; } || echo "HEAD_STATE.md 不在"
+echo '```'
+echo
+echo "---"
+echo "生成: \`orrery-audit-evidence\` / 出力: $OUT"

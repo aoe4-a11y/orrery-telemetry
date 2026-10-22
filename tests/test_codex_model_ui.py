@@ -29,6 +29,7 @@ def run_ui(provider, scenario):
 @pytest.fixture
 def provider(monkeypatch, tmp_path):
     monkeypatch.setenv("CODEX_HOME", str(tmp_path))
+    monkeypatch.setenv("AGENTSTACK_ALLOW_XHIGH", "1")
     monkeypatch.delenv("AGENTSTACK_CODEX_MODELS", raising=False)
     monkeypatch.setattr(codex_models, "cli_version", lambda: (0, 159, 1))
     return codex_models.provider_catalog()
@@ -63,7 +64,7 @@ out.lunaEfforts=displayedEfforts();
     assert result["sol"]["payload"]["model"] == "gpt-6.1-sol"
     assert result["sol"]["payload"]["effort"] == "ultra"
     assert result["luna"]["payload"]["model"] == "gpt-6-luna"
-    assert result["luna"]["payload"]["effort"] == "xhigh"
+    assert result["luna"]["payload"]["effort"] == "medium"
     assert "ultra" not in result["lunaEfforts"]
 
 
@@ -120,7 +121,7 @@ def test_auto_selected_effort_does_not_replace_the_next_model_default(provider):
     provider["model_effort_defaults"]["gpt-lite"] = "low"
     result = run_ui(provider, "selectSpawnModel('gpt-lite');out.lite=state();selectSpawnModel('gpt-6.1-sol');out.sol=state();")
     assert result["lite"]["payload"]["effort"] == "low"
-    assert result["sol"]["payload"]["effort"] == "xhigh"
+    assert result["sol"]["payload"]["effort"] == "medium"
 
 
 def test_codex_overflow_models_sit_behind_the_more_models_fold(provider):

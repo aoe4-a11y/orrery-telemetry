@@ -1,0 +1,134 @@
+traffic: [ORRERY-UP-1-verified-suite] waiting — mem 11484MB, disk 100GiB, slots in use: 2/2
+traffic: [ORRERY-UP-1-verified-suite] waiting — mem 11690MB, disk 100GiB, slots in use: 2/2
+traffic: [ORRERY-UP-1-verified-suite] waiting — mem 11973MB, disk 100GiB, slots in use: 2/2
+traffic: [ORRERY-UP-1-verified-suite] waiting — mem 11976MB, disk 100GiB, slots in use: 2/2
+traffic: [ORRERY-UP-1-verified-suite] waiting — mem 10818MB, disk 100GiB, slots in use: 2/2
+traffic: [ORRERY-UP-1-verified-suite] waiting — mem 11538MB, disk 100GiB, slots in use: 2/2
+traffic: [ORRERY-UP-1-verified-suite] waiting — mem 11460MB, disk 100GiB, slots in use: 2/2
+traffic: [ORRERY-UP-1-verified-suite] waiting — mem 11227MB, disk 100GiB, slots in use: 2/2
+traffic: [ORRERY-UP-1-verified-suite] waiting — mem 11366MB, disk 100GiB, slots in use: 2/2
+traffic: [ORRERY-UP-1-verified-suite] waiting — mem 12249MB, disk 100GiB, slots in use: 2/2
+traffic: [ORRERY-UP-1-verified-suite] waiting — mem 12622MB, disk 100GiB, slots in use: 2/2
+traffic: [ORRERY-UP-1-verified-suite] waiting — mem 11525MB, disk 100GiB, slots in use: 2/2
+traffic: [ORRERY-UP-1-verified-suite] waiting — mem 11416MB, disk 100GiB, slots in use: 2/2
+traffic: [ORRERY-UP-1-verified-suite] waiting — mem 14317MB, disk 101GiB, slots in use: 2/2
+traffic: [ORRERY-UP-1-verified-suite] waiting — mem 11410MB, disk 100GiB, slots in use: 2/2
+traffic: [ORRERY-UP-1-verified-suite] waiting — mem 12258MB, disk 100GiB, slots in use: 2/2
+traffic: [ORRERY-UP-1-verified-suite] waiting — mem 12841MB, disk 100GiB, slots in use: 2/2
+traffic: [ORRERY-UP-1-verified-suite] waiting — mem 11976MB, disk 100GiB, slots in use: 2/2
+traffic: [ORRERY-UP-1-verified-suite] waiting — mem 11816MB, disk 100GiB, slots in use: 2/2
+traffic: [ORRERY-UP-1-verified-suite] waiting — mem 10577MB, disk 100GiB, slots in use: 2/2
+traffic: [ORRERY-UP-1-verified-suite] waiting — mem 12036MB, disk 100GiB, slots in use: 2/2
+traffic: [ORRERY-UP-1-verified-suite] waiting — mem 11880MB, disk 100GiB, slots in use: 2/2
+traffic: [ORRERY-UP-1-verified-suite] waiting — mem 11941MB, disk 100GiB, slots in use: 2/2
+traffic: [ORRERY-UP-1-verified-suite] waiting — mem 11571MB, disk 100GiB, slots in use: 2/2
+traffic: [ORRERY-UP-1-verified-suite] waiting — mem 11521MB, disk 100GiB, slots in use: 2/2
+traffic: [ORRERY-UP-1-verified-suite] waiting — mem 9991MB, disk 100GiB, slots in use: 2/2
+traffic: [ORRERY-UP-1-verified-suite] waiting — mem 10605MB, disk 100GiB, slots in use: 2/2
+traffic: [ORRERY-UP-1-verified-suite] running (slot slot-1, mem 12981MB, disk 100GiB)
+..                                                                       [100%]
+============================= slowest 25 durations =============================
+11.19s call     tests/test_runtime_defaults.py::test_isolated_installer_migrates_annotations_and_matches_manifest_sample
+
+(5 durations < 1s hidden.)
+2 passed in 11.88s
+WATCHER: job ended, exit=0
+..........s............................................................. [  2%]
+.........................s..................................s........... [  4%]
+........................................................................ [  6%]
+........................................................................ [  8%]
+......................sss............................................... [ 11%]
+........................................................................ [ 13%]
+..sss................................................................... [ 15%]
+........................................................................ [ 17%]
+........................................................................ [ 20%]
+....................................................sssssss....sssssssss [ 22%]
+..............................................ss........................ [ 24%]
+..................................................s..................... [ 26%]
+........................................................................ [ 28%]
+...........s................................................. [ 30%]
+........................................................................ [ 33%]
+........................................................................ [ 35%]
+........................................................................ [ 37%]
+........................................................................ [ 39%]
+........................................................................ [ 41%]
+........................................................................ [ 44%]
+........................................................................ [ 46%]
+........................................................................ [ 48%]
+........................................................................ [ 50%]
+........................................................................ [ 53%]
+........................................................................ [ 55%]
+........................................................................ [ 57%]
+........................................................................ [ 59%]
+........................................................................ [ 61%]
+................................................s....................... [ 64%]
+........................................................................ [ 66%]
+........................................................................ [ 68%]
+........................................................................ [ 70%]
+........................................................................ [ 73%]
+........................................................................ [ 75%]
+.......ss..................................................s............ [ 77%]
+........................................................................ [ 79%]
+........................................................................ [ 81%]
+........................................................................ [ 84%]
+.................................................................. [ 86%]
+........................................................................ [ 88%]
+........................................................................ [ 90%]
+........................................................................ [ 92%]
+........................................................................ [ 95%]
+........................................................................ [ 97%]
+........................................................................ [ 99%]
+..............                                                           [100%]
+=============================== warnings summary ===============================
+../../../../Volumes/DevSSD/DevStorageGovernor/artifacts/orrery-telemetry/20261001T011558Z-build-cache-33928e51/venv/lib/python3.14/site-packages/fastmcp/server/auth/providers/jwt.py:10
+  /Volumes/DevSSD/DevStorageGovernor/artifacts/orrery-telemetry/20261001T011558Z-build-cache-33928e51/venv/lib/python3.14/site-packages/fastmcp/server/auth/providers/jwt.py:10: AuthlibDeprecationWarning: authlib.jose module is deprecated, please use joserfc instead.
+  It will be compatible before version 2.0.0.
+    from authlib.jose import JsonWebKey, JsonWebToken
+
+../../../../Volumes/DevSSD/DevStorageGovernor/artifacts/orrery-telemetry/20261001T011558Z-build-cache-33928e51/venv/lib/python3.14/site-packages/authlib/integrations/httpx_client/assertion_client.py:5
+  /Volumes/DevSSD/DevStorageGovernor/artifacts/orrery-telemetry/20261001T011558Z-build-cache-33928e51/venv/lib/python3.14/site-packages/authlib/integrations/httpx_client/assertion_client.py:5: AuthlibDeprecationWarning: The httpx module is deprecated; please use httpx2 instead.
+    from ._compat import httpx2
+
+packages/agentstack_mail/tests/test_consumer.py::test_hard_process_exit_reuses_stages_and_leaves_no_debris
+  /Users/huyuhutaru/tools/orrery-telemetry-wt-orrery-up-1/packages/agentstack_mail/tests/test_consumer.py:1132: DeprecationWarning: This process (pid=93733) is multi-threaded, use of fork() may lead to deadlocks in the child.
+    pid = os.fork()
+
+packages/agentstack_mail/tests/test_service.py::test_wrapper_sigkill_leaves_child_lock_blocking_a_replacement_writer
+packages/agentstack_mail/tests/test_service.py::test_wrapper_sigkill_leaves_child_lock_blocking_a_replacement_writer
+packages/agentstack_mail/tests/test_service.py::test_missing_lock_inheritance_mutant_allows_two_real_writers
+packages/agentstack_mail/tests/test_service.py::test_missing_lock_inheritance_mutant_allows_two_real_writers
+  /opt/homebrew/Cellar/python@3.14/3.14.7/Frameworks/Python.framework/Versions/3.14/lib/python3.14/contextlib.py:109: DeprecationWarning: Use `streamable_http_client` instead.
+    self.gen = func(*args, **kwds)
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+============================= slowest 25 durations =============================
+30.24s call     tests/test_mail_autostart.py::test_the_sweep_leaves_a_deliberately_stopped_server_alone
+19.33s call     tests/test_spawn_child_codex_bin.py::test_slow_usable_cli_keeps_launcher_api_and_delegate_defaults_stable[0.159.1-gpt-6.1-sol]
+19.31s call     tests/test_spawn_child_codex_bin.py::test_slow_usable_cli_keeps_launcher_api_and_delegate_defaults_stable[0.158.0-gpt-6-sol]
+18.87s call     tests/test_install_agentstack_mail.py::test_default_provisions_isolated_state_and_serves_health
+13.81s call     tests/test_mailctl_launchd.py::test_a_later_start_finds_the_runner_instead_of_racing_a_second_one
+13.54s call     tests/test_service_label_isolation.py::test_an_explicit_mail_label_reaches_the_env_and_the_manifest
+11.25s call     tests/test_runtime_defaults.py::test_noninteractive_assume_yes_is_explicit_audited_approval
+10.92s call     tests/test_dashboard_service.py::test_launchd_in_place_upgrade_replaces_its_own_listener_with_new_code
+10.20s call     tests/test_service_watcher_measurement.py::test_teardown_reports_a_recorded_process_it_cannot_stop
+9.55s call     tests/test_runtime_defaults.py::test_isolated_installer_migrates_annotations_and_matches_manifest_sample
+8.88s call     packages/agentstack_mail/tests/test_cutover_gates.py::test_fault_cutover_gate_detects_its_broken_control
+8.13s call     tests/test_install_agentstack_mail.py::test_reinstall_adopts_the_running_candidate_enroll_cli_and_wrapper_inspects
+8.09s call     packages/agentstack_mail/tests/test_pending_decision_d11_d12.py::test_d12_selected_parity_watcher_crash_windows_are_durable_and_hermetic
+7.78s call     tests/test_spawn_child_codex_bin.py::test_all_probes_share_one_budget
+7.54s call     tests/test_dashboard_service.py::test_macos_launchd_bootstrap_failure_falls_back_and_finishes_install
+7.09s call     tests/test_mailctl_launchd.py::test_port_grace_is_separate_from_health_grace
+6.90s call     tests/test_spawn_v2.py::test_process_group_launcher_cleanup_outlives_the_canonical_5s_grace
+6.76s call     packages/agentstack_mail/tests/test_inherited_env_isolation.py::test_a_live_management_socket_in_the_parent_env_is_not_used
+6.54s call     tests/test_mail_watcher_recovery_scan.py::test_macos_still_waits_for_its_thirty_second_scan
+6.53s call     tests/test_dashboard_service.py::test_supervised_in_place_upgrade_stops_old_pid_and_runs_new_code
+6.08s call     tests/test_service_watcher_measurement.py::test_teardown_reports_a_process_it_could_not_stop
+6.06s call     packages/agentstack_mail/tests/test_consumer.py::test_real_migration_baseline_gates_success_and_post_baseline_no_write
+6.00s call     packages/agentstack_mail/tests/test_migration.py::test_source_mutation_at_post_publish_seam_is_blocked_and_unconfirmed
+5.81s call     packages/agentstack_mail/tests/test_migration.py::test_source_mutation_at_final_pre_publish_seam_is_blocked
+5.81s call     packages/agentstack_mail/tests/test_migration.py::test_source_mutation_after_fsync_is_blocked_before_publish
+3204 passed, 33 skipped, 7 warnings, 17 subtests passed in 1136.42s (0:18:56)
+WATCHER: job ended, exit=0
+traffic: [ORRERY-UP-1-verified-suite] done (exit 0)
+
+EXIT_CODE=0

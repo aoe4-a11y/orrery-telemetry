@@ -1,0 +1,60 @@
+traffic: [ORRERY-UP-1-focused] waiting — mem 13876MB, disk 104GiB, slots in use: 2/2
+traffic: [ORRERY-UP-1-focused] waiting — mem 11174MB, disk 104GiB, slots in use: 2/2
+traffic: [ORRERY-UP-1-focused] running (slot slot-1, mem 14916MB, disk 104GiB)
+........................................................................ [ 20%]
+........................................................................ [ 41%]
+........................................................................ [ 61%]
+............................F........................................... [ 82%]
+..............................................................           [100%]
+=================================== FAILURES ===================================
+_________ test_the_probe_runs_codex_with_the_path_the_child_will_have __________
+
+tmp_path = PosixPath('/private/var/folders/3h/9fn3ldps3c98n54rzk0m2c6m0000gn/T/pytest-of-huyuhutaru/pytest-4/test_the_probe_runs_codex_with0')
+
+    def test_the_probe_runs_codex_with_the_path_the_child_will_have(tmp_path):
+        """Pink's reproduction (review of 55cd037): the launcher's PATH is minimal,
+        and ~/.local/bin holds both codex (`#!/usr/bin/env node`) and node. The child
+        runs codex from a login shell with ~/.local/bin in front, so it works there;
+        a probe under the launcher's own PATH could not find node and rejected it."""
+        local_bin = tmp_path / "home" / ".local" / "bin"
+        _script(local_bin / "node", "#!/bin/sh\necho v22.0.0\n")
+        codex = _script(local_bin / "codex", "#!/usr/bin/env node\n")
+        rc, out, err = _resolve(tmp_path, path_dirs=[])
+>       assert rc == 0, err
+E       AssertionError: Error: no usable Codex CLI found (reasons above, if any candidate was found). Install Codex where this shell can run it, or set AGENTSTACK_CODEX_BIN to its path (on WSL, a codex under /mnt is the Windows install and cannot run here).
+E         
+E       assert 1 == 0
+
+tests/test_spawn_child_codex_bin.py:192: AssertionError
+============================= slowest 25 durations =============================
+19.30s call     tests/test_spawn_child_codex_bin.py::test_slow_usable_cli_keeps_launcher_api_and_delegate_defaults_stable[0.158.0-gpt-6-sol]
+19.16s call     tests/test_spawn_child_codex_bin.py::test_slow_usable_cli_keeps_launcher_api_and_delegate_defaults_stable[0.159.1-gpt-6.1-sol]
+13.78s call     tests/test_service_label_isolation.py::test_an_explicit_mail_label_reaches_the_env_and_the_manifest
+10.53s call     tests/test_runtime_defaults.py::test_noninteractive_assume_yes_is_explicit_audited_approval
+10.17s call     tests/test_service_watcher_measurement.py::test_teardown_reports_a_recorded_process_it_cannot_stop
+9.43s call     tests/test_runtime_defaults.py::test_isolated_installer_migrates_annotations_and_matches_manifest_sample
+7.77s call     tests/test_spawn_child_codex_bin.py::test_all_probes_share_one_budget
+6.13s call     tests/test_service_watcher_measurement.py::test_teardown_reports_a_process_it_could_not_stop
+5.28s call     tests/test_runtime_defaults.py::test_installer_preserves_conflicting_user_skill
+5.27s call     tests/test_runtime_defaults.py::test_an_explicit_mail_label_is_not_overwritten_by_the_derived_one
+4.81s call     tests/test_spawn_child_codex_bin.py::test_an_unresponsive_saved_codex_is_probed_once_per_spawn
+2.98s call     tests/test_claude_child_chrome.py::test_codex_child_process_does_not_inherit_the_chrome_env
+2.69s call     tests/test_claude_child_chrome.py::test_env_default_is_ignored_for_codex_children
+1.93s call     tests/test_spawn_child_codex_bin.py::test_model_policy_and_api_use_the_child_runner_and_selected_binary[broken-environment-0.159.1-gpt-6.1-sol]
+1.93s call     tests/test_spawn_child_codex_bin.py::test_model_policy_and_api_use_the_child_runner_and_selected_binary[broken-environment-0.158.0-gpt-6-sol]
+1.88s call     tests/test_claude_child_chrome.py::test_default_spawn_has_repeatable_fleet_permissions_and_no_chrome
+1.84s call     tests/test_claude_child_chrome.py::test_a_later_launch_never_changes_an_earlier_conversation[chrome]
+1.64s call     tests/test_claude_child_chrome.py::test_a_later_launch_never_changes_an_earlier_conversation[inherit]
+1.34s call     tests/test_claude_child_chrome.py::test_a_later_launch_never_changes_an_earlier_conversation[failed-chrome]
+1.26s call     tests/test_codex_launch.py::test_launcher_normalization_uses_configured_cli_version
+1.17s call     tests/test_spawn_child_codex_bin.py::test_model_policy_and_api_use_the_child_runner_and_selected_binary[env.sh-0.158.0-gpt-6-sol]
+1.16s call     tests/test_spawn_child_codex_bin.py::test_model_policy_and_api_use_the_child_runner_and_selected_binary[env.sh-0.159.1-gpt-6.1-sol]
+1.15s call     tests/test_spawn_child_codex_bin.py::test_model_policy_and_api_use_the_child_runner_and_selected_binary[environment-0.158.0-gpt-6-sol]
+1.13s call     tests/test_spawn_child_codex_bin.py::test_model_policy_and_api_use_the_child_runner_and_selected_binary[environment-0.159.1-gpt-6.1-sol]
+1.03s call     tests/test_claude_child_chrome.py::test_without_a_device_the_child_holds_all_browser_actions
+=========================== short test summary info ============================
+FAILED tests/test_spawn_child_codex_bin.py::test_the_probe_runs_codex_with_the_path_the_child_will_have
+1 failed, 349 passed in 179.87s (0:02:59)
+traffic: [ORRERY-UP-1-focused] done (exit 1)
+
+EXIT_CODE=1

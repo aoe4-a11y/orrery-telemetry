@@ -1,0 +1,25 @@
+#!/usr/bin/env bash
+# 監査ジョブ用に headless の claude を再ログインさせる。ターミナル窓を出してブラウザ認証へつなぐだけ。
+# 殿はブラウザで「サインイン」を押すだけでよい。
+set -uo pipefail
+EMAIL="a10.31meu@gmail.com"
+CMD="claude auth login --claudeai --email $EMAIL; echo; echo '--- 認証状態 ---'; claude auth status"
+
+if [ -d "/Applications/iTerm.app" ]; then
+  osascript >/dev/null 2>&1 <<OSA
+tell application "iTerm"
+  activate
+  create window with default profile
+  tell current session of current window to write text "$CMD"
+end tell
+OSA
+else
+  osascript >/dev/null 2>&1 <<OSA
+tell application "Terminal"
+  activate
+  do script "$CMD"
+end tell
+OSA
+fi
+echo "ターミナル窓を開きました。ブラウザが立ち上がったら『サインイン』を押してください。"
+echo "終わったら、この画面で確認します。"

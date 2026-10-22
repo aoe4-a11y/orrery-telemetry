@@ -1,0 +1,28 @@
+{
+  "upstream_tag": "2026.09.30.4",
+  "schema_title_old_and_tag": [
+    "Codex App to agent-mail binding record v1",
+    "Codex App to ORRERY Mail binding record v1"
+  ],
+  "schema_except_title_equal": true,
+  "project_description_old_and_tag": [
+    "Optional Codex App bridge for claude-agent-stack",
+    "Optional Codex App bridge for ORRERY Telemetry"
+  ],
+  "project_except_description_equal": true,
+  "owner_optional_metadata": "core install retains old metadata; new tag metadata is in branch",
+  "evidence": [
+    {
+      "old": "docs/orrery-up-1/live-code/integrations/codex_app/schemas/binding-record-v1.json",
+      "old_sha256": "3895fed4e17dd2fc0159575a77fef613e3b3266ff972b4c01259e95cab20130e",
+      "tag_source": "integrations/codex_app/schemas/binding-record-v1.json",
+      "tag_sha256": "6c310f6ccbff19b3003a02d114272b2a0b9b35face4364b12e1448e499f5f4b6"
+    },
+    {
+      "old": "docs/orrery-up-1/live-code/integrations/codex_app/pyproject.toml",
+      "old_sha256": "294e049f74c43135e8f3249abd22a4f1b8500b01c438ebd6183d9bce147ceb02",
+      "tag_source": "integrations/codex_app/pyproject.toml",
+      "tag_sha256": "98232fe3fd96cfe1fa5384233af63d026c87b06d1e885312406d735d536d968f"
+    }
+  ]
+}

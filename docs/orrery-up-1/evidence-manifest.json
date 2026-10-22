@@ -1,0 +1,146 @@
+{
+  "worktree": "/Users/huyuhutaru/tools/orrery-telemetry-wt-orrery-up-1",
+  "latest_tested_commit": "36bf85a4ca054ec3a62736b526eeeb72cbc6fe10",
+  "files": [
+    {
+      "path": "docs/orrery-up-1/identity.json",
+      "sha256": "0fdb28c75dd75e29f2e72bb65e3499acc6ce03c8b973b271db8078adc5029069",
+      "shows": "本家tag・fork4commit・隔離installと最終testのcommitを固定"
+    },
+    {
+      "path": "docs/orrery-up-1/inventory.json",
+      "sha256": "79151bb533c5720b602569f6e65acdfbfd133350181c3586d1eb0e5a82341cd0",
+      "shows": "owned252・追加/backupを含む全307行のpath/SHA/移植先"
+    },
+    {
+      "path": "docs/orrery-up-1/migration-map.md",
+      "sha256": "bf935c1a61d217440dcbb608d5cd0d61bbccfc2621aef20333e83de27f9478ca",
+      "shows": "各改造と移植commit、55件source不在、backup世代、upstream同等箇所の対応"
+    },
+    {
+      "path": "docs/orrery-up-1/final-census.json",
+      "sha256": "2850b551e7a96ba0f973a6a7f4133bce2f99434e87302569c56612172621e0cd",
+      "shows": "owned7差分・55source不在＋4owned backup・外部owned5の件数"
+    },
+    {
+      "path": "docs/orrery-up-1/coverage-final.json",
+      "sha256": "f1bba97662a7583edd4fbfc68e3c39999fb0aaf446eb3bcaad1e5a81eb70b078",
+      "shows": "bin/hooks/config等8領域288regular fileの未採録0"
+    },
+    {
+      "path": "docs/orrery-up-1/final-destination-check.json",
+      "sha256": "4a086329139c5f51a78439896ef2e89c0b5507d1fd1cce96752fe60c3b4ccb78",
+      "shows": "現行code/config/backup286hashのdrift0、祖先5件、canonical checkout未変更"
+    },
+    {
+      "path": "docs/orrery-up-1/live-to-branch.diff",
+      "sha256": "9a2b2a6341dcdc51918f0ce655aed577d1dc156b108e2faeb7fd86ea4e11350c",
+      "shows": "現行コードと移植branchの差分全文"
+    },
+    {
+      "path": "docs/orrery-up-1/live-to-install.json",
+      "sha256": "46575ee31c09ac7e4c05101980700c6d70b0bf7c2d678cd725475f11f4146828",
+      "shows": "71対象でraw65一致・移植branch71一致"
+    },
+    {
+      "path": "docs/orrery-up-1/live-to-install.diff",
+      "sha256": "e93af0ca2b9786b27c8c8d0515a7cfe3cbd6feddb55785289a52010a69d9c257",
+      "shows": "現行と使い捨てinstallの6差分全文"
+    },
+    {
+      "path": "docs/orrery-up-1/installed-latest-source.json",
+      "sha256": "8efc70973c0a64b721abf00e639f2d7f279f67668e8e5c6d80addceb94555447",
+      "shows": "core4sourceを最新branchで置換しoptional metadata3件は現行値保持"
+    },
+    {
+      "path": "docs/orrery-up-1/rehearsal.json",
+      "sha256": "0f4cfb57db28603f1d9b29aac047f49030b84431d0807439e628e736003c974d",
+      "shows": "実installer exit0・隔離Mail/DB/dashboard正常・71comparison・teardown"
+    },
+    {
+      "path": "docs/orrery-up-1/rehearsal-second.log",
+      "sha256": "c7995c5e80456574e8267de86225945e097e04eea4357a3ea47a68e376f7b2b3",
+      "shows": "使い捨て実installerの出力全文とexit0"
+    },
+    {
+      "path": "docs/orrery-up-1/rehearsal-warnings.txt",
+      "sha256": "f260d1315cc389a3c9773d28bfac6f04b9c6963eb22eb877e122909a9419daa0",
+      "shows": "隔離service stub/承認skipに由来する8warningの原文"
+    },
+    {
+      "path": "docs/orrery-up-1/rollback-proof.json",
+      "sha256": "d1eeb17eb12646c5185f75f1ee49e34b8f48e1fda81a59ed04f86f32628598fc",
+      "shows": "隔離先310recordのsnapshot/restore両exit0・元SHA復元・runtime保持"
+    },
+    {
+      "path": "docs/orrery-up-1/model-default-proof.json",
+      "sha256": "8017b9ce60d119accf6b08d90b17c9f4d3c6ad29af4ca8ff67c034ae9885f9dc",
+      "shows": "実Codex0.159.3のresolver gpt-6.1-sol・medium、3command exit0"
+    },
+    {
+      "path": "docs/orrery-up-1/test-history.json",
+      "sha256": "d1d45f60201f5e0e09a07a09f227f2b3c4d61fc28ea4c32830bbebf324741698",
+      "shows": "初回24赤と2回目2赤のassertion・導入変更・修正・未特定の範囲"
+    },
+    {
+      "path": "docs/orrery-up-1/full-suite-first.log",
+      "sha256": "d7ad64e478845a31d3acf10b1a52c9d8281f2327830229c00e0d6b4e78744ab6",
+      "shows": "初回全体24failed/3179passed/33skipped、exit1の出力全文"
+    },
+    {
+      "path": "docs/orrery-up-1/full-suite-final.log",
+      "sha256": "2041fe1c875657627e4f8707c7d9bb701d253252f460e07c86fe62f99af72e59",
+      "shows": "2回目全体2failed/3202passed/33skipped、exit1の出力全文"
+    },
+    {
+      "path": "docs/orrery-up-1/last-two-focused.log",
+      "sha256": "efaa49ceebc65f7920859cc5647e032569109226b8eb145c37ff9d5d794e07b6",
+      "shows": "残った2件の修正確認、単独pytest出力とexit"
+    },
+    {
+      "path": "docs/orrery-up-1/full-suite-verified.log",
+      "sha256": "670426c099bdd8c579e38861263b5f62e4d3b8ee59e235fe498c24e830d74ba7",
+      "shows": "最終commitの全体pytest出力全文とexit"
+    },
+    {
+      "path": "docs/orrery-up-1/queue-route.json",
+      "sha256": "7089758df961bc2f4564a01f592fb109a99293af6f6dc28cd4a80301e72f0714",
+      "shows": "canonical heavy wrapperと21path探索、優先度実装0・上限変更なし"
+    },
+    {
+      "path": "docs/orrery-up-1/cleanup-check.json",
+      "sha256": "b3063edcc19c4f4d7cdd1b9bd02a65a82ad2ea82a426901e11734affd66cbe42",
+      "shows": "隔離installのhelper process残存0・実service停止0"
+    },
+    {
+      "path": "docs/orrery-up-1/guide.md",
+      "sha256": "ec49122e2c9d3e5b927c05d5a0bbac6ff3854c96b13ed199be54c97e559519c1",
+      "shows": "所有者が実行するinstall1本とrollback3command・未測定範囲"
+    },
+    {
+      "path": "docs/orrery-up-1/push-candidate.json",
+      "sha256": "fed6a1c1f7760ea7307b5876b83a4cddaaa7987dce10911d7ab94ae6941f6c43",
+      "shows": "forkへcandidate SHAをpushしremoteと一致させた記録"
+    },
+    {
+      "path": "docs/orrery-up-1/log-credential-shape-scan.json",
+      "sha256": "0da6b524a9e13d572ffa0f494d9ee6ec6fe8abb2ab94daa6240a50dcf79661e0",
+      "shows": "station logの3種類のcredential shape検出件数（網羅性の限界付き）"
+    },
+    {
+      "path": "docs/orrery-up-1/optional-metadata-equivalence.json",
+      "sha256": "a84c1a620ad56d32350770e1e0a8c49c668083c016d4a0195bde0a1ed985ec27",
+      "shows": "owned metadataのschema titleとproject description以外は同一、制約/依存差分なし"
+    },
+    {
+      "path": "scripts/install-fleet-upgrade.sh",
+      "sha256": "7420b9d51656505da6b1aeb63748ae3f528354b61bf51a979f6645e1277bbeeb",
+      "shows": "所有者用対話installer wrapper"
+    },
+    {
+      "path": "scripts/fleet-upgrade-backup.py",
+      "sha256": "f4d4fb63ed86bde35649526c28862f49e8aa442d15deecb11e8cab371209f77f",
+      "shows": "Mail/runtimeを除くsnapshot/restore実装"
+    }
+  ]
+}

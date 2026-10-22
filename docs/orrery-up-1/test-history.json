@@ -1,0 +1,256 @@
+{
+  "first_full": {
+    "commit": "2b2ac5e",
+    "exit": 1,
+    "failed": 24,
+    "passed": 3179,
+    "skipped": 33
+  },
+  "red_tests": [
+    {
+      "test": "tests/test_adjective_vocab.py::test_generated_agent_names_use_the_stock_safe_hyphen_separator",
+      "first_full_observation": "2b2ac5e",
+      "introducing_change": "ef51345（現行 nohyphen policy 移植）",
+      "asserted_behavior": "利用可能な adjective/scientist の名前を登録形式に従って生成する",
+      "resolution": "9cccf55: separator期待を AdjectiveScientist に同期し、双方の membership/availability assertion は保持"
+    },
+    {
+      "test": "tests/test_claude_child_chrome.py::test_builder_is_byte_identical_to_the_pre_chrome_command_when_not_requested",
+      "first_full_observation": "2b2ac5e",
+      "introducing_change": "ef51345（現行 full permission / Sonnet5.5 移植）",
+      "asserted_behavior": "Claude command の full permission/add-dir を保持し chrome指定だけを追加。指定modelと一致する warm session のみ再利用する",
+      "resolution": "9cccf55: full argv を検証、chrome差分を単独確認。warm fixture は formal Sonnet5 と exact model matching を確認"
+    },
+    {
+      "test": "tests/test_claude_child_chrome.py::test_builder_adds_only_chrome_when_requested",
+      "first_full_observation": "2b2ac5e",
+      "introducing_change": "ef51345（現行 full permission / Sonnet5.5 移植）",
+      "asserted_behavior": "Claude command の full permission/add-dir を保持し chrome指定だけを追加。指定modelと一致する warm session のみ再利用する",
+      "resolution": "9cccf55: full argv を検証、chrome差分を単独確認。warm fixture は formal Sonnet5 と exact model matching を確認"
+    },
+    {
+      "test": "tests/test_claude_child_chrome.py::test_default_spawn_matches_the_pre_chrome_launcher_exactly",
+      "first_full_observation": "2b2ac5e",
+      "introducing_change": "ef51345（現行 full permission / Sonnet5.5 移植）",
+      "asserted_behavior": "Claude command の full permission/add-dir を保持し chrome指定だけを追加。指定modelと一致する warm session のみ再利用する",
+      "resolution": "9cccf55: full argv を検証、chrome差分を単独確認。warm fixture は formal Sonnet5 と exact model matching を確認"
+    },
+    {
+      "test": "tests/test_claude_child_chrome.py::test_default_spawn_still_claims_a_ready_warm_session[sonnet]",
+      "first_full_observation": "2b2ac5e",
+      "introducing_change": "ef51345（現行 full permission / Sonnet5.5 移植）",
+      "asserted_behavior": "Claude command の full permission/add-dir を保持し chrome指定だけを追加。指定modelと一致する warm session のみ再利用する",
+      "resolution": "9cccf55: full argv を検証、chrome差分を単独確認。warm fixture は formal Sonnet5 と exact model matching を確認"
+    },
+    {
+      "test": "tests/test_claude_child_chrome.py::test_chrome_request_skips_a_ready_warm_session_and_adds_chrome",
+      "first_full_observation": "2b2ac5e",
+      "introducing_change": "ef51345（現行 full permission / Sonnet5.5 移植）",
+      "asserted_behavior": "Claude command の full permission/add-dir を保持し chrome指定だけを追加。指定modelと一致する warm session のみ再利用する",
+      "resolution": "9cccf55: full argv を検証、chrome差分を単独確認。warm fixture は formal Sonnet5 と exact model matching を確認"
+    },
+    {
+      "test": "tests/test_claude_child_chrome.py::test_env_default_turns_chrome_on_for_claude_children",
+      "first_full_observation": "2b2ac5e",
+      "introducing_change": "ef51345（現行 full permission / Sonnet5.5 移植）",
+      "asserted_behavior": "Claude command の full permission/add-dir を保持し chrome指定だけを追加。指定modelと一致する warm session のみ再利用する",
+      "resolution": "9cccf55: full argv を検証、chrome差分を単独確認。warm fixture は formal Sonnet5 と exact model matching を確認"
+    },
+    {
+      "test": "tests/test_codex_launch.py::test_model_catalog_fallback_preserves_aliases_and_old_ids_without_cli_version",
+      "first_full_observation": "2b2ac5e",
+      "introducing_change": "ef51345（friendly Sonnet alias 5.5 移植）",
+      "asserted_behavior": "model catalog は friendly default を現行 Sonnet5.5 にし、明示旧IDは保持する",
+      "resolution": "9cccf55: Sonnet5.5 friendly alias と旧 formal model IDs の保持を同時確認"
+    },
+    {
+      "test": "tests/test_codex_launch.py::test_model_specific_effort_constraints_are_enforced",
+      "first_full_observation": "2b2ac5e",
+      "introducing_change": "ef51345（R062 effort default / authorization policy 移植）",
+      "asserted_behavior": "R062未承認の高effortは選ばずmedium既定、明示許可時にはmodel能力に従いadvanced effortを渡す",
+      "resolution": "8924a48 + 9cccf55: advanced capability testはALLOW_XHIGH=1を明示、未承認defaultはmedium。prod menu/cacheにもpolicyを適用"
+    },
+    {
+      "test": "tests/test_codex_launch.py::test_launcher_no_longer_hardcodes_full_auto",
+      "first_full_observation": "2b2ac5e",
+      "introducing_change": "701b298（明示 sandbox override の移植）",
+      "asserted_behavior": "explicit sandbox を tmux launch に渡し、未指定時は workspace-write にする",
+      "resolution": "9cccf55: workspace-write fallback と explicit override を両方要求"
+    },
+    {
+      "test": "tests/test_codex_launch.py::test_actual_codex_launch_commands_keep_models_and_optional_efforts",
+      "first_full_observation": "2b2ac5e",
+      "introducing_change": "ef51345（R062 effort default / authorization policy 移植）",
+      "asserted_behavior": "R062未承認の高effortは選ばずmedium既定、明示許可時にはmodel能力に従いadvanced effortを渡す",
+      "resolution": "8924a48 + 9cccf55: advanced capability testはALLOW_XHIGH=1を明示、未承認defaultはmedium。prod menu/cacheにもpolicyを適用"
+    },
+    {
+      "test": "tests/test_codex_model_ui.py::test_model_switch_removes_unsupported_effort_and_preserves_id",
+      "first_full_observation": "2b2ac5e",
+      "introducing_change": "ef51345（R062 effort default / authorization policy 移植）",
+      "asserted_behavior": "R062未承認の高effortは選ばずmedium既定、明示許可時にはmodel能力に従いadvanced effortを渡す",
+      "resolution": "8924a48 + 9cccf55: advanced capability testはALLOW_XHIGH=1を明示、未承認defaultはmedium。prod menu/cacheにもpolicyを適用"
+    },
+    {
+      "test": "tests/test_codex_model_ui.py::test_auto_selected_effort_does_not_replace_the_next_model_default",
+      "first_full_observation": "2b2ac5e",
+      "introducing_change": "ef51345（R062 effort default / authorization policy 移植）",
+      "asserted_behavior": "R062未承認の高effortは選ばずmedium既定、明示許可時にはmodel能力に従いadvanced effortを渡す",
+      "resolution": "8924a48 + 9cccf55: advanced capability testはALLOW_XHIGH=1を明示、未承認defaultはmedium。prod menu/cacheにもpolicyを適用"
+    },
+    {
+      "test": "tests/test_docs_consistency.py::test_hook_count_matches_the_settings_template",
+      "first_full_observation": "2b2ac5e",
+      "introducing_change": "ef51345（R068 hook 移植）",
+      "asserted_behavior": "installした hooks と docs/settings manifest の件数・内容を一致させる",
+      "resolution": "9cccf55: hook10件を guides/sample へ同期"
+    },
+    {
+      "test": "tests/test_name_availability.py::test_picker_still_returns_a_name_when_the_server_answers",
+      "first_full_observation": "2b2ac5e",
+      "introducing_change": "ef51345（現行 nohyphen policy 移植）",
+      "asserted_behavior": "利用可能な adjective/scientist の名前を登録形式に従って生成する",
+      "resolution": "9cccf55: separator期待を AdjectiveScientist に同期し、双方の membership/availability assertion は保持"
+    },
+    {
+      "test": "tests/test_runtime_defaults.py::test_isolated_installer_migrates_annotations_and_matches_manifest_sample",
+      "first_full_observation": "2b2ac5e",
+      "introducing_change": "701b298（AGENTSTACK_CODEX_SANDBOX env 追加）",
+      "asserted_behavior": "隔離 installer が annotations と env default を manifest に記録する",
+      "resolution": "9cccf55: env manifest sample を generator と同期"
+    },
+    {
+      "test": "tests/test_runtime_defaults.py::test_install_state_sample_settings_merge_matches_generator",
+      "first_full_observation": "2b2ac5e",
+      "introducing_change": "ef51345（R068 hook 移植）",
+      "asserted_behavior": "installした hooks と docs/settings manifest の件数・内容を一致させる",
+      "resolution": "9cccf55: hook10件を guides/sample へ同期"
+    },
+    {
+      "test": "tests/test_service_label_isolation.py::test_a_distinct_mail_label_is_accepted",
+      "first_full_observation": "2b2ac5e",
+      "introducing_change": "未特定（2b2ac5e の初回全体実走で初観測。assertion 到達前の process 起動/merge timeout を含む）",
+      "asserted_behavior": "別の Mail service label を使った dry-run が完了する",
+      "resolution": "product source・timeout 閾値を変えず focused-third で通過。最終全体で再確認"
+    },
+    {
+      "test": "tests/test_service_watcher_measurement.py::test_teardown_stops_a_real_runner_and_its_child",
+      "first_full_observation": "2b2ac5e",
+      "introducing_change": "未特定（2b2ac5e の初回全体実走で初観測。assertion 到達前の process 起動/merge timeout を含む）",
+      "asserted_behavior": "隔離 runner の起動を確認して runner/child を終了できる。終了済み PID は正常に扱う",
+      "resolution": "product source・timeout 閾値を変えず focused-third で通過。最終全体で再確認"
+    },
+    {
+      "test": "tests/test_service_watcher_measurement.py::test_a_stale_pid_file_for_a_process_that_has_exited_is_not_an_error",
+      "first_full_observation": "2b2ac5e",
+      "introducing_change": "未特定（2b2ac5e の初回全体実走で初観測。assertion 到達前の process 起動/merge timeout を含む）",
+      "asserted_behavior": "隔離 runner の起動を確認して runner/child を終了できる。終了済み PID は正常に扱う",
+      "resolution": "product source・timeout 閾値を変えず focused-third で通過。最終全体で再確認"
+    },
+    {
+      "test": "tests/test_settings_permissions.py::test_merge_installs_permissions_into_fresh_settings",
+      "first_full_observation": "2b2ac5e",
+      "introducing_change": "未特定（2b2ac5e の初回全体実走で初観測。assertion 到達前の process 起動/merge timeout を含む）",
+      "asserted_behavior": "許可設定を fresh merge し、user rule を残して legacy skill 設定だけを除去し、再 merge しても変わらない",
+      "resolution": "product source・timeout 閾値を変えず focused-third で通過。最終全体で再確認"
+    },
+    {
+      "test": "tests/test_settings_permissions.py::test_merge_removes_only_legacy_agentstack_skills_directory",
+      "first_full_observation": "2b2ac5e",
+      "introducing_change": "未特定（2b2ac5e の初回全体実走で初観測。assertion 到達前の process 起動/merge timeout を含む）",
+      "asserted_behavior": "許可設定を fresh merge し、user rule を残して legacy skill 設定だけを除去し、再 merge しても変わらない",
+      "resolution": "product source・timeout 閾値を変えず focused-third で通過。最終全体で再確認"
+    },
+    {
+      "test": "tests/test_settings_permissions.py::test_merge_preserves_user_rules_and_is_idempotent",
+      "first_full_observation": "2b2ac5e",
+      "introducing_change": "未特定（2b2ac5e の初回全体実走で初観測。assertion 到達前の process 起動/merge timeout を含む）",
+      "asserted_behavior": "許可設定を fresh merge し、user rule を残して legacy skill 設定だけを除去し、再 merge しても変わらない",
+      "resolution": "product source・timeout 閾値を変えず focused-third で通過。最終全体で再確認"
+    },
+    {
+      "test": "tests/test_spawn_child_codex_bin.py::test_nothing_usable_is_an_error_that_says_why",
+      "first_full_observation": "2b2ac5e",
+      "introducing_change": "55cd037 の upstream fixture が host Homebrew の実 Codex を拾う。fixture導入commitであり red導入時点は未特定（初観測2b2ac5e）",
+      "asserted_behavior": "実行可能 Codex が無い場合に理由付き error と nonzero を返す",
+      "resolution": "9cccf55 / fb2cd26: login shell の host PATH 再生成を fixture 内で隔離、prod resolver unchanged"
+    }
+  ],
+  "harness_runs": [
+    {
+      "log": "focused.log",
+      "exit": 1,
+      "note": "initial3 fixture/policy failures; 8924a48で修正"
+    },
+    {
+      "log": "focused-second.log",
+      "exit": 2,
+      "note": "own pytestを中断し canonical heavy wrapper 経由へやり直した"
+    },
+    {
+      "log": "focused-third.log",
+      "exit": 1,
+      "note": "349pass・controlled PATH fixture1fail。9cccf55/fb2cd26でfixtureを補正"
+    },
+    {
+      "log": "codex-bin-focused.log",
+      "exit": 0,
+      "note": "最後の PATH fixture3test pass"
+    },
+    {
+      "log": "rehearsal-first.log",
+      "exit": -9,
+      "note": "installer起動前の own queue を止めR068 configを追加。product install未実行"
+    },
+    {
+      "log": "rehearsal-second.log",
+      "exit": 0,
+      "note": "実installer・実隔離Mail/database/dashboard・71comparison pass"
+    }
+  ],
+  "second_full": {
+    "commit": "fb2cd26f9cdffe1666c440114f8b2c69fc4fe987",
+    "exit": 1,
+    "failed": 2,
+    "passed": 3202,
+    "skipped": 33,
+    "seconds": 1148.9
+  },
+  "second_full_red_tests": [
+    {
+      "test": "tests/test_runtime_defaults.py::test_isolated_installer_migrates_annotations_and_matches_manifest_sample",
+      "introducing_change": "a931cc3: R068 owner-controlled config seed, intentionally not installer-owned",
+      "asserted_behavior": "core uninstall removes owned payload and retains owner config; assertion omitted newly retained config top-level directory",
+      "resolution_commit": "36bf85a4ca054ec3a62736b526eeeb72cbc6fe10",
+      "resolution": "retention allowlist includes config and exact retained config bytes equal the branch template"
+    },
+    {
+      "test": "tests/test_spawn_v2.py::test_spawn_names_advertises_codex_provider",
+      "introducing_change": "9cccf55: provider effort menu obeys R062 explicit authorization",
+      "asserted_behavior": "unapproved provider advertises low/medium/high only, advanced entries require explicit authorization",
+      "resolution_commit": "36bf85a4ca054ec3a62736b526eeeb72cbc6fe10",
+      "resolution": "fixture pins ALLOW_XHIGH=0 and asserts exact three permitted efforts with medium default"
+    }
+  ],
+  "latest_test_commit": "36bf85a4ca054ec3a62736b526eeeb72cbc6fe10",
+  "source_changes_since_isolated_install": [
+    "tests/test_runtime_defaults.py",
+    "tests/test_spawn_v2.py"
+  ],
+  "installed_payload_changes_since_isolated_install": [],
+  "verification_state": "all final repository tests passed; no baseline exemption",
+  "final_full": {
+    "commit": "36bf85a4ca054ec3a62736b526eeeb72cbc6fe10",
+    "exit": 0,
+    "passed": 3204,
+    "skipped": 33,
+    "subtests_passed": 17,
+    "warnings": 7,
+    "seconds": 1136.42
+  },
+  "focused_last_two": {
+    "exit": 0,
+    "passed": 2,
+    "seconds": 11.88
+  }
+}
