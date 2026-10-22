@@ -6,6 +6,13 @@ PACKAGE_SRC = Path(__file__).resolve().parents[1] / "src"
 if str(PACKAGE_SRC) not in sys.path:
     sys.path.insert(0, str(PACKAGE_SRC))
 
+# S2b loads a repository client fixture by file path; that fixture imports
+# shared helpers from tests/. Make package-only runs resolve the same helpers
+# as a complete repository collection, without collecting the other suite.
+REPO_TEST_HELPERS = Path(__file__).resolve().parents[3] / "tests"
+if str(REPO_TEST_HELPERS) not in sys.path:
+    sys.path.append(str(REPO_TEST_HELPERS))
+
 # A shell started by the installed stack carries the live Mail's settings
 # (AGENTSTACK_MAIL_MANAGEMENT_SOCKET, AGENTSTACK_MAIL_DB, ...). The server under
 # test reads them through python-decouple, which prefers the process environment

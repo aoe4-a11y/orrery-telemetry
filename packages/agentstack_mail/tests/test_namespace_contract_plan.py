@@ -558,6 +558,18 @@ def test_default_mcp_still_routes_by_project_and_preserves_v1_schema(
                     )
                     if tool.name == "send_message":
                         properties.pop("reply_to")
+                    if tool.name == "fetch_inbox":
+                        # Exact retrieval is an optional legacy extension;
+                        # keep the namespace v1 snapshot and every other field
+                        # frozen while accounting for that explicit addition.
+                        extension = json.loads((Path(__file__).parents[1] /
+                            "fixtures/tool-schema-extensions-v1.json").read_text())
+                        assert extension["extension_version"] == 1
+                        additions = extension["tools"]["fetch_inbox"]["inputSchema"]["properties"]
+                        assert set(additions) == {"message_id"}
+                        assert "message_id" not in properties
+                        assert "message_id" not in tool.inputSchema.get("required", [])
+                        properties.update(additions)
                     if tool.name == "summarize_thread":
                         properties.pop("message_id")
                         properties["thread_id"] = tool.inputSchema["properties"][
