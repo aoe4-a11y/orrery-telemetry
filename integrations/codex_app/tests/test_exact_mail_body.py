@@ -4,7 +4,7 @@ from __future__ import annotations
 import asyncio
 import json
 from contextlib import asynccontextmanager
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 import pytest
@@ -75,7 +75,7 @@ def route(tmp_path, monkeypatch):
         with Session(engine, expire_on_commit=False) as session:
             session.add(Message(id=message_id, project_id=project_id, sender_id=1,
                         subject='[station] fixture', body_md=body, importance=importance,
-                        created_ts=datetime(2026, 10, 12) + timedelta(seconds=message_id)))
+                        created_ts=datetime(2026, 10, 12, tzinfo=timezone.utc) + timedelta(seconds=message_id)))
             session.add(MessageRecipient(message_id=message_id, agent_id=recipient, kind=kind))
             session.commit()
 

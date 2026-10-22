@@ -83,3 +83,6 @@ Documents without a translation are labelled with their original language. Image
 
 - [Native context and helper models](native-capabilities.md) — dsh / Hermes context observations and per-model capabilities.
 - [Native catalog and effort capabilities (Japanese)](managed-catalog.md)
+
+- [ORRERY-UP-3 Mail update guide (Japanese)](orrery-up-3/guide.md)
+- [ORRERY-UP-3 MAIL-FETCH-1 migration table (Japanese)](orrery-up-3/migration.md)

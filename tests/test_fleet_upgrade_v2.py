@@ -23,6 +23,20 @@ def payload_module():
     spec=importlib.util.spec_from_file_location('fleet_payload',ROOT/'scripts/install-fleet-payload.py')
     mod=importlib.util.module_from_spec(spec);spec.loader.exec_module(mod);return mod
 
+def frozen_old_dependency(row):
+    """Resolve old bytes from frozen Git inputs; never read the live install."""
+    paths = [row.get('archive'), 'docs/orrery-up-1/live-code/'+row['installed'],
+             row.get('preserved_at'), row.get('source')]
+    candidates = [('ade977f8', p) for p in paths if p]
+    candidates += [('e5039ff', p) for p in (row['installed'], row.get('source')) if p]
+    for revision, path in candidates:
+        result = subprocess.run(['git', 'show', revision+':'+path], cwd=ROOT,
+                                capture_output=True)
+        if result.returncode == 0 and hashlib.sha256(result.stdout).hexdigest() == row['sha256']:
+            mode = subprocess.check_output(['git', 'ls-tree', revision, '--', path], cwd=ROOT)
+            return result.stdout, int(mode.split()[0], 8) & 0o777
+    raise AssertionError('frozen old dependency missing or hash mismatch: '+row['installed'])
+
 def stage(home,new):
     stack=home/'.agentstack';stack.mkdir(parents=True)
     for tree in ('hooks','bin'):
@@ -35,13 +49,13 @@ def stage(home,new):
         for row in inventory['rows']:
             rel=row['installed']
             if not rel.startswith(('bin/','hooks/')) or row.get('kind')!='file' or not row.get('sha256'):continue
-            source=Path('/Users/huyuhutaru/.agentstack')/rel
-            raw=source.read_bytes()
+            raw, mode = frozen_old_dependency(row)
             assert hashlib.sha256(raw).hexdigest()==row['sha256'], rel
             target=stack/rel;target.parent.mkdir(parents=True,exist_ok=True)
+            if target.exists() and not target.is_symlink():mode=stat.S_IMODE(target.stat().st_mode)
             if target.is_symlink():target.unlink()
             target.write_bytes(raw.replace(b'/Users/huyuhutaru/.agentstack',str(stack).encode()))
-            shutil.copymode(source,target)
+            target.chmod(mode)
         shutil.copytree(ROOT/'fleet'/RELEASE,stack/RELEASE,symlinks=True)
         for link in (stack/RELEASE).rglob('*'):
             if link.is_symlink():
@@ -132,12 +146,22 @@ while IFS= read -r line; do printf '\n%s\n› ' "$line"; done
         subprocess.run([str(fake/'tmux'),'kill-session','-t','=FixtureEnvSeed'],env=env,capture_output=True)
 
 @pytest.mark.parametrize('entry',['restart-seat','spawn-codex','spawn_child'])
-def test_three_entrances_preserve_current_generation_identity(tmp_path,entry):
+def test_three_entrances_preserve_current_generation_identity(tmp_path,entry,monkeypatch):
+    # This regression must fail before opening a production payload, even if
+    # its bytes happen to match the historical inventory again.
+    production=Path('/Users/huyuhutaru/.agentstack')
+    def guard(original):
+        def read(path,*args,**kwargs):
+            assert not path.resolve().is_relative_to(production), 'live install read forbidden'
+            return original(path,*args,**kwargs)
+        return read
+    for method in ('read_bytes','read_text'):
+        monkeypatch.setattr(Path,method,guard(getattr(Path,method)))
     old=run_arm(tmp_path/'old',entry,False);new=run_arm(tmp_path/'new',entry,True)
     assert old==new
     assert new['token_mode']==new['state_mode']==0o600
     assert new['child_process_environment']=={'ssl_cert_file_present':False,'codex_ca_certificate_present':False}
-    out=ROOT/'docs/orrery-up-2';out.mkdir(exist_ok=True)
+    out=tmp_path
     (out/('parity-'+entry+'.json')).write_text(json.dumps({'transport':'real isolated tmux; synthetic provider/Mail; no paid API','old':old,'new':new,'equal':old==new},indent=2)+'\n')
 
 def test_all_release_file_bytes_and_symlink_targets_are_preserved():

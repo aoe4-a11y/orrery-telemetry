@@ -36,3 +36,14 @@
 README・AGENTS・Claude/Codex の managed 指示・install/hook docs を確認した。起動/承認の製品フローは変わらず、既存 `docs/hooks.md` の exact 取得案内と本表・guide で補う。配布の新規設定項目は増やしていない。
 
 package 単独の完走で見つけた 3 赤も修正した（`9091cd8`）。`packages/agentstack_mail/tests/conftest.py` は repo `tests/` の共通 helper を import path に明示して S2b の動的 fixture 読込みを成立させる。`test_namespace_contract_plan.py` は frozen namespace v1 に optional legacy `message_id` 拡張 fixture を明示的に足して全項目の等値比較を維持する。required へ昇格していないことも検査し、subset 比較には変えていない。製品の API 追加は `05f280e`、旧 namespace 比較試験の導入は `96c5fc7`。S2b helper import の導入は `711f913`（package 単独で収集する時に不足し、repo 全体の collection に依存していた）。
+
+## repo 全体で追加した修正
+
+| file | 意図 | diff |
+|---|---|---|
+| `integrations/codex_app/tests/test_exact_mail_body.py` | 現行 model の新規日時書込み契約へ fixture を合わせる | 固定日時に `timezone.utc` を付ける。Unicode・宛先・age・chunk assertion は維持 |
+| `docs/README.md`・`docs/README.en.md` | 新しい2記事を文書索引へ登録する | guide / migration のリンクを両索引に追加 |
+| `tests/test_fleet_upgrade_v2.py` | 旧 payload 比較を稼働 install から切り離す | inventory の全148 fileを固定 `ade977f8` の archive / UP1 snapshot / preserved source と `e5039ff` から元SHA一致で解決。live fallback は無い。read_bytes/read_text は本番 path を開く前に拒否するguardを追加。旧 hash・入口同一性 assertion は維持 |
+| 同上の出力 | 過去の受領書を試験が上書きしない | parity JSON の出力先を既存 `docs/orrery-up-2` からその test の tmp_path へ変更 |
+
+最初の全体実行では既存の old-arm fixture が本物の `bin/agent-start` を読んで旧SHA不一致で停止した。3 caseともこの最初のfileで停止し、資格file/DBへの到達・本番変更は無い。これは駅の本番非参照の指示から逸脱したため、報告し上記guardと凍結入力で再発を防いだ。焦点31件は同じSHA検査を維持したまま exit0。

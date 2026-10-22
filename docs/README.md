@@ -98,3 +98,6 @@ Telemetry 自体の操作は、header の `HELP MAP`（NETWORK では `SETTINGS`
 - [ORRERY-UP-2 改造対応表](orrery-up-2/migration-map.md)
 
 - [ORRERY-UP-2 赤の発生点と修正記録](orrery-up-2/test-history.md)
+
+- [ORRERY-UP-3 Mail 更新手順](orrery-up-3/guide.md)
+- [ORRERY-UP-3 MAIL-FETCH-1 移植表](orrery-up-3/migration.md)
