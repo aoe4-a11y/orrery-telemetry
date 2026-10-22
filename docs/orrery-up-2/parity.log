@@ -1,0 +1,12 @@
+traffic: [orrery-up-2-parity] running (slot slot-1, mem 14026MB, disk 85GiB)
+....                                                                     [100%]
+============================= slowest 25 durations =============================
+20.99s call     tests/test_fleet_upgrade_v2.py::test_three_entrances_preserve_current_generation_identity[restart-seat]
+14.93s call     tests/test_fleet_upgrade_v2.py::test_three_entrances_preserve_current_generation_identity[spawn-codex]
+13.70s call     tests/test_fleet_upgrade_v2.py::test_three_entrances_preserve_current_generation_identity[spawn_child]
+
+(9 durations < 1s hidden.)
+4 passed in 49.99s
+traffic: [orrery-up-2-parity] done (exit 0)
+
+EXIT_CODE=0

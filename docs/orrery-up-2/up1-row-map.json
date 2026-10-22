@@ -60,7 +60,7 @@
     "up1_row_sha256": "71759edd4bd8ec7a693a24f6ef33a96a246ce76c9fada28b5a53de96960e8b7f",
     "installed": "integrations/codex_app/marketplace/plugins/agentstack-codex-app/src/agentstack_codex_app/mcp_server.py",
     "up2_installed": "integrations/codex_app/marketplace/plugins/agentstack-codex-app/src/agentstack_codex_app/mcp_server.py",
-    "migration_commit": "1d42c7235e59c53376e20033c72360f6fa2693fd",
+    "migration_commit": "711878cc15bbbb83e60a01aa654cb3d52cc61cf2",
     "preservation": "既存optional配置を非上書きで保持。対応sourceは参照のみ（隔離diffで旧bytes一致）"
   },
   {
@@ -68,7 +68,7 @@
     "up1_row_sha256": "c80ff83223534c7b95245824bec10997a6b1abfe4c4ced4c4548f12113b77490",
     "installed": "integrations/codex_app/marketplace/plugins/agentstack-codex-app/src/agentstack_codex_app/agent_mail_client.py",
     "up2_installed": "integrations/codex_app/marketplace/plugins/agentstack-codex-app/src/agentstack_codex_app/agent_mail_client.py",
-    "migration_commit": "1d42c7235e59c53376e20033c72360f6fa2693fd",
+    "migration_commit": "711878cc15bbbb83e60a01aa654cb3d52cc61cf2",
     "preservation": "本家の600字上限とredaction付きerror表示を採用（引用参照）"
   },
   {
@@ -84,7 +84,7 @@
     "up1_row_sha256": "daca9b6684050bb1e2c4b51407ef0818c52bfa816e8ceee55d8aa8ed1fcf9365",
     "installed": "bin/__pycache__/agentstack-supervisor.cpython-314.pyc",
     "up2_installed": "bin/__pycache__/agentstack-supervisor.cpython-314.pyc",
-    "migration_commit": "1d42c7235e59c53376e20033c72360f6fa2693fd",
+    "migration_commit": "711878cc15bbbb83e60a01aa654cb3d52cc61cf2",
     "preservation": "生成物または外部設定をinstaller範囲外で保持。コードの再導入なし"
   },
   {
@@ -460,7 +460,7 @@
     "up1_row_sha256": "9631c011908a6ee5dfa5a53789a617fd8b3a49b7f4e613d8b45248fe6b8817a9",
     "installed": "bin/lib/__pycache__/mcp_endpoint.cpython-314.pyc",
     "up2_installed": "bin/lib/__pycache__/mcp_endpoint.cpython-314.pyc",
-    "migration_commit": "1d42c7235e59c53376e20033c72360f6fa2693fd",
+    "migration_commit": "711878cc15bbbb83e60a01aa654cb3d52cc61cf2",
     "preservation": "生成物または外部設定をinstaller範囲外で保持。コードの再導入なし"
   },
   {
@@ -644,7 +644,7 @@
     "up1_row_sha256": "5fbd422cb704099646a6ec0290c803fcbbace0487e3067bbf640d0328879bc97",
     "installed": "dashboard/__pycache__/graph_data.cpython-314.pyc",
     "up2_installed": "dashboard/__pycache__/graph_data.cpython-314.pyc",
-    "migration_commit": "1d42c7235e59c53376e20033c72360f6fa2693fd",
+    "migration_commit": "711878cc15bbbb83e60a01aa654cb3d52cc61cf2",
     "preservation": "生成物または外部設定をinstaller範囲外で保持。コードの再導入なし"
   },
   {
@@ -1580,7 +1580,7 @@
     "up1_row_sha256": "b2451b05fcfaf2bca9511c1a7690056ae035473ac3517d5a8379821c1e9fa3ac",
     "installed": "dashboard/providers/__pycache__/__init__.cpython-314.pyc",
     "up2_installed": "dashboard/providers/__pycache__/__init__.cpython-314.pyc",
-    "migration_commit": "1d42c7235e59c53376e20033c72360f6fa2693fd",
+    "migration_commit": "711878cc15bbbb83e60a01aa654cb3d52cc61cf2",
     "preservation": "生成物または外部設定をinstaller範囲外で保持。コードの再導入なし"
   },
   {
@@ -1588,7 +1588,7 @@
     "up1_row_sha256": "346dd996e7ceedc889f39df84a393f50e1ecf0e40bf33a5ce1b75c049bcb5dbf",
     "installed": "dashboard/providers/__pycache__/base.cpython-314.pyc",
     "up2_installed": "dashboard/providers/__pycache__/base.cpython-314.pyc",
-    "migration_commit": "1d42c7235e59c53376e20033c72360f6fa2693fd",
+    "migration_commit": "711878cc15bbbb83e60a01aa654cb3d52cc61cf2",
     "preservation": "生成物または外部設定をinstaller範囲外で保持。コードの再導入なし"
   },
   {
@@ -1596,7 +1596,7 @@
     "up1_row_sha256": "39899158fb8d8e693c944ee84f8dd6e27930c2a2d96ab93b388955af78743cba",
     "installed": "dashboard/providers/__pycache__/codex_app.cpython-314.pyc",
     "up2_installed": "dashboard/providers/__pycache__/codex_app.cpython-314.pyc",
-    "migration_commit": "1d42c7235e59c53376e20033c72360f6fa2693fd",
+    "migration_commit": "711878cc15bbbb83e60a01aa654cb3d52cc61cf2",
     "preservation": "生成物または外部設定をinstaller範囲外で保持。コードの再導入なし"
   },
   {
@@ -1684,7 +1684,7 @@
     "up1_row_sha256": "a83cfba653d3af4e23a6e1fd946bd9d0b2b137c95a8afd14b0ad0f23356e5365",
     "installed": "env.sh",
     "up2_installed": "env.sh",
-    "migration_commit": "1d42c7235e59c53376e20033c72360f6fa2693fd",
+    "migration_commit": "711878cc15bbbb83e60a01aa654cb3d52cc61cf2",
     "preservation": "literal-values-and-codex-comments-preserved"
   },
   {
@@ -1972,7 +1972,7 @@
     "up1_row_sha256": "973bad2e8cbce55604a01f60178958d2135dfe43ce2796463ed9a618d31dde5a",
     "installed": "install-state.json",
     "up2_installed": "install-state.json",
-    "migration_commit": "1d42c7235e59c53376e20033c72360f6fa2693fd",
+    "migration_commit": "711878cc15bbbb83e60a01aa654cb3d52cc61cf2",
     "preservation": "生成設定・既存optional配置を上書きせず保持（隔離diffを参照）"
   },
   {
@@ -1980,7 +1980,7 @@
     "up1_row_sha256": "d948eabb5c56b3189650ca44f903be86b204c621e37293d6a4b124ba41a45b1c",
     "installed": "integrations/codex_app/README.md",
     "up2_installed": "integrations/codex_app/README.md",
-    "migration_commit": "1d42c7235e59c53376e20033c72360f6fa2693fd",
+    "migration_commit": "711878cc15bbbb83e60a01aa654cb3d52cc61cf2",
     "preservation": "既存optional配置を非上書きで保持。対応sourceは参照のみ（隔離diffで旧bytes一致）"
   },
   {
@@ -1988,7 +1988,7 @@
     "up1_row_sha256": "0625914e1e6d7cb56e48d58c42ed6c003c39f937493c98c7bda02360b828d4f3",
     "installed": "integrations/codex_app/bin/doctor-codex-app-integration",
     "up2_installed": "integrations/codex_app/bin/doctor-codex-app-integration",
-    "migration_commit": "1d42c7235e59c53376e20033c72360f6fa2693fd",
+    "migration_commit": "711878cc15bbbb83e60a01aa654cb3d52cc61cf2",
     "preservation": "既存optional配置を非上書きで保持。対応sourceは参照のみ（隔離diffで旧bytes一致）"
   },
   {
@@ -1996,7 +1996,7 @@
     "up1_row_sha256": "8342d556555185e0a3ea53bfafed93ef34c1592d59919ebd22228123c1d04210",
     "installed": "integrations/codex_app/bin/run-bridge",
     "up2_installed": "integrations/codex_app/bin/run-bridge",
-    "migration_commit": "1d42c7235e59c53376e20033c72360f6fa2693fd",
+    "migration_commit": "711878cc15bbbb83e60a01aa654cb3d52cc61cf2",
     "preservation": "既存optional配置を非上書きで保持。対応sourceは参照のみ（隔離diffで旧bytes一致）"
   },
   {
@@ -2004,7 +2004,7 @@
     "up1_row_sha256": "3441675662bc7f8398224e88996a12eba65e443f3bfc7eeaeed3e3acfa2e7594",
     "installed": "integrations/codex_app/bin/uninstall-codex-app-integration",
     "up2_installed": "integrations/codex_app/bin/uninstall-codex-app-integration",
-    "migration_commit": "1d42c7235e59c53376e20033c72360f6fa2693fd",
+    "migration_commit": "711878cc15bbbb83e60a01aa654cb3d52cc61cf2",
     "preservation": "既存optional配置を非上書きで保持。対応sourceは参照のみ（隔離diffで旧bytes一致）"
   },
   {
@@ -2012,7 +2012,7 @@
     "up1_row_sha256": "abbd707fe7e8bbd78f931e7b3f3230c741331f2f4fd397a06ab2290b9923bd17",
     "installed": "integrations/codex_app/env.sh",
     "up2_installed": "integrations/codex_app/env.sh",
-    "migration_commit": "1d42c7235e59c53376e20033c72360f6fa2693fd",
+    "migration_commit": "711878cc15bbbb83e60a01aa654cb3d52cc61cf2",
     "preservation": "既存optional配置を非上書きで保持。対応sourceは参照のみ（隔離diffで旧bytes一致）"
   },
   {
@@ -2020,7 +2020,7 @@
     "up1_row_sha256": "25a5c486b54035480afe961cef4179f19766c88c494e1bb49e42fbcc71e0597d",
     "installed": "integrations/codex_app/env.sh.bak-20260927-wakepoll",
     "up2_installed": "integrations/codex_app/env.sh.bak-20260927-wakepoll",
-    "migration_commit": "1d42c7235e59c53376e20033c72360f6fa2693fd",
+    "migration_commit": "711878cc15bbbb83e60a01aa654cb3d52cc61cf2",
     "preservation": "既存optional配置を非上書きで保持。対応sourceは参照のみ（隔離diffで旧bytes一致）"
   },
   {
@@ -2028,7 +2028,7 @@
     "up1_row_sha256": "c7aef0a1dca88a5473fe16a8ac17fa12a4dd393747f81db0154175887819a009",
     "installed": "integrations/codex_app/env.sh.bak-headwiring-20260908T083501Z",
     "up2_installed": "integrations/codex_app/env.sh.bak-headwiring-20260908T083501Z",
-    "migration_commit": "1d42c7235e59c53376e20033c72360f6fa2693fd",
+    "migration_commit": "711878cc15bbbb83e60a01aa654cb3d52cc61cf2",
     "preservation": "既存optional配置を非上書きで保持。対応sourceは参照のみ（隔離diffで旧bytes一致）"
   },
   {
@@ -2036,7 +2036,7 @@
     "up1_row_sha256": "d5b68ff055b55ecbe955943cb7ee9cc8a67c70e01443a1455093e8956a7829e9",
     "installed": "integrations/codex_app/env.sh.bak-skipgit-20260904T204712Z",
     "up2_installed": "integrations/codex_app/env.sh.bak-skipgit-20260904T204712Z",
-    "migration_commit": "1d42c7235e59c53376e20033c72360f6fa2693fd",
+    "migration_commit": "711878cc15bbbb83e60a01aa654cb3d52cc61cf2",
     "preservation": "既存optional配置を非上書きで保持。対応sourceは参照のみ（隔離diffで旧bytes一致）"
   },
   {
@@ -2044,7 +2044,7 @@
     "up1_row_sha256": "ed4b9e04b4d3c56d91f3612a2b7c5032ca128316a8968b0a68b6a4e806708a39",
     "installed": "integrations/codex_app/env.sh.bak-skipgit-revert-20260905T051851Z",
     "up2_installed": "integrations/codex_app/env.sh.bak-skipgit-revert-20260905T051851Z",
-    "migration_commit": "1d42c7235e59c53376e20033c72360f6fa2693fd",
+    "migration_commit": "711878cc15bbbb83e60a01aa654cb3d52cc61cf2",
     "preservation": "既存optional配置を非上書きで保持。対応sourceは参照のみ（隔離diffで旧bytes一致）"
   },
   {
@@ -2052,7 +2052,7 @@
     "up1_row_sha256": "a94d1e4a471f6ba01b1fa502940116758cc85ee998aabebf3d2bbc0de1ab842f",
     "installed": "integrations/codex_app/env.sh.sample",
     "up2_installed": "integrations/codex_app/env.sh.sample",
-    "migration_commit": "1d42c7235e59c53376e20033c72360f6fa2693fd",
+    "migration_commit": "711878cc15bbbb83e60a01aa654cb3d52cc61cf2",
     "preservation": "既存optional配置を非上書きで保持。対応sourceは参照のみ（隔離diffで旧bytes一致）"
   },
   {
@@ -2060,7 +2060,7 @@
     "up1_row_sha256": "1edacf7e689476a1cf5810df4d38cc2c8f713999f6755c0139e6a171a078fa1a",
     "installed": "integrations/codex_app/export-manifest.txt",
     "up2_installed": "integrations/codex_app/export-manifest.txt",
-    "migration_commit": "1d42c7235e59c53376e20033c72360f6fa2693fd",
+    "migration_commit": "711878cc15bbbb83e60a01aa654cb3d52cc61cf2",
     "preservation": "既存optional配置を非上書きで保持。対応sourceは参照のみ（隔離diffで旧bytes一致）"
   },
   {
@@ -2068,7 +2068,7 @@
     "up1_row_sha256": "25f6a32fe96a2b8c2e130dbe001c2e99d1dea67d96fc7885e866a072cd11a448",
     "installed": "integrations/codex_app/install-state.json",
     "up2_installed": "integrations/codex_app/install-state.json",
-    "migration_commit": "1d42c7235e59c53376e20033c72360f6fa2693fd",
+    "migration_commit": "711878cc15bbbb83e60a01aa654cb3d52cc61cf2",
     "preservation": "既存optional配置を非上書きで保持。対応sourceは参照のみ（隔離diffで旧bytes一致）"
   },
   {
@@ -2076,7 +2076,7 @@
     "up1_row_sha256": "c32b6438a36b7ca6d493ba3ec4db94c948caa7929540393c3e033cb22efc7190",
     "installed": "integrations/codex_app/launchd/org.agentstack.codex-app-bridge.plist",
     "up2_installed": "integrations/codex_app/launchd/org.agentstack.codex-app-bridge.plist",
-    "migration_commit": "1d42c7235e59c53376e20033c72360f6fa2693fd",
+    "migration_commit": "711878cc15bbbb83e60a01aa654cb3d52cc61cf2",
     "preservation": "既存optional配置を非上書きで保持。対応sourceは参照のみ（隔離diffで旧bytes一致）"
   },
   {
@@ -2084,7 +2084,7 @@
     "up1_row_sha256": "63ae7486df627b215a766ece8796e98f7a8f6145a4f24f20384e1a8f5bda391a",
     "installed": "integrations/codex_app/launchd/org.agentstack.codex-app-bridge.plist.template",
     "up2_installed": "integrations/codex_app/launchd/org.agentstack.codex-app-bridge.plist.template",
-    "migration_commit": "1d42c7235e59c53376e20033c72360f6fa2693fd",
+    "migration_commit": "711878cc15bbbb83e60a01aa654cb3d52cc61cf2",
     "preservation": "既存optional配置を非上書きで保持。対応sourceは参照のみ（隔離diffで旧bytes一致）"
   },
   {
@@ -2092,7 +2092,7 @@
     "up1_row_sha256": "092f3f8a56ca86ab0c37bf8db4191f162524faecca07787179f57cee16f41c89",
     "installed": "integrations/codex_app/marketplace/.agents/plugins/marketplace.json",
     "up2_installed": "integrations/codex_app/marketplace/.agents/plugins/marketplace.json",
-    "migration_commit": "1d42c7235e59c53376e20033c72360f6fa2693fd",
+    "migration_commit": "711878cc15bbbb83e60a01aa654cb3d52cc61cf2",
     "preservation": "既存optional配置を非上書きで保持。対応sourceは参照のみ（隔離diffで旧bytes一致）"
   },
   {
@@ -2100,7 +2100,7 @@
     "up1_row_sha256": "a8806c66a0e6d7d4e4622913856290654e54511d2e18c74025fe786f6cace899",
     "installed": "integrations/codex_app/marketplace/plugins/agentstack-codex-app/.codex-plugin/plugin.json",
     "up2_installed": "integrations/codex_app/marketplace/plugins/agentstack-codex-app/.codex-plugin/plugin.json",
-    "migration_commit": "1d42c7235e59c53376e20033c72360f6fa2693fd",
+    "migration_commit": "711878cc15bbbb83e60a01aa654cb3d52cc61cf2",
     "preservation": "既存optional配置を非上書きで保持。対応sourceは参照のみ（隔離diffで旧bytes一致）"
   },
   {
@@ -2108,7 +2108,7 @@
     "up1_row_sha256": "201a8f137960c367a52fa1dd0b0e4e649e72b57255bfea4cd372bbb0eba4abb1",
     "installed": "integrations/codex_app/marketplace/plugins/agentstack-codex-app/.mcp.json",
     "up2_installed": "integrations/codex_app/marketplace/plugins/agentstack-codex-app/.mcp.json",
-    "migration_commit": "1d42c7235e59c53376e20033c72360f6fa2693fd",
+    "migration_commit": "711878cc15bbbb83e60a01aa654cb3d52cc61cf2",
     "preservation": "既存optional配置を非上書きで保持。対応sourceは参照のみ（隔離diffで旧bytes一致）"
   },
   {
@@ -2116,7 +2116,7 @@
     "up1_row_sha256": "27965c0c1c7b40485214266fd116f7935086b486a937afa60e0bee5b23b12fcc",
     "installed": "integrations/codex_app/marketplace/plugins/agentstack-codex-app/hooks/hooks.json",
     "up2_installed": "integrations/codex_app/marketplace/plugins/agentstack-codex-app/hooks/hooks.json",
-    "migration_commit": "1d42c7235e59c53376e20033c72360f6fa2693fd",
+    "migration_commit": "711878cc15bbbb83e60a01aa654cb3d52cc61cf2",
     "preservation": "既存optional配置を非上書きで保持。対応sourceは参照のみ（隔離diffで旧bytes一致）"
   },
   {
@@ -2124,7 +2124,7 @@
     "up1_row_sha256": "580fa7d08843c611f4fa3b03fa8933d5c19d4f992cd2a3b9a93be590b6ff0be7",
     "installed": "integrations/codex_app/marketplace/plugins/agentstack-codex-app/schemas/README.md",
     "up2_installed": "integrations/codex_app/marketplace/plugins/agentstack-codex-app/schemas/README.md",
-    "migration_commit": "1d42c7235e59c53376e20033c72360f6fa2693fd",
+    "migration_commit": "711878cc15bbbb83e60a01aa654cb3d52cc61cf2",
     "preservation": "既存optional配置を非上書きで保持。対応sourceは参照のみ（隔離diffで旧bytes一致）"
   },
   {
@@ -2132,7 +2132,7 @@
     "up1_row_sha256": "eaf038d99aa2aae804f5cd3e98871989ecae3a5311e387084d934f49a1fdccc9",
     "installed": "integrations/codex_app/marketplace/plugins/agentstack-codex-app/schemas/binding-record-v1.json",
     "up2_installed": "integrations/codex_app/marketplace/plugins/agentstack-codex-app/schemas/binding-record-v1.json",
-    "migration_commit": "1d42c7235e59c53376e20033c72360f6fa2693fd",
+    "migration_commit": "711878cc15bbbb83e60a01aa654cb3d52cc61cf2",
     "preservation": "既存optional配置を非上書きで保持。対応sourceは参照のみ（隔離diffで旧bytes一致）"
   },
   {
@@ -2140,7 +2140,7 @@
     "up1_row_sha256": "a951d1d262e34619e100b48ee84190b31b1fd837f2eb0b8d57d561d6a20958dd",
     "installed": "integrations/codex_app/marketplace/plugins/agentstack-codex-app/schemas/migrations/001_delivery_state.sql",
     "up2_installed": "integrations/codex_app/marketplace/plugins/agentstack-codex-app/schemas/migrations/001_delivery_state.sql",
-    "migration_commit": "1d42c7235e59c53376e20033c72360f6fa2693fd",
+    "migration_commit": "711878cc15bbbb83e60a01aa654cb3d52cc61cf2",
     "preservation": "既存optional配置を非上書きで保持。対応sourceは参照のみ（隔離diffで旧bytes一致）"
   },
   {
@@ -2148,7 +2148,7 @@
     "up1_row_sha256": "bc5febecf1085d4ab6b6ac8caa94ddfcbffce5217ec1d0800d713b691575409d",
     "installed": "integrations/codex_app/marketplace/plugins/agentstack-codex-app/schemas/runtime-event-v1.json",
     "up2_installed": "integrations/codex_app/marketplace/plugins/agentstack-codex-app/schemas/runtime-event-v1.json",
-    "migration_commit": "1d42c7235e59c53376e20033c72360f6fa2693fd",
+    "migration_commit": "711878cc15bbbb83e60a01aa654cb3d52cc61cf2",
     "preservation": "既存optional配置を非上書きで保持。対応sourceは参照のみ（隔離diffで旧bytes一致）"
   },
   {
@@ -2156,7 +2156,7 @@
     "up1_row_sha256": "fcafb279f5416bdf2bbc6f4f8af0f6b8f95b26bb13d56ceaa9b32246ed0157a9",
     "installed": "integrations/codex_app/marketplace/plugins/agentstack-codex-app/scripts/run-hook.sh",
     "up2_installed": "integrations/codex_app/marketplace/plugins/agentstack-codex-app/scripts/run-hook.sh",
-    "migration_commit": "1d42c7235e59c53376e20033c72360f6fa2693fd",
+    "migration_commit": "711878cc15bbbb83e60a01aa654cb3d52cc61cf2",
     "preservation": "既存optional配置を非上書きで保持。対応sourceは参照のみ（隔離diffで旧bytes一致）"
   },
   {
@@ -2164,7 +2164,7 @@
     "up1_row_sha256": "870032816bb3e176a10c362fa7e170bffa2447233ec2a1fd68b9ee0809479d26",
     "installed": "integrations/codex_app/marketplace/plugins/agentstack-codex-app/scripts/run-mcp.sh",
     "up2_installed": "integrations/codex_app/marketplace/plugins/agentstack-codex-app/scripts/run-mcp.sh",
-    "migration_commit": "1d42c7235e59c53376e20033c72360f6fa2693fd",
+    "migration_commit": "711878cc15bbbb83e60a01aa654cb3d52cc61cf2",
     "preservation": "既存optional配置を非上書きで保持。対応sourceは参照のみ（隔離diffで旧bytes一致）"
   },
   {
@@ -2172,7 +2172,7 @@
     "up1_row_sha256": "4af952a9571c0fe1f67124615e6d7011cb65351beb59e87c3305488f1f2e2893",
     "installed": "integrations/codex_app/marketplace/plugins/agentstack-codex-app/skills/coordinate/SKILL.md",
     "up2_installed": "integrations/codex_app/marketplace/plugins/agentstack-codex-app/skills/coordinate/SKILL.md",
-    "migration_commit": "1d42c7235e59c53376e20033c72360f6fa2693fd",
+    "migration_commit": "711878cc15bbbb83e60a01aa654cb3d52cc61cf2",
     "preservation": "既存optional配置を非上書きで保持。対応sourceは参照のみ（隔離diffで旧bytes一致）"
   },
   {
@@ -2180,7 +2180,7 @@
     "up1_row_sha256": "eec6a10900cf5be4ac84d439929a45ad9b0b0a8f535bb5253b86faaac700fd72",
     "installed": "integrations/codex_app/marketplace/plugins/agentstack-codex-app/src/agentstack_codex_app/__init__.py",
     "up2_installed": "integrations/codex_app/marketplace/plugins/agentstack-codex-app/src/agentstack_codex_app/__init__.py",
-    "migration_commit": "1d42c7235e59c53376e20033c72360f6fa2693fd",
+    "migration_commit": "711878cc15bbbb83e60a01aa654cb3d52cc61cf2",
     "preservation": "既存optional配置を非上書きで保持。対応sourceは参照のみ（隔離diffで旧bytes一致）"
   },
   {
@@ -2188,7 +2188,7 @@
     "up1_row_sha256": "7b4dd7809fbb3d6002702e1498edb19d6eb4c5e169a73c3e456bd931d7a31d1a",
     "installed": "integrations/codex_app/marketplace/plugins/agentstack-codex-app/src/agentstack_codex_app/agent_mail_client.py",
     "up2_installed": "integrations/codex_app/marketplace/plugins/agentstack-codex-app/src/agentstack_codex_app/agent_mail_client.py",
-    "migration_commit": "1d42c7235e59c53376e20033c72360f6fa2693fd",
+    "migration_commit": "711878cc15bbbb83e60a01aa654cb3d52cc61cf2",
     "preservation": "本家の600字上限とredaction付きerror表示を採用（引用参照）"
   },
   {
@@ -2196,7 +2196,7 @@
     "up1_row_sha256": "4066228383b5700a2f56d3071de1e95e8c0b6fa4c9306652bc184ce26883694b",
     "installed": "integrations/codex_app/marketplace/plugins/agentstack-codex-app/src/agentstack_codex_app/daemon.py",
     "up2_installed": "integrations/codex_app/marketplace/plugins/agentstack-codex-app/src/agentstack_codex_app/daemon.py",
-    "migration_commit": "1d42c7235e59c53376e20033c72360f6fa2693fd",
+    "migration_commit": "711878cc15bbbb83e60a01aa654cb3d52cc61cf2",
     "preservation": "既存optional配置を非上書きで保持。対応sourceは参照のみ（隔離diffで旧bytes一致）"
   },
   {
@@ -2204,7 +2204,7 @@
     "up1_row_sha256": "f76a180f2a7ab29b77ec8b616384075037d92a814531f02697a060fbbcb61af4",
     "installed": "integrations/codex_app/marketplace/plugins/agentstack-codex-app/src/agentstack_codex_app/delivery.py",
     "up2_installed": "integrations/codex_app/marketplace/plugins/agentstack-codex-app/src/agentstack_codex_app/delivery.py",
-    "migration_commit": "1d42c7235e59c53376e20033c72360f6fa2693fd",
+    "migration_commit": "711878cc15bbbb83e60a01aa654cb3d52cc61cf2",
     "preservation": "既存optional配置を非上書きで保持。対応sourceは参照のみ（隔離diffで旧bytes一致）"
   },
   {
@@ -2212,7 +2212,7 @@
     "up1_row_sha256": "27cb375909c323912db48f8122f023c97714ca88c8b096eef327ba71a425e040",
     "installed": "integrations/codex_app/marketplace/plugins/agentstack-codex-app/src/agentstack_codex_app/hook_entry.py",
     "up2_installed": "integrations/codex_app/marketplace/plugins/agentstack-codex-app/src/agentstack_codex_app/hook_entry.py",
-    "migration_commit": "1d42c7235e59c53376e20033c72360f6fa2693fd",
+    "migration_commit": "711878cc15bbbb83e60a01aa654cb3d52cc61cf2",
     "preservation": "既存optional配置を非上書きで保持。対応sourceは参照のみ（隔離diffで旧bytes一致）"
   },
   {
@@ -2220,7 +2220,7 @@
     "up1_row_sha256": "73ae6564eff859a7c30895b22cc8e88bf1a33a74f683d4e3ac035b547903fa57",
     "installed": "integrations/codex_app/marketplace/plugins/agentstack-codex-app/src/agentstack_codex_app/identity_store.py",
     "up2_installed": "integrations/codex_app/marketplace/plugins/agentstack-codex-app/src/agentstack_codex_app/identity_store.py",
-    "migration_commit": "1d42c7235e59c53376e20033c72360f6fa2693fd",
+    "migration_commit": "711878cc15bbbb83e60a01aa654cb3d52cc61cf2",
     "preservation": "既存optional配置を非上書きで保持。対応sourceは参照のみ（隔離diffで旧bytes一致）"
   },
   {
@@ -2228,7 +2228,7 @@
     "up1_row_sha256": "02a961b2a5b0680a54b95c281e0aa20f64a2a605c8497844904bd70c1171e568",
     "installed": "integrations/codex_app/marketplace/plugins/agentstack-codex-app/src/agentstack_codex_app/mcp_server.py",
     "up2_installed": "integrations/codex_app/marketplace/plugins/agentstack-codex-app/src/agentstack_codex_app/mcp_server.py",
-    "migration_commit": "1d42c7235e59c53376e20033c72360f6fa2693fd",
+    "migration_commit": "711878cc15bbbb83e60a01aa654cb3d52cc61cf2",
     "preservation": "既存optional配置を非上書きで保持。対応sourceは参照のみ（隔離diffで旧bytes一致）"
   },
   {
@@ -2236,7 +2236,7 @@
     "up1_row_sha256": "80671f0f374898e5f590b2a00369d9ad1b92923fb3fc414100c1f0c80034f917",
     "installed": "integrations/codex_app/marketplace/plugins/agentstack-codex-app/src/agentstack_codex_app/protocol.py",
     "up2_installed": "integrations/codex_app/marketplace/plugins/agentstack-codex-app/src/agentstack_codex_app/protocol.py",
-    "migration_commit": "1d42c7235e59c53376e20033c72360f6fa2693fd",
+    "migration_commit": "711878cc15bbbb83e60a01aa654cb3d52cc61cf2",
     "preservation": "既存optional配置を非上書きで保持。対応sourceは参照のみ（隔離diffで旧bytes一致）"
   },
   {
@@ -2244,7 +2244,7 @@
     "up1_row_sha256": "fb7a59ab499fd4e3c0447a52d39b3b2aaa11f9bb5407db76bd04fb5f94efc8bf",
     "installed": "integrations/codex_app/marketplace/plugins/agentstack-codex-app/src/agentstack_codex_app/snapshot.py",
     "up2_installed": "integrations/codex_app/marketplace/plugins/agentstack-codex-app/src/agentstack_codex_app/snapshot.py",
-    "migration_commit": "1d42c7235e59c53376e20033c72360f6fa2693fd",
+    "migration_commit": "711878cc15bbbb83e60a01aa654cb3d52cc61cf2",
     "preservation": "既存optional配置を非上書きで保持。対応sourceは参照のみ（隔離diffで旧bytes一致）"
   },
   {
@@ -2252,7 +2252,7 @@
     "up1_row_sha256": "7a2c4ce2f46b4d71eadd38690cc3574f1cc78b9adc2a43d78e4f2d807b71e85c",
     "installed": "integrations/codex_app/marketplace/plugins/agentstack-codex-app/src/agentstack_codex_app/wake.py",
     "up2_installed": "integrations/codex_app/marketplace/plugins/agentstack-codex-app/src/agentstack_codex_app/wake.py",
-    "migration_commit": "1d42c7235e59c53376e20033c72360f6fa2693fd",
+    "migration_commit": "711878cc15bbbb83e60a01aa654cb3d52cc61cf2",
     "preservation": "既存optional配置を非上書きで保持。対応sourceは参照のみ（隔離diffで旧bytes一致）"
   },
   {
@@ -2308,7 +2308,7 @@
     "up1_row_sha256": "d89eaf55b590fec12975b7614a3bb85cf9de103b6d51f933a1504d5891ecf494",
     "installed": "integrations/codex_app/pyproject.toml",
     "up2_installed": "integrations/codex_app/pyproject.toml",
-    "migration_commit": "1d42c7235e59c53376e20033c72360f6fa2693fd",
+    "migration_commit": "711878cc15bbbb83e60a01aa654cb3d52cc61cf2",
     "preservation": "既存optional配置を非上書きで保持。対応sourceは参照のみ（隔離diffで旧bytes一致）"
   },
   {
@@ -2316,7 +2316,7 @@
     "up1_row_sha256": "07b65d992dac433676799f24a482e7f651b5148359f358c76d1f944670648f64",
     "installed": "integrations/codex_app/schemas/README.md",
     "up2_installed": "integrations/codex_app/schemas/README.md",
-    "migration_commit": "1d42c7235e59c53376e20033c72360f6fa2693fd",
+    "migration_commit": "711878cc15bbbb83e60a01aa654cb3d52cc61cf2",
     "preservation": "既存optional配置を非上書きで保持。対応sourceは参照のみ（隔離diffで旧bytes一致）"
   },
   {
@@ -2324,7 +2324,7 @@
     "up1_row_sha256": "43fcaa37a750ebd88bddb73a91cce829a6b6f4672e57445ca921ec7a397339bc",
     "installed": "integrations/codex_app/schemas/binding-record-v1.json",
     "up2_installed": "integrations/codex_app/schemas/binding-record-v1.json",
-    "migration_commit": "1d42c7235e59c53376e20033c72360f6fa2693fd",
+    "migration_commit": "711878cc15bbbb83e60a01aa654cb3d52cc61cf2",
     "preservation": "既存optional配置を非上書きで保持。対応sourceは参照のみ（隔離diffで旧bytes一致）"
   },
   {
@@ -2332,7 +2332,7 @@
     "up1_row_sha256": "29722b410460b6fb9ad9c011d0310144067052ced192e67cbb00ded5fe82efbb",
     "installed": "integrations/codex_app/schemas/migrations/001_delivery_state.sql",
     "up2_installed": "integrations/codex_app/schemas/migrations/001_delivery_state.sql",
-    "migration_commit": "1d42c7235e59c53376e20033c72360f6fa2693fd",
+    "migration_commit": "711878cc15bbbb83e60a01aa654cb3d52cc61cf2",
     "preservation": "既存optional配置を非上書きで保持。対応sourceは参照のみ（隔離diffで旧bytes一致）"
   },
   {
@@ -2340,7 +2340,7 @@
     "up1_row_sha256": "603f66c38c9210b1a8ef28e57757b7106f004281cdb16566b20c2169ad589ab1",
     "installed": "integrations/codex_app/schemas/runtime-event-v1.json",
     "up2_installed": "integrations/codex_app/schemas/runtime-event-v1.json",
-    "migration_commit": "1d42c7235e59c53376e20033c72360f6fa2693fd",
+    "migration_commit": "711878cc15bbbb83e60a01aa654cb3d52cc61cf2",
     "preservation": "既存optional配置を非上書きで保持。対応sourceは参照のみ（隔離diffで旧bytes一致）"
   },
   {
@@ -2428,7 +2428,7 @@
     "up1_row_sha256": "8a86e42f264b9ee8558a2e04363f283e06da4a6527e20650ab18cc9162f615a9",
     "installed": "mail-service/renders/95c14223266a8e8a599b6a68d84ca1f7e2026bb7-7e795c6f7e8c2856f78e/run-agentstack-mail.sh",
     "up2_installed": "mail-service/renders/95c14223266a8e8a599b6a68d84ca1f7e2026bb7-7e795c6f7e8c2856f78e/run-agentstack-mail.sh",
-    "migration_commit": "1d42c7235e59c53376e20033c72360f6fa2693fd",
+    "migration_commit": "711878cc15bbbb83e60a01aa654cb3d52cc61cf2",
     "preservation": "生成物または外部設定をinstaller範囲外で保持。コードの再導入なし"
   },
   {
@@ -2436,7 +2436,7 @@
     "up1_row_sha256": "291fe1e1475669b109822204726078f166e6198c904bde46fc53a88a5321a7d0",
     "installed": "mail-service/renders/95c14223266a8e8a599b6a68d84ca1f7e2026bb7-7e795c6f7e8c2856f78e/service.env",
     "up2_installed": "mail-service/renders/95c14223266a8e8a599b6a68d84ca1f7e2026bb7-7e795c6f7e8c2856f78e/service.env",
-    "migration_commit": "1d42c7235e59c53376e20033c72360f6fa2693fd",
+    "migration_commit": "711878cc15bbbb83e60a01aa654cb3d52cc61cf2",
     "preservation": "生成物または外部設定をinstaller範囲外で保持。コードの再導入なし"
   },
   {
@@ -2444,7 +2444,7 @@
     "up1_row_sha256": "e3348802fcbca94cba789864390fd94bd319721f6b8796ce91b87185324eebf5",
     "installed": "runtime/claude-mcp-merge-result.json",
     "up2_installed": "runtime/claude-mcp-merge-result.json",
-    "migration_commit": "1d42c7235e59c53376e20033c72360f6fa2693fd",
+    "migration_commit": "711878cc15bbbb83e60a01aa654cb3d52cc61cf2",
     "preservation": "生成物または外部設定をinstaller範囲外で保持。コードの再導入なし"
   },
   {
@@ -2452,7 +2452,7 @@
     "up1_row_sha256": "4e4800a11912e8a317c77d5bab3903cfca4c3a7dbd1241b57a060c86712888fb",
     "installed": "runtime/settings-merge-result.json",
     "up2_installed": "runtime/settings-merge-result.json",
-    "migration_commit": "1d42c7235e59c53376e20033c72360f6fa2693fd",
+    "migration_commit": "711878cc15bbbb83e60a01aa654cb3d52cc61cf2",
     "preservation": "生成物または外部設定をinstaller範囲外で保持。コードの再導入なし"
   },
   {
@@ -2476,7 +2476,7 @@
     "up1_row_sha256": "0fe79b3c6d1d4d888ac0876a213dc89a6683f700a862008efe8ef7d5f91aa298",
     "installed": "@home/.claude/skills/delegate",
     "up2_installed": "@home/.claude/skills/delegate",
-    "migration_commit": "1d42c7235e59c53376e20033c72360f6fa2693fd",
+    "migration_commit": "711878cc15bbbb83e60a01aa654cb3d52cc61cf2",
     "preservation": "生成物または外部設定をinstaller範囲外で保持。コードの再導入なし"
   },
   {
@@ -2484,7 +2484,7 @@
     "up1_row_sha256": "4208e1680f3d90d11d7cff26485867ccf452a488a7382bb4e6cf314bcb5f44eb",
     "installed": "@home/.claude/skills/log",
     "up2_installed": "@home/.claude/skills/log",
-    "migration_commit": "1d42c7235e59c53376e20033c72360f6fa2693fd",
+    "migration_commit": "711878cc15bbbb83e60a01aa654cb3d52cc61cf2",
     "preservation": "生成物または外部設定をinstaller範囲外で保持。コードの再導入なし"
   },
   {
@@ -2492,7 +2492,7 @@
     "up1_row_sha256": "7e55cc8c7717ed723410a6be4145ba5962a0626102fbeb60883ccc5bfb48ca85",
     "installed": "@home/Library/LaunchAgents/org.agentstack.agentdashboard.plist",
     "up2_installed": "@home/Library/LaunchAgents/org.agentstack.agentdashboard.plist",
-    "migration_commit": "1d42c7235e59c53376e20033c72360f6fa2693fd",
+    "migration_commit": "711878cc15bbbb83e60a01aa654cb3d52cc61cf2",
     "preservation": "生成物または外部設定をinstaller範囲外で保持。コードの再導入なし"
   },
   {
@@ -2500,7 +2500,7 @@
     "up1_row_sha256": "4aad3bce6372056ef0ce5bc1f4ce35af5962316ae26c7ca9816b4d95ea3b06e5",
     "installed": "@home/Library/LaunchAgents/org.agentstack.mail-watcher.plist",
     "up2_installed": "@home/Library/LaunchAgents/org.agentstack.mail-watcher.plist",
-    "migration_commit": "1d42c7235e59c53376e20033c72360f6fa2693fd",
+    "migration_commit": "711878cc15bbbb83e60a01aa654cb3d52cc61cf2",
     "preservation": "生成物または外部設定をinstaller範囲外で保持。コードの再導入なし"
   },
   {
@@ -2508,7 +2508,7 @@
     "up1_row_sha256": "29e99433036906c8abc4f95abe80f0fc28ccbd7f63457fb45e10e9e375d180a8",
     "installed": "@home/Library/LaunchAgents/org.agentstack.mail.plist",
     "up2_installed": "@home/Library/LaunchAgents/org.agentstack.mail.plist",
-    "migration_commit": "1d42c7235e59c53376e20033c72360f6fa2693fd",
+    "migration_commit": "711878cc15bbbb83e60a01aa654cb3d52cc61cf2",
     "preservation": "生成物または外部設定をinstaller範囲外で保持。コードの再導入なし"
   },
   {

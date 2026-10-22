@@ -2,7 +2,6 @@
   "upstream_tag": "2026.10.22",
   "upstream_sha": "15c00c54c9774c390bdafe332603292b506d76d2",
   "up1_sha": "29070a0d6bbab0d0db6227a783f0f9b8b30eb5ae",
-  "suite_code_sha": "6fa4e24990359b0504e1cd8a7f92c731fe3980b4",
   "upstream_commits_since_up1": 723,
   "canonical_branch": "fix/claude-prompt-nbsp",
   "canonical_head": "e5039ff79663d99764d83e0cfa6961074ec60199",
@@ -20,6 +19,11 @@
   "parent_ruling_messages": [
     35253,
     35265,
-    35273
-  ]
+    35273,
+    35280,
+    35281
+  ],
+  "initial_suite_code_sha": "6fa4e24990359b0504e1cd8a7f92c731fe3980b4",
+  "final_suite_code_sha": "711878cc15bbbb83e60a01aa654cb3d52cc61cf2",
+  "branch": "upgrade/orrery-up-2-20261022"
 }

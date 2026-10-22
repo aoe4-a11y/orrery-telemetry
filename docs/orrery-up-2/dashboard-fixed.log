@@ -1,0 +1,87 @@
+traffic: [orrery-up-2-dashboard] running (slot slot-1, mem 13024MB, disk 62GiB)
+.F                                                                       [100%]
+=================================== FAILURES ===================================
+_______ test_supervised_in_place_upgrade_stops_old_pid_and_runs_new_code _______
+
+tmp_path = PosixPath('/Users/huyuhutaru/.dev-storage-governor/examforge/20261022T063810Z-build-cache-e4007ade/dashboard-fixed-temp/test_supervised_in_place_upgra0')
+
+    @pytest.mark.skipif(
+        os.environ.get("GITHUB_ACTIONS") == "true",
+        reason="starts a real dashboard/service process; fails only on GitHub-hosted runners (no interactive user session), cause not isolated yet — run 33846626836",
+    )
+    def test_supervised_in_place_upgrade_stops_old_pid_and_runs_new_code(tmp_path):
+        repo = _isolated_installer_repo(tmp_path)
+        _write_marker_dashboard(repo / "dashboard" / "server.py", "supervised-v1")
+        fake_bin = tmp_path / "fake-bin"
+        fake_bin.mkdir()
+        for name, body in {
+            "tmux": "#!/bin/sh\nexit 0\n",
+            "uname": "#!/bin/sh\necho Darwin\n",
+            "uv": "#!/bin/sh\nexit 0\n",
+            "launchctl": """#!/bin/sh
+    case "$1" in
+      print) exit 1 ;;
+      bootstrap) exit 125 ;;
+    esac
+    exit 0
+    """,
+        }.items():
+            command = fake_bin / name
+            command.write_text(body, encoding="utf-8")
+            command.chmod(0o755)
+    
+        with socket.socket() as probe:
+            probe.bind(("127.0.0.1", 0))
+            port = probe.getsockname()[1]
+        env, install_dir = _installer_upgrade_env(tmp_path, fake_bin, port)
+        command = [
+            "bash",
+            str(repo / "scripts" / "install.sh"),
+            "--dashboard-only",
+        ]
+        first = subprocess.run(
+            command,
+            cwd=repo,
+            env=env,
+            text=True,
+            capture_output=True,
+            check=True,
+        )
+        pidfile = install_dir / "runtime" / "dashboard.pid"
+        old_pid = int(pidfile.read_text(encoding="utf-8").strip())
+        try:
+            assert "falling back to supervised background mode" in first.stderr
+            # The checkout carries the optional Gemini dashboard extension; a core
+            # install must neither ship it nor let the runner start through it.
+            assert (repo / "dashboard" / "provider_server.py").is_file()
+            assert not (install_dir / "dashboard" / "provider_server.py").exists()
+            assert not (install_dir / "dashboard" / "gemini_provider_runtime.py").exists()
+            state = json.loads(
+                (install_dir / "runtime" / "dashboard-service.json").read_text(encoding="utf-8"))
+            assert state["server_path"] == str(install_dir / "dashboard" / "server.py")
+            _wait_for_marker(port, "supervised-v1")
+            _write_marker_dashboard(repo / "dashboard" / "server.py", "supervised-v2")
+            second = subprocess.run(
+                command,
+                cwd=repo,
+                env=env,
+                text=True,
+                capture_output=True,
+                check=False,
+            )
+>           assert result.returncode == 0, result.stdout + result.stderr
+                   ^^^^^^
+E           NameError: name 'result' is not defined
+
+tests/test_dashboard_service.py:742: NameError
+============================= slowest 25 durations =============================
+10.21s call     tests/test_dashboard_service.py::test_launchd_in_place_upgrade_replaces_its_own_listener_with_new_code
+6.63s call     tests/test_dashboard_service.py::test_supervised_in_place_upgrade_stops_old_pid_and_runs_new_code
+
+(4 durations < 1s hidden.)
+=========================== short test summary info ============================
+FAILED tests/test_dashboard_service.py::test_supervised_in_place_upgrade_stops_old_pid_and_runs_new_code
+1 failed, 1 passed in 17.22s
+traffic: [orrery-up-2-dashboard] done (exit 1)
+
+EXIT_CODE=1

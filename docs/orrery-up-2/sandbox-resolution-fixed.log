@@ -1,0 +1,13 @@
+traffic: [orrery-up-2-sandbox] running (slot slot-1, mem 14139MB, disk 55GiB)
+.......                                                                  [100%]
+============================= slowest 25 durations =============================
+2.63s call     tests/test_setting_precedence.py::test_codex_sandbox_explicit_value_survives_resolution[workspace-write]
+2.57s call     tests/test_setting_precedence.py::test_codex_sandbox_explicit_value_survives_resolution[read-only]
+2.56s call     tests/test_setting_precedence.py::test_codex_sandbox_from_old_unclassified_env_is_kept
+2.55s call     tests/test_setting_precedence.py::test_codex_sandbox_explicit_value_survives_resolution[danger-full-access]
+
+(17 durations < 1s hidden.)
+7 passed in 10.69s
+traffic: [orrery-up-2-sandbox] done (exit 0)
+
+EXIT_CODE=0

@@ -1,7 +1,7 @@
 {
   "home": "/Users/huyuhutaru/.dev-storage-governor/examforge/20261022T063810Z-build-cache-e4007ade/rehearsal/rehearsal-home",
-  "mail_port": 53318,
-  "dashboard_port": 53319,
+  "mail_port": 50347,
+  "dashboard_port": 50348,
   "seeded": 358,
   "mode": "real isolated native Mail and dashboard; fake no-service Linux manager; scoped approvals skipped",
   "wrapper_exit": 0,
@@ -2038,6 +2038,13 @@
     "api": 26
   },
   "rollback_snapshot": "/Users/huyuhutaru/.dev-storage-governor/examforge/20261022T063810Z-build-cache-e4007ade/rehearsal/rollback/payload-before-upgrade",
+  "process_cleanup_refusals": [
+    "pkill refused"
+  ],
+  "process_cleanup_stubs": {
+    "pkill": "1c13fabf10eec7aada6472d3f4a9504da5fc98ce2271669eb6982487e2e75405",
+    "killall": "fc87fd85bb326588fe3a9b5bb68db6c6d10fc8a04100cc6a9092db2e850869f3"
+  },
   "helper_processes_stopped": true,
   "mail_port_closed": true,
   "dashboard_port_closed": true

@@ -77,6 +77,8 @@ def main():
     for row in inventory['rows']:
         values = [row['installed'], row['state'], row.get('sha256', '生成物・未読'), row.get('preserved_at', 'installer対象外'), row['preservation'], row['migration_commit']]
         lines.append('| ' + ' | '.join('`' + v.replace('|', '/') + '`' for v in values) + ' |')
+    external=json.loads((OUT/'external-config.json').read_text())
+    lines += ['', '## 外部のgit設定（file件数の外）', '', '| 設定 | 値 | 値SHA-256 | 扱い / commit |', '|---|---|---|---|', '| `http.sslCAInfo` | `'+external['git_http_sslCAInfo']+'` | `'+external['git_setting_value_sha256']+'` | head便35273。ownerのglobal設定を保持しinstallerは書換えない / `6fa4e24990359b0504e1cd8a7f92c731fe3980b4` |']
     (OUT / 'migration-map.md').write_text('\n'.join(lines) + '\n')
     print(json.dumps({'rows': len(inventory['rows']), 'up1_table_rows': len(previous)}))
 

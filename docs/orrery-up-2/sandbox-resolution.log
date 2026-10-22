@@ -1,0 +1,181 @@
+traffic: [orrery-up-2-sandbox] running (slot slot-1, mem 14291MB, disk 55GiB)
+FFFF...                                                                  [100%]
+=================================== FAILURES ===================================
+____ test_codex_sandbox_explicit_value_survives_resolution[workspace-write] ____
+
+tmp_path = PosixPath('/Users/huyuhutaru/.dev-storage-governor/examforge/20261022T063810Z-build-cache-e4007ade/sandbox-resolution-temp/test_codex_sandbox_explicit_va0')
+value = 'workspace-write'
+
+    @pytest.mark.parametrize("value", ["workspace-write", "danger-full-access", "read-only"])
+    def test_codex_sandbox_explicit_value_survives_resolution(tmp_path,value):
+        home=tmp_path/"home";home.mkdir()
+>       assert _resolve_like_the_installer(home,"CODEX_SANDBOX_SETTING",env={"AGENTSTACK_CODEX_SANDBOX":value})==[value]
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/test_setting_precedence.py:779: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+home = PosixPath('/Users/huyuhutaru/.dev-storage-governor/examforge/20261022T063810Z-build-cache-e4007ade/sandbox-resolution-temp/test_codex_sandbox_explicit_va0/home')
+args = (), env = {'AGENTSTACK_CODEX_SANDBOX': 'workspace-write'}
+outputs = ('CODEX_SANDBOX_SETTING',)
+
+    def _resolve_like_the_installer(
+        home: pathlib.Path,
+        *outputs: str,
+        args: tuple[str, ...] = (),
+        env: dict[str, str] | None = None,
+    ) -> list[str]:
+        """Run the installer itself, options and all, up to preflight; print values.
+    
+        For values the dry-run summary does not show. Everything before preflight
+        runs unchanged except where the script finds its own directory.
+        """
+        text = INSTALLER.read_text(encoding="utf-8")
+        locate = 'SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"'
+        assert text.count(locate) == 1
+        head = text[: text.index('PREFLIGHT_OS=""')].replace(
+            locate, f"SCRIPT_DIR={shlex.quote(str(ROOT / 'scripts'))}"
+        )
+        probe = head + "".join(f'printf "%s\\n" "${name}"\n' for name in outputs)
+        # No codex on PATH: the codex probe in the same block has nothing to run.
+        result = subprocess.run(
+            ["bash", "-c", probe, "install.sh", *args],
+            env=_scrubbed_env(home, PATH="/usr/bin:/bin", **(env or {})),
+            text=True,
+            capture_output=True,
+        )
+>       assert result.returncode == 0, result.stderr
+E       AssertionError: error: project key is required on first install; pass --project-key /absolute/path/to/project or set AGENTSTACK_PROJECT_KEY
+E         
+E       assert 2 == 0
+E        +  where 2 = CompletedProcess(args=['bash', '-c', '#!/usr/bin/env bash\nset -euo pipefail\n\nSCRIPT_DIR=/Users/huyuhutaru/.dev-stor...roject key is required on first install; pass --project-key /absolute/path/to/project or set AGENTSTACK_PROJECT_KEY\n').returncode
+
+tests/test_setting_precedence.py:222: AssertionError
+__ test_codex_sandbox_explicit_value_survives_resolution[danger-full-access] ___
+
+tmp_path = PosixPath('/Users/huyuhutaru/.dev-storage-governor/examforge/20261022T063810Z-build-cache-e4007ade/sandbox-resolution-temp/test_codex_sandbox_explicit_va1')
+value = 'danger-full-access'
+
+    @pytest.mark.parametrize("value", ["workspace-write", "danger-full-access", "read-only"])
+    def test_codex_sandbox_explicit_value_survives_resolution(tmp_path,value):
+        home=tmp_path/"home";home.mkdir()
+>       assert _resolve_like_the_installer(home,"CODEX_SANDBOX_SETTING",env={"AGENTSTACK_CODEX_SANDBOX":value})==[value]
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/test_setting_precedence.py:779: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+home = PosixPath('/Users/huyuhutaru/.dev-storage-governor/examforge/20261022T063810Z-build-cache-e4007ade/sandbox-resolution-temp/test_codex_sandbox_explicit_va1/home')
+args = (), env = {'AGENTSTACK_CODEX_SANDBOX': 'danger-full-access'}
+outputs = ('CODEX_SANDBOX_SETTING',)
+
+    def _resolve_like_the_installer(
+        home: pathlib.Path,
+        *outputs: str,
+        args: tuple[str, ...] = (),
+        env: dict[str, str] | None = None,
+    ) -> list[str]:
+        """Run the installer itself, options and all, up to preflight; print values.
+    
+        For values the dry-run summary does not show. Everything before preflight
+        runs unchanged except where the script finds its own directory.
+        """
+        text = INSTALLER.read_text(encoding="utf-8")
+        locate = 'SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"'
+        assert text.count(locate) == 1
+        head = text[: text.index('PREFLIGHT_OS=""')].replace(
+            locate, f"SCRIPT_DIR={shlex.quote(str(ROOT / 'scripts'))}"
+        )
+        probe = head + "".join(f'printf "%s\\n" "${name}"\n' for name in outputs)
+        # No codex on PATH: the codex probe in the same block has nothing to run.
+        result = subprocess.run(
+            ["bash", "-c", probe, "install.sh", *args],
+            env=_scrubbed_env(home, PATH="/usr/bin:/bin", **(env or {})),
+            text=True,
+            capture_output=True,
+        )
+>       assert result.returncode == 0, result.stderr
+E       AssertionError: error: project key is required on first install; pass --project-key /absolute/path/to/project or set AGENTSTACK_PROJECT_KEY
+E         
+E       assert 2 == 0
+E        +  where 2 = CompletedProcess(args=['bash', '-c', '#!/usr/bin/env bash\nset -euo pipefail\n\nSCRIPT_DIR=/Users/huyuhutaru/.dev-stor...roject key is required on first install; pass --project-key /absolute/path/to/project or set AGENTSTACK_PROJECT_KEY\n').returncode
+
+tests/test_setting_precedence.py:222: AssertionError
+_______ test_codex_sandbox_explicit_value_survives_resolution[read-only] _______
+
+tmp_path = PosixPath('/Users/huyuhutaru/.dev-storage-governor/examforge/20261022T063810Z-build-cache-e4007ade/sandbox-resolution-temp/test_codex_sandbox_explicit_va2')
+value = 'read-only'
+
+    @pytest.mark.parametrize("value", ["workspace-write", "danger-full-access", "read-only"])
+    def test_codex_sandbox_explicit_value_survives_resolution(tmp_path,value):
+        home=tmp_path/"home";home.mkdir()
+>       assert _resolve_like_the_installer(home,"CODEX_SANDBOX_SETTING",env={"AGENTSTACK_CODEX_SANDBOX":value})==[value]
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/test_setting_precedence.py:779: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+home = PosixPath('/Users/huyuhutaru/.dev-storage-governor/examforge/20261022T063810Z-build-cache-e4007ade/sandbox-resolution-temp/test_codex_sandbox_explicit_va2/home')
+args = (), env = {'AGENTSTACK_CODEX_SANDBOX': 'read-only'}
+outputs = ('CODEX_SANDBOX_SETTING',)
+
+    def _resolve_like_the_installer(
+        home: pathlib.Path,
+        *outputs: str,
+        args: tuple[str, ...] = (),
+        env: dict[str, str] | None = None,
+    ) -> list[str]:
+        """Run the installer itself, options and all, up to preflight; print values.
+    
+        For values the dry-run summary does not show. Everything before preflight
+        runs unchanged except where the script finds its own directory.
+        """
+        text = INSTALLER.read_text(encoding="utf-8")
+        locate = 'SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"'
+        assert text.count(locate) == 1
+        head = text[: text.index('PREFLIGHT_OS=""')].replace(
+            locate, f"SCRIPT_DIR={shlex.quote(str(ROOT / 'scripts'))}"
+        )
+        probe = head + "".join(f'printf "%s\\n" "${name}"\n' for name in outputs)
+        # No codex on PATH: the codex probe in the same block has nothing to run.
+        result = subprocess.run(
+            ["bash", "-c", probe, "install.sh", *args],
+            env=_scrubbed_env(home, PATH="/usr/bin:/bin", **(env or {})),
+            text=True,
+            capture_output=True,
+        )
+>       assert result.returncode == 0, result.stderr
+E       AssertionError: error: project key is required on first install; pass --project-key /absolute/path/to/project or set AGENTSTACK_PROJECT_KEY
+E         
+E       assert 2 == 0
+E        +  where 2 = CompletedProcess(args=['bash', '-c', '#!/usr/bin/env bash\nset -euo pipefail\n\nSCRIPT_DIR=/Users/huyuhutaru/.dev-stor...roject key is required on first install; pass --project-key /absolute/path/to/project or set AGENTSTACK_PROJECT_KEY\n').returncode
+
+tests/test_setting_precedence.py:222: AssertionError
+_____________ test_codex_sandbox_from_old_unclassified_env_is_kept _____________
+
+tmp_path = PosixPath('/Users/huyuhutaru/.dev-storage-governor/examforge/20261022T063810Z-build-cache-e4007ade/sandbox-resolution-temp/test_codex_sandbox_from_old_un0')
+
+    def test_codex_sandbox_from_old_unclassified_env_is_kept(tmp_path):
+        home,_=_previous_install(tmp_path)
+        with (home/".agentstack/env.sh").open("a") as stream:
+            stream.write("export AGENTSTACK_CODEX_SANDBOX=read-only\n")
+>       assert _resolve_like_the_installer(home,"CODEX_SANDBOX_SETTING")==["read-only"]
+E       AssertionError: assert ['workspace-write'] == ['read-only']
+E         
+E         At index 0 diff: 'workspace-write' != 'read-only'
+E         Use -v to get more diff
+
+tests/test_setting_precedence.py:785: AssertionError
+============================= slowest 25 durations =============================
+2.74s call     tests/test_setting_precedence.py::test_codex_sandbox_from_old_unclassified_env_is_kept
+
+(20 durations < 1s hidden.)
+=========================== short test summary info ============================
+FAILED tests/test_setting_precedence.py::test_codex_sandbox_explicit_value_survives_resolution[workspace-write]
+FAILED tests/test_setting_precedence.py::test_codex_sandbox_explicit_value_survives_resolution[danger-full-access]
+FAILED tests/test_setting_precedence.py::test_codex_sandbox_explicit_value_survives_resolution[read-only]
+FAILED tests/test_setting_precedence.py::test_codex_sandbox_from_old_unclassified_env_is_kept
+4 failed, 3 passed in 3.18s
+traffic: [orrery-up-2-sandbox] done (exit 1)
+
+EXIT_CODE=1

@@ -2,5 +2,9 @@
   "authority": "head mail 35273",
   "git_http_sslCAInfo": "/opt/homebrew/etc/ca-certificates/cert.pem",
   "codex_wrapper_sha256": "6464d644843e302f598177991beda6515c75f792fd9033806a4cb02cce7b0d62",
-  "external_settings_changed_by_station": false
+  "external_settings_changed_by_station": false,
+  "git_setting_origin": "file:/Users/huyuhutaru/.gitconfig",
+  "git_setting_value_sha256": "374985abd54d99e563b2ea10f8b8f704bd9480b3c0515dd8c4d40114bc65bf06",
+  "git_setting_policy": "retain owner global setting; installer does not run git config writes",
+  "git_setting_migration_record_commit": "6fa4e24990359b0504e1cd8a7f92c731fe3980b4"
 }

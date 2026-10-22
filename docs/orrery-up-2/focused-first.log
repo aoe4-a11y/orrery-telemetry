@@ -1,0 +1,670 @@
+traffic: [orrery-up-2-focused] running (slot slot-1, mem 15594MB, disk 91GiB)
+....F................................................................... [ 33%]
+.................F....FFF.F.....FF...................................... [ 67%]
+.......F........F..F.............FF..................................    [100%]
+=================================== FAILURES ===================================
+_____ test_restart_authenticates_before_killing_and_passes_formal_binding ______
+
+tmp_path = PosixPath('/private/var/folders/3h/9fn3ldps3c98n54rzk0m2c6m0000gn/T/pytest-of-huyuhutaru/pytest-363/test_restart_authenticates_bef0')
+
+    def test_restart_authenticates_before_killing_and_passes_formal_binding(tmp_path):
+        import json
+        home=tmp_path/'home';stack=home/'.agentstack';(stack/'runtime').mkdir(parents=True)
+        token=stack/'runtime/agent_token_SunnyCurie';token.write_text('fixture-owner');token.chmod(0o600)
+        task=tmp_path/'task.md';task.write_text('# fixture task')
+        trace=tmp_path/'trace';fake=tmp_path/'fake';fake.mkdir()
+        lib=tmp_path/'register.sh';lib.write_text('''ags_mail_load_token() { :; }
+    ags_load_registration_token() { printf fixture-owner; }
+    ags_register_session() {
+        echo authenticated >> "$TRACE"
+        [[ "${AUTH_FAIL:-0}" != 1 ]] || return 1
+        AGS_REGISTERED_AGENT_NAME=SunnyCurie
+        AGS_REGISTERED_AGENT_ID=73
+    }
+    ''')
+        for name,body in {'tmux':'''#!/bin/bash
+    if [[ "$1" == kill-session ]]; then echo killed >> "$TRACE"; fi
+    if [[ "$1" == display-message ]]; then echo /fixture; fi
+    exit 0
+    ''','sleep':'#!/bin/sh\nexit 0\n'}.items():
+            p=fake/name;p.write_text(body);p.chmod(0o755)
+        (stack/'hooks').mkdir();spawn=stack/'hooks/spawn_child.sh'
+        spawn.write_text('''#!/bin/bash
+    python3 - "$HOME/.agentstack/runtime/agent_token_SunnyCurie.binding.json" <<'PY_BIND'
+    import json,sys
+    assert json.load(open(sys.argv[1]))['agent_id']==73
+    PY_BIND
+    echo spawned >> "$TRACE"
+    ''');spawn.chmod(0o755)
+        env={**os.environ,'HOME':str(home),'TRACE':str(trace),'AGENTSTACK_REGISTER_LIB':str(lib),
+             'PATH':str(fake)+':'+os.environ['PATH'],'AGENTSTACK_PROJECT_KEY':str(tmp_path)}
+        run=subprocess.run(['/bin/bash',str(ROOT/'bin/agentstack-restart-seat'),'SunnyCurie',str(task),'gpt-6.1-sol','medium',str(tmp_path)],env=env,capture_output=True,text=True)
+>       assert run.returncode==0,run.stderr
+E       AssertionError: /opt/homebrew/Cellar/python@3.14/3.14.9/Frameworks/Python.framework/Versions/3.14/Resources/Python.app/Contents/MacOS/Python: can't open file '/private/var/folders/3h/9fn3ldps3c98n54rzk0m2c6m0000gn/T/pytest-of-huyuhutaru/pytest-363/test_restart_authenticates_bef0/home/.agentstack/hooks/seat_lifecycle.py': [Errno 2] No such file or directory
+E         /opt/homebrew/Cellar/python@3.14/3.14.9/Frameworks/Python.framework/Versions/3.14/Resources/Python.app/Contents/MacOS/Python: can't open file '/private/var/folders/3h/9fn3ldps3c98n54rzk0m2c6m0000gn/T/pytest-of-huyuhutaru/pytest-363/test_restart_authenticates_bef0/home/.agentstack/hooks/seat_lifecycle.py': [Errno 2] No such file or directory
+E         
+E       assert 2 == 0
+E        +  where 2 = CompletedProcess(args=['/bin/bash', '/Users/huyuhutaru/.dev-storage-governor/examforge/20261022T063810Z-build-cache-e4...-363/test_restart_authenticates_bef0/home/.agentstack/hooks/seat_lifecycle.py': [Errno 2] No such file or directory\n").returncode
+
+tests/test_local_upgrade.py:112: AssertionError
+____________ test_the_dashboard_never_kills_a_codex_updating_itself ____________
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x109847a10>
+
+    def test_the_dashboard_never_kills_a_codex_updating_itself(monkeypatch):
+        # #60: a spawn that fails while Codex runs `npm install -g` must leave the
+        # session alone, or the machine's codex is left half replaced.
+        from dashboard import server
+    
+        screens = {"updating": "Updating Codex via `npm install -g @openai/codex`...\n", "idle": "› Ask Codex\n"}
+        for name, screen in screens.items():
+            monkeypatch.setattr(server, "_tmux_run",
+                                lambda argv, s=screen, **_kw: server.subprocess.CompletedProcess(argv, 0, s, ""))
+            assert server._codex_self_update_on_screen("Child") is (name == "updating")
+        source = (_ROOT / "dashboard" / "server.py").read_text(encoding="utf-8")
+        body = source[source.index("    def kill_spawn_session() -> bool:"):]
+        body = body[:body.index("\n\n")]
+>       assert body.index("_codex_self_update_on_screen") < body.index("'kill-session'")
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       ValueError: substring not found
+
+tests/test_codex_launch.py:1513: ValueError
+_ test_builder_is_byte_identical_to_the_pre_chrome_command_when_not_requested __
+
+    def test_builder_is_byte_identical_to_the_pre_chrome_command_when_not_requested():
+        # Covers the legacy launch site too: both sites call this one builder.
+>       assert _builder_output(False) == f"/bin/bash -lc '{PRE_CHROME_INNER}'"
+E       assert '/bin/bash -l...d-agent.sh"\'' == '/bin/bash -l...d-agent.sh"\''
+E         
+E         Skipping 227 identical leading characters in diff, use -v to show
+E         - LD_MODEL" "${MCP_ARGS[@]}"; /bin/bash "$AGENTSTACK_HOOKS_DIR/cleanup-child-agent.sh"'
+E         + LD_MODEL" --dangerously-skip-permissions --add-dir "$HOME/.agentstack" --add-dir "$HOME/tools" --add-dir /Volumes/DevSSD "${MCP_ARGS[@]}"; /bin/bash "$AGENTSTACK_HOOKS_DIR/cleanup-child-agent.sh"'
+
+tests/test_claude_child_chrome.py:190: AssertionError
+_________________ test_builder_adds_only_chrome_when_requested _________________
+
+    def test_builder_adds_only_chrome_when_requested():
+>       assert _builder_output(True) == f"/bin/bash -lc '{CHROME_INNER}'"
+E       assert '/bin/bash -l...d-agent.sh"\'' == '/bin/bash -l...d-agent.sh"\''
+E         
+E         Skipping 227 identical leading characters in diff, use -v to show
+E         - LD_MODEL" "${MCP_ARGS[@]}" --chrome; /bin/bash "$AGENTSTACK_HOOKS_DIR/cleanup-child-agent.sh"'
+E         + LD_MODEL" --dangerously-skip-permissions --add-dir "$HOME/.agentstack" --add-dir "$HOME/tools" --add-dir /Volumes/DevSSD "${MCP_ARGS[@]}" --chrome; /bin/bash "$AGENTSTACK_HOOKS_DIR/cleanup-child-agent.sh"'
+
+tests/test_claude_child_chrome.py:194: AssertionError
+__________ test_default_spawn_matches_the_pre_chrome_launcher_exactly __________
+
+tmp_path = PosixPath('/private/var/folders/3h/9fn3ldps3c98n54rzk0m2c6m0000gn/T/pytest-of-huyuhutaru/pytest-363/test_default_spawn_matches_the0')
+
+    def test_default_spawn_matches_the_pre_chrome_launcher_exactly(tmp_path):
+        """Run the launcher from before this change and this one on the same input."""
+        old_hooks = tmp_path / "old" / "hooks"
+        old_hooks.mkdir(parents=True)
+        (tmp_path / "old" / "dashboard").symlink_to(ROOT / "dashboard")
+        old_text = subprocess.run(
+            ["git", "-C", str(ROOT), "show", "0a43a3c:hooks/spawn_child.sh"],
+            text=True, capture_output=True, check=False,
+        )
+        if old_text.returncode != 0:
+            pytest.skip("pre-change launcher is not in this checkout's history")
+        (old_hooks / "spawn_child.sh").write_text(old_text.stdout, encoding="utf-8")
+    
+        launches, prompts = {}, {}
+        for label, script in (("old", old_hooks / "spawn_child.sh"), ("new", SPAWN)):
+            (tmp_path / label).mkdir(exist_ok=True)
+            env, workdir = _launch_env(tmp_path / label)
+            result = subprocess.run(
+                ["/bin/bash", str(script), "--pre-registered", "SameChild",
+                 "--child-token-file", str(_handoff(tmp_path / label)),
+                 "mail task", str(workdir)],
+                cwd=ROOT, env=env, text=True, capture_output=True, timeout=60, check=False,
+            )
+            assert result.returncode == 0, result.stderr
+            log = _log_text(env)
+            launch = [arg.replace(str(tmp_path / label), "<tmp>") for arg in _new_session(env)]
+            if label == "old":
+                # The old launcher pasted the prompt: it is the load-buffer content.
+                _, _, rest = log.partition("\034load-buffer\034")
+                prompts[label] = rest.split("\035\n", 1)[1].split("CALL", 1)[0]
+            else:
+                raw_inner = launch[-1]
+                # The new one passes the same text as the launch argument instead,
+                # and runs the claude path it resolved (bare `claude` if none).
+                for variable in ("CLAUDE_CHILD_PROMPT_FILE=", "CLAUDE_CHILD_SYSTEM_PROMPT=", "CLAUDE_CHILD_BIN="):
+                    index = next(i for i, arg in enumerate(launch) if arg.startswith(variable)) - 1
+                    assert launch[index] == "-e"
+                    del launch[index:index + 2]
+                launch[-1] = launch[-1].replace(ARGV_PROMPT, "").replace('"${CLAUDE_CHILD_BIN:-claude}"', "claude")
+                prompts[label] = log.split("ARGV_TASK\034600\034", 1)[1].split("CALL", 1)[0]
+                assert "\034load-buffer\034" not in log and "\034paste-buffer\034" not in log
+            launches[label] = launch
+        # Without --claude-chrome the child is launched exactly as before, and gets
+        # exactly the prompt it got before; only how the prompt travels changed.
+>       assert launches["new"] == launches["old"]
+E       AssertionError: assert ['new-session...workdir', ...] == ['new-session...workdir', ...]
+E         
+E         At index 33 diff: 'AGENTSTACK_CODEX_SANDBOX=workspace-write' != 'AGENTSTACK_CODEX_APPROVAL=--ask-for-approval never'
+E         Left contains 2 more items, first extra item: 'CLAUDE_CHILD_MCP_CONFIG='
+E         Use -v to get more diff
+
+tests/test_claude_child_chrome.py:241: AssertionError
+____ test_default_spawn_still_claims_a_ready_warm_session[claude-sonnet-5] _____
+
+tmp_path = PosixPath('/private/var/folders/3h/9fn3ldps3c98n54rzk0m2c6m0000gn/T/pytest-of-huyuhutaru/pytest-363/test_default_spawn_still_claim1')
+warm_model = 'claude-sonnet-5'
+
+    @pytest.mark.parametrize("warm_model", ["opus", "claude-sonnet-5"])
+    def test_default_spawn_still_claims_a_ready_warm_session(tmp_path, warm_model):
+        env, workdir = _launch_env(tmp_path)
+        env["AGENTSTACK_HOOKS_DIR"] = str(_hooks_with_warm_pool(tmp_path))
+        result = _spawn(tmp_path, env, workdir, "WarmChild", "--model", warm_model)
+        assert result.returncode == 0, result.stderr
+>       model = {"opus": "claude-opus-5-5", "sonnet": "claude-sonnet-5-5"}[warm_model]
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       KeyError: 'claude-sonnet-5'
+
+tests/test_claude_child_chrome.py:252: KeyError
+________ test_chrome_request_skips_a_ready_warm_session_and_adds_chrome ________
+
+tmp_path = PosixPath('/private/var/folders/3h/9fn3ldps3c98n54rzk0m2c6m0000gn/T/pytest-of-huyuhutaru/pytest-363/test_chrome_request_skips_a_re0')
+
+    def test_chrome_request_skips_a_ready_warm_session_and_adds_chrome(tmp_path):
+        env, workdir = _launch_env(tmp_path)
+        env["AGENTSTACK_HOOKS_DIR"] = str(_hooks_with_warm_pool(tmp_path))
+        result = _spawn(tmp_path, env, workdir, "ChromeChild", "--claude-chrome")
+        assert result.returncode == 0, result.stderr
+        assert not (tmp_path / "warm.log").exists()
+>       assert _new_session(env)[-1].endswith(f"-lc '{LAUNCHED_CHROME_INNER}'")
+E       assert False
+E        +  where False = <built-in method endswith of str object at 0xc02038c00>('-lc \'export PATH="$HOME/.local/bin:$PATH"; MCP_ARGS=(); [[ -n "$CLAUDE_CHILD_MCP_CONFIG" ]] && MCP_ARGS=(--mcp-confi...DE_CHILD_PROMPT_FILE"; rm -f "$CLAUDE_CHILD_PROMPT_FILE")"; /bin/bash "$AGENTSTACK_HOOKS_DIR/cleanup-child-agent.sh"\'')
+E        +    where <built-in method endswith of str object at 0xc02038c00> = '/bin/zsh -lc \'export PATH="$HOME/.local/bin:$PATH"; MCP_ARGS=(); [[ -n "$CLAUDE_CHILD_MCP_CONFIG" ]] && MCP_ARGS=(--...DE_CHILD_PROMPT_FILE"; rm -f "$CLAUDE_CHILD_PROMPT_FILE")"; /bin/bash "$AGENTSTACK_HOOKS_DIR/cleanup-child-agent.sh"\''.endswith
+
+tests/test_claude_child_chrome.py:302: AssertionError
+_____________ test_env_default_turns_chrome_on_for_claude_children _____________
+
+tmp_path = PosixPath('/private/var/folders/3h/9fn3ldps3c98n54rzk0m2c6m0000gn/T/pytest-of-huyuhutaru/pytest-363/test_env_default_turns_chrome_0')
+
+    def test_env_default_turns_chrome_on_for_claude_children(tmp_path):
+        env, workdir = _launch_env(tmp_path)
+        env["AGENTSTACK_CLAUDE_CHILD_CHROME"] = "1"
+        env["AGENTSTACK_CLAUDE_CHILD_CHROME_DEVICE"] = "win-brave.1"
+        result = _spawn(tmp_path, env, workdir, "EnvChild")
+        assert result.returncode == 0, result.stderr
+>       assert _new_session(env)[-1].endswith(f"-lc '{LAUNCHED_CHROME_INNER}'")
+E       assert False
+E        +  where False = <built-in method endswith of str object at 0xc02832a00>('-lc \'export PATH="$HOME/.local/bin:$PATH"; MCP_ARGS=(); [[ -n "$CLAUDE_CHILD_MCP_CONFIG" ]] && MCP_ARGS=(--mcp-confi...DE_CHILD_PROMPT_FILE"; rm -f "$CLAUDE_CHILD_PROMPT_FILE")"; /bin/bash "$AGENTSTACK_HOOKS_DIR/cleanup-child-agent.sh"\'')
+E        +    where <built-in method endswith of str object at 0xc02832a00> = '/bin/zsh -lc \'export PATH="$HOME/.local/bin:$PATH"; MCP_ARGS=(); [[ -n "$CLAUDE_CHILD_MCP_CONFIG" ]] && MCP_ARGS=(--...DE_CHILD_PROMPT_FILE"; rm -f "$CLAUDE_CHILD_PROMPT_FILE")"; /bin/bash "$AGENTSTACK_HOOKS_DIR/cleanup-child-agent.sh"\''.endswith
+
+tests/test_claude_child_chrome.py:311: AssertionError
+_________ test_new_agent_strips_the_cli_env_defaults_from_the_launcher _________
+
+args = ['/private/var/folders/3h/9fn3ldps3c98n54rzk0m2c6m0000gn/T/pytest-of-huyuhutaru/pytest-363/test_new_agent_strips_the_c...ew_agent_strips_the_cli_0/runtime/spawn-tokens/QuietCurie.aec5f9cf740285625f9292387db88e7e.token', '--standalone', ...]
+kwargs = {'stdout': <_io.FileIO [closed]>, 'stderr': <_io.FileIO [closed]>, 'env': {'CLAUDE_CODE_ENABLE_ASK_USER_QUESTION_TOOL'...TOKEN': '67a22f8ee33d9a34c2dce22888ff7689', 'NoDefaultCurrentDirectoryInExePath': '1', ...}, 'start_new_session': True}
+
+    def popen(args, **kwargs):
+        seen.append((args, kwargs.get("env") or {}))
+>       raise OSError("stop after capture")
+E       OSError: stop after capture
+
+tests/test_claude_child_chrome.py:823: OSError
+
+During handling of the above exception, another exception occurred:
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x10a17be00>
+tmp_path = PosixPath('/private/var/folders/3h/9fn3ldps3c98n54rzk0m2c6m0000gn/T/pytest-of-huyuhutaru/pytest-363/test_new_agent_strips_the_cli_0')
+
+    def test_new_agent_strips_the_cli_env_defaults_from_the_launcher(monkeypatch, tmp_path):
+        monkeypatch.setenv("AGENTSTACK_CLAUDE_CHILD_CHROME", "1")
+        monkeypatch.setenv("AGENTSTACK_CLAUDE_CHILD_CHROME_DEVICE", "from-env")
+        monkeypatch.setenv("AGENTSTACK_CHILD_DEFAULT_TOOLS", "browser,screen:operate")
+        launcher = tmp_path / "launcher.sh"
+        launcher.write_text("#!/bin/bash\nexit 0\n", encoding="utf-8")
+        launcher.chmod(0o755)
+        seen = []
+    
+        def mcp(method, args, timeout=15):
+            data = {"id": 73, "name": "QuietCurie", "registration_token": "tok"} \
+                if method == "register_agent" else {}
+            return {"ok": True, "data": data}
+    
+        def popen(args, **kwargs):
+            seen.append((args, kwargs.get("env") or {}))
+            raise OSError("stop after capture")
+    
+        monkeypatch.setattr(server, "RUNTIME_DIR", str(tmp_path / "runtime"))
+        monkeypatch.setattr(server, "_project_key", lambda: "/project")
+        monkeypatch.setattr(server, "_spawn_name_status", lambda _: "available")
+        monkeypatch.setattr(server, "_mcp_call", mcp)
+        monkeypatch.setattr(server, "_spawn_unavailable_error", lambda: None)
+        from _legacy_dashboard_transport import install_legacy_transport
+        install_legacy_transport(monkeypatch, tmp_path, server, lambda *a, **kw: subprocess.CompletedProcess([], 1, "", ""))
+        monkeypatch.setattr(server.subprocess, "Popen", popen)
+        spec = server.SpawnLaunchSpec(
+            provider="claude", program="claude-code", model="claude-opus-5-5",
+            script=str(launcher),
+        )
+>       server.spawn_with_launch_spec(
+            {"standalone": True, "name": "QuietCurie", "task": "t", "dir": str(tmp_path)},
+            spec,
+        )
+
+tests/test_claude_child_chrome.py:837: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+dashboard/server.py:8290: in spawn_with_launch_spec
+    return _spawn_launch(payload, request, spec, handoff, discard_handoff)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+dashboard/server.py:8948: in _spawn_launch
+    return failed_spawn_result(f"spawn launch failed: {e}")
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+error = 'spawn launch failed: stop after capture', fields = {}
+
+    def failed_spawn_result(error, **fields):
+        nonlocal token_created
+        cleanup_env = {**env, 'AGENTSTACK_RUNTIME_DIR': RUNTIME_DIR,
+>                      'AGENTSTACK_HOOKS_DIR': str(Path(spec.script).parent),
+                                                   ^^^^
+                       'AGENTSTACK_PROJECT_KEY': project_key}
+E       NameError: cannot access free variable 'Path' where it is not associated with a value in enclosing scope
+
+dashboard/server.py:8678: NameError
+________________ test_hook_count_matches_the_settings_template _________________
+
+    def test_hook_count_matches_the_settings_template() -> None:
+        count = _event_hook_count()
+>       assert f"event hook は{count}件" in _read("docs/hooks.md")
+E       AssertionError: assert 'event hook は11件' in '# Hooks と運用 helper\n\n> English version: [hooks.en.md](hooks.en.md)\n\n[前: 委任と child agent](delegation.md) · [README ...り出し形はcommand全文から照合し、if/then・brace等の前置にも適用します。既知の限界として、quoted heredocの例示やinterpreter欠落時の鍵読取りに似た文字列は、保守的に誤拒否することがあります。\n'
+E        +  where '# Hooks と運用 helper\n\n> English version: [hooks.en.md](hooks.en.md)\n\n[前: 委任と child agent](delegation.md) · [README ...り出し形はcommand全文から照合し、if/then・brace等の前置にも適用します。既知の限界として、quoted heredocの例示やinterpreter欠落時の鍵読取りに似た文字列は、保守的に誤拒否することがあります。\n' = _read('docs/hooks.md')
+
+tests/test_docs_consistency.py:114: AssertionError
+_______________ test_documentation_indexes_cover_the_actual_tree _______________
+
+    def test_documentation_indexes_cover_the_actual_tree() -> None:
+        import runpy
+    
+        checker = runpy.run_path(str(ROOT / "scripts/check_docs_index.py"))
+>       assert checker["check"](ROOT) == []
+E       AssertionError: assert ['unindexed a...1/receipt.md'] == []
+E         
+E         Left contains 6 more items, first extra item: 'unindexed article: docs/orrery-up-1/guide.md'
+E         Use -v to get more diff
+
+tests/test_docs_consistency.py:147: AssertionError
+___ test_isolated_installer_migrates_annotations_and_matches_manifest_sample ___
+
+tmp_path = PosixPath('/private/var/folders/3h/9fn3ldps3c98n54rzk0m2c6m0000gn/T/pytest-of-huyuhutaru/pytest-363/test_isolated_installer_migrat0')
+
+    @pytest.mark.skipif(
+        os.environ.get("GITHUB_ACTIONS") == "true",
+        reason="starts a real dashboard/service process; fails only on GitHub-hosted runners (no interactive user session), cause not isolated yet — run 33846626836",
+    )
+    def test_isolated_installer_migrates_annotations_and_matches_manifest_sample(tmp_path):
+        env = _clean_env(tmp_path / "home")
+        fake_bin = tmp_path / "fake-bin"
+        fake_bin.mkdir()
+        for name, body in {
+            "systemctl": _fake_systemctl(),
+            "tmux": "#!/bin/sh\nexit 0\n",
+            "uname": "#!/bin/sh\necho Linux\n",
+            "uv": "#!/bin/sh\nexit 0\n",
+        }.items():
+            command = fake_bin / name
+            command.write_text(body, encoding="utf-8")
+            command.chmod(0o755)
+    
+        home = pathlib.Path(env["HOME"])
+        install_dir = home / ".agentstack"
+        # Pin the codex the installer records. Left to PATH it resolves whatever
+        # this machine has, and the manifest then differs per developer.
+        codex_bin = home / ".local" / "bin" / "codex"
+        codex_bin.parent.mkdir(parents=True)
+        codex_bin.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+        codex_bin.chmod(0o755)
+        user_skill = home / ".claude" / "skills" / "user-owned" / "SKILL.md"
+        user_skill.parent.mkdir(parents=True)
+        user_skill.write_text("---\nname: user-owned\n---\n", encoding="utf-8")
+        legacy_path = install_dir / "dashboard" / "annotations.json"
+        legacy_path.parent.mkdir(parents=True)
+        legacy_log = install_dir / "dashboard" / "dashboard.log"
+        legacy_log.write_text("legacy dashboard crash\n", encoding="utf-8")
+        legacy_data = {
+            "WiseFaraday": {"role": "legacy", "emoji": "", "group": "runtime"}
+        }
+        legacy_path.write_text(json.dumps(legacy_data), encoding="utf-8")
+        mail_dir = install_dir / "mail"
+        with socket.socket() as probe:
+            probe.bind(("127.0.0.1", 0))
+            port = probe.getsockname()[1]
+        with socket.socket() as probe:
+            probe.bind(("127.0.0.1", 0))
+            mail_port = probe.getsockname()[1]
+        project_dir = home / "project"
+        project_dir.mkdir(parents=True)
+        worktree_root = home / "durable-worktrees"
+        codex_child_overlay = home / "codex-child-overlay.toml"
+        codex_child_overlay.write_text(
+            '[mcp_servers.browser]\ndefault_tools_approval_mode = "approve"\n',
+            encoding="utf-8",
+        )
+        env.update({
+            "PATH": f"{fake_bin}:{env['PATH']}",
+            "AGENTSTACK_HOME": str(install_dir),
+            "AGENTSTACK_MAIL_STATE_ROOT": str(mail_dir),
+            "AGENTSTACK_MAIL_SERVICE_VENV": str(pathlib.Path(sys.executable).parent.parent),
+            "AGENTSTACK_PORT": str(port),
+            "AGENTSTACK_LABEL_PREFIX": TEST_LABEL_PREFIX,
+            "AGENTSTACK_PROJECT_KEY": str(project_dir),
+            "AGENTSTACK_PROTECTED_ROOTS": str(project_dir),
+            "AGENTSTACK_DELIVERABLE_ROOTS": "",
+            "AGENTSTACK_LANG": "ja",
+            "AGENTSTACK_MURMUR": "off",
+            "AGENTSTACK_SPAWN_DIRS": f"~/code:{project_dir}",
+            "AGENTSTACK_SPAWN_ROOTS": str(project_dir),
+            "AGENTSTACK_WORKTREE_ROOT": str(worktree_root),
+            "AGENTSTACK_PORTRAITS_DIR": "~/faces",
+            "AGENTSTACK_CUSTOM_PORTRAITS": f"{project_dir}/faces.json",
+            "AGENTSTACK_CLAUDE_MODELS": "claude-sonnet-5,claude-opus-5-5",
+            "AGENTSTACK_CODEX_MODELS": "gpt-5.6-sol,gpt-5.6-luna",
+            "AGENTSTACK_CODEX_BIN": str(codex_bin),
+            "AGENTSTACK_CODEX_CHILD_CONFIG_OVERLAY": str(codex_child_overlay),
+            "AGENTSTACK_CHILD_RESUME_RETENTION_DAYS": "45",
+            "AGENTSTACK_AUTO_OPEN_CHILD": "1",
+            "AGENTSTACK_MCP_URL": f"http://127.0.0.1:{mail_port}/mcp",
+            "AGENTSTACK_TERMINAL": "auto",
+            "AGENTSTACK_TEST_PYTHON": sys.executable,
+            "AGENTSTACK_TEST_SERVICE_PID": str(tmp_path / "dashboard-service.pid"),
+        })
+    
+        install_command = ["bash", str(ROOT / "scripts" / "install.sh")]
+        install_result = subprocess.run(
+            install_command,
+            cwd=ROOT,
+            env=env,
+            text=True,
+            capture_output=True,
+            check=True,
+        )
+        assert "dashboard healthy:" in install_result.stdout
+        assert f"Verify operation: {install_dir}/bin/agentstack-selftest" in (
+            install_result.stdout
+        )
+        installed_selftest = install_dir / "bin" / "agentstack-selftest"
+        assert installed_selftest.read_bytes() == (
+            ROOT / "scripts" / "selftest.py"
+        ).read_bytes()
+        assert os.access(installed_selftest, os.X_OK)
+    
+        runtime_path = install_dir / "runtime" / "annotations.json"
+        runtime_log = install_dir / "runtime" / "dashboard.log"
+        assert json.loads(runtime_path.read_text(encoding="utf-8")) == legacy_data
+        assert runtime_log.read_text(encoding="utf-8").startswith(
+            "legacy dashboard crash\n"
+        )
+        assert not legacy_path.exists()
+        assert not legacy_log.exists()
+    
+        # Reinstall must keep every old operational log out of the payload tree,
+        # even when the canonical and first legacy migration targets already exist.
+        _stop_fake_dashboard(env)
+        legacy_log.write_text("second legacy dashboard crash\n", encoding="utf-8")
+        # Reinstall with no new value must preserve the model setting.
+        env.pop("AGENTSTACK_CLAUDE_MODELS")
+        subprocess.run(
+            install_command,
+            cwd=ROOT,
+            env=env,
+            text=True,
+            capture_output=True,
+            check=True,
+        )
+        runtime_legacy_log = install_dir / "runtime" / "dashboard.legacy.log"
+        assert runtime_legacy_log.read_text(encoding="utf-8").startswith(
+            "second legacy dashboard crash\n"
+        )
+        assert not legacy_log.exists()
+    
+        _stop_fake_dashboard(env)
+        legacy_log.write_text("third legacy dashboard crash\n", encoding="utf-8")
+        subprocess.run(
+            install_command,
+            cwd=ROOT,
+            env=env,
+            text=True,
+            capture_output=True,
+            check=True,
+        )
+        runtime_legacy_log_1 = install_dir / "runtime" / "dashboard.legacy.1.log"
+        assert runtime_legacy_log_1.read_text(encoding="utf-8").startswith(
+            "third legacy dashboard crash\n"
+        )
+        assert not legacy_log.exists()
+    
+        manifest = _as_production_label(
+            json.loads((install_dir / "install-state.json").read_text(encoding="utf-8"))
+        )
+        assert str(install_dir / "runtime") in manifest["retained_paths"]
+        assert str(install_dir / "runtime") in manifest["purge_paths"]
+        assert str(install_dir / "profiles") in manifest["retained_paths"]
+        assert str(install_dir / "profiles") in manifest["purge_paths"]
+        assert str(install_dir / "connections") in manifest["retained_paths"]
+        assert str(install_dir / "connections") in manifest["purge_paths"]
+        assert str(legacy_path) not in manifest["owned_files"]
+        expected_payload_files = {
+            str(install_dir / relative)
+            for relative in _tracked_core_payload_files()
+        }
+        assert expected_payload_files <= set(manifest["owned_files"])
+        for relative in SOURCE_ONLY_ENTRIES:
+            assert not (install_dir / relative).exists()
+            assert str(install_dir / relative) not in manifest["owned_files"]
+        assert str(install_dir / "VERSION") in manifest["owned_files"]
+        assert str(installed_selftest) in manifest["owned_files"]
+        assert str(
+            install_dir / "integrations/codex_app/plugin/scripts/run-mcp.sh"
+        ) in manifest["owned_files"]
+        assert str(
+            install_dir / "integrations/codex_app/src/agentstack_codex_app/mcp_server.py"
+        ) in manifest["owned_files"]
+        expected_skill_links = [
+            {
+                "path": str(home / host / "skills" / name),
+                "target": str(install_dir / "skills" / name),
+            }
+            for host in (".claude", ".codex")
+            for name in ("delegate", "log")
+        ]
+        assert manifest["skill_links"] == expected_skill_links
+        for record in expected_skill_links:
+            link = pathlib.Path(record["path"])
+            assert link.is_symlink()
+            assert link.resolve() == pathlib.Path(record["target"])
+            assert record["path"] in manifest["owned_files"]
+        assert set(_expected_owned_dirs(install_dir)) <= set(manifest["owned_dirs"])
+        systemd_unit = (
+            home
+            / ".config"
+            / "systemd"
+            / "user"
+            / f"{TEST_LABEL_PREFIX}.agentdashboard.service"
+        ).read_text(encoding="utf-8")
+        exec_start = next(
+            line for line in systemd_unit.splitlines() if line.startswith("ExecStart=")
+        )
+        assert exec_start.split()[-1] == str(install_dir / "dashboard" / "service_runner.py")
+        # The unit must hand the installer-selected interpreter to dashboard children,
+        # mirroring the launchd plist (PR #29); otherwise providers spawned from the
+        # service fall back to whatever python3 is first on PATH.
+        unit_python = exec_start[len("ExecStart="):].split()[0]
+        assert f'Environment="AGENTSTACK_PYTHON={unit_python}"' in systemd_unit
+        assert "Restart=always" in systemd_unit
+        assert (
+            f'Environment="AGENTSTACK_DASHBOARD_LOG={install_dir}/runtime/dashboard.log"'
+            in systemd_unit
+        )
+        assert (
+            f'Environment="AGENTSTACK_PERSISTENT_PROFILES_DIR={install_dir}/profiles"'
+            in systemd_unit
+        )
+        assert 'Environment="AGENTSTACK_LANG=ja"' in systemd_unit
+        assert 'Environment="AGENTSTACK_MURMUR=off"' in systemd_unit
+        assert f'Environment="AGENTSTACK_SPAWN_DIRS=~/code:{project_dir}"' in systemd_unit
+        assert f'Environment="AGENTSTACK_SPAWN_ROOTS={project_dir}"' in systemd_unit
+        assert f'Environment="AGENTSTACK_WORKTREE_ROOT={worktree_root}"' in systemd_unit
+        assert 'Environment="AGENTSTACK_PORTRAITS_DIR=~/faces"' in systemd_unit
+        assert 'Environment="AGENTSTACK_CLAUDE_MODELS=claude-sonnet-5,claude-opus-5-5"' in systemd_unit
+        assert 'Environment="AGENTSTACK_CODEX_MODELS=gpt-5.6-sol,gpt-5.6-luna"' in systemd_unit
+        assert (
+            f'Environment="AGENTSTACK_CODEX_CHILD_CONFIG_OVERLAY={codex_child_overlay}"'
+            in systemd_unit
+        )
+        assert 'Environment="AGENTSTACK_CHILD_RESUME_RETENTION_DAYS=45"' in systemd_unit
+        assert 'Environment="AGENTSTACK_AUTO_OPEN_CHILD=1"' in systemd_unit
+        generated_env = (install_dir / "env.sh").read_text(encoding="utf-8")
+        assert f"export AGENTSTACK_PERSISTENT_PROFILES_DIR={install_dir}/profiles" in generated_env
+        assert "export AGENTSTACK_LANG=ja" in generated_env
+        assert "export AGENTSTACK_MURMUR=off" in generated_env
+        assert f"export AGENTSTACK_SPAWN_DIRS='~/code:{project_dir}'" in generated_env
+        assert f"export AGENTSTACK_SPAWN_ROOTS={project_dir}" in generated_env
+        assert f"export AGENTSTACK_WORKTREE_ROOT={worktree_root}" in generated_env
+        assert (
+            f"export AGENTSTACK_CODEX_CHILD_CONFIG_OVERLAY={codex_child_overlay}"
+            in generated_env
+        )
+        assert "export AGENTSTACK_CHILD_RESUME_RETENTION_DAYS=45" in generated_env
+        assert "export AGENTSTACK_AUTO_OPEN_CHILD=1" in generated_env
+        assert "export AGENTSTACK_CLAUDE_MODELS=claude-sonnet-5,claude-opus-5-5" in generated_env
+        assert manifest["env"]["AGENTSTACK_SPAWN_DIRS"] == f"~/code:{project_dir}"
+        assert manifest["env"]["AGENTSTACK_WORKTREE_ROOT"] == str(worktree_root)
+        assert "export AGENTSTACK_PORTRAITS_DIR='~/faces'" in generated_env
+        assert manifest["env"]["AGENTSTACK_CUSTOM_PORTRAITS"] == f"{project_dir}/faces.json"
+        assert manifest["env"]["AGENTSTACK_CLAUDE_MODELS"] == "claude-sonnet-5,claude-opus-5-5"
+        assert manifest["env"]["AGENTSTACK_CODEX_MODELS"] == "gpt-5.6-sol,gpt-5.6-luna"
+        assert manifest["env"]["AGENTSTACK_CODEX_CHILD_CONFIG_OVERLAY"] == str(
+            codex_child_overlay
+        )
+        assert manifest["env"]["AGENTSTACK_CHILD_RESUME_RETENTION_DAYS"] == "45"
+        assert manifest["env"]["AGENTSTACK_AUTO_OPEN_CHILD"] == "1"
+        fixture_enroll = (
+            pathlib.Path(sys.executable).parent.parent.resolve()
+            / "bin"
+            / "agentstack-enroll"
+        )
+        assert manifest["env"]["AGENTSTACK_MAIL_ENROLL_BIN"] == str(fixture_enroll)
+        assert manifest["agent_mail"]["enroll_bin"] == str(fixture_enroll)
+    
+        sample = json.loads(INSTALL_STATE_SAMPLE.read_text(encoding="utf-8"))
+>       assert set(sample) == set(manifest)
+E       AssertionError: assert {'agent_mail'...all_dir', ...} == {'agent_mail'...le_dirs', ...}
+E         
+E         Extra items in the right set:
+E         'managed_harness_roots'
+E         'example_files'
+E         'example_dirs'
+E         Use -v to get more diff
+
+tests/test_runtime_defaults.py:1011: AssertionError
+__________ test_install_state_sample_settings_merge_matches_generator __________
+
+tmp_path = PosixPath('/private/var/folders/3h/9fn3ldps3c98n54rzk0m2c6m0000gn/T/pytest-of-huyuhutaru/pytest-363/test_install_state_sample_sett0')
+
+    def test_install_state_sample_settings_merge_matches_generator(tmp_path):
+        sample = json.loads(INSTALL_STATE_SAMPLE.read_text(encoding="utf-8"))
+        home = tmp_path / "home"
+        settings_path = home / ".claude" / "settings.json"
+        settings_path.parent.mkdir(parents=True)
+        settings_path.write_text("{}\n", encoding="utf-8")
+        result_path = tmp_path / "settings-merge-result.json"
+        install_dir = home / ".agentstack"
+        subprocess.run(
+            [
+                "python3",
+                str(ROOT / "scripts" / "lib" / "merge_settings.py"),
+                "--settings",
+                str(settings_path),
+                "--template",
+                str(ROOT / "hooks" / "settings.template.json"),
+                "--hooks-dir",
+                str(install_dir / "hooks"),
+                "--bin-dir",
+                str(install_dir / "bin"),
+                "--skills-dir",
+                str(install_dir / "skills"),
+                "--backup-dir",
+                str(install_dir / "backups"),
+                "--result-json",
+                str(result_path),
+            ],
+            cwd=ROOT,
+            text=True,
+            capture_output=True,
+            check=True,
+        )
+        generated = json.loads(result_path.read_text(encoding="utf-8"))
+        generated = _normalize_sample_paths(
+            generated,
+            {
+                "install_dir": str(install_dir),
+                "repo_root": str(ROOT),
+                "env": {"AGENTSTACK_PROJECT_KEY": str(tmp_path / "project")},
+            },
+        )
+        generated["before_sha256"] = "example-before-sha256"
+        generated["after_sha256"] = "example-after-sha256"
+        generated["backup"] = sample["settings_merge"]["backup"]
+    
+>       assert generated == sample["settings_merge"]
+E       AssertionError: assert {'added_entri...-sha256', ...} == {'added_entri...-sha256', ...}
+E         
+E         Omitting 13 identical items, use -vv to show
+E         Differing items:
+E         {'added_entries': [{'command': '/bin/bash /home/alice/.agentstack/hooks/set-ghostty-title.sh', 'event': 'SessionStart'...mand': '/bin/bash /home/alice/.agentstack/hooks/deny-llm-key-read.sh', 'event': 'PreToolUse', 'matcher': 'Bash'}, ...]} != {'added_entries': [{'command': '/bin/bash /home/alice/.agentstack/hooks/set-ghostty-title.sh', 'event': 'SessionStart'...mand': '/bin/bash /home/alice/.agentstack/hooks/deny-llm-key-read.sh', 'event': 'PreToolUse', 'matcher': 'Bash'}, ...]}
+E         {'entries': [{'command': '/bin/b...
+E         
+E         ...Full output truncated (2 lines hidden), use '-vv' to show
+
+tests/test_runtime_defaults.py:1180: AssertionError
+============================= slowest 25 durations =============================
+19.39s call     tests/test_spawn_child_codex_bin.py::test_slow_usable_cli_keeps_launcher_api_and_delegate_defaults_stable[0.158.0-gpt-6-sol]
+19.28s call     tests/test_runtime_defaults.py::test_noninteractive_assume_yes_is_explicit_audited_approval
+19.17s call     tests/test_spawn_child_codex_bin.py::test_slow_usable_cli_keeps_launcher_api_and_delegate_defaults_stable[0.159.1-gpt-6.1-sol]
+13.49s call     tests/test_runtime_defaults.py::test_isolated_installer_migrates_annotations_and_matches_manifest_sample
+7.67s call     tests/test_spawn_child_codex_bin.py::test_all_probes_share_one_budget
+6.92s call     tests/test_runtime_defaults.py::test_installer_preserves_conflicting_user_skill
+6.70s call     tests/test_runtime_defaults.py::test_an_explicit_mail_label_is_not_overwritten_by_the_derived_one
+4.97s call     tests/test_claude_child_chrome.py::test_codex_child_process_does_not_inherit_the_chrome_env
+4.73s call     tests/test_spawn_child_codex_bin.py::test_an_unresponsive_saved_codex_is_probed_once_per_spawn
+4.62s call     tests/test_claude_child_chrome.py::test_env_default_is_ignored_for_codex_children
+3.17s call     tests/test_claude_child_chrome.py::test_default_spawn_still_claims_a_ready_warm_session[opus]
+2.42s call     tests/test_claude_child_chrome.py::test_default_spawn_matches_the_pre_chrome_launcher_exactly
+2.13s call     tests/test_claude_child_chrome.py::test_a_later_launch_never_changes_an_earlier_conversation[failed-chrome]
+2.01s call     tests/test_spawn_child_codex_bin.py::test_model_policy_and_api_use_the_child_runner_and_selected_binary[broken-environment-0.159.1-gpt-6.1-sol]
+2.00s call     tests/test_claude_child_chrome.py::test_a_later_launch_never_changes_an_earlier_conversation[chrome]
+1.96s call     tests/test_codex_launch.py::test_launcher_normalization_uses_configured_cli_version
+1.95s call     tests/test_spawn_child_codex_bin.py::test_model_policy_and_api_use_the_child_runner_and_selected_binary[broken-environment-0.158.0-gpt-6-sol]
+1.90s call     tests/test_claude_child_chrome.py::test_a_later_launch_never_changes_an_earlier_conversation[inherit]
+1.83s call     tests/test_codex_launch.py::test_model_catalog_fallback_preserves_aliases_and_old_ids_without_cli_version
+1.60s call     tests/test_claude_child_chrome.py::test_cli_device_wins_over_env_device
+1.33s call     tests/test_codex_launch.py::test_approval_flags_follow_the_installed_cli
+1.30s call     tests/test_codex_launch.py::test_a_codex_that_cannot_answer_help_still_pins_the_policy
+1.28s call     tests/test_claude_child_chrome.py::test_chrome_spawn_writes_only_a_pending_record_for_its_launch
+1.26s call     tests/test_claude_child_chrome.py::test_chrome_request_skips_a_ready_warm_session_and_adds_chrome
+1.26s call     tests/test_claude_child_chrome.py::test_env_default_turns_chrome_on_for_claude_children
+=========================== short test summary info ============================
+FAILED tests/test_local_upgrade.py::test_restart_authenticates_before_killing_and_passes_formal_binding
+FAILED tests/test_codex_launch.py::test_the_dashboard_never_kills_a_codex_updating_itself
+FAILED tests/test_claude_child_chrome.py::test_builder_is_byte_identical_to_the_pre_chrome_command_when_not_requested
+FAILED tests/test_claude_child_chrome.py::test_builder_adds_only_chrome_when_requested
+FAILED tests/test_claude_child_chrome.py::test_default_spawn_matches_the_pre_chrome_launcher_exactly
+FAILED tests/test_claude_child_chrome.py::test_default_spawn_still_claims_a_ready_warm_session[claude-sonnet-5]
+FAILED tests/test_claude_child_chrome.py::test_chrome_request_skips_a_ready_warm_session_and_adds_chrome
+FAILED tests/test_claude_child_chrome.py::test_env_default_turns_chrome_on_for_claude_children
+FAILED tests/test_claude_child_chrome.py::test_new_agent_strips_the_cli_env_defaults_from_the_launcher
+FAILED tests/test_docs_consistency.py::test_hook_count_matches_the_settings_template
+FAILED tests/test_docs_consistency.py::test_documentation_indexes_cover_the_actual_tree
+FAILED tests/test_runtime_defaults.py::test_isolated_installer_migrates_annotations_and_matches_manifest_sample
+FAILED tests/test_runtime_defaults.py::test_install_state_sample_settings_merge_matches_generator
+13 failed, 200 passed in 172.65s (0:02:52)
+traffic: [orrery-up-2-focused] done (exit 1)
+
+EXIT_CODE=1

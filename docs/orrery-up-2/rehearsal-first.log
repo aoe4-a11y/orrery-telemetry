@@ -1,0 +1,34 @@
+traffic: [orrery-up-2-rehearsal] running (slot slot-1, mem 13820MB, disk 84GiB)
+Traceback (most recent call last):
+  File "/Users/huyuhutaru/.dev-storage-governor/examforge/20261022T063810Z-build-cache-e4007ade/source/scripts/fleet-upgrade-backup.py", line 74, in <module>
+    if __name__=='__main__':main()
+                            ~~~~^^
+  File "/Users/huyuhutaru/.dev-storage-governor/examforge/20261022T063810Z-build-cache-e4007ade/source/scripts/fleet-upgrade-backup.py", line 72, in main
+    n=snapshot(a.home,a.directory,a.project_key,a.codex_home) if a.operation=='snapshot' else restore(a.home,a.directory)
+      ~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/huyuhutaru/.dev-storage-governor/examforge/20261022T063810Z-build-cache-e4007ade/source/scripts/fleet-upgrade-backup.py", line 41, in snapshot
+    if not extra.is_relative_to(home):raise ValueError('managed document is outside the recorded home')
+                                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+ValueError: managed document is outside the recorded home
+{
+  "home": "/Users/huyuhutaru/.dev-storage-governor/examforge/20261022T063810Z-build-cache-e4007ade/rehearsal/rehearsal-home",
+  "mail_port": 60514,
+  "dashboard_port": 60515,
+  "seeded": 353,
+  "mode": "real isolated native Mail and dashboard; fake no-service Linux manager; scoped approvals skipped",
+  "installer_exit": 1,
+  "helper_processes_stopped": true,
+  "mail_port_closed": true,
+  "dashboard_port_closed": true
+}
+Traceback (most recent call last):
+  File "/Users/huyuhutaru/.dev-storage-governor/examforge/20261022T063810Z-build-cache-e4007ade/source/scripts/rehearse-fleet-upgrade.py", line 151, in <module>
+    if __name__=='__main__':main()
+                            ~~~~^^
+  File "/Users/huyuhutaru/.dev-storage-governor/examforge/20261022T063810Z-build-cache-e4007ade/source/scripts/rehearse-fleet-upgrade.py", line 85, in main
+    if install.returncode:raise RuntimeError('isolated installer failed')
+                          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+RuntimeError: isolated installer failed
+traffic: [orrery-up-2-rehearsal] done (exit 1)
+
+EXIT_CODE=1

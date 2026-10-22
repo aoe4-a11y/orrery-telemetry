@@ -1,0 +1,67 @@
+{
+  "protected_ancestor_pids": [
+    1,
+    14875,
+    40101,
+    85432,
+    85446,
+    85448
+  ],
+  "remaining_owned_root_processes": [
+    {
+      "pid": 23711,
+      "ppid": 1,
+      "command": "bi",
+      "args_sha256": "77aaae1ffb7bd425187303f24cae316f7fd62862a06687940f961a6e8dbca266",
+      "cwd": [
+        "/Users/huyuhutaru/.dev-storage-governor/examforge/20261022T063810Z-build-cache-e4007ade/source"
+      ],
+      "args_scope": "owned governor root present",
+      "managed_service_candidate": false
+    },
+    {
+      "pid": 23733,
+      "ppid": 1,
+      "command": "bash",
+      "args_sha256": "c7b4ffc734032fb9e5771e2b4aa1d4f31df62e59826b362afd58d87cb678afc1",
+      "cwd": [
+        "/Users/huyuhutaru/.dev-storage-governor/examforge/20261022T063810Z-build-cache-e4007ade/source"
+      ],
+      "args_scope": "owned governor root present",
+      "managed_service_candidate": true
+    },
+    {
+      "pid": 36801,
+      "ppid": 1,
+      "command": "huyuhutar",
+      "args_sha256": "d32c550ec92dbc7e11b602c68da7cd130f4f2428bd5f71e20bf87426397b812e",
+      "cwd": [
+        "/Users/huyuhutaru/.dev-storage-governor/examforge/20261022T063810Z-build-cache-e4007ade/focused-fixes-third-temp/popen-gw1/test_supervised_in_place_upgra0/installer-repo"
+      ],
+      "args_scope": "owned governor root present",
+      "managed_service_candidate": true
+    },
+    {
+      "pid": 42934,
+      "ppid": 1,
+      "command": "huyuhutar",
+      "args_sha256": "d32c550ec92dbc7e11b602c68da7cd130f4f2428bd5f71e20bf87426397b812e",
+      "cwd": [
+        "/Users/huyuhutaru/.dev-storage-governor/examforge/20261022T063810Z-build-cache-e4007ade/dashboard-diagnosis-temp/test_supervised_in_place_upgra0/installer-repo"
+      ],
+      "args_scope": "owned governor root present",
+      "managed_service_candidate": true
+    },
+    {
+      "pid": 23720,
+      "ppid": 23711,
+      "command": "huyuhutar",
+      "args_sha256": "f8819193bf23ec34e6b821bdb8889397db0efcd66c8098ec8f958708bb4f4e3b",
+      "cwd": [
+        "/Users/huyuhutaru/.dev-storage-governor/examforge/20261022T063810Z-build-cache-e4007ade/source"
+      ],
+      "args_scope": "owned governor root present",
+      "managed_service_candidate": false
+    }
+  ]
+}

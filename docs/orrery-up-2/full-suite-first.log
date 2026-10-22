@@ -1,0 +1,2026 @@
+traffic: [orrery-up-2-suite] running (slot slot-1, mem 14344MB, disk 73GiB)
+bringing up nodes...
+bringing up nodes...
+
+........................................................................ [  0%]
+........................................................................ [  1%]
+........................................................................ [  2%]
+........................................................................ [  3%]
+........................................................................ [  4%]
+........................................................................ [  5%]
+........................................................................ [  6%]
+........................................................................ [  7%]
+........................................................................ [  8%]
+........................................................................ [  9%]
+........................................................................ [ 10%]
+........................................................................ [ 11%]
+........................................................................ [ 11%]
+........................................................................ [ 12%]
+........................................................................ [ 13%]
+..........................................................FF............ [ 14%]
+........................................................................ [ 15%]
+........................................................................ [ 16%]
+........................................................................ [ 17%]
+....s................................................................... [ 18%]
+........................................................................ [ 19%]
+........................................................................ [ 20%]
+........................................................................ [ 21%]
+........................................ss.............................. [ 22%]
+............................................s........................... [ 22%]
+........................................................................ [ 23%]
+........................................................................ [ 24%]
+........................................................................ [ 25%]
+........................................................................ [ 26%]
+........................................................................ [ 27%]
+........................................................................ [ 28%]
+........................................................................ [ 29%]
+F....................................................................... [ 30%]
+........................................................................ [ 31%]
+........................................................................ [ 32%]
+........................................................................ [ 33%]
+........................................................................ [ 33%]
+........................................................................ [ 34%]
+........................................................................ [ 35%]
+........................................................................ [ 36%]
+........................................................................ [ 37%]
+........................................................................ [ 38%]
+........................................................................ [ 39%]
+........................................................................ [ 40%]
+........................................................................ [ 41%]
+......................................F................................. [ 42%]
+........................................................................ [ 43%]
+........................................................................ [ 44%]
+........................................................................ [ 44%]
+........................................................................ [ 45%]
+........................................................................ [ 46%]
+........................................................................ [ 47%]
+......................................F....F......F...............F..... [ 48%]
+..........F............................F..................F........F.... [ 49%]
+........................................................................ [ 50%]
+........................................................................ [ 51%]
+........................................................................ [ 52%]
+........................................................................ [ 53%]
+........................................................................ [ 54%]
+...F.................................................................... [ 55%]
+........................................................................ [ 55%]
+........................................................................ [ 56%]
+........................................................................ [ 57%]
+........................................................................ [ 58%]
+....F.FF................................................................ [ 59%]
+.......................................................F.......F........ [ 60%]
+........................................................................ [ 61%]
+........................................................................ [ 62%]
+........................................................................ [ 63%]
+........................................................................ [ 64%]
+........................................................................ [ 65%]
+........................................................................ [ 66%]
+...................................ssssssssssssssssssssssssss........... [ 66%]
+..FF.................................................................... [ 67%]
+........................................................................ [ 68%]
+........................................................................ [ 69%]
+........................................................................ [ 70%]
+...s.sss................................................................ [ 71%]
+..................uuuu..uuuu.uuuu.uuuu...........uu.....uu...ss......... [ 72%]
+........................................................................ [ 73%]
+...............................................................F........ [ 74%]
+........................................................................ [ 74%]
+.........................uu............................................. [ 75%]
+........................................................................ [ 76%]
+....................................................F.....uuuuuuuuuuuu.. [ 77%]
+............................................................uuuu...uuuuu [ 78%]
+uu.uuuuu...uuuuuu..u.......u....u...u.....uu..uuuu...................... [ 78%]
+...................u..uu.........u.....................................u [ 79%]
+.u..u...u.....u...........................uuuuuuuuuuuuuuuuu..........u.. [ 80%]
+.....u............................................................E....E [ 81%]
+........................................................................ [ 82%]
+........................................................................ [ 83%]
+...........................................................F.FF.F....... [ 84%]
+..............................s......................................... [ 85%]
+............................uuu...uuu................................... [ 85%]
+........................................................................ [ 86%]
+........................................................................ [ 87%]
+................................................ssssssss................ [ 88%]
+........................................................................ [ 89%]
+.....uuuu.......uu..uu.................................................. [ 90%]
+..................................uuuu..uuuuuuu.uu.uu.---.sss..ssssssss. [ 91%]
+................................................................uu...... [ 91%]
+....................sss...................................uuuu.uuu....s. [ 92%]
+.......F..............................................sss.FF.F.......... [ 93%]
+.................................................................s.uuuuu [ 94%]
+u.uu................s................................................... [ 95%]
+.............................................uu....uuuuuuu.............. [ 96%]
+......................sssss............................................. [ 97%]
+.....uu..FFFF.........uu..uu.uuuuuuuuu...s..............ssss............ [ 97%]
+.............F.......................................................... [ 98%]
+.............---------.--------.-------.----.ss......................s.. [ 99%]
+........uuu.........ss....ss...sssss.s...s...............                [100%]
+==================================== ERRORS ====================================
+__ ERROR collecting docs/orrery-up-2/live-code/bin/test_agentstack_jobend.py ___
+import file mismatch:
+imported module 'test_agentstack_jobend' has this __file__ attribute:
+  /Users/huyuhutaru/.dev-storage-governor/examforge/20261022T063810Z-build-cache-e4007ade/source/bin/test_agentstack_jobend.py
+which is not the same as the test file we want to collect:
+  /Users/huyuhutaru/.dev-storage-governor/examforge/20261022T063810Z-build-cache-e4007ade/source/docs/orrery-up-2/live-code/bin/test_agentstack_jobend.py
+HINT: remove __pycache__ / .pyc files and/or use a unique basename for your test file modules
+__ ERROR collecting docs/orrery-up-2/live-code/bin/test_agentstack_orphan.py ___
+import file mismatch:
+imported module 'test_agentstack_orphan' has this __file__ attribute:
+  /Users/huyuhutaru/.dev-storage-governor/examforge/20261022T063810Z-build-cache-e4007ade/source/bin/test_agentstack_orphan.py
+which is not the same as the test file we want to collect:
+  /Users/huyuhutaru/.dev-storage-governor/examforge/20261022T063810Z-build-cache-e4007ade/source/docs/orrery-up-2/live-code/bin/test_agentstack_orphan.py
+HINT: remove __pycache__ / .pyc files and/or use a unique basename for your test file modules
+_ ERROR collecting docs/orrery-up-2/live-code/bin/test_agentstack_retainprune.py _
+import file mismatch:
+imported module 'test_agentstack_retainprune' has this __file__ attribute:
+  /Users/huyuhutaru/.dev-storage-governor/examforge/20261022T063810Z-build-cache-e4007ade/source/bin/test_agentstack_retainprune.py
+which is not the same as the test file we want to collect:
+  /Users/huyuhutaru/.dev-storage-governor/examforge/20261022T063810Z-build-cache-e4007ade/source/docs/orrery-up-2/live-code/bin/test_agentstack_retainprune.py
+HINT: remove __pycache__ / .pyc files and/or use a unique basename for your test file modules
+_ ERROR collecting docs/orrery-up-2/live-code/bin/test_agentstack_stallself.py _
+import file mismatch:
+imported module 'test_agentstack_stallself' has this __file__ attribute:
+  /Users/huyuhutaru/.dev-storage-governor/examforge/20261022T063810Z-build-cache-e4007ade/source/bin/test_agentstack_stallself.py
+which is not the same as the test file we want to collect:
+  /Users/huyuhutaru/.dev-storage-governor/examforge/20261022T063810Z-build-cache-e4007ade/source/docs/orrery-up-2/live-code/bin/test_agentstack_stallself.py
+HINT: remove __pycache__ / .pyc files and/or use a unique basename for your test file modules
+_ ERROR collecting docs/orrery-up-2/live-code/bin/test_agentstack_station_materials_sparse.py _
+import file mismatch:
+imported module 'test_agentstack_station_materials_sparse' has this __file__ attribute:
+  /Users/huyuhutaru/.dev-storage-governor/examforge/20261022T063810Z-build-cache-e4007ade/source/bin/test_agentstack_station_materials_sparse.py
+which is not the same as the test file we want to collect:
+  /Users/huyuhutaru/.dev-storage-governor/examforge/20261022T063810Z-build-cache-e4007ade/source/docs/orrery-up-2/live-code/bin/test_agentstack_station_materials_sparse.py
+HINT: remove __pycache__ / .pyc files and/or use a unique basename for your test file modules
+_ ERROR collecting docs/orrery-up-2/live-code/bin/test_agentstack_unstick_seats.py _
+import file mismatch:
+imported module 'test_agentstack_unstick_seats' has this __file__ attribute:
+  /Users/huyuhutaru/.dev-storage-governor/examforge/20261022T063810Z-build-cache-e4007ade/source/bin/test_agentstack_unstick_seats.py
+which is not the same as the test file we want to collect:
+  /Users/huyuhutaru/.dev-storage-governor/examforge/20261022T063810Z-build-cache-e4007ade/source/docs/orrery-up-2/live-code/bin/test_agentstack_unstick_seats.py
+HINT: remove __pycache__ / .pyc files and/or use a unique basename for your test file modules
+_ ERROR at setup of test_retired_signal_backlog_does_not_make_healthy_delivery_red _
+[gw0] darwin -- Python 3.13.12 /Users/huyuhutaru/.dev-storage-governor/examforge/20261022T063810Z-build-cache-e4007ade/source/.venv/bin/python
+
+tmp_path = PosixPath('/Users/huyuhutaru/.dev-storage-governor/examforge/20261022T063810Z-build-cache-e4007ade/full-suite-temp/popen-gw0/test_retired_signal_backlog_do0')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x1147e2660>
+
+    @pytest.fixture
+    def retired_signals(tmp_path, monkeypatch):
+        home = tmp_path / 'home'
+        home.mkdir()
+        runtime = home / '.agentstack/runtime'
+        signals = home / '.agentstack/mail/signals'
+        agents = signals / 'projects/probe/agents'
+        retired = agents / 'RetiredRecipient'
+        retired.mkdir(parents=True)
+        tmux = shutil.which('tmux')
+        if tmux is None:
+            pytest.skip('tmux is required')
+        private_tmux = tempfile.TemporaryDirectory(prefix='r2mh-',dir='/private/tmp' if Path('/private/tmp').is_dir() else None)
+        monkeypatch.setenv('TMUX_TMPDIR',str(Path(private_tmux.name).resolve()))
+        monkeypatch.delenv('TMUX',raising=False)
+        monkeypatch.delenv('TMUX_PANE',raising=False)
+        commands = tmp_path / 'bin'
+        commands.mkdir()
+        wrapper = commands / 'tmux'
+        wrapper.write_text('#!/bin/sh\nexec ' + shlex.quote(tmux) + ' "$@"\n')
+        wrapper.chmod(0o755)
+        monkeypatch.setenv('HOME', str(home))
+        monkeypatch.setenv('PATH', str(commands) + ':' + os.environ['PATH'])
+        monkeypatch.setenv('AGENTSTACK_RUNTIME_DIR', str(runtime))
+        monkeypatch.setenv('AGENTSTACK_SIGNALS_DIR', str(signals))
+        monkeypatch.setenv('AGENTSTACK_PERSISTENT_DELIVER', str(tmp_path / 'no-headless-helper'))
+        source = (ROOT / 'hooks/watch_agent_mail_signals.sh').read_text()
+        # Execute the real delivery functions once; no service/lock or watch loop.
+        source = source[:source.index('if command -v fswatch &>/dev/null; then')]
+        source = source.replace('\nacquire_lock\n', '\n# fixture: no service lock\n')
+        install_root = home / '.agentstack'
+        copy_client_library(install_root)
+        runner = install_root / 'hooks/watch-once.sh'
+        runner.parent.mkdir(parents=True, exist_ok=True)
+        runner.write_text(source + '\nprocess_existing_signals\nwait\n')
+        def call(*args):
+            return subprocess.run([str(wrapper), *args], capture_output=True, text=True, timeout=10, check=True)
+        def write_signal(number, recipient=retired, old=False):
+            recipient.mkdir(parents=True, exist_ok=True)
+            path = recipient / f'{number}.signal'
+            path.write_text(json.dumps({'message': {'id': number, 'from': 'FixtureSender', 'subject': 'fixture'}}))
+            if old:
+                stamp = time.time() - 2 * 86400
+                os.utime(path, (stamp, stamp))
+            return path
+        try:
+            call('new-session', '-d', '-s', 'Control', 'sleep 300')
+            call('new-session', '-d', '-s', 'RetiredRecipient', "printf 'Claude\\n'; cat")
+            write_signal(1)
+            completed = subprocess.run(['/bin/bash', str(runner)], capture_output=True, text=True, timeout=45)
+            assert completed.returncode == 0, completed.stderr
+            state = json.loads((runtime / 'notify-state.json').read_text())
+>           assert state['RetiredRecipient:1']['last_result'] == 'success'
+E           AssertionError: assert 'inject_failed' == 'success'
+E             
+E             - success
+E             + inject_failed
+
+tests/test_mail_signal_health.py:76: AssertionError
+______ ERROR at setup of test_doctor_warns_about_orphans_without_failing _______
+[gw0] darwin -- Python 3.13.12 /Users/huyuhutaru/.dev-storage-governor/examforge/20261022T063810Z-build-cache-e4007ade/source/.venv/bin/python
+
+tmp_path = PosixPath('/Users/huyuhutaru/.dev-storage-governor/examforge/20261022T063810Z-build-cache-e4007ade/full-suite-temp/popen-gw0/test_doctor_warns_about_orphan0')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x11807b0e0>
+
+    @pytest.fixture
+    def retired_signals(tmp_path, monkeypatch):
+        home = tmp_path / 'home'
+        home.mkdir()
+        runtime = home / '.agentstack/runtime'
+        signals = home / '.agentstack/mail/signals'
+        agents = signals / 'projects/probe/agents'
+        retired = agents / 'RetiredRecipient'
+        retired.mkdir(parents=True)
+        tmux = shutil.which('tmux')
+        if tmux is None:
+            pytest.skip('tmux is required')
+        private_tmux = tempfile.TemporaryDirectory(prefix='r2mh-',dir='/private/tmp' if Path('/private/tmp').is_dir() else None)
+        monkeypatch.setenv('TMUX_TMPDIR',str(Path(private_tmux.name).resolve()))
+        monkeypatch.delenv('TMUX',raising=False)
+        monkeypatch.delenv('TMUX_PANE',raising=False)
+        commands = tmp_path / 'bin'
+        commands.mkdir()
+        wrapper = commands / 'tmux'
+        wrapper.write_text('#!/bin/sh\nexec ' + shlex.quote(tmux) + ' "$@"\n')
+        wrapper.chmod(0o755)
+        monkeypatch.setenv('HOME', str(home))
+        monkeypatch.setenv('PATH', str(commands) + ':' + os.environ['PATH'])
+        monkeypatch.setenv('AGENTSTACK_RUNTIME_DIR', str(runtime))
+        monkeypatch.setenv('AGENTSTACK_SIGNALS_DIR', str(signals))
+        monkeypatch.setenv('AGENTSTACK_PERSISTENT_DELIVER', str(tmp_path / 'no-headless-helper'))
+        source = (ROOT / 'hooks/watch_agent_mail_signals.sh').read_text()
+        # Execute the real delivery functions once; no service/lock or watch loop.
+        source = source[:source.index('if command -v fswatch &>/dev/null; then')]
+        source = source.replace('\nacquire_lock\n', '\n# fixture: no service lock\n')
+        install_root = home / '.agentstack'
+        copy_client_library(install_root)
+        runner = install_root / 'hooks/watch-once.sh'
+        runner.parent.mkdir(parents=True, exist_ok=True)
+        runner.write_text(source + '\nprocess_existing_signals\nwait\n')
+        def call(*args):
+            return subprocess.run([str(wrapper), *args], capture_output=True, text=True, timeout=10, check=True)
+        def write_signal(number, recipient=retired, old=False):
+            recipient.mkdir(parents=True, exist_ok=True)
+            path = recipient / f'{number}.signal'
+            path.write_text(json.dumps({'message': {'id': number, 'from': 'FixtureSender', 'subject': 'fixture'}}))
+            if old:
+                stamp = time.time() - 2 * 86400
+                os.utime(path, (stamp, stamp))
+            return path
+        try:
+            call('new-session', '-d', '-s', 'Control', 'sleep 300')
+            call('new-session', '-d', '-s', 'RetiredRecipient', "printf 'Claude\\n'; cat")
+            write_signal(1)
+            completed = subprocess.run(['/bin/bash', str(runner)], capture_output=True, text=True, timeout=45)
+            assert completed.returncode == 0, completed.stderr
+            state = json.loads((runtime / 'notify-state.json').read_text())
+>           assert state['RetiredRecipient:1']['last_result'] == 'success'
+E           AssertionError: assert 'inject_failed' == 'success'
+E             
+E             - success
+E             + inject_failed
+
+tests/test_mail_signal_health.py:76: AssertionError
+=================================== FAILURES ===================================
+_ test_client_start_waits_for_a_mutex_another_caller_is_writing[operation_lock-{"kind": "orrery-client-operation-mutex-v1"}] _
+[gw0] darwin -- Python 3.13.12 /Users/huyuhutaru/.dev-storage-governor/examforge/20261022T063810Z-build-cache-e4007ade/source/.venv/bin/python
+
+tmp_path = PosixPath('/Users/huyuhutaru/.dev-storage-governor/examforge/20261022T063810Z-build-cache-e4007ade/full-suite-temp/popen-gw0/test_client_start_waits_for_a_0')
+role = 'operation_lock'
+content = b'{"kind": "orrery-client-operation-mutex-v1"}'
+
+    @pytest.mark.parametrize('role, content', [
+        ('operation_lock', OPERATION_MUTEX),
+        ('mutex', b'{"kind": "orrery-client-local-mutex-v1"}'),
+    ])
+    def test_client_start_waits_for_a_mutex_another_caller_is_writing(tmp_path, role, content):
+        """The constructor preflights every slot before it takes the operation mutex."""
+        import threading
+        root = _offline_context(tmp_path)
+        path = root / api['CLIENT_LAYOUT'][role]
+        fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600)
+        before = os.fstat(fd).st_ino
+        result, done = {}, threading.Event()
+    
+        def start():
+            try:
+                RuntimeClient(root / 'runtime-client.json')
+                result['start'] = 'accepted'
+            except Exception as exc:
+                result['start'] = str(exc)
+            done.set()
+    
+        thread = threading.Thread(target=start)
+        try:
+            thread.start()
+>           assert not done.wait(0.3), result
+E           AssertionError: {'start': 'ISOLATION_REQUIRED'}
+E           assert not True
+E            +  where True = wait(0.3)
+E            +    where wait = <threading.Event at 0x1163563f0: set>.wait
+
+tests/test_global_runtime_client.py:764: AssertionError
+_ test_client_start_waits_for_a_mutex_another_caller_is_writing[mutex-{"kind": "orrery-client-local-mutex-v1"}] _
+[gw0] darwin -- Python 3.13.12 /Users/huyuhutaru/.dev-storage-governor/examforge/20261022T063810Z-build-cache-e4007ade/source/.venv/bin/python
+
+tmp_path = PosixPath('/Users/huyuhutaru/.dev-storage-governor/examforge/20261022T063810Z-build-cache-e4007ade/full-suite-temp/popen-gw0/test_client_start_waits_for_a_1')
+role = 'mutex', content = b'{"kind": "orrery-client-local-mutex-v1"}'
+
+    @pytest.mark.parametrize('role, content', [
+        ('operation_lock', OPERATION_MUTEX),
+        ('mutex', b'{"kind": "orrery-client-local-mutex-v1"}'),
+    ])
+    def test_client_start_waits_for_a_mutex_another_caller_is_writing(tmp_path, role, content):
+        """The constructor preflights every slot before it takes the operation mutex."""
+        import threading
+        root = _offline_context(tmp_path)
+        path = root / api['CLIENT_LAYOUT'][role]
+        fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600)
+        before = os.fstat(fd).st_ino
+        result, done = {}, threading.Event()
+    
+        def start():
+            try:
+                RuntimeClient(root / 'runtime-client.json')
+                result['start'] = 'accepted'
+            except Exception as exc:
+                result['start'] = str(exc)
+            done.set()
+    
+        thread = threading.Thread(target=start)
+        try:
+            thread.start()
+>           assert not done.wait(0.3), result
+E           AssertionError: {'start': 'ISOLATION_REQUIRED'}
+E           assert not True
+E            +  where True = wait(0.3)
+E            +    where wait = <threading.Event at 0x115c1eb70: set>.wait
+
+tests/test_global_runtime_client.py:764: AssertionError
+______________________ test_the_update_screen_gets_no_key ______________________
+[gw3] darwin -- Python 3.13.12 /Users/huyuhutaru/.dev-storage-governor/examforge/20261022T063810Z-build-cache-e4007ade/source/.venv/bin/python
+
+tmp_path = PosixPath('/Users/huyuhutaru/.dev-storage-governor/examforge/20261022T063810Z-build-cache-e4007ade/full-suite-temp/popen-gw3/test_the_update_screen_gets_no0')
+
+    def test_the_update_screen_gets_no_key(tmp_path):
+        # "Press enter to continue" alone once read as a sign-in screen, and the
+        # Enter started the update (#60). Only a trust screen, by its whole
+        # layout, is answered.
+        result, keys, notes = _watch(tmp_path, [UPDATE_SCREEN])
+>       assert keys == []
+E       AssertionError: assert ['send-keys -... Escape', ...] == []
+E         
+E         Left contains 30 more items, first extra item: 'send-keys -t Child Escape'
+E         Use -v to get more diff
+
+tests/test_codex_initial_prompt_argv.py:537: AssertionError
+___________ test_unchanged_watcher_delivers_into_real_tmux_tty_sink ____________
+[gw3] darwin -- Python 3.13.12 /Users/huyuhutaru/.dev-storage-governor/examforge/20261022T063810Z-build-cache-e4007ade/source/.venv/bin/python
+
+tmp_path = PosixPath('/Users/huyuhutaru/.dev-storage-governor/examforge/20261022T063810Z-build-cache-e4007ade/full-suite-temp/popen-gw3/test_unchanged_watcher_deliver0')
+
+    def test_unchanged_watcher_delivers_into_real_tmux_tty_sink(tmp_path):
+        if os.name != 'posix':
+            pytest.skip('POSIX TTY required')
+        tmux = shutil.which('tmux', path='/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin')
+        if not tmux:
+            pytest.skip('tmux required for unchanged watcher integration')
+        # コードrepoのpayloadだけを、一時HOMEへ配置する。
+        sys.path.insert(0, str(ROOT / 'tests'))
+        from _installed_client_payload import copy_client_library
+        home = tmp_path / 'home'
+        install = home / '.agentstack'
+        home.mkdir()
+        copy_client_library(install)
+        watcher = install / 'hooks/watch_agent_mail_signals.sh'
+        shutil.copyfile(ROOT / 'hooks/watch_agent_mail_signals.sh', watcher)
+        runtime, signals = tmp_path / 'runtime', tmp_path / 'signals'
+        command_bin = tmp_path / 'bin'
+        command_bin.mkdir()
+        (command_bin / 'python3').write_text('#!/bin/sh\nexec ' + shlex.quote(sys.executable) + ' "$@"\n')
+        (command_bin / 'python3').chmod(0o700)
+        (command_bin / 'fswatch').write_text('#!/bin/sh\nexec /bin/sleep 60\n')
+        (command_bin / 'fswatch').chmod(0o700)
+        with tempfile.TemporaryDirectory(prefix='notice-tty-', dir='/private/tmp') as socket_root:
+            env = dict(HOME=str(home), PATH=str(command_bin)+':'+str(Path(tmux).parent)+':/usr/bin:/bin',
+                TMUX_TMPDIR=socket_root, TMPDIR=str(tmp_path), AGENTSTACK_HOME=str(install),
+                AGENTSTACK_RUNTIME_MODE='legacy', AGENTSTACK_RUNTIME_DIR=str(runtime),
+                AGENTSTACK_SIGNALS_DIR=str(signals), AGENTSTACK_MAIL_HOME=str(tmp_path/'mail'),
+                # 既定と異なる明示lockにし、実際の旧共有lockを参照させない。
+                AGENTSTACK_MAIL_WATCHER_LOCK_DIR=str(tmp_path/'watcher-singleton'),
+                AGENTSTACK_PERSISTENT_DELIVER=str(ROOT/'bin/agentstack-persistent-deliver'))
+            fifo = tmp_path / 'events.fifo'
+            os.mkfifo(fifo, 0o600)
+            read_fd = os.open(fifo, os.O_RDONLY | os.O_NONBLOCK)
+            keep_fd = os.open(fifo, os.O_WRONLY | os.O_NONBLOCK)
+            pending, process = bytearray(), None
+            def terminal(*args):
+                return subprocess.run([tmux, '-f', '/dev/null', *args], env=env,
+                    capture_output=True, text=True, timeout=10)
+            try:
+                result = terminal('new-session', '-d', '-P', '-F', '#{pane_id}', '-s', 'ProbeReceiver',
+                                  shlex.join(sink_arguments('--event-fifo', str(fifo))))
+                assert result.returncode == 0, result.stderr
+                pane_id = result.stdout.strip()
+                assert pane_id.startswith('%') and pane_id[1:].isdigit(), result.stdout
+                assert receive_line(read_fd, pending)['event'] == 'sink_ready'
+                admission = subprocess.run([sys.executable, '-B', str(install/'bin/lib/runtime_tmux_consumer.py'),
+                    'has-session', '-t', 'ProbeReceiver'],env=env,capture_output=True,text=True,timeout=10)
+                assert admission.returncode == 0, admission.stderr
+                signal_file = signals / 'projects/probe/agents/ProbeReceiver/777.signal'
+                signal_file.parent.mkdir(parents=True)
+                signal_file.write_text(json.dumps(dict(message=dict(id=777, **{'from':'ProbeSender'},
+                    subject=m.nonce(RUN, 'normal', 1), importance='normal',
+                    body_snippet='synthetic measurement', body_truncated=False))))
+                with (tmp_path/'watcher.log').open('wb') as log:
+                    process = subprocess.Popen(['/bin/bash', str(watcher)], env=env,
+                        stdout=log, stderr=subprocess.STDOUT, start_new_session=True)
+>                   notice = receive_line(read_fd, pending, timeout=30)
+                             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/test_mail_notice_measure.py:555: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+fd = 14, pending = bytearray(b''), timeout = 30
+
+    def receive_line(fd, pending, timeout=5):
+        deadline = time.monotonic() + timeout
+        while b'\n' not in pending:
+            remaining = deadline - time.monotonic()
+>           assert remaining > 0 and select.select([fd], [], [], remaining)[0], 'event timeout'
+E           AssertionError: event timeout
+E           assert (29.999987208051607 > 0 and [])
+
+tests/test_mail_notice_measure.py:455: AssertionError
+____ test_launchd_in_place_upgrade_replaces_its_own_listener_with_new_code _____
+[gw0] darwin -- Python 3.13.12 /Users/huyuhutaru/.dev-storage-governor/examforge/20261022T063810Z-build-cache-e4007ade/source/.venv/bin/python
+
+tmp_path = PosixPath('/Users/huyuhutaru/.dev-storage-governor/examforge/20261022T063810Z-build-cache-e4007ade/full-suite-temp/popen-gw0/test_launchd_in_place_upgrade_0')
+
+    @pytest.mark.skipif(
+        os.environ.get("GITHUB_ACTIONS") == "true",
+        reason="starts a real dashboard/service process; fails only on GitHub-hosted runners (no interactive user session), cause not isolated yet — run 33846626836",
+    )
+    def test_launchd_in_place_upgrade_replaces_its_own_listener_with_new_code(
+        tmp_path,
+    ):
+        repo = _isolated_installer_repo(tmp_path)
+        _write_marker_dashboard(repo / "dashboard" / "server.py", "new-launchd")
+        fake_bin = tmp_path / "fake-bin"
+        fake_bin.mkdir()
+        new_pidfile = tmp_path / "new-launchd.pid"
+        for name, body in {
+            "tmux": "#!/bin/sh\nexit 0\n",
+            "uname": "#!/bin/sh\necho Darwin\n",
+            "uv": "#!/bin/sh\nexit 0\n",
+            "launchctl": """#!/bin/sh
+    case "$*" in
+      *agentdashboard*) ;;
+      *) [ "$1" = print ] && exit 1; exit 0 ;;
+    esac
+    case "$1" in
+      print)
+        [ -f "$AGENTSTACK_TEST_LOADED_MARKER" ] || exit 1
+        printf '{\n    pid = %s\n}\n' "$AGENTSTACK_TEST_OLD_PID"
+        ;;
+      bootout)
+        if kill -0 "$AGENTSTACK_TEST_OLD_PID" 2>/dev/null; then
+          kill "$AGENTSTACK_TEST_OLD_PID" 2>/dev/null || true
+          attempts=0
+          while kill -0 "$AGENTSTACK_TEST_OLD_PID" 2>/dev/null && [ "$attempts" -lt 50 ]; do
+            sleep 0.1
+            attempts=$((attempts + 1))
+          done
+        fi
+        rm -f "$AGENTSTACK_TEST_LOADED_MARKER"
+        ;;
+      bootstrap)
+        nohup "$AGENTSTACK_PYTHON" \
+          "$AGENTSTACK_HOME/dashboard/service_runner.py" >/dev/null 2>&1 &
+        echo $! > "$AGENTSTACK_TEST_NEW_PIDFILE"
+        ;;
+    esac
+    exit 0
+    """,
+        }.items():
+            command = fake_bin / name
+            command.write_text(body, encoding="utf-8")
+            command.chmod(0o755)
+    
+        with socket.socket() as probe:
+            probe.bind(("127.0.0.1", 0))
+            port = probe.getsockname()[1]
+        env, install_dir = _installer_upgrade_env(tmp_path, fake_bin, port)
+        old_server = tmp_path / "old-dashboard.py"
+        _write_marker_dashboard(old_server, "old-launchd")
+        env["AGENTSTACK_CHILD_DEFAULT_TOOLS"] = "browser,screen:read:windows-mcp"
+        old_process = subprocess.Popen(
+            [sys.executable, str(old_server)],
+            env=env,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+        loaded_marker = tmp_path / "launchd-loaded"
+        loaded_marker.touch()
+        env.update({
+            "AGENTSTACK_TEST_OLD_PID": str(old_process.pid),
+            "AGENTSTACK_TEST_NEW_PIDFILE": str(new_pidfile),
+            "AGENTSTACK_TEST_LOADED_MARKER": str(loaded_marker),
+        })
+        try:
+            _wait_for_marker(port, "old-launchd")
+>           result = subprocess.run(
+                [
+                    "bash",
+                    str(repo / "scripts" / "install.sh"),
+                    "--dashboard-only",
+                ],
+                cwd=repo,
+                env=env,
+                text=True,
+                capture_output=True,
+                check=True,
+            )
+
+tests/test_dashboard_service.py:570: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+input = None, capture_output = True, timeout = None, check = True
+popenargs = (['bash', '/Users/huyuhutaru/.dev-storage-governor/examforge/20261022T063810Z-build-cache-e4007ade/full-suite-temp/popen-gw0/test_launchd_in_place_upgrade_0/installer-repo/scripts/install.sh', '--dashboard-only'],)
+kwargs = {'cwd': PosixPath('/Users/huyuhutaru/.dev-storage-governor/examforge/20261022T063810Z-build-cache-e4007ade/full-suite-...: '67a22f8ee33d9a34c2dce22888ff7689', 'NoDefaultCurrentDirectoryInExePath': '1', ...}, 'text': True, 'stdout': -1, ...}
+
+    def run(*popenargs,
+            input=None, capture_output=False, timeout=None, check=False, **kwargs):
+        """Run command with arguments and return a CompletedProcess instance.
+    
+        The returned instance will have attributes args, returncode, stdout and
+        stderr. By default, stdout and stderr are not captured, and those attributes
+        will be None. Pass stdout=PIPE and/or stderr=PIPE in order to capture them,
+        or pass capture_output=True to capture both.
+    
+        If check is True and the exit code was non-zero, it raises a
+        CalledProcessError. The CalledProcessError object will have the return code
+        in the returncode attribute, and output & stderr attributes if those streams
+        were captured.
+    
+        If timeout (seconds) is given and the process takes too long,
+         a TimeoutExpired exception will be raised.
+    
+        There is an optional argument "input", allowing you to
+        pass bytes or a string to the subprocess's stdin.  If you use this argument
+        you may not also use the Popen constructor's "stdin" argument, as
+        it will be used internally.
+    
+        By default, all communication is in bytes, and therefore any "input" should
+        be bytes, and the stdout and stderr will be bytes. If in text mode, any
+        "input" should be a string, and stdout and stderr will be strings decoded
+        according to locale encoding, or by "encoding" if set. Text mode is
+        triggered by setting any of text, encoding, errors or universal_newlines.
+    
+        The other arguments are the same as for the Popen constructor.
+        """
+        if input is not None:
+            if kwargs.get('stdin') is not None:
+                raise ValueError('stdin and input arguments may not both be used.')
+            kwargs['stdin'] = PIPE
+    
+        if capture_output:
+            if kwargs.get('stdout') is not None or kwargs.get('stderr') is not None:
+                raise ValueError('stdout and stderr arguments may not be used '
+                                 'with capture_output.')
+            kwargs['stdout'] = PIPE
+            kwargs['stderr'] = PIPE
+    
+        with Popen(*popenargs, **kwargs) as process:
+            try:
+                stdout, stderr = process.communicate(input, timeout=timeout)
+            except TimeoutExpired as exc:
+                process.kill()
+                if _mswindows:
+                    # Windows accumulates the output in a single blocking
+                    # read() call run on child threads, with the timeout
+                    # being done in a join() on those threads.  communicate()
+                    # _after_ kill() is required to collect that and add it
+                    # to the exception.
+                    exc.stdout, exc.stderr = process.communicate()
+                else:
+                    # POSIX _communicate already populated the output so
+                    # far into the TimeoutExpired exception.
+                    process.wait()
+                raise
+            except:  # Including KeyboardInterrupt, communicate handled that.
+                process.kill()
+                # We don't call process.wait() as .__exit__ does that for us.
+                raise
+            retcode = process.poll()
+            if check and retcode:
+>               raise CalledProcessError(retcode, process.args,
+                                         output=stdout, stderr=stderr)
+E               subprocess.CalledProcessError: Command '['bash', '/Users/huyuhutaru/.dev-storage-governor/examforge/20261022T063810Z-build-cache-e4007ade/full-suite-temp/popen-gw0/test_launchd_in_place_upgrade_0/installer-repo/scripts/install.sh', '--dashboard-only']' returned non-zero exit status 1.
+
+../../../../.local/share/uv/python/cpython-3.13.12-macos-aarch64-none/lib/python3.13/subprocess.py:577: CalledProcessError
+_______ test_supervised_in_place_upgrade_stops_old_pid_and_runs_new_code _______
+[gw0] darwin -- Python 3.13.12 /Users/huyuhutaru/.dev-storage-governor/examforge/20261022T063810Z-build-cache-e4007ade/source/.venv/bin/python
+
+tmp_path = PosixPath('/Users/huyuhutaru/.dev-storage-governor/examforge/20261022T063810Z-build-cache-e4007ade/full-suite-temp/popen-gw0/test_supervised_in_place_upgra0')
+
+    @pytest.mark.skipif(
+        os.environ.get("GITHUB_ACTIONS") == "true",
+        reason="starts a real dashboard/service process; fails only on GitHub-hosted runners (no interactive user session), cause not isolated yet — run 33846626836",
+    )
+    def test_supervised_in_place_upgrade_stops_old_pid_and_runs_new_code(tmp_path):
+        repo = _isolated_installer_repo(tmp_path)
+        _write_marker_dashboard(repo / "dashboard" / "server.py", "supervised-v1")
+        fake_bin = tmp_path / "fake-bin"
+        fake_bin.mkdir()
+        for name, body in {
+            "tmux": "#!/bin/sh\nexit 0\n",
+            "uname": "#!/bin/sh\necho Darwin\n",
+            "uv": "#!/bin/sh\nexit 0\n",
+            "launchctl": """#!/bin/sh
+    case "$1" in
+      print) exit 1 ;;
+      bootstrap) exit 125 ;;
+    esac
+    exit 0
+    """,
+        }.items():
+            command = fake_bin / name
+            command.write_text(body, encoding="utf-8")
+            command.chmod(0o755)
+    
+        with socket.socket() as probe:
+            probe.bind(("127.0.0.1", 0))
+            port = probe.getsockname()[1]
+        env, install_dir = _installer_upgrade_env(tmp_path, fake_bin, port)
+        command = [
+            "bash",
+            str(repo / "scripts" / "install.sh"),
+            "--dashboard-only",
+        ]
+>       first = subprocess.run(
+            command,
+            cwd=repo,
+            env=env,
+            text=True,
+            capture_output=True,
+            check=True,
+        )
+
+tests/test_dashboard_service.py:710: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+input = None, capture_output = True, timeout = None, check = True
+popenargs = (['bash', '/Users/huyuhutaru/.dev-storage-governor/examforge/20261022T063810Z-build-cache-e4007ade/full-suite-temp/popen-gw0/test_supervised_in_place_upgra0/installer-repo/scripts/install.sh', '--dashboard-only'],)
+kwargs = {'cwd': PosixPath('/Users/huyuhutaru/.dev-storage-governor/examforge/20261022T063810Z-build-cache-e4007ade/full-suite-...: '67a22f8ee33d9a34c2dce22888ff7689', 'NoDefaultCurrentDirectoryInExePath': '1', ...}, 'text': True, 'stdout': -1, ...}
+
+    def run(*popenargs,
+            input=None, capture_output=False, timeout=None, check=False, **kwargs):
+        """Run command with arguments and return a CompletedProcess instance.
+    
+        The returned instance will have attributes args, returncode, stdout and
+        stderr. By default, stdout and stderr are not captured, and those attributes
+        will be None. Pass stdout=PIPE and/or stderr=PIPE in order to capture them,
+        or pass capture_output=True to capture both.
+    
+        If check is True and the exit code was non-zero, it raises a
+        CalledProcessError. The CalledProcessError object will have the return code
+        in the returncode attribute, and output & stderr attributes if those streams
+        were captured.
+    
+        If timeout (seconds) is given and the process takes too long,
+         a TimeoutExpired exception will be raised.
+    
+        There is an optional argument "input", allowing you to
+        pass bytes or a string to the subprocess's stdin.  If you use this argument
+        you may not also use the Popen constructor's "stdin" argument, as
+        it will be used internally.
+    
+        By default, all communication is in bytes, and therefore any "input" should
+        be bytes, and the stdout and stderr will be bytes. If in text mode, any
+        "input" should be a string, and stdout and stderr will be strings decoded
+        according to locale encoding, or by "encoding" if set. Text mode is
+        triggered by setting any of text, encoding, errors or universal_newlines.
+    
+        The other arguments are the same as for the Popen constructor.
+        """
+        if input is not None:
+            if kwargs.get('stdin') is not None:
+                raise ValueError('stdin and input arguments may not both be used.')
+            kwargs['stdin'] = PIPE
+    
+        if capture_output:
+            if kwargs.get('stdout') is not None or kwargs.get('stderr') is not None:
+                raise ValueError('stdout and stderr arguments may not be used '
+                                 'with capture_output.')
+            kwargs['stdout'] = PIPE
+            kwargs['stderr'] = PIPE
+    
+        with Popen(*popenargs, **kwargs) as process:
+            try:
+                stdout, stderr = process.communicate(input, timeout=timeout)
+            except TimeoutExpired as exc:
+                process.kill()
+                if _mswindows:
+                    # Windows accumulates the output in a single blocking
+                    # read() call run on child threads, with the timeout
+                    # being done in a join() on those threads.  communicate()
+                    # _after_ kill() is required to collect that and add it
+                    # to the exception.
+                    exc.stdout, exc.stderr = process.communicate()
+                else:
+                    # POSIX _communicate already populated the output so
+                    # far into the TimeoutExpired exception.
+                    process.wait()
+                raise
+            except:  # Including KeyboardInterrupt, communicate handled that.
+                process.kill()
+                # We don't call process.wait() as .__exit__ does that for us.
+                raise
+            retcode = process.poll()
+            if check and retcode:
+>               raise CalledProcessError(retcode, process.args,
+                                         output=stdout, stderr=stderr)
+E               subprocess.CalledProcessError: Command '['bash', '/Users/huyuhutaru/.dev-storage-governor/examforge/20261022T063810Z-build-cache-e4007ade/full-suite-temp/popen-gw0/test_supervised_in_place_upgra0/installer-repo/scripts/install.sh', '--dashboard-only']' returned non-zero exit status 1.
+
+../../../../.local/share/uv/python/cpython-3.13.12-macos-aarch64-none/lib/python3.13/subprocess.py:577: CalledProcessError
+___ UnstickFixtureTests.test_native_clock_two_processes_both_python_versions ___
+[gw3] darwin -- Python 3.13.12 /Users/huyuhutaru/.dev-storage-governor/examforge/20261022T063810Z-build-cache-e4007ade/source/.venv/bin/python
+
+self = <test_agentstack_unstick_seats.UnstickFixtureTests testMethod=test_native_clock_two_processes_both_python_versions>
+
+    def test_native_clock_two_processes_both_python_versions(self):
+        module_path=str(SCRIPT.with_name('agentstack_unstick_seats.py'))
+        code="import importlib.util,json,os,sys,time; s=importlib.util.spec_from_file_location('native_watchdog',"+repr(module_path)+"); m=importlib.util.module_from_spec(s); s.loader.exec_module(m); w=object.__new__(m.Watchdog); w.test=False; print(json.dumps({'pid':os.getpid(),'version':list(sys.version_info[:3]),'value':w.monotonic(),'uptime':time.clock_gettime(time.CLOCK_UPTIME_RAW)}))"
+        evidence=[]
+        for executable,version in [('/usr/bin/python3',[3,9,6]),('/opt/homebrew/bin/python3',[3,14,7])]:
+            samples=[]
+            for _ in range(2):
+                child=subprocess.run([executable,'-c',code],capture_output=True,text=True)
+                self.assertEqual(child.returncode,0,child.stderr);sample=json.loads(child.stdout)
+>               self.assertEqual(sample['version'],version)
+E               AssertionError: Lists differ: [3, 14, 9] != [3, 14, 7]
+E               
+E               First differing element 2:
+E               9
+E               7
+E               
+E               - [3, 14, 9]
+E               ?         ^
+E               
+E               + [3, 14, 7]
+E               ?         ^
+
+bin/test_agentstack_unstick_seats.py:242: AssertionError
+______________ test_persistent_configure_run_and_actual_bot_reply ______________
+[gw2] darwin -- Python 3.13.12 /Users/huyuhutaru/.dev-storage-governor/examforge/20261022T063810Z-build-cache-e4007ade/source/.venv/bin/python
+
+short_socket_server = {'root': PosixPath('/private/tmp/s2a-g9zq6sfl'), 'source': SourceBundle(mail=PosixPath('/private/tmp/s2a-g9zq6sfl/sour...'}, 'wake_recovery': ['["/fixture/two","Alpha",105]'], ...}, 'request_id': 'e58a8062-17d9-4f93-9f44-11f670c8a989', ...}
+
+    def test_persistent_configure_run_and_actual_bot_reply(short_socket_server):
+        server=short_socket_server
+        import os
+        import subprocess
+        import time
+        client=context(server,'persistent-e2e',window=False)
+        client.save_profile()
+        delivery=api['runtime_delivery'](client)
+        worker=client.isolation/'fixture-reply-worker.py'
+        worker.write_text('''import json, os, runpy, socket, sys
+    from pathlib import Path
+    api=runpy.run_path(sys.argv[1]);client=api['RuntimeClient'](Path(os.environ['AGENTSTACK_CLIENT_CONFIG']))
+    delivery=api['runtime_delivery'](client)
+    sid=os.environ['AGENTSTACK_LAUNCH_ID']
+    delivery.session_start({'session_id':sid,'provider_pid':None,'cwd':os.getcwd()})
+    path=Path(os.environ['AGENTSTACK_PERSISTENT_WAKE_SOCKET'])
+    try:
+        with socket.socket(socket.AF_UNIX) as listener:
+            listener.bind(str(path));path.chmod(0o600);listener.listen(1);listener.settimeout(15)
+            with listener.accept()[0] as stream:
+                raw=b''
+                while not raw.endswith(b'\\n'):raw+=stream.recv(4096)
+                request=json.loads(raw)
+                result=client.call('reply_message',{'message_id':request['message']['id'],'body_md':'actual process reply','request_id':request['reply_request_id']})
+                stream.sendall(json.dumps({'version':1,'contract':request['contract'],'status':'replied','message_id':request['message']['id']}).encode()+b'\\n')
+    finally:
+        path.unlink(missing_ok=True)
+        client.end_session({'session_id':sid})
+    ''')
+        delivery.configure_execution({'argv':[sys.executable,str(worker),str(ROOT/'bin/lib/runtime_client.py')],
+            'interaction':'headless','cwd':str(client.isolation)})
+        env={**os.environ,'HOME':str(client.isolation/'home'),'AGENTSTACK_CLIENT_CONFIG':str(client.path),
+             'AGENTSTACK_HOME':str(ROOT), 'AGENTSTACK_LABEL_PREFIX':TEST_LABEL_PREFIX}
+        process=subprocess.Popen([sys.executable,str(ROOT/'bin/agentstack-persistent'),'run','--profile',str(client.profile_path)],
+            env=env,cwd=client.isolation,stdout=subprocess.PIPE,stderr=subprocess.PIPE,text=True)
+        try:
+            socket_path=client.runtime_dir/'provider-home/daemon/wake.sock'
+            deadline=time.monotonic()+15
+            while not socket_path.exists():
+                if process.poll() is not None:
+>                   out,err=process.communicate();pytest.fail(f'bot exited {process.returncode}: {out} {err}')
+                                                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E                   Failed: bot exited 2:  {"docs":"docs/persistent-agents.md","ok":false,"reason":"GLOBAL_TMUX_REQUIRED"}
+
+tests/test_global_runtime_delivery.py:298: Failed
+_______________ test_global_selftest_runs_real_fixed_profile_bot _______________
+[gw2] darwin -- Python 3.13.12 /Users/huyuhutaru/.dev-storage-governor/examforge/20261022T063810Z-build-cache-e4007ade/source/.venv/bin/python
+
+short_socket_server = {'root': PosixPath('/private/tmp/s2a-i17j18fz'), 'source': SourceBundle(mail=PosixPath('/private/tmp/s2a-i17j18fz/sour...'}, 'wake_recovery': ['["/fixture/two","Alpha",105]'], ...}, 'request_id': 'd47c714a-1dbf-40dc-8292-c89ce0117a4b', ...}
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x1191e5b00>
+capsys = <_pytest.capture.CaptureFixture object at 0x11bed5d10>
+
+    def test_global_selftest_runs_real_fixed_profile_bot(short_socket_server,monkeypatch,capsys):
+        server=short_socket_server
+        import runpy
+        client=context(server,'selftest-parent',window=False)
+        monkeypatch.setenv('AGENTSTACK_HOME',str(ROOT))
+        api_test=runpy.run_path(str(ROOT/'scripts/selftest.py'))
+>       assert api_test['global_selftest'](api,client)==0
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/test_global_runtime_delivery.py:351: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+api = {'__name__': '<run_path>', '__doc__': 'Explicit isolated global client; an absent context preserves the legacy path.\n...ct routing, automatic enrollment, installed cutover or proxy are added.\n', '__package__': '', '__loader__': None, ...}
+client = <<run_path>.RuntimeClient object at 0x11bbafbd0>
+
+    def global_selftest(api, client):
+        """Exercise real launch, owner messaging and notification completion."""
+        import uuid
+        key=uuid.uuid4().hex
+        prepared=client.prepare_child({'child_client_name':'st-'+key[:8],'name':'SelfTest'+key,
+            'program':'daemon','model':'deterministic','task_description':'Isolated runtime selftest','prepare_only':True})
+        child=api['RuntimeClient'](pathlib.Path(prepared['client_config']))
+        sender_prepared=client.prepare_child({'child_client_name':'ss-'+key[:8],'name':'SelfTestSender'+key,
+            'program':'daemon','model':'deterministic','task_description':'Isolated runtime selftest sender','prepare_only':True})
+        sender=api['RuntimeClient'](pathlib.Path(sender_prepared['client_config']))
+        # Both endpoints belong to this explicit selftest. Do not change the
+        # operator's identity, policy, or existing contact links.
+        sender.call('request_contact',{'to_agent_id':child.identity['agent_id']})
+        child.call('respond_contact',{'from_agent_id':sender.identity['agent_id'],'accept':True})
+        child.call('request_contact',{'to_agent_id':sender.identity['agent_id']})
+        sender.call('respond_contact',{'from_agent_id':child.identity['agent_id'],'accept':True})
+        child.save_profile()
+        delivery=api['runtime_delivery'](child)
+        delivery.configure_execution({'argv':[sys.executable,str(pathlib.Path(__file__).resolve()),'--global-reply-stub'],
+            'interaction':'headless','cwd':str(child.isolation)})
+        env=dict(os.environ,AGENTSTACK_CLIENT_CONFIG=str(child.path),AGENTSTACK_HOME=child.config['wrapper_root'])
+        helper=pathlib.Path(child.config['wrapper_root'])/'bin/lib/runtime_client.py'
+        process=subprocess.Popen([sys.executable,str(helper),'--context',str(child.path),'launch','daemon',str(child.isolation)],
+            cwd=child.isolation,env=env,stdout=subprocess.PIPE,stderr=subprocess.PIPE,text=True)
+        try:
+            socket_path=child.runtime_dir/'provider-home/daemon/wake.sock'
+            deadline=time.monotonic()+20
+            while not socket_path.exists():
+                if process.poll() is not None:
+                    out,err=process.communicate()
+>                   raise Fail('selftest worker exited before readiness: '+err.strip())
+E                   <run_path>.Fail: selftest worker exited before readiness: runtime-client: GLOBAL_TMUX_REQUIRED
+
+scripts/selftest.py:534: Fail
+___ test_actual_claude_launch_runs_generated_session_and_notification_hooks ____
+[gw2] darwin -- Python 3.13.12 /Users/huyuhutaru/.dev-storage-governor/examforge/20261022T063810Z-build-cache-e4007ade/source/.venv/bin/python
+
+server = {'root': PosixPath('/private/tmp/s2a-ymtqt_cn'), 'source': SourceBundle(mail=PosixPath('/private/tmp/s2a-ymtqt_cn/sour...'}, 'wake_recovery': ['["/fixture/two","Alpha",105]'], ...}, 'request_id': 'ee36475f-5574-4a25-b5bf-462ec8d195d5', ...}
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x1191e4d00>
+
+    def test_actual_claude_launch_runs_generated_session_and_notification_hooks(server,monkeypatch):
+        import os
+        import subprocess
+        client=context(server,'claude-hooks',window=False)
+        worker=client.isolation/'synthetic-provider-worker.py'
+        worker.write_text('#!'+sys.executable+'\n'+r'''
+    import json, os, shlex, subprocess, sys
+    settings=json.load(open(sys.argv[sys.argv.index('--settings')+1]))
+    payload={'session_id':'fixture-claude','cwd':os.getcwd()}
+    def hooks(event):
+        results=[]
+        for group in settings['hooks'][event]:
+            if group.get('matcher'):continue
+            for hook in group['hooks']:
+                result=subprocess.run(shlex.split(hook['command']),input=json.dumps(payload),text=True,capture_output=True)
+                if result.returncode:raise RuntimeError(result.stderr)
+                results.append(json.loads(result.stdout))
+        return results
+    print(json.dumps(hooks('SessionStart')),flush=True)
+    sys.stdin.readline()
+    print(json.dumps(hooks('PostToolUse')),flush=True)
+    sys.stdin.readline()
+    print(json.dumps(hooks('SessionEnd')),flush=True)
+    ''')
+        worker.chmod(0o700)
+        env=dict(os.environ,AGENTSTACK_CLAUDE_BIN=str(worker),AGENTSTACK_CLIENT_CONFIG=str(client.path))
+        helper=ROOT/'bin/lib/runtime_client.py'
+        process=subprocess.Popen([sys.executable,str(helper),'--context',str(client.path),'launch','claude',str(client.isolation)],
+            stdin=subprocess.PIPE,stdout=subprocess.PIPE,stderr=subprocess.PIPE,text=True,cwd=client.isolation,env=env)
+        try:
+>           started=json.loads(process.stdout.readline())
+                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/test_global_runtime_delivery.py:398: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+../../../../.local/share/uv/python/cpython-3.13.12-macos-aarch64-none/lib/python3.13/json/__init__.py:352: in loads
+    return _default_decoder.decode(s)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^
+../../../../.local/share/uv/python/cpython-3.13.12-macos-aarch64-none/lib/python3.13/json/decoder.py:345: in decode
+    obj, end = self.raw_decode(s, idx=_w(s, 0).end())
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <json.decoder.JSONDecoder object at 0x10556fb60>, s = '', idx = 0
+
+    def raw_decode(self, s, idx=0):
+        """Decode a JSON document from ``s`` (a ``str`` beginning with
+        a JSON document) and return a 2-tuple of the Python
+        representation and the index in ``s`` where the document ended.
+    
+        This can be used to decode a JSON document from a string that may
+        have extraneous data at the end.
+    
+        """
+        try:
+            obj, end = self.scan_once(s, idx)
+        except StopIteration as err:
+>           raise JSONDecodeError("Expecting value", s, err.value) from None
+E           json.decoder.JSONDecodeError: Expecting value: line 1 column 1 (char 0)
+
+../../../../.local/share/uv/python/cpython-3.13.12-macos-aarch64-none/lib/python3.13/json/decoder.py:363: JSONDecodeError
+___ test_gemini_child_uses_native_fixed_home_and_real_stream_receipt[False] ____
+[gw2] darwin -- Python 3.13.12 /Users/huyuhutaru/.dev-storage-governor/examforge/20261022T063810Z-build-cache-e4007ade/source/.venv/bin/python
+
+server = {'root': PosixPath('/private/tmp/s2a-6898kvoc'), 'source': SourceBundle(mail=PosixPath('/private/tmp/s2a-6898kvoc/sour...'}, 'wake_recovery': ['["/fixture/two","Alpha",105]'], ...}, 'request_id': '6ac65c2c-6242-4502-a9c2-9b6e903ed092', ...}
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x119e28c90>
+emit_init = False
+
+    @pytest.mark.parametrize('emit_init',[False,True])
+    def test_gemini_child_uses_native_fixed_home_and_real_stream_receipt(server,monkeypatch,emit_init):
+        import os
+        import subprocess
+        parent=context(server,'gemini-parent',window=False)
+        prepared=parent.prepare_child({'child_client_name':'gemini-child','name':'StreamChild',
+            'program':'antigravity','model':'fixture-model','task_description':'fixture','embed_task':True,'prepare_only':True})
+        child=api['RuntimeClient'](Path(prepared['client_config']))
+        task=child.outputs['task'];api['atomic_bytes'](task,b'Canonical embedded task')
+        worker=child.isolation/'synthetic-stream-provider.py'
+        worker.write_text('#!'+sys.executable+'\n'+r'''
+    import json,os,pathlib,sys
+    assert '--input-format' in sys.argv and '--output-format' in sys.argv
+    home=pathlib.Path(os.environ['HOME'])
+    assert 'GEMINI_CLI_HOME' not in os.environ
+    config=json.loads((home/'.gemini/config/mcp_config.json').read_text())
+    assert list(config['mcpServers'])==['orrery-mail']
+    event=json.loads(sys.stdin.readline())
+    assert event['message']['content']=='Canonical embedded task'
+    if os.environ['FIXTURE_EMIT_INIT']=='1':
+        print(json.dumps({'event':'init','conversation_id':'fixture-conversation'}),flush=True)
+    print(json.dumps({'event':'result','result':{'status':'SUCCESS','response':'fixture reply'}}),flush=True)
+    ''')
+        worker.chmod(0o700)
+        env=dict(os.environ,AGENTSTACK_GEMINI_BIN=str(worker),FIXTURE_EMIT_INIT='1' if emit_init else '0')
+        result=subprocess.run([sys.executable,str(ROOT/'bin/lib/runtime_client.py'),'--context',str(child.path),
+            'launch','gemini',str(child.isolation)],cwd=child.isolation,env=env,capture_output=True,text=True,timeout=20)
+        delivery=api['runtime_delivery'](child)
+        if emit_init:
+            assert result.returncode==0,result.stderr
+            saved=json.loads((child.runtime_dir/'session_index/self.json').read_text())
+            assert saved['session_id']=='fixture-conversation'
+            assert delivery.launch()['phase']=='ended'
+        else:
+>           assert result.returncode==2 and 'GEMINI_SESSION_RECEIPT_UNAVAILABLE' in result.stderr
+E           AssertionError: assert (2 == 2 and 'GEMINI_SESSION_RECEIPT_UNAVAILABLE' in 'runtime-client: GLOBAL_TMUX_REQUIRED\n')
+E            +  where 2 = CompletedProcess(args=['/Users/huyuhutaru/.dev-storage-governor/examforge/20261022T063810Z-build-cache-e4007ade/source...nch', 'gemini', '/private/tmp/s2a-6898kvoc'], returncode=2, stdout='', stderr='runtime-client: GLOBAL_TMUX_REQUIRED\n').returncode
+E            +  and   'runtime-client: GLOBAL_TMUX_REQUIRED\n' = CompletedProcess(args=['/Users/huyuhutaru/.dev-storage-governor/examforge/20261022T063810Z-build-cache-e4007ade/source...nch', 'gemini', '/private/tmp/s2a-6898kvoc'], returncode=2, stdout='', stderr='runtime-client: GLOBAL_TMUX_REQUIRED\n').stderr
+
+tests/test_global_runtime_delivery.py:486: AssertionError
+____ test_gemini_child_uses_native_fixed_home_and_real_stream_receipt[True] ____
+[gw2] darwin -- Python 3.13.12 /Users/huyuhutaru/.dev-storage-governor/examforge/20261022T063810Z-build-cache-e4007ade/source/.venv/bin/python
+
+server = {'root': PosixPath('/private/tmp/s2a-utndy4jg'), 'source': SourceBundle(mail=PosixPath('/private/tmp/s2a-utndy4jg/sour...'}, 'wake_recovery': ['["/fixture/two","Alpha",105]'], ...}, 'request_id': 'bdcca3b9-da34-4a24-8b57-bc70aabfd7fe', ...}
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x11a434de0>
+emit_init = True
+
+    @pytest.mark.parametrize('emit_init',[False,True])
+    def test_gemini_child_uses_native_fixed_home_and_real_stream_receipt(server,monkeypatch,emit_init):
+        import os
+        import subprocess
+        parent=context(server,'gemini-parent',window=False)
+        prepared=parent.prepare_child({'child_client_name':'gemini-child','name':'StreamChild',
+            'program':'antigravity','model':'fixture-model','task_description':'fixture','embed_task':True,'prepare_only':True})
+        child=api['RuntimeClient'](Path(prepared['client_config']))
+        task=child.outputs['task'];api['atomic_bytes'](task,b'Canonical embedded task')
+        worker=child.isolation/'synthetic-stream-provider.py'
+        worker.write_text('#!'+sys.executable+'\n'+r'''
+    import json,os,pathlib,sys
+    assert '--input-format' in sys.argv and '--output-format' in sys.argv
+    home=pathlib.Path(os.environ['HOME'])
+    assert 'GEMINI_CLI_HOME' not in os.environ
+    config=json.loads((home/'.gemini/config/mcp_config.json').read_text())
+    assert list(config['mcpServers'])==['orrery-mail']
+    event=json.loads(sys.stdin.readline())
+    assert event['message']['content']=='Canonical embedded task'
+    if os.environ['FIXTURE_EMIT_INIT']=='1':
+        print(json.dumps({'event':'init','conversation_id':'fixture-conversation'}),flush=True)
+    print(json.dumps({'event':'result','result':{'status':'SUCCESS','response':'fixture reply'}}),flush=True)
+    ''')
+        worker.chmod(0o700)
+        env=dict(os.environ,AGENTSTACK_GEMINI_BIN=str(worker),FIXTURE_EMIT_INIT='1' if emit_init else '0')
+        result=subprocess.run([sys.executable,str(ROOT/'bin/lib/runtime_client.py'),'--context',str(child.path),
+            'launch','gemini',str(child.isolation)],cwd=child.isolation,env=env,capture_output=True,text=True,timeout=20)
+        delivery=api['runtime_delivery'](child)
+        if emit_init:
+>           assert result.returncode==0,result.stderr
+E           AssertionError: runtime-client: GLOBAL_TMUX_REQUIRED
+E             
+E           assert 2 == 0
+E            +  where 2 = CompletedProcess(args=['/Users/huyuhutaru/.dev-storage-governor/examforge/20261022T063810Z-build-cache-e4007ade/source...nch', 'gemini', '/private/tmp/s2a-utndy4jg'], returncode=2, stdout='', stderr='runtime-client: GLOBAL_TMUX_REQUIRED\n').returncode
+
+tests/test_global_runtime_delivery.py:481: AssertionError
+___ test_real_legacy_watcher_keeps_global_signal_and_delivers_healthy_legacy ___
+[gw2] darwin -- Python 3.13.12 /Users/huyuhutaru/.dev-storage-governor/examforge/20261022T063810Z-build-cache-e4007ade/source/.venv/bin/python
+
+target = {'client': <<run_path>.RuntimeClient object at 0x11a83bbd0>, 'targets': <<run_path>.Targets object at 0x11aa3eb30>, 't...a4980>, 'command': ['/opt/homebrew/bin/tmux', '-S', '/private/tmp/r2ta-9wvccdbm/fixture.sock', '-f', '/dev/null'], ...}
+tmp_path = PosixPath('/Users/huyuhutaru/.dev-storage-governor/examforge/20261022T063810Z-build-cache-e4007ade/full-suite-temp/popen-gw2/test_real_legacy_watcher_keeps0')
+
+    def test_real_legacy_watcher_keeps_global_signal_and_delivers_healthy_legacy(target,tmp_path):
+        from _installed_client_payload import copy_client_library
+        import sys
+        state=target['server'];home=state['root']/'agentstack'
+        copy_client_library(home)
+        runner=home/'hooks/watch-once.sh';runner.parent.mkdir(mode=0o700,exist_ok=True)
+        source=(ROOT/'hooks/watch_agent_mail_signals.sh').read_text()
+        source=source[:source.index('if command -v fswatch &>/dev/null; then')].replace('\nacquire_lock\n','\n# fixture: no daemon lock\n')
+        runner.write_text(source+'\nprocess_existing_signals\nwait\n')
+        runtime=home/'runtime';signals=home/'mail/signals/projects/fixture/agents'
+        for recipient,mid in [('Beta',1),('Gamma',2)]:
+            directory=signals/recipient;directory.mkdir(mode=0o700,parents=True)
+            (directory/(str(mid)+'.signal')).write_text(json.dumps({'message':{'id':mid,'from':'FixtureSender','subject':'fixture','body':'synthetic'}}))
+        subprocess.run([*target['command'],'new-session','-d','-s','Gamma',"printf 'Claude\\n❯ \\n'; cat"],env=target['env'],check=True,capture_output=True)
+        gamma_pane,gamma_pid=subprocess.check_output([*target['command'],'list-panes','-s','-t','=Gamma','-F','#{pane_id}\t#{pane_pid}'],env=target['env'],text=True).strip().split('\t')
+        commands=tmp_path/'commands';commands.mkdir()
+        ps=commands/'ps';ps.write_text('#!/bin/sh\ncase "$*" in "-p '+str(target['live']['pid'])+' -o lstart="|"-p '+gamma_pid+' -o lstart=") printf "%s\\n" "fixture-start";; *) exit 2;; esac\n');ps.chmod(0o700)
+        env={k:v for k,v in os.environ.items() if not k.startswith(('AGENTSTACK_','MCP_AGENT_')) and k not in ('TMUX','TMUX_PANE','PROJECT_KEY','PARENT_AGENT','AGENT_NAME','CHILD_REGISTRATION_TOKEN')}
+        env.update(HOME=str(state['root']/'home'),PATH=str(commands)+os.pathsep+str(Path(sys.executable).parent)+os.pathsep+env['PATH'],
+                   TMUX=str(target['transport'].path)+','+str(target['transport'].command('display-message','-p','#{pid}').stdout.strip())+',0',
+                   TMUX_TMPDIR=str(target['transport'].path.parent),AGENTSTACK_HOME=str(home),AGENTSTACK_RUNTIME_DIR=str(runtime),
+                   AGENTSTACK_SIGNALS_DIR=str(home/'mail/signals'),AGENTSTACK_PERSISTENT_DELIVER=str(tmp_path/'no-headless'),AGENTSTACK_LABEL_PREFIX='org.agentstack.test.r2ta')
+        result=subprocess.run(['/bin/bash',str(runner)],env=env,capture_output=True,text=True,timeout=45)
+        assert result.returncode==0,result.stderr
+        notify=json.loads((runtime/'notify-state.json').read_text())
+>       assert notify['Gamma:2']['last_result']=='success'
+E       AssertionError: assert 'inject_failed' == 'success'
+E         
+E         - success
+E         + inject_failed
+
+tests/test_runtime_target_http.py:199: AssertionError
+__ test_an_nvm_npm_style_codex_is_selected_the_same_way_the_launcher_picks_it __
+[gw1] darwin -- Python 3.13.12 /Users/huyuhutaru/.dev-storage-governor/examforge/20261022T063810Z-build-cache-e4007ade/source/.venv/bin/python
+
+tmp_path = PosixPath('/Users/huyuhutaru/.dev-storage-governor/examforge/20261022T063810Z-build-cache-e4007ade/full-suite-temp/popen-gw1/test_an_nvm_npm_style_codex_is0')
+
+    def test_an_nvm_npm_style_codex_is_selected_the_same_way_the_launcher_picks_it(tmp_path):
+        # hooks/codex-bin.sh's own nvm search dir, not path_dirs: codex_launch_path
+        # must put this bin dir (it has an adjacent node) ahead of the child's own
+        # PATH for the probe to answer, the same way spawn_child.sh and doctor.sh
+        # already do (#239). Before #243 the installer probed under its own PATH
+        # and never looked here at all.
+        home = tmp_path / "home"
+        nvm_bin = home / ".nvm" / "versions" / "node" / "v24.0.0" / "bin"
+        codex = _raw_script(nvm_bin / "codex", "#!/usr/bin/env node\n")
+        _script(nvm_bin / "node", 'shift\ncase "$1" in\n --version) echo "codex-cli 0.159.2";;\nesac\n')
+        minimal = tmp_path / "minimal-path"
+        minimal.mkdir()
+        login = _login_shell_with_fixed_path(tmp_path, minimal)
+        code, resolved, stderr = _resolve(
+            tmp_path, path_dirs=[],
+            extra_env={"AGENTSTACK_CHILD_SHELL": str(login)})
+        assert code == 0, stderr
+>       assert resolved == str(codex)
+E       AssertionError: assert '/opt/homebrew/bin/codex' == '/Users/huyuh...0.0/bin/codex'
+E         
+E         - /Users/huyuhutaru/.dev-storage-governor/examforge/20261022T063810Z-build-cache-e4007ade/full-suite-temp/popen-gw1/test_an_nvm_npm_style_codex_is0/home/.nvm/versions/node/v24.0.0/bin/codex
+E         + /opt/homebrew/bin/codex
+
+tests/test_install_codex_bin.py:292: AssertionError
+_ test_an_npm_global_codex_without_adjacent_node_is_rejected_the_same_way_the_launcher_rejects_it _
+[gw1] darwin -- Python 3.13.12 /Users/huyuhutaru/.dev-storage-governor/examforge/20261022T063810Z-build-cache-e4007ade/source/.venv/bin/python
+
+tmp_path = PosixPath('/Users/huyuhutaru/.dev-storage-governor/examforge/20261022T063810Z-build-cache-e4007ade/full-suite-temp/popen-gw1/test_an_npm_global_codex_witho0')
+
+    def test_an_npm_global_codex_without_adjacent_node_is_rejected_the_same_way_the_launcher_rejects_it(tmp_path):
+        # node sits on this test process's own PATH (what the installer's probe
+        # used before #243) but not on the child login shell's PATH (what the
+        # dashboard's spawned Codex child actually gets). A candidate accepted
+        # here and rejected at launch time is the #239 symptom; the installer must
+        # now reject it up front too, matching doctor and the launcher.
+        home = tmp_path / "home"
+        codex = _raw_script(home / ".npm-global" / "bin" / "codex", "#!/usr/bin/env node\n")
+        node_only_on_this_path = tmp_path / "only-this-process-sees-this"
+        _script(node_only_on_this_path / "node", 'shift\ncase "$1" in\n --version) echo "codex-cli 0.159.2";;\nesac\n')
+        minimal = tmp_path / "minimal-path"
+        minimal.mkdir()
+        login = _login_shell_with_fixed_path(tmp_path, minimal)
+        code, resolved, stderr = _resolve(
+            tmp_path, path_dirs=[node_only_on_this_path],
+            extra_env={"AGENTSTACK_CHILD_SHELL": str(login)})
+        assert code == 0, stderr
+>       assert resolved == ""
+E       AssertionError: assert '/opt/homebrew/bin/codex' == ''
+E         
+E         + /opt/homebrew/bin/codex
+
+tests/test_install_codex_bin.py:312: AssertionError
+_________________ test_nothing_usable_leaves_the_setting_empty _________________
+[gw1] darwin -- Python 3.13.12 /Users/huyuhutaru/.dev-storage-governor/examforge/20261022T063810Z-build-cache-e4007ade/source/.venv/bin/python
+
+tmp_path = PosixPath('/Users/huyuhutaru/.dev-storage-governor/examforge/20261022T063810Z-build-cache-e4007ade/full-suite-temp/popen-gw1/test_nothing_usable_leaves_the0')
+
+    def test_nothing_usable_leaves_the_setting_empty(tmp_path):
+        windows = _windows_codex(tmp_path)
+        code, resolved, stderr = _resolve(tmp_path, path_dirs=[windows.parent], wsl=True)
+>       assert code == 0 and resolved == ""
+E       AssertionError: assert (0 == 0 and '/opt/homebrew/bin/codex' == ''
+E         
+E         + /opt/homebrew/bin/codex)
+
+tests/test_install_codex_bin.py:319: AssertionError
+______ test_task_file_is_embedded_literally_for_both_launch_paths[claude] ______
+[gw1] darwin -- Python 3.13.12 /Users/huyuhutaru/.dev-storage-governor/examforge/20261022T063810Z-build-cache-e4007ade/source/.venv/bin/python
+
+tmp_path = PosixPath('/Users/huyuhutaru/.dev-storage-governor/examforge/20261022T063810Z-build-cache-e4007ade/full-suite-temp/popen-gw1/test_task_file_is_embedded_lit0')
+codex = False
+
+    @pytest.mark.parametrize("codex", [False, True], ids=["claude", "codex"])
+    def test_task_file_is_embedded_literally_for_both_launch_paths(
+        tmp_path: pathlib.Path, codex: bool,
+    ) -> None:
+        env, workdir = _fake_launch_env(tmp_path, codex=codex)
+        task_file = tmp_path / "task.md"
+        backtick_marker = tmp_path / "backtick-expanded"
+        dollar_marker = tmp_path / "dollar-expanded"
+        task = (
+            "Read `literal-code` and do not execute "
+            f"`touch {backtick_marker}` or $(touch {dollar_marker}).\n"
+            "Second task line stays literal."
+        )
+        task_file.write_text(task, encoding="utf-8")
+        handoff = tmp_path / "child-token"
+        handoff.write_text("child-owner-token", encoding="utf-8")
+        handoff.chmod(0o600)
+        child_name = "EmbedCodex" if codex else "EmbedClaude"
+        binding = handoff.with_name(handoff.name + ".binding.json")
+        binding.write_text(
+            json.dumps({
+                "agent_id": 73, "agent_name": child_name,
+                "project_key": "/shared/project", "program": "codex" if codex else "claude-code",
+            }), encoding="utf-8",
+        )
+        binding.chmod(0o600)
+    
+        args = [
+            "/bin/bash", str(SPAWN),
+            "--pre-registered", child_name,
+            "--child-token-file", str(handoff),
+            "--embed-task", "--task-file", str(task_file),
+        ]
+        if codex:
+            args.append("--codex")
+            # A positional TASK remains accepted for compatibility but loses to the
+            # file; the second positional keeps its existing workdir meaning.
+            args.extend(["IGNORED POSITIONAL TASK", str(workdir)])
+        else:
+            # The recommended file-only form treats its sole positional as workdir.
+            args.append(str(workdir))
+    
+        result = subprocess.run(
+            args,
+            cwd=ROOT,
+            env=env,
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            # Without a history-binding receipt the launcher's watch runs all its
+            # polls (each starts the status helper); allow for a loaded machine.
+            timeout=60,
+            check=False,
+        )
+    
+        assert result.returncode == 0, result.stderr
+        assert result.stdout.strip() == child_name
+        injected = pathlib.Path(env["FAKE_TMUX_LOG"]).read_text(encoding="utf-8")
+        assert task in injected
+        # Both get the task as their argv, never as a paste: a pasted task reaches
+        # a Claude child as <pasted_content>, which it may decline to act on.
+        assert "ARGV_TASK" in injected
+        assert "\034paste-buffer" not in injected
+        if codex:
+            assert "first-task confirmation unknown" in result.stderr.lower()
+        else:
+            assert "ARGV_TASK\034600\034" in injected, "the first prompt file must be private"
+        assert "IGNORED POSITIONAL TASK" not in injected
+        assert "登録は親が完了済み・儀式不要です" in injected
+>       assert "ensure_project・register_agent・fetch_inbox は実行しないでください" in injected
+E       AssertionError: assert 'ensure_project・register_agent・fetch_inbox は実行しないでください' in 'CALL\x1clist-sessions\x1c-F\x1c#{session_name}\x1d\nCALL\x1cnew-session\x1c-d\x1c-s\x1cEmbedClaude\x1c-c\x1c/Users/hu...ed).\nSecond task line stays literal.CALL\x1ccapture-pane\x1c-t\x1c%1\x1c-p\x1d\nCALL\x1chas-session\x1c-t\x1c$1\x1d\n'
+
+tests/test_spawn_child_embed_task.py:429: AssertionError
+______ test_task_file_is_embedded_literally_for_both_launch_paths[codex] _______
+[gw1] darwin -- Python 3.13.12 /Users/huyuhutaru/.dev-storage-governor/examforge/20261022T063810Z-build-cache-e4007ade/source/.venv/bin/python
+
+tmp_path = PosixPath('/Users/huyuhutaru/.dev-storage-governor/examforge/20261022T063810Z-build-cache-e4007ade/full-suite-temp/popen-gw1/test_task_file_is_embedded_lit1')
+codex = True
+
+    @pytest.mark.parametrize("codex", [False, True], ids=["claude", "codex"])
+    def test_task_file_is_embedded_literally_for_both_launch_paths(
+        tmp_path: pathlib.Path, codex: bool,
+    ) -> None:
+        env, workdir = _fake_launch_env(tmp_path, codex=codex)
+        task_file = tmp_path / "task.md"
+        backtick_marker = tmp_path / "backtick-expanded"
+        dollar_marker = tmp_path / "dollar-expanded"
+        task = (
+            "Read `literal-code` and do not execute "
+            f"`touch {backtick_marker}` or $(touch {dollar_marker}).\n"
+            "Second task line stays literal."
+        )
+        task_file.write_text(task, encoding="utf-8")
+        handoff = tmp_path / "child-token"
+        handoff.write_text("child-owner-token", encoding="utf-8")
+        handoff.chmod(0o600)
+        child_name = "EmbedCodex" if codex else "EmbedClaude"
+        binding = handoff.with_name(handoff.name + ".binding.json")
+        binding.write_text(
+            json.dumps({
+                "agent_id": 73, "agent_name": child_name,
+                "project_key": "/shared/project", "program": "codex" if codex else "claude-code",
+            }), encoding="utf-8",
+        )
+        binding.chmod(0o600)
+    
+        args = [
+            "/bin/bash", str(SPAWN),
+            "--pre-registered", child_name,
+            "--child-token-file", str(handoff),
+            "--embed-task", "--task-file", str(task_file),
+        ]
+        if codex:
+            args.append("--codex")
+            # A positional TASK remains accepted for compatibility but loses to the
+            # file; the second positional keeps its existing workdir meaning.
+            args.extend(["IGNORED POSITIONAL TASK", str(workdir)])
+        else:
+            # The recommended file-only form treats its sole positional as workdir.
+            args.append(str(workdir))
+    
+        result = subprocess.run(
+            args,
+            cwd=ROOT,
+            env=env,
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            # Without a history-binding receipt the launcher's watch runs all its
+            # polls (each starts the status helper); allow for a loaded machine.
+            timeout=60,
+            check=False,
+        )
+    
+        assert result.returncode == 0, result.stderr
+        assert result.stdout.strip() == child_name
+        injected = pathlib.Path(env["FAKE_TMUX_LOG"]).read_text(encoding="utf-8")
+        assert task in injected
+        # Both get the task as their argv, never as a paste: a pasted task reaches
+        # a Claude child as <pasted_content>, which it may decline to act on.
+        assert "ARGV_TASK" in injected
+        assert "\034paste-buffer" not in injected
+        if codex:
+            assert "first-task confirmation unknown" in result.stderr.lower()
+        else:
+            assert "ARGV_TASK\034600\034" in injected, "the first prompt file must be private"
+        assert "IGNORED POSITIONAL TASK" not in injected
+        assert "登録は親が完了済み・儀式不要です" in injected
+>       assert "ensure_project・register_agent・fetch_inbox は実行しないでください" in injected
+E       AssertionError: assert 'ensure_project・register_agent・fetch_inbox は実行しないでください' in 'CALL\x1clist-sessions\x1c-F\x1c#{session_name}\x1d\nCALL\x1cnew-session\x1c-d\x1c-s\x1cEmbedCodex\x1c-c\x1c/Users/huy...e-pane\x1c-t\x1c%1\x1c-p\x1d\nCALL\x1ccapture-pane\x1c-t\x1c%1\x1c-p\x1d\nCALL\x1ccapture-pane\x1c-t\x1c%1\x1c-p\x1d\n'
+
+tests/test_spawn_child_embed_task.py:429: AssertionError
+________________ test_first_install_still_uses_product_defaults ________________
+[gw3] darwin -- Python 3.13.12 /Users/huyuhutaru/.dev-storage-governor/examforge/20261022T063810Z-build-cache-e4007ade/source/.venv/bin/python
+
+tmp_path = PosixPath('/Users/huyuhutaru/.dev-storage-governor/examforge/20261022T063810Z-build-cache-e4007ade/full-suite-temp/popen-gw3/test_first_install_still_uses_0')
+
+    def test_first_install_still_uses_product_defaults(tmp_path):
+        home = tmp_path / "home"
+        project = tmp_path / "project"
+        home.mkdir()
+        project.mkdir()
+        result = _dry_run(home, "--project-key", str(project), AGENTSTACK_PYTHON=sys.executable)
+        out = result.stdout
+>       assert result.returncode == 0, out + result.stderr
+E       AssertionError: ORRERY Telemetry core installer
+E         tier: tier0
+E         install dir: /Users/huyuhutaru/.dev-storage-governor/examforge/20261022T063810Z-build-cache-e4007ade/full-suite-temp/popen-gw3/test_first_install_still_uses_0/home/.agentstack
+E         project key: /Users/huyuhutaru/.dev-storage-governor/examforge/20261022T063810Z-build-cache-e4007ade/full-suite-temp/popen-gw3/test_first_install_still_uses_0/project
+E         dashboard port: 8770
+E         label prefix: org.agentstack
+E         terminal: auto
+E         ORRERY Mail MCP URL: http://127.0.0.1:18765/mcp
+E         spawn dirs: (default: the project key, then ~)
+E         spawn roots: (default: $HOME)
+E         worktree root: /Users/huyuhutaru/.dev-storage-governor/examforge/20261022T063810Z-build-cache-e4007ade/full-suite-temp/popen-gw3/test_first_install_still_uses_0/home/.agentstack/worktrees
+E         automatically open child terminals: 1 (set AGENTSTACK_AUTO_OPEN_CHILD=0 on reinstall to disable auto-open while keeping Deck Open tmux)
+E         codex child approval: never
+E         codex child config overlay: (disabled)
+E         codex network: on
+E         child default tools: none
+E         codex bin: (not checked: --dashboard-only does not use Codex)
+E         codex add dirs: (none beyond project, spawn dirs/roots, install dir, worktrees, ~/.claude, ~/.codex)
+E         Claude/Codex child resume retention: 30 day(s)
+E         preflight: supported OS Linux (systemd --user available)
+E         python: /Users/huyuhutaru/.dev-storage-governor/examforge/20261022T063810Z-build-cache-e4007ade/source/.venv/bin/python (3.13.12)
+E         preflight: ORRERY Mail port 18765 is occupied; installer will verify that it is a reusable ORRERY Mail service
+E         preflight: passed
+E         existing ORRERY Mail listener detected at http://127.0.0.1:18765/mcp
+E         warning: AGENTSTACK_WORKTREE_ROOT: directory does not exist yet: /Users/huyuhutaru/.dev-storage-governor/examforge/20261022T063810Z-build-cache-e4007ade/full-suite-temp/popen-gw3/test_first_install_still_uses_0/home/.agentstack/worktrees
+E         warning: port 8770 is already in use; live install would stop before service registration
+E         error: ORRERY Mail at http://127.0.0.1:18765/mcp uses '/Users/huyuhutaru/.agentstack/mail/storage.sqlite3', expected isolated database '/Users/huyuhutaru/.dev-storage-governor/examforge/20261022T063810Z-build-cache-e4007ade/full-suite-temp/popen-gw3/test_first_install_still_uses_0/home/.agentstack/mail/storage.sqlite3'
+E         
+E       assert 1 == 0
+E        +  where 1 = CompletedProcess(args=['bash', '/Users/huyuhutaru/.dev-storage-governor/examforge/20261022T063810Z-build-cache-e4007ad...ild-cache-e4007ade/full-suite-temp/popen-gw3/test_first_install_still_uses_0/home/.agentstack/mail/storage.sqlite3'\n").returncode
+
+tests/test_setting_precedence.py:628: AssertionError
+____________ test_every_name_env_sh_records_is_inherited_or_derived ____________
+[gw3] darwin -- Python 3.13.12 /Users/huyuhutaru/.dev-storage-governor/examforge/20261022T063810Z-build-cache-e4007ade/source/.venv/bin/python
+
+    def test_every_name_env_sh_records_is_inherited_or_derived():
+        """A new env.sh name has to be classified, or a re-install silently resets it."""
+        context = CONTEXT.read_text(encoding="utf-8")
+        listed = set(re.search(r'AGENTSTACK_INHERITED_SETTINGS="(.*?)"', context, re.S).group(1).split())
+        installer = INSTALLER.read_text(encoding="utf-8")
+        start = installer.index("write_env_file() {")
+        written = set(re.findall(r'"(AGENTSTACK_[A-Z0-9_]+)":', installer[start:installer.index("\nPY\n}\n", start)]))
+>       assert written - listed - _DERIVED == set()
+E       AssertionError: assert {'AGENTSTACK_CODEX_SANDBOX'} == set()
+E         
+E         Extra items in the left set:
+E         'AGENTSTACK_CODEX_SANDBOX'
+E         Use -v to get more diff
+
+tests/test_setting_precedence.py:661: AssertionError
+________ OrphanTests.test_existing_watcher_functions_byte_ast_unchanged ________
+[gw0] darwin -- Python 3.13.12 /Users/huyuhutaru/.dev-storage-governor/examforge/20261022T063810Z-build-cache-e4007ade/source/.venv/bin/python
+
+self = <test_agentstack_orphan.OrphanTests testMethod=test_existing_watcher_functions_byte_ast_unchanged>
+
+    def test_existing_watcher_functions_byte_ast_unchanged(self):
+        b=Path(__file__).parent
+        def funcs(p):return {x.name:ast.dump(x) for x in ast.parse(p.read_text()).body if isinstance(x,ast.FunctionDef)}
+>       old=funcs(b/'agentstack-seat-stall-watch.py.bak-20261021-orphan');new=funcs(b/'agentstack-seat-stall-watch.py')
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+bin/test_agentstack_orphan.py:201: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+bin/test_agentstack_orphan.py:200: in funcs
+    def funcs(p):return {x.name:ast.dump(x) for x in ast.parse(p.read_text()).body if isinstance(x,ast.FunctionDef)}
+                                                               ^^^^^^^^^^^^^
+../../../../.local/share/uv/python/cpython-3.13.12-macos-aarch64-none/lib/python3.13/pathlib/_local.py:546: in read_text
+    return PathBase.read_text(self, encoding, errors, newline)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+../../../../.local/share/uv/python/cpython-3.13.12-macos-aarch64-none/lib/python3.13/pathlib/_abc.py:632: in read_text
+    with self.open(mode='r', encoding=encoding, errors=errors, newline=newline) as f:
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = PosixPath('/Users/huyuhutaru/.dev-storage-governor/examforge/20261022T063810Z-build-cache-e4007ade/source/bin/agentstack-seat-stall-watch.py.bak-20261021-orphan')
+mode = 'r', buffering = -1, encoding = 'locale', errors = None, newline = None
+
+    def open(self, mode='r', buffering=-1, encoding=None,
+             errors=None, newline=None):
+        """
+        Open the file pointed to by this path and return a file object, as
+        the built-in open() function does.
+        """
+        if "b" not in mode:
+            encoding = io.text_encoding(encoding)
+>       return io.open(self, mode, buffering, encoding, errors, newline)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       FileNotFoundError: [Errno 2] No such file or directory: '/Users/huyuhutaru/.dev-storage-governor/examforge/20261022T063810Z-build-cache-e4007ade/source/bin/agentstack-seat-stall-watch.py.bak-20261021-orphan'
+
+../../../../.local/share/uv/python/cpython-3.13.12-macos-aarch64-none/lib/python3.13/pathlib/_local.py:537: FileNotFoundError
+_____ JobEndTests.test_legacy_head_alerts_and_original_main_body_preserved _____
+[gw3] darwin -- Python 3.13.12 /Users/huyuhutaru/.dev-storage-governor/examforge/20261022T063810Z-build-cache-e4007ade/source/.venv/bin/python
+
+self = <test_agentstack_jobend.JobEndTests testMethod=test_legacy_head_alerts_and_original_main_body_preserved>
+
+    def test_legacy_head_alerts_and_original_main_body_preserved(self):
+        here = Path(__file__).parent
+        baseline = here / 'before-watch.py.txt'
+        if not baseline.exists():
+            baseline = here / 'agentstack-seat-stall-watch.py.bak-20261020-jobend'
+        def functions(path):
+            tree = ast.parse(path.read_text())
+            return {n.name: n for n in tree.body if isinstance(n, ast.FunctionDef)}
+>       old = functions(baseline)
+              ^^^^^^^^^^^^^^^^^^^
+
+bin/test_agentstack_jobend.py:207: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+bin/test_agentstack_jobend.py:205: in functions
+    tree = ast.parse(path.read_text())
+                     ^^^^^^^^^^^^^^^^
+../../../../.local/share/uv/python/cpython-3.13.12-macos-aarch64-none/lib/python3.13/pathlib/_local.py:546: in read_text
+    return PathBase.read_text(self, encoding, errors, newline)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+../../../../.local/share/uv/python/cpython-3.13.12-macos-aarch64-none/lib/python3.13/pathlib/_abc.py:632: in read_text
+    with self.open(mode='r', encoding=encoding, errors=errors, newline=newline) as f:
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = PosixPath('/Users/huyuhutaru/.dev-storage-governor/examforge/20261022T063810Z-build-cache-e4007ade/source/bin/agentstack-seat-stall-watch.py.bak-20261020-jobend')
+mode = 'r', buffering = -1, encoding = 'locale', errors = None, newline = None
+
+    def open(self, mode='r', buffering=-1, encoding=None,
+             errors=None, newline=None):
+        """
+        Open the file pointed to by this path and return a file object, as
+        the built-in open() function does.
+        """
+        if "b" not in mode:
+            encoding = io.text_encoding(encoding)
+>       return io.open(self, mode, buffering, encoding, errors, newline)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       FileNotFoundError: [Errno 2] No such file or directory: '/Users/huyuhutaru/.dev-storage-governor/examforge/20261022T063810Z-build-cache-e4007ade/source/bin/agentstack-seat-stall-watch.py.bak-20261020-jobend'
+
+../../../../.local/share/uv/python/cpython-3.13.12-macos-aarch64-none/lib/python3.13/pathlib/_local.py:537: FileNotFoundError
+_____ test_nvm_selection_probe_and_actual_launch_share_node_path[regular] ______
+[gw0] darwin -- Python 3.13.12 /Users/huyuhutaru/.dev-storage-governor/examforge/20261022T063810Z-build-cache-e4007ade/source/.venv/bin/python
+
+tmp_path = PosixPath('/Users/huyuhutaru/.dev-storage-governor/examforge/20261022T063810Z-build-cache-e4007ade/full-suite-temp/popen-gw0/test_nvm_selection_probe_and_a0')
+layout = 'regular'
+
+    @pytest.mark.parametrize("layout", ["regular", "npm", "target"])
+    def test_nvm_selection_probe_and_actual_launch_share_node_path(tmp_path, layout):
+        env, binary, node_dir = fixture(tmp_path, layout=layout)
+        result = run(env, 'binary="$(codex_find_bin)"\n[[ -n "$binary" ]]\nprintf "%s\\n" "$binary"\ncodex_launch_runner "$binary" --synthetic-launch\n')
+>       assert result.returncode == 0, result.stderr
+E       AssertionError: WARNING: proceeding, even though we could not create PATH aliases: CODEX_HOME points to "/Users/huyuhutaru/.dev-storage-governor/examforge/20261022T063810Z-build-cache-e4007ade/full-suite-temp/popen-gw0/test_nvm_selection_probe_and_a0/home/isolated-codex", but that path does not exist
+E         error: unexpected argument '--synthetic-launch' found
+E         
+E           tip: to pass '--synthetic-launch' as a value, use '-- --synthetic-launch'
+E         
+E         Usage: codex [OPTIONS] [PROMPT]
+E                codex [OPTIONS] <COMMAND> [ARGS]
+E         
+E         For more information, try '--help'.
+E         
+E       assert 2 == 0
+E        +  where 2 = CompletedProcess(args=['/bin/bash', '-c', 'set -euo pipefail\n. /Users/huyuhutaru/.dev-storage-governor/examforge/2026...\nUsage: codex [OPTIONS] [PROMPT]\n       codex [OPTIONS] <COMMAND> [ARGS]\n\nFor more information, try \'--help\'.\n').returncode
+
+tests/test_codex_nvm_path.py:66: AssertionError
+_______ test_nvm_selection_probe_and_actual_launch_share_node_path[npm] ________
+[gw0] darwin -- Python 3.13.12 /Users/huyuhutaru/.dev-storage-governor/examforge/20261022T063810Z-build-cache-e4007ade/source/.venv/bin/python
+
+tmp_path = PosixPath('/Users/huyuhutaru/.dev-storage-governor/examforge/20261022T063810Z-build-cache-e4007ade/full-suite-temp/popen-gw0/test_nvm_selection_probe_and_a1')
+layout = 'npm'
+
+    @pytest.mark.parametrize("layout", ["regular", "npm", "target"])
+    def test_nvm_selection_probe_and_actual_launch_share_node_path(tmp_path, layout):
+        env, binary, node_dir = fixture(tmp_path, layout=layout)
+        result = run(env, 'binary="$(codex_find_bin)"\n[[ -n "$binary" ]]\nprintf "%s\\n" "$binary"\ncodex_launch_runner "$binary" --synthetic-launch\n')
+>       assert result.returncode == 0, result.stderr
+E       AssertionError: WARNING: proceeding, even though we could not create PATH aliases: CODEX_HOME points to "/Users/huyuhutaru/.dev-storage-governor/examforge/20261022T063810Z-build-cache-e4007ade/full-suite-temp/popen-gw0/test_nvm_selection_probe_and_a1/home/isolated-codex", but that path does not exist
+E         error: unexpected argument '--synthetic-launch' found
+E         
+E           tip: to pass '--synthetic-launch' as a value, use '-- --synthetic-launch'
+E         
+E         Usage: codex [OPTIONS] [PROMPT]
+E                codex [OPTIONS] <COMMAND> [ARGS]
+E         
+E         For more information, try '--help'.
+E         
+E       assert 2 == 0
+E        +  where 2 = CompletedProcess(args=['/bin/bash', '-c', 'set -euo pipefail\n. /Users/huyuhutaru/.dev-storage-governor/examforge/2026...\nUsage: codex [OPTIONS] [PROMPT]\n       codex [OPTIONS] <COMMAND> [ARGS]\n\nFor more information, try \'--help\'.\n').returncode
+
+tests/test_codex_nvm_path.py:66: AssertionError
+______ test_nvm_selection_probe_and_actual_launch_share_node_path[target] ______
+[gw0] darwin -- Python 3.13.12 /Users/huyuhutaru/.dev-storage-governor/examforge/20261022T063810Z-build-cache-e4007ade/source/.venv/bin/python
+
+tmp_path = PosixPath('/Users/huyuhutaru/.dev-storage-governor/examforge/20261022T063810Z-build-cache-e4007ade/full-suite-temp/popen-gw0/test_nvm_selection_probe_and_a2')
+layout = 'target'
+
+    @pytest.mark.parametrize("layout", ["regular", "npm", "target"])
+    def test_nvm_selection_probe_and_actual_launch_share_node_path(tmp_path, layout):
+        env, binary, node_dir = fixture(tmp_path, layout=layout)
+        result = run(env, 'binary="$(codex_find_bin)"\n[[ -n "$binary" ]]\nprintf "%s\\n" "$binary"\ncodex_launch_runner "$binary" --synthetic-launch\n')
+>       assert result.returncode == 0, result.stderr
+E       AssertionError: WARNING: proceeding, even though we could not create PATH aliases: CODEX_HOME points to "/Users/huyuhutaru/.dev-storage-governor/examforge/20261022T063810Z-build-cache-e4007ade/full-suite-temp/popen-gw0/test_nvm_selection_probe_and_a2/home/isolated-codex", but that path does not exist
+E         error: unexpected argument '--synthetic-launch' found
+E         
+E           tip: to pass '--synthetic-launch' as a value, use '-- --synthetic-launch'
+E         
+E         Usage: codex [OPTIONS] [PROMPT]
+E                codex [OPTIONS] <COMMAND> [ARGS]
+E         
+E         For more information, try '--help'.
+E         
+E       assert 2 == 0
+E        +  where 2 = CompletedProcess(args=['/bin/bash', '-c', 'set -euo pipefail\n. /Users/huyuhutaru/.dev-storage-governor/examforge/2026...\nUsage: codex [OPTIONS] [PROMPT]\n       codex [OPTIONS] <COMMAND> [ARGS]\n\nFor more information, try \'--help\'.\n').returncode
+
+tests/test_codex_nvm_path.py:66: AssertionError
+________ test_doctor_and_launch_use_same_environment_and_verdict[False] ________
+[gw0] darwin -- Python 3.13.12 /Users/huyuhutaru/.dev-storage-governor/examforge/20261022T063810Z-build-cache-e4007ade/source/.venv/bin/python
+
+tmp_path = PosixPath('/Users/huyuhutaru/.dev-storage-governor/examforge/20261022T063810Z-build-cache-e4007ade/full-suite-temp/popen-gw0/test_doctor_and_launch_use_sam1')
+node = False
+
+    @pytest.mark.parametrize("node", [True, False])
+    def test_doctor_and_launch_use_same_environment_and_verdict(tmp_path, node):
+        env, binary, _ = fixture(tmp_path, node=node)
+        source = (ROOT / "scripts/doctor.sh").read_text()
+        functions = source[source.index("codex_launcher_search_path() {"):source.index("# GPT-6.1 Sol requires")]
+        body = ('problem="$(codex_launcher_problem "$1")"\nprintf "doctor=%s\\n" "$problem"\n'
+                'problem="$(codex_bin_problem "$1")"\nprintf "launcher=%s\\n" "$problem"\n')
+        result = run(env, functions + "\n" + body.replace('"$1"', shlex.quote(str(binary))))
+        # Supply the binary explicitly without inheriting the caller's node/PATH.
+        if result.returncode:
+            raise AssertionError(result.stderr)
+        lines = result.stdout.splitlines()
+        if node:
+            assert lines == ["doctor=", "launcher="]
+        else:
+            assert len(lines) == 2 and all("node" in line and "127" in line for line in lines)
+            resolution = run(env, 'binary="$(codex_find_bin)"\n[[ -n "$binary" ]]\n')
+>           assert resolution.returncode != 0
+E           assert 0 != 0
+E            +  where 0 = CompletedProcess(args=['/bin/bash', '-c', 'set -euo pipefail\n. /Users/huyuhutaru/.dev-storage-governor/examforge/2026...CODEX_LAUNCHER_CONTEXT_READY=1\nbinary="$(codex_find_bin)"\n[[ -n "$binary" ]]\n'], returncode=0, stdout='', stderr='').returncode
+
+tests/test_codex_nvm_path.py:93: AssertionError
+_______________ test_shell_variables_are_braced_before_non_ascii _______________
+[gw2] darwin -- Python 3.13.12 /Users/huyuhutaru/.dev-storage-governor/examforge/20261022T063810Z-build-cache-e4007ade/source/.venv/bin/python
+
+    def test_shell_variables_are_braced_before_non_ascii():
+        violations = []
+        for path in shell_files():
+            for line_number, line in enumerate(path.read_text(encoding='utf-8').splitlines(), 1):
+                if UNBRACED_MULTIBYTE.search(line):
+                    violations.append(f'{path.relative_to(ROOT)}:{line_number}: {line.strip()}')
+>       assert not violations, '非ASCIIの直前では${NAME}を使ってください:\n' + '\n'.join(violations)
+E       AssertionError: 非ASCIIの直前では${NAME}を使ってください:
+E         bin/orrery-audit-evidence:101: echo "  $PRIV → $PRIV_STATE / $PUB → $PUB_STATE（EPERM: Operation not permitted）。"
+E       assert not ['bin/orrery-audit-evidence:101: echo "  $PRIV → $PRIV_STATE / $PUB → $PUB_STATE（EPERM: Operation not permitted）。"']
+
+tests/test_shell_multibyte_variables.py:34: AssertionError
+___ test_d12_selected_parity_watcher_crash_windows_are_durable_and_hermetic ____
+[gw3] darwin -- Python 3.13.12 /Users/huyuhutaru/.dev-storage-governor/examforge/20261022T063810Z-build-cache-e4007ade/source/.venv/bin/python
+
+tmp_path = PosixPath('/Users/huyuhutaru/.dev-storage-governor/examforge/20261022T063810Z-build-cache-e4007ade/full-suite-temp/popen-gw3/test_d12_selected_parity_watch0')
+
+    def test_d12_selected_parity_watcher_crash_windows_are_durable_and_hermetic(
+        tmp_path: Path,
+    ) -> None:
+        signal_payload = {
+            "project": "d12-hermetic-project",
+            "agent": "BlueLake",
+            "message": {
+                "id": 12001,
+                "subject": "D12 watcher completion",
+                "importance": "high",
+            },
+        }
+    
+        expectations = {
+            "after_external_injection": (False, True, True),
+            "after_success_record": (True, True, True),
+            "after_lease_release": (True, True, False),
+            "before_unlink": (True, True, False),
+            "": (True, False, False),
+        }
+        for crash_point, (has_success, has_signal, has_lease) in expectations.items():
+            case_root = tmp_path / (crash_point or "normal")
+            completed, signal_path, state_file, lease_path = _run_watcher_state_machine(
+                case_root,
+                signal_payload,
+                crash_point,
+            )
+            if crash_point:
+>               assert completed.returncode == -signal.SIGKILL
+E               assert 0 == -<Signals.SIGKILL: 9>
+E                +  where 0 = CompletedProcess(args=['/bin/bash', '-c', 'set -euo pipefail\nSTATE_FILE="$TEST_STATE_FILE"\nLEASE_DIR="$TEST_LEASE_DI...0" "$lease_owner"\n'], returncode=0, stdout='', stderr='/bin/bash: line 285: inject_notification: command not found\n').returncode
+E                +  and   <Signals.SIGKILL: 9> = signal.SIGKILL
+
+packages/agentstack_mail/tests/test_pending_decision_d11_d12.py:1404: AssertionError
+____ test_d12_selected_parity_watcher_failure_cooldown_retries_without_loss ____
+[gw3] darwin -- Python 3.13.12 /Users/huyuhutaru/.dev-storage-governor/examforge/20261022T063810Z-build-cache-e4007ade/source/.venv/bin/python
+
+tmp_path = PosixPath('/Users/huyuhutaru/.dev-storage-governor/examforge/20261022T063810Z-build-cache-e4007ade/full-suite-temp/popen-gw3/test_d12_selected_parity_watch1')
+
+    def test_d12_selected_parity_watcher_failure_cooldown_retries_without_loss(
+        tmp_path: Path,
+    ) -> None:
+        signal_payload = {
+            "project": "d12-hermetic-project",
+            "agent": "BlueLake",
+            "message": {
+                "id": 12002,
+                "subject": "D12 watcher completion",
+                "importance": "high",
+            },
+        }
+        case_root = tmp_path / "ordinary-failure-cooldown"
+        failed, signal_path, state_file, lease_path = _run_watcher_state_machine(
+            case_root,
+            signal_payload,
+            "",
+            fail_has_session=True,
+        )
+        assert failed.returncode == 0, failed.stderr
+        assert signal_path.exists()
+        assert not lease_path.exists()
+        state = json.loads(state_file.read_text(encoding="utf-8"))
+        key = f"BlueLake:{signal_payload['message']['id']}"
+        assert state[key]["last_result"] == "session_not_found"
+        assert _state_should_attempt(case_root, signal_payload).returncode == 1
+    
+        state[key]["last_attempt_epoch"] = 0
+        state_file.write_text(json.dumps(state), encoding="utf-8")
+        assert _state_should_attempt(case_root, signal_payload).returncode == 0
+    
+        retried, retried_signal, _state, retried_lease = _run_watcher_state_machine(
+            case_root,
+            signal_payload,
+            "",
+            command_log=case_root / "fake-external-commands.log",
+        )
+        assert retried.returncode == 0, retried.stderr
+>       assert not retried_signal.exists()
+E       AssertionError: assert not True
+E        +  where True = exists()
+E        +    where exists = PosixPath('/Users/huyuhutaru/.dev-storage-governor/examforge/20261022T063810Z-build-cache-e4007ade/full-suite-temp/popen-gw3/test_d12_selected_parity_watch1/ordinary-failure-cooldown/signals/agents/BlueLake/12002.signal').exists
+
+packages/agentstack_mail/tests/test_pending_decision_d11_d12.py:1493: AssertionError
+______________ test_fault_cutover_gate_detects_its_broken_control ______________
+[gw0] darwin -- Python 3.13.12 /Users/huyuhutaru/.dev-storage-governor/examforge/20261022T063810Z-build-cache-e4007ade/source/.venv/bin/python
+
+tmp_path = PosixPath('/Users/huyuhutaru/.dev-storage-governor/examforge/20261022T063810Z-build-cache-e4007ade/full-suite-temp/popen-gw0/test_fault_cutover_gate_detect0')
+
+    def test_fault_cutover_gate_detects_its_broken_control(tmp_path: Path) -> None:
+>       result = gates.run_fault_gate(tmp_path.resolve() / "fault")
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+packages/agentstack_mail/tests/test_cutover_gates.py:92: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+root = PosixPath('/Users/huyuhutaru/.dev-storage-governor/examforge/20261022T063810Z-build-cache-e4007ade/full-suite-temp/popen-gw0/test_fault_cutover_gate_detect0/fault')
+
+    def run_fault_gate(root: Path) -> dict[str, Any]:
+        ledger = _ledger_expectations()
+        import test_pending_decision_d8_d9 as d8
+        import test_pending_decision_d10 as d10
+        import test_pending_decision_d11_d12 as d12
+    
+        d8_root = root / "d8-sigkill"
+        d8_subset = d8._observe_d8_subset(  # noqa: SLF001
+            namespace=CORE_NAMESPACE,
+            source=CORE_SOURCE,
+            root=d8_root,
+            kill_after=1,
+        )
+        _validate_d8_subset(d8_subset, d8)
+        d8_exception = d8._observe_d8_exception(  # noqa: SLF001
+            namespace=CORE_NAMESPACE,
+            source=CORE_SOURCE,
+            root=root / "d8-exception",
+        )
+        expected_exception_records = d8._expected_d8_database_records(  # noqa: SLF001
+            d8._D8_EXCEPTION_SUBJECT, d8._D8_EXCEPTION_BODY  # noqa: SLF001
+        )
+        if d8_exception != {
+            "tool_error": True,
+            "injected_bundle_failure": True,
+            "database_delivery_records": expected_exception_records,
+            "completed_archive_roles": [],
+        }:
+            raise GateFailure("D8 archive exception did not preserve the selected DB row")
+    
+        d10_output = d10._run_worker(  # noqa: SLF001
+            namespace=CORE_NAMESPACE,
+            scenario="same_process_shared_root",
+            root=root / "d10",
+            frozen_live_checkout=PACKAGE_ROOT,
+        )
+        d10_samples = d10_output["evidence"]["samples"]
+        if len(d10_samples) != d10.SAME_PROCESS_RACE_TRIALS:
+            raise GateFailure("D10 returned an unexpected trial count")
+        for sample in d10_samples:
+            if not (
+                sample["lock_attempts_before_release"] == 2
+                and sample["all_calls_ok"] is True
+                and len(sample["winners"]) == 1
+                and len(sample["losers"]) == 1
+                and sample["active_rows"] == 1
+            ):
+                raise GateFailure(f"D10 concurrency projection failed in trial {sample['trial']}")
+    
+        d12_probe = _run_d12_core_probe(root / "d12-server", d12)
+        d12_projection = d12._d12_server_projection(d12_probe)  # noqa: SLF001
+        _validate_d12_projection(d12_projection)
+    
+        watcher_payload = {
+            "project": "cutover-fault-project",
+            "agent": "BlueLake",
+            "message": {
+                "id": 12001,
+                "subject": "D12 cutover crash recovery",
+                "importance": "high",
+            },
+        }
+        watcher_root = root / "d12-watcher-crash"
+        crashed, signal_path, _state_file, lease_path = d12._run_watcher_state_machine(  # noqa: SLF001
+            watcher_root,
+            watcher_payload,
+            "after_external_injection",
+        )
+        if crashed.returncode != -signal.SIGKILL or not signal_path.exists() or not lease_path.exists():
+>           raise GateFailure("D12 watcher crash did not retain retryable signal and lease")
+E           cutover_gates.GateFailure: D12 watcher crash did not retain retryable signal and lease
+
+packages/agentstack_mail/scripts/cutover_gates.py:1141: GateFailure
+_ SavedNodeTests.test_enable_then_update_without_node_env_preserves_node_and_manifest _
+[gw3] darwin -- Python 3.13.12 /Users/huyuhutaru/.dev-storage-governor/examforge/20261022T063810Z-build-cache-e4007ade/source/.venv/bin/python
+
+self = <test_dsh_install_node.SavedNodeTests testMethod=test_enable_then_update_without_node_env_preserves_node_and_manifest>
+
+    def test_enable_then_update_without_node_env_preserves_node_and_manifest(self):
+        node = str(self.root / 'fixed Node/bin/node')
+        manifest = str(self.root / 'private manifest.json')
+        first = self.invoke(node=node, manifest=manifest, enabled=True)
+>       self.assertEqual(first.returncode, 0, first.stderr)
+E       AssertionError: 1 != 0 : /bin/bash: line 166: AGENTSTACK_CODEX_SANDBOX: unbound variable
+
+tests/test_dsh_install_node.py:63: AssertionError
+___ SavedNodeTests.test_existing_install_backfills_node_from_current_receipt ___
+[gw3] darwin -- Python 3.13.12 /Users/huyuhutaru/.dev-storage-governor/examforge/20261022T063810Z-build-cache-e4007ade/source/.venv/bin/python
+
+self = <test_dsh_install_node.SavedNodeTests testMethod=test_existing_install_backfills_node_from_current_receipt>
+
+    def test_existing_install_backfills_node_from_current_receipt(self):
+        current = self.install / 'harnesses/dsh/current.json'
+        current.parent.mkdir(parents=True)
+        current.write_text(json.dumps({'node': '/fixture/existing/node'}))
+        result = self.invoke()
+>       self.assertEqual(result.returncode, 0, result.stderr)
+E       AssertionError: 1 != 0 : /bin/bash: line 166: AGENTSTACK_CODEX_SANDBOX: unbound variable
+
+tests/test_dsh_install_node.py:98: AssertionError
+_ SavedNodeTests.test_explicit_node_overrides_saved_and_explicit_empty_does_not_backfill _
+[gw3] darwin -- Python 3.13.12 /Users/huyuhutaru/.dev-storage-governor/examforge/20261022T063810Z-build-cache-e4007ade/source/.venv/bin/python
+
+self = <test_dsh_install_node.SavedNodeTests testMethod=test_explicit_node_overrides_saved_and_explicit_empty_does_not_backfill>
+
+    def test_explicit_node_overrides_saved_and_explicit_empty_does_not_backfill(self):
+>       self.assertEqual(self.invoke(node='/fixture/old/node').returncode, 0)
+E       AssertionError: 1 != 0
+
+tests/test_dsh_install_node.py:102: AssertionError
+_ SavedNodeTests.test_native_settings_loader_keeps_saved_values_and_explicit_overrides _
+[gw3] darwin -- Python 3.13.12 /Users/huyuhutaru/.dev-storage-governor/examforge/20261022T063810Z-build-cache-e4007ade/source/.venv/bin/python
+
+self = <test_dsh_install_node.SavedNodeTests testMethod=test_native_settings_loader_keeps_saved_values_and_explicit_overrides>
+
+    def test_native_settings_loader_keeps_saved_values_and_explicit_overrides(self):
+        saved = ('/fixture/saved node/bin/node', '/fixture/saved manifest.json')
+        result = self.invoke(node=saved[0], manifest=saved[1])
+>       self.assertEqual(result.returncode, 0, result.stderr)
+E       AssertionError: 1 != 0 : /bin/bash: line 166: AGENTSTACK_CODEX_SANDBOX: unbound variable
+
+tests/test_dsh_install_node.py:77: AssertionError
+___________ test_bundled_watcher_reads_agentstack_per_message_signal ___________
+[gw1] darwin -- Python 3.13.12 /Users/huyuhutaru/.dev-storage-governor/examforge/20261022T063810Z-build-cache-e4007ade/source/.venv/bin/python
+
+tmp_path = PosixPath('/Users/huyuhutaru/.dev-storage-governor/examforge/20261022T063810Z-build-cache-e4007ade/full-suite-temp/popen-gw1/test_bundled_watcher_reads_age0')
+
+    def test_bundled_watcher_reads_agentstack_per_message_signal(tmp_path):
+        """Exercise the producer-shaped per-message layout through the real watcher."""
+    
+        fake_bin = tmp_path / "fake-bin"
+        fake_bin.mkdir()
+        tmux_log = tmp_path / "tmux.log"
+        _write_command(
+            fake_bin,
+            "tmux",
+            """#!/bin/bash
+    printf '%s\n' "$*" >> "$FAKE_TMUX_LOG"
+    case "$1" in
+      has-session) exit 0 ;;
+      capture-pane) printf '%s\n' 'Claude Code' ;;
+      load-buffer) cat "$4" >> "$FAKE_TMUX_LOG"; printf '\n' >> "$FAKE_TMUX_LOG" ;;
+      paste-buffer|delete-buffer|send-keys) exit 0 ;;
+      *) exit 1 ;;
+    esac
+    """,
+        )
+        signals = tmp_path / "signals"
+        runtime = tmp_path / "runtime"
+        lock = tmp_path / "watcher.lock"
+        signal_file = (
+            signals
+            / "projects"
+            / "isolated-project"
+            / "agents"
+            / "BreezyMaxwell"
+            / "42.signal"
+        )
+        signal_file.parent.mkdir(parents=True)
+        signal_file.write_text(
+            json.dumps(
+                {
+                    "timestamp": "2026-08-15T00:00:00+00:00",
+                    "project": "isolated-project",
+                    "agent": "BreezyMaxwell",
+                    "message": {
+                        "id": 42,
+                        "from": "ProOpus",
+                        "subject": "per-message verification",
+                        "importance": "high",
+                    },
+                }
+            ),
+            encoding="utf-8",
+        )
+        env = os.environ.copy()
+        env.update(
+            {
+                "PATH": f"{fake_bin}:{pathlib.Path(sys.executable).parent}:/usr/bin:/bin:/usr/sbin:/sbin",
+                "FAKE_TMUX_LOG": str(tmux_log),
+                "AGENTSTACK_MAIL_HOME": str(tmp_path / "mail-home"),
+                "AGENTSTACK_SIGNALS_DIR": str(signals),
+                "AGENTSTACK_RUNTIME_DIR": str(runtime),
+                "AGENTSTACK_MAIL_WATCHER_LOCK_DIR": str(lock),
+                "TMUX_TIMEOUT": "2",
+            }
+        )
+        from _fake_tmux_transport import add_transport_evidence
+        add_transport_evidence(fake_bin, env)
+        pathlib.Path(env['FAKE_TMUX_SESSION_FILE']).write_text(json.loads(signal_file.read_text())['agent'])
+        watcher = subprocess.Popen(
+            ["/bin/bash", str(ROOT / "hooks" / "watch_agent_mail_signals.sh")],
+            env=env,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+        )
+        try:
+            state_file = runtime / "notify-state.json"
+            deadline = time.monotonic() + 10
+            state: dict[str, dict[str, object]] = {}
+            while time.monotonic() < deadline:
+                try:
+                    state = json.loads(state_file.read_text(encoding="utf-8"))
+                except (OSError, json.JSONDecodeError):
+                    state = {}
+                if (
+                    state.get("BreezyMaxwell:42", {}).get("last_result") == "success"
+                    and not signal_file.exists()
+                ):
+                    break
+                time.sleep(0.1)
+>           assert state.get("BreezyMaxwell:42", {}).get("last_result") == "success"
+E           AssertionError: assert 'inject_failed' == 'success'
+E             
+E             - success
+E             + inject_failed
+
+tests/test_install_agentstack_mail.py:1037: AssertionError
+=============================== warnings summary ===============================
+.venv/lib/python3.13/site-packages/fastmcp/server/auth/providers/jwt.py:10
+.venv/lib/python3.13/site-packages/fastmcp/server/auth/providers/jwt.py:10
+.venv/lib/python3.13/site-packages/fastmcp/server/auth/providers/jwt.py:10
+.venv/lib/python3.13/site-packages/fastmcp/server/auth/providers/jwt.py:10
+  /Users/huyuhutaru/.dev-storage-governor/examforge/20261022T063810Z-build-cache-e4007ade/source/.venv/lib/python3.13/site-packages/fastmcp/server/auth/providers/jwt.py:10: AuthlibDeprecationWarning: authlib.jose module is deprecated, please use joserfc instead.
+  It will be compatible before version 2.0.0.
+    from authlib.jose import JsonWebKey, JsonWebToken
+
+.venv/lib/python3.13/site-packages/authlib/integrations/httpx_client/assertion_client.py:5
+.venv/lib/python3.13/site-packages/authlib/integrations/httpx_client/assertion_client.py:5
+.venv/lib/python3.13/site-packages/authlib/integrations/httpx_client/assertion_client.py:5
+.venv/lib/python3.13/site-packages/authlib/integrations/httpx_client/assertion_client.py:5
+  /Users/huyuhutaru/.dev-storage-governor/examforge/20261022T063810Z-build-cache-e4007ade/source/.venv/lib/python3.13/site-packages/authlib/integrations/httpx_client/assertion_client.py:5: AuthlibDeprecationWarning: The httpx module is deprecated; please use httpx2 instead.
+    from ._compat import httpx2
+
+packages/agentstack_mail/tests/test_global_server_s2c.py: 10 warnings
+tests/test_global_runtime_client.py: 1807 warnings
+packages/agentstack_mail/tests/test_global_server_s2b.py: 17 warnings
+packages/agentstack_mail/tests/test_service.py: 4 warnings
+packages/agentstack_mail/tests/test_global_server_s2a.py: 5 warnings
+packages/agentstack_mail/tests/test_global_server.py: 938 warnings
+tests/test_global_runtime_delivery.py: 95 warnings
+tests/test_runtime_target_http.py: 48 warnings
+tests/test_global_runtime_observation.py: 48 warnings
+tests/test_global_child_client.py: 38 warnings
+tests/test_global_operator_client.py: 30 warnings
+tests/test_global_runtime_client_s2a.py: 30 warnings
+tests/test_global_dashboard_backend.py: 29 warnings
+tests/r2_tb_v3/test_lifecycle_interruptions.py: 27 warnings
+tests/test_global_runtime_delivery_recovery.py: 50 warnings
+tests/test_runtime_mode_watch_service.py: 25 warnings
+tests/test_global_child_reviewfix.py: 22 warnings
+tests/r2_tb_v3/test_lifecycle_v3_red.py: 15 warnings
+tests/r2_tb_v3/test_review_recovery.py: 15 warnings
+tests/test_global_dashboard_view.py: 8 warnings
+tests/test_global_runtime_delivery_cleanup.py: 21 warnings
+tests/test_global_child_entry.py: 11 warnings
+tests/r2_tb_v3/test_ended_slot_recovery.py: 10 warnings
+tests/r2_tb_v3/test_lifecycle_cooperative.py: 7 warnings
+tests/test_global_child_dashboard.py: 1 warning
+tests/r2_tb_v3/test_recovery_v3_red.py: 5 warnings
+tests/test_runtime_target_worker_guards.py: 4 warnings
+packages/agentstack_mail/tests/test_global_runtime_4c.py: 14 warnings
+tests/r2_tb_v3/test_lifecycle_native.py: 3 warnings
+tests/test_global_runtime_delivery_slots.py: 12 warnings
+tests/r2_tb_v3/test_operator_confirmation.py: 2 warnings
+  /Users/huyuhutaru/.local/share/uv/python/cpython-3.13.12-macos-aarch64-none/lib/python3.13/contextlib.py:109: DeprecationWarning: Use `streamable_http_client` instead.
+    self.gen = func(*args, **kwds)
+
+packages/agentstack_mail/tests/test_consumer.py::test_hard_process_exit_reuses_stages_and_leaves_no_debris
+  /Users/huyuhutaru/.dev-storage-governor/examforge/20261022T063810Z-build-cache-e4007ade/source/packages/agentstack_mail/tests/test_consumer.py:1132: DeprecationWarning: This process (pid=2840) is multi-threaded, use of fork() may lead to deadlocks in the child.
+    pid = os.fork()
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+============================= slowest 25 durations =============================
+82.09s call     bin/test_agentstack_unstick_seats.py::UnstickFixtureTests::test_native_processes_real_eighty_second_gate
+30.57s call     tests/test_mail_autostart.py::test_the_sweep_leaves_a_deliberately_stopped_server_alone
+30.15s call     tests/test_mail_notice_measure.py::test_unchanged_watcher_delivers_into_real_tmux_tty_sink
+21.35s call     tests/test_fleet_upgrade_v2.py::test_three_entrances_preserve_current_generation_identity[restart-seat]
+21.03s call     tests/test_install_agentstack_mail.py::test_default_provisions_isolated_state_and_serves_health
+20.17s call     tests/test_install_mail_update.py::test_update_switches_the_running_build_and_keeps_state
+19.83s call     tests/test_install_mail_update.py::test_an_interrupted_switch_restores_the_previous_build[SIGTERM]
+19.35s call     tests/test_install_mail_update.py::test_update_back_to_the_previous_candidate_reuses_its_render
+19.31s call     tests/test_spawn_child_codex_bin.py::test_slow_usable_cli_keeps_launcher_api_and_delegate_defaults_stable[0.158.0-gpt-6-sol]
+19.30s call     tests/test_install_mail_update.py::test_an_interrupted_switch_restores_the_previous_build[SIGINT]
+19.14s call     tests/test_spawn_child_codex_bin.py::test_slow_usable_cli_keeps_launcher_api_and_delegate_defaults_stable[0.159.1-gpt-6.1-sol]
+18.58s call     tests/test_install_mail_update.py::test_auto_that_cannot_switch_keeps_the_running_build_and_succeeds[broken1-rolled-back-start_failed_rolled_back]
+18.08s call     tests/test_install_mail_update.py::test_a_budget_with_a_leading_zero_is_read_as_decimal[0009]
+17.82s call     tests/test_install_mail_update.py::test_a_budget_with_a_leading_zero_is_read_as_decimal[09]
+17.75s call     tests/test_install_mail_update.py::test_a_rerun_keeps_the_running_build_by_default_and_a_dry_run_changes_nothing[keep0-keep_default]
+17.75s call     tests/test_install_mail_update.py::test_auto_keeps_the_running_build_when_the_outage_would_be_too_long
+17.45s call     tests/test_install_mail_update.py::test_a_rerun_keeps_the_running_build_by_default_and_a_dry_run_changes_nothing[keep3-keep_requested]
+17.41s call     tests/test_install_mail_update.py::test_a_rerun_keeps_the_running_build_by_default_and_a_dry_run_changes_nothing[keep2-keep_requested]
+17.31s call     tests/test_install_mail_update.py::test_update_rolls_back_when_the_new_build_does_not_serve
+17.10s call     tests/test_install_mail_update.py::test_a_rerun_keeps_the_running_build_by_default_and_a_dry_run_changes_nothing[keep1-keep_requested]
+16.36s call     tests/test_install_mail_update.py::test_auto_switches_to_a_newer_build
+15.59s call     tests/test_fleet_upgrade_v2.py::test_three_entrances_preserve_current_generation_identity[spawn-codex]
+14.21s call     tests/test_fleet_upgrade_v2.py::test_three_entrances_preserve_current_generation_identity[spawn_child]
+13.21s call     tests/test_mailctl_launchd.py::test_a_later_start_finds_the_runner_instead_of_racing_a_second_one
+13.19s call     tests/test_install_mail_update.py::test_update_never_uses_an_occupied_scratch_port_or_the_live_one
+=========================== short test summary info ============================
+FAILED tests/test_global_runtime_client.py::test_client_start_waits_for_a_mutex_another_caller_is_writing[operation_lock-{"kind": "orrery-client-operation-mutex-v1"}]
+FAILED tests/test_global_runtime_client.py::test_client_start_waits_for_a_mutex_another_caller_is_writing[mutex-{"kind": "orrery-client-local-mutex-v1"}]
+FAILED tests/test_codex_initial_prompt_argv.py::test_the_update_screen_gets_no_key
+FAILED tests/test_mail_notice_measure.py::test_unchanged_watcher_delivers_into_real_tmux_tty_sink
+FAILED tests/test_dashboard_service.py::test_launchd_in_place_upgrade_replaces_its_own_listener_with_new_code
+FAILED tests/test_dashboard_service.py::test_supervised_in_place_upgrade_stops_old_pid_and_runs_new_code
+FAILED bin/test_agentstack_unstick_seats.py::UnstickFixtureTests::test_native_clock_two_processes_both_python_versions
+FAILED tests/test_global_runtime_delivery.py::test_persistent_configure_run_and_actual_bot_reply
+FAILED tests/test_global_runtime_delivery.py::test_global_selftest_runs_real_fixed_profile_bot
+FAILED tests/test_global_runtime_delivery.py::test_actual_claude_launch_runs_generated_session_and_notification_hooks
+FAILED tests/test_global_runtime_delivery.py::test_gemini_child_uses_native_fixed_home_and_real_stream_receipt[False]
+FAILED tests/test_global_runtime_delivery.py::test_gemini_child_uses_native_fixed_home_and_real_stream_receipt[True]
+FAILED tests/test_runtime_target_http.py::test_real_legacy_watcher_keeps_global_signal_and_delivers_healthy_legacy
+FAILED tests/test_install_codex_bin.py::test_an_nvm_npm_style_codex_is_selected_the_same_way_the_launcher_picks_it
+FAILED tests/test_install_codex_bin.py::test_an_npm_global_codex_without_adjacent_node_is_rejected_the_same_way_the_launcher_rejects_it
+FAILED tests/test_install_codex_bin.py::test_nothing_usable_leaves_the_setting_empty
+FAILED tests/test_spawn_child_embed_task.py::test_task_file_is_embedded_literally_for_both_launch_paths[claude]
+FAILED tests/test_spawn_child_embed_task.py::test_task_file_is_embedded_literally_for_both_launch_paths[codex]
+FAILED tests/test_setting_precedence.py::test_first_install_still_uses_product_defaults
+FAILED tests/test_setting_precedence.py::test_every_name_env_sh_records_is_inherited_or_derived
+FAILED bin/test_agentstack_orphan.py::OrphanTests::test_existing_watcher_functions_byte_ast_unchanged
+FAILED bin/test_agentstack_jobend.py::JobEndTests::test_legacy_head_alerts_and_original_main_body_preserved
+FAILED tests/test_codex_nvm_path.py::test_nvm_selection_probe_and_actual_launch_share_node_path[regular]
+FAILED tests/test_codex_nvm_path.py::test_nvm_selection_probe_and_actual_launch_share_node_path[npm]
+FAILED tests/test_codex_nvm_path.py::test_nvm_selection_probe_and_actual_launch_share_node_path[target]
+FAILED tests/test_codex_nvm_path.py::test_doctor_and_launch_use_same_environment_and_verdict[False]
+FAILED tests/test_shell_multibyte_variables.py::test_shell_variables_are_braced_before_non_ascii
+FAILED packages/agentstack_mail/tests/test_pending_decision_d11_d12.py::test_d12_selected_parity_watcher_crash_windows_are_durable_and_hermetic
+FAILED packages/agentstack_mail/tests/test_pending_decision_d11_d12.py::test_d12_selected_parity_watcher_failure_cooldown_retries_without_loss
+FAILED packages/agentstack_mail/tests/test_cutover_gates.py::test_fault_cutover_gate_detects_its_broken_control
+FAILED tests/test_dsh_install_node.py::SavedNodeTests::test_enable_then_update_without_node_env_preserves_node_and_manifest
+FAILED tests/test_dsh_install_node.py::SavedNodeTests::test_existing_install_backfills_node_from_current_receipt
+FAILED tests/test_dsh_install_node.py::SavedNodeTests::test_explicit_node_overrides_saved_and_explicit_empty_does_not_backfill
+FAILED tests/test_dsh_install_node.py::SavedNodeTests::test_native_settings_loader_keeps_saved_values_and_explicit_overrides
+FAILED tests/test_install_agentstack_mail.py::test_bundled_watcher_reads_agentstack_per_message_signal
+ERROR docs/orrery-up-2/live-code/bin/test_agentstack_jobend.py - import file ...
+ERROR docs/orrery-up-2/live-code/bin/test_agentstack_orphan.py - import file ...
+ERROR docs/orrery-up-2/live-code/bin/test_agentstack_retainprune.py - import ...
+ERROR docs/orrery-up-2/live-code/bin/test_agentstack_stallself.py - import fi...
+ERROR docs/orrery-up-2/live-code/bin/test_agentstack_station_materials_sparse.py
+ERROR docs/orrery-up-2/live-code/bin/test_agentstack_unstick_seats.py - impor...
+ERROR tests/test_mail_signal_health.py::test_retired_signal_backlog_does_not_make_healthy_delivery_red
+ERROR tests/test_mail_signal_health.py::test_doctor_warns_about_orphans_without_failing
+35 failed, 7725 passed, 120 skipped, 3360 warnings, 8 errors, 167 subtests passed in 1009.16s (0:16:49)
+traffic: [orrery-up-2-suite] done (exit 1)
+
+EXIT_CODE=1

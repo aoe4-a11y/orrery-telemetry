@@ -1,0 +1,294 @@
+traffic: [orrery-up-2-dashboard] running (slot slot-1, mem 13316MB, disk 62GiB)
+FF                                                                       [100%]
+=================================== FAILURES ===================================
+____ test_launchd_in_place_upgrade_replaces_its_own_listener_with_new_code _____
+
+tmp_path = PosixPath('/Users/huyuhutaru/.dev-storage-governor/examforge/20261022T063810Z-build-cache-e4007ade/dashboard-diagnosis-temp/test_launchd_in_place_upgrade_0')
+
+    @pytest.mark.skipif(
+        os.environ.get("GITHUB_ACTIONS") == "true",
+        reason="starts a real dashboard/service process; fails only on GitHub-hosted runners (no interactive user session), cause not isolated yet — run 33846626836",
+    )
+    def test_launchd_in_place_upgrade_replaces_its_own_listener_with_new_code(
+        tmp_path,
+    ):
+        repo = _isolated_installer_repo(tmp_path)
+        _write_marker_dashboard(repo / "dashboard" / "server.py", "new-launchd")
+        fake_bin = tmp_path / "fake-bin"
+        fake_bin.mkdir()
+        new_pidfile = tmp_path / "new-launchd.pid"
+        for name, body in {
+            "tmux": "#!/bin/sh\nexit 0\n",
+            "uname": "#!/bin/sh\necho Darwin\n",
+            "uv": "#!/bin/sh\nexit 0\n",
+            "launchctl": """#!/bin/sh
+    case "$*" in
+      *agentdashboard*) ;;
+      *) [ "$1" = print ] && exit 1; exit 0 ;;
+    esac
+    case "$1" in
+      print)
+        [ -f "$AGENTSTACK_TEST_LOADED_MARKER" ] || exit 1
+        printf '{\n    pid = %s\n}\n' "$AGENTSTACK_TEST_OLD_PID"
+        ;;
+      bootout)
+        if kill -0 "$AGENTSTACK_TEST_OLD_PID" 2>/dev/null; then
+          kill "$AGENTSTACK_TEST_OLD_PID" 2>/dev/null || true
+          attempts=0
+          while kill -0 "$AGENTSTACK_TEST_OLD_PID" 2>/dev/null && [ "$attempts" -lt 50 ]; do
+            sleep 0.1
+            attempts=$((attempts + 1))
+          done
+        fi
+        rm -f "$AGENTSTACK_TEST_LOADED_MARKER"
+        ;;
+      bootstrap)
+        nohup "$AGENTSTACK_PYTHON" \
+          "$AGENTSTACK_HOME/dashboard/service_runner.py" >/dev/null 2>&1 &
+        echo $! > "$AGENTSTACK_TEST_NEW_PIDFILE"
+        ;;
+    esac
+    exit 0
+    """,
+        }.items():
+            command = fake_bin / name
+            command.write_text(body, encoding="utf-8")
+            command.chmod(0o755)
+    
+        with socket.socket() as probe:
+            probe.bind(("127.0.0.1", 0))
+            port = probe.getsockname()[1]
+        env, install_dir = _installer_upgrade_env(tmp_path, fake_bin, port)
+        old_server = tmp_path / "old-dashboard.py"
+        _write_marker_dashboard(old_server, "old-launchd")
+        env["AGENTSTACK_CHILD_DEFAULT_TOOLS"] = "browser,screen:read:windows-mcp"
+        old_process = subprocess.Popen(
+            [sys.executable, str(old_server)],
+            env=env,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+        loaded_marker = tmp_path / "launchd-loaded"
+        loaded_marker.touch()
+        env.update({
+            "AGENTSTACK_TEST_OLD_PID": str(old_process.pid),
+            "AGENTSTACK_TEST_NEW_PIDFILE": str(new_pidfile),
+            "AGENTSTACK_TEST_LOADED_MARKER": str(loaded_marker),
+        })
+        try:
+            _wait_for_marker(port, "old-launchd")
+            result = subprocess.run(
+                [
+                    "bash",
+                    str(repo / "scripts" / "install.sh"),
+                    "--dashboard-only",
+                ],
+                cwd=repo,
+                env=env,
+                text=True,
+                capture_output=True,
+                check=False,
+            )
+>           assert result.returncode == 0, result.stdout + result.stderr
+E           AssertionError: ORRERY Telemetry core installer
+E             tier: tier0
+E             install dir: /Users/huyuhutaru/.dev-storage-governor/examforge/20261022T063810Z-build-cache-e4007ade/dashboard-diagnosis-temp/test_launchd_in_place_upgrade_0/home/.agentstack
+E             project key: /Users/huyuhutaru/.dev-storage-governor/examforge/20261022T063810Z-build-cache-e4007ade/dashboard-diagnosis-temp/test_launchd_in_place_upgrade_0/project
+E             dashboard port: 57860
+E             label prefix: org.agentstack.test
+E             terminal: none
+E             ORRERY Mail MCP URL: http://127.0.0.1:57861/mcp
+E             spawn dirs: (default: the project key, then ~)
+E             spawn roots: (default: $HOME)
+E             worktree root: /Users/huyuhutaru/.dev-storage-governor/examforge/20261022T063810Z-build-cache-e4007ade/dashboard-diagnosis-temp/test_launchd_in_place_upgrade_0/home/.agentstack/worktrees
+E             automatically open child terminals: 1 (set AGENTSTACK_AUTO_OPEN_CHILD=0 on reinstall to disable auto-open while keeping Deck Open tmux)
+E             codex child approval: never
+E             codex child config overlay: (disabled)
+E             codex network: on
+E             child default tools: browser,screen:read:windows-mcp
+E             codex bin: (not checked: --dashboard-only does not use Codex)
+E             codex add dirs: (none beyond project, spawn dirs/roots, install dir, worktrees, ~/.claude, ~/.codex)
+E             Claude/Codex child resume retention: 30 day(s)
+E             preflight: supported OS macOS (launchd)
+E             python: /Users/huyuhutaru/.dev-storage-governor/examforge/20261022T063810Z-build-cache-e4007ade/source/.venv/bin/python (3.13.12)
+E             preflight: ORRERY Mail port 57861 is available
+E             preflight: passed
+E             managed dashboard owns port 57860; replacing it during this install
+E             no native listener or state found; installer will provision ORRERY Mail at http://127.0.0.1:57861/mcp
+E             planned service mode: launchd (falls back to supervised background if it cannot start)
+E             create install layout under /Users/huyuhutaru/.dev-storage-governor/examforge/20261022T063810Z-build-cache-e4007ade/dashboard-diagnosis-temp/test_launchd_in_place_upgrade_0/home/.agentstack
+E             skip hooks copy for --dashboard-only
+E             skip skills copy for --dashboard-only
+E             copy internal credential reader -> /Users/huyuhutaru/.dev-storage-governor/examforge/20261022T063810Z-build-cache-e4007ade/dashboard-diagnosis-temp/test_launchd_in_place_upgrade_0/home/.agentstack/hooks/llm_secret_reader.py
+E             copy /Users/huyuhutaru/.dev-storage-governor/examforge/20261022T063810Z-build-cache-e4007ade/dashboard-diagnosis-temp/test_launchd_in_place_upgrade_0/installer-repo/dashboard -> /Users/huyuhutaru/.dev-storage-governor/examforge/20261022T063810Z-build-cache-e4007ade/dashboard-diagnosis-temp/test_launchd_in_place_upgrade_0/home/.agentstack/dashboard (core files; optional provider payload excluded)
+E             copy VERSION -> /Users/huyuhutaru/.dev-storage-governor/examforge/20261022T063810Z-build-cache-e4007ade/dashboard-diagnosis-temp/test_launchd_in_place_upgrade_0/home/.agentstack/VERSION
+E             install helper scripts into /Users/huyuhutaru/.dev-storage-governor/examforge/20261022T063810Z-build-cache-e4007ade/dashboard-diagnosis-temp/test_launchd_in_place_upgrade_0/home/.agentstack/bin
+E             skip Claude skill links for --dashboard-only
+E             skip Codex skill links for --dashboard-only
+E             reuse immutable ORRERY Mail candidate venv /Users/huyuhutaru/.dev-storage-governor/examforge/20261022T063810Z-build-cache-e4007ade/source/.venv
+E             render namespaced ORRERY Mail service env /Users/huyuhutaru/.dev-storage-governor/examforge/20261022T063810Z-build-cache-e4007ade/dashboard-diagnosis-temp/test_launchd_in_place_upgrade_0/home/.agentstack/mail-service/renders/source-f5f125da00b3137ab500/service.env
+E             initialize empty ORRERY Mail state at /Users/huyuhutaru/.dev-storage-governor/examforge/20261022T063810Z-build-cache-e4007ade/dashboard-diagnosis-temp/test_launchd_in_place_upgrade_0/home/.agentstack/mail
+E             start ORRERY Mail with agentstack-mailctl at http://127.0.0.1:57861/mcp
+E             ORRERY Mail started (pid 42262, endpoint http://127.0.0.1:57861/mcp, ready after 1s)
+E             ORRERY Mail ready at http://127.0.0.1:57861/mcp (database: /Users/huyuhutaru/.dev-storage-governor/examforge/20261022T063810Z-build-cache-e4007ade/dashboard-diagnosis-temp/test_launchd_in_place_upgrade_0/home/.agentstack/mail/storage.sqlite3)
+E             ORRERY Mail requested-name handling: honored (passthrough)
+E             write local operator enrollment connection profile /Users/huyuhutaru/.dev-storage-governor/examforge/20261022T063810Z-build-cache-e4007ade/dashboard-diagnosis-temp/test_launchd_in_place_upgrade_0/home/.agentstack/connections/local.json
+E             write /Users/huyuhutaru/.dev-storage-governor/examforge/20261022T063810Z-build-cache-e4007ade/dashboard-diagnosis-temp/test_launchd_in_place_upgrade_0/home/.agentstack/env.sh (mode 600, token-free)
+E             render launchd plist /Users/huyuhutaru/.dev-storage-governor/examforge/20261022T063810Z-build-cache-e4007ade/dashboard-diagnosis-temp/test_launchd_in_place_upgrade_0/home/Library/LaunchAgents/org.agentstack.test.mail.plist (ORRERY Mail autostart)
+E             ORRERY Mail will restart at login (org.agentstack.test.mail)
+E             render launchd plist /Users/huyuhutaru/.dev-storage-governor/examforge/20261022T063810Z-build-cache-e4007ade/dashboard-diagnosis-temp/test_launchd_in_place_upgrade_0/home/Library/LaunchAgents/org.agentstack.test.mail-watcher.plist (ORRERY Mail watcher)
+E             stopped the tmux mail-watcher session; the service unit takes over
+E             ORRERY Mail watcher runs under launchd (org.agentstack.test.mail-watcher)
+E             render launchd plist /Users/huyuhutaru/.dev-storage-governor/examforge/20261022T063810Z-build-cache-e4007ade/dashboard-diagnosis-temp/test_launchd_in_place_upgrade_0/home/Library/LaunchAgents/org.agentstack.test.agentdashboard.plist
+E             write manifest /Users/huyuhutaru/.dev-storage-governor/examforge/20261022T063810Z-build-cache-e4007ade/dashboard-diagnosis-temp/test_launchd_in_place_upgrade_0/home/.agentstack/install-state.json
+E             distribute inactive native harness examples; keep existing files
+E             warning: AGENTSTACK_WORKTREE_ROOT: directory does not exist yet: /Users/huyuhutaru/.dev-storage-governor/examforge/20261022T063810Z-build-cache-e4007ade/dashboard-diagnosis-temp/test_launchd_in_place_upgrade_0/home/.agentstack/worktrees
+E             Traceback (most recent call last):
+E               File "<stdin>", line 254, in <module>
+E               File "/Users/huyuhutaru/.dev-storage-governor/examforge/20261022T063810Z-build-cache-e4007ade/dashboard-diagnosis-temp/test_launchd_in_place_upgrade_0/installer-repo/scripts/lib/install_examples.py", line 283, in write_manifest
+E                 transaction.prepare()
+E                 ~~~~~~~~~~~~~~~~~~~^^
+E               File "/Users/huyuhutaru/.dev-storage-governor/examforge/20261022T063810Z-build-cache-e4007ade/dashboard-diagnosis-temp/test_launchd_in_place_upgrade_0/installer-repo/scripts/lib/install_examples.py", line 189, in prepare
+E                 raise ValueError('example_source_missing: ' + name)
+E             ValueError: example_source_missing: README.md
+E             
+E           assert 1 == 0
+E            +  where 1 = CompletedProcess(args=['bash', '/Users/huyuhutaru/.dev-storage-governor/examforge/20261022T063810Z-build-cache-e4007ad...n prepare\n    raise ValueError(\'example_source_missing: \' + name)\nValueError: example_source_missing: README.md\n').returncode
+
+tests/test_dashboard_service.py:583: AssertionError
+_______ test_supervised_in_place_upgrade_stops_old_pid_and_runs_new_code _______
+
+tmp_path = PosixPath('/Users/huyuhutaru/.dev-storage-governor/examforge/20261022T063810Z-build-cache-e4007ade/dashboard-diagnosis-temp/test_supervised_in_place_upgra0')
+
+    @pytest.mark.skipif(
+        os.environ.get("GITHUB_ACTIONS") == "true",
+        reason="starts a real dashboard/service process; fails only on GitHub-hosted runners (no interactive user session), cause not isolated yet — run 33846626836",
+    )
+    def test_supervised_in_place_upgrade_stops_old_pid_and_runs_new_code(tmp_path):
+        repo = _isolated_installer_repo(tmp_path)
+        _write_marker_dashboard(repo / "dashboard" / "server.py", "supervised-v1")
+        fake_bin = tmp_path / "fake-bin"
+        fake_bin.mkdir()
+        for name, body in {
+            "tmux": "#!/bin/sh\nexit 0\n",
+            "uname": "#!/bin/sh\necho Darwin\n",
+            "uv": "#!/bin/sh\nexit 0\n",
+            "launchctl": """#!/bin/sh
+    case "$1" in
+      print) exit 1 ;;
+      bootstrap) exit 125 ;;
+    esac
+    exit 0
+    """,
+        }.items():
+            command = fake_bin / name
+            command.write_text(body, encoding="utf-8")
+            command.chmod(0o755)
+    
+        with socket.socket() as probe:
+            probe.bind(("127.0.0.1", 0))
+            port = probe.getsockname()[1]
+        env, install_dir = _installer_upgrade_env(tmp_path, fake_bin, port)
+        command = [
+            "bash",
+            str(repo / "scripts" / "install.sh"),
+            "--dashboard-only",
+        ]
+>       first = subprocess.run(
+            command,
+            cwd=repo,
+            env=env,
+            text=True,
+            capture_output=True,
+            check=True,
+        )
+
+tests/test_dashboard_service.py:712: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+input = None, capture_output = True, timeout = None, check = True
+popenargs = (['bash', '/Users/huyuhutaru/.dev-storage-governor/examforge/20261022T063810Z-build-cache-e4007ade/dashboard-diagnosis-temp/test_supervised_in_place_upgra0/installer-repo/scripts/install.sh', '--dashboard-only'],)
+kwargs = {'cwd': PosixPath('/Users/huyuhutaru/.dev-storage-governor/examforge/20261022T063810Z-build-cache-e4007ade/dashboard-d...: '67a22f8ee33d9a34c2dce22888ff7689', 'NoDefaultCurrentDirectoryInExePath': '1', ...}, 'text': True, 'stdout': -1, ...}
+
+    def run(*popenargs,
+            input=None, capture_output=False, timeout=None, check=False, **kwargs):
+        """Run command with arguments and return a CompletedProcess instance.
+    
+        The returned instance will have attributes args, returncode, stdout and
+        stderr. By default, stdout and stderr are not captured, and those attributes
+        will be None. Pass stdout=PIPE and/or stderr=PIPE in order to capture them,
+        or pass capture_output=True to capture both.
+    
+        If check is True and the exit code was non-zero, it raises a
+        CalledProcessError. The CalledProcessError object will have the return code
+        in the returncode attribute, and output & stderr attributes if those streams
+        were captured.
+    
+        If timeout (seconds) is given and the process takes too long,
+         a TimeoutExpired exception will be raised.
+    
+        There is an optional argument "input", allowing you to
+        pass bytes or a string to the subprocess's stdin.  If you use this argument
+        you may not also use the Popen constructor's "stdin" argument, as
+        it will be used internally.
+    
+        By default, all communication is in bytes, and therefore any "input" should
+        be bytes, and the stdout and stderr will be bytes. If in text mode, any
+        "input" should be a string, and stdout and stderr will be strings decoded
+        according to locale encoding, or by "encoding" if set. Text mode is
+        triggered by setting any of text, encoding, errors or universal_newlines.
+    
+        The other arguments are the same as for the Popen constructor.
+        """
+        if input is not None:
+            if kwargs.get('stdin') is not None:
+                raise ValueError('stdin and input arguments may not both be used.')
+            kwargs['stdin'] = PIPE
+    
+        if capture_output:
+            if kwargs.get('stdout') is not None or kwargs.get('stderr') is not None:
+                raise ValueError('stdout and stderr arguments may not be used '
+                                 'with capture_output.')
+            kwargs['stdout'] = PIPE
+            kwargs['stderr'] = PIPE
+    
+        with Popen(*popenargs, **kwargs) as process:
+            try:
+                stdout, stderr = process.communicate(input, timeout=timeout)
+            except TimeoutExpired as exc:
+                process.kill()
+                if _mswindows:
+                    # Windows accumulates the output in a single blocking
+                    # read() call run on child threads, with the timeout
+                    # being done in a join() on those threads.  communicate()
+                    # _after_ kill() is required to collect that and add it
+                    # to the exception.
+                    exc.stdout, exc.stderr = process.communicate()
+                else:
+                    # POSIX _communicate already populated the output so
+                    # far into the TimeoutExpired exception.
+                    process.wait()
+                raise
+            except:  # Including KeyboardInterrupt, communicate handled that.
+                process.kill()
+                # We don't call process.wait() as .__exit__ does that for us.
+                raise
+            retcode = process.poll()
+            if check and retcode:
+>               raise CalledProcessError(retcode, process.args,
+                                         output=stdout, stderr=stderr)
+E               subprocess.CalledProcessError: Command '['bash', '/Users/huyuhutaru/.dev-storage-governor/examforge/20261022T063810Z-build-cache-e4007ade/dashboard-diagnosis-temp/test_supervised_in_place_upgra0/installer-repo/scripts/install.sh', '--dashboard-only']' returned non-zero exit status 1.
+
+../../../../.local/share/uv/python/cpython-3.13.12-macos-aarch64-none/lib/python3.13/subprocess.py:577: CalledProcessError
+============================= slowest 25 durations =============================
+9.93s call     tests/test_dashboard_service.py::test_launchd_in_place_upgrade_replaces_its_own_listener_with_new_code
+3.95s call     tests/test_dashboard_service.py::test_supervised_in_place_upgrade_stops_old_pid_and_runs_new_code
+
+(4 durations < 1s hidden.)
+=========================== short test summary info ============================
+FAILED tests/test_dashboard_service.py::test_launchd_in_place_upgrade_replaces_its_own_listener_with_new_code
+FAILED tests/test_dashboard_service.py::test_supervised_in_place_upgrade_stops_old_pid_and_runs_new_code
+2 failed in 14.27s
+traffic: [orrery-up-2-dashboard] done (exit 1)
+
+EXIT_CODE=1

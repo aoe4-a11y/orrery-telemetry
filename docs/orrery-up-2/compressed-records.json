@@ -1,0 +1,10 @@
+[
+  {
+    "original": "docs/orrery-up-2/live-to-install.diff",
+    "original_bytes": 4049478,
+    "original_sha256": "6f0a82af2304ffa2bf06f8e80d2f17b730811f800204f6ff0c85247c2f714f72",
+    "compressed": "docs/orrery-up-2/live-to-install.diff.gz",
+    "compressed_bytes": 536297,
+    "compressed_sha256": "88f555600052c5d5699113f00a0657350eed8c1dd725cd75ed926fb1f1f5a292"
+  }
+]

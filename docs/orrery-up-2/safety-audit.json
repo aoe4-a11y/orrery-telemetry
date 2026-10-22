@@ -1,0 +1,35 @@
+{
+  "startup_code": [
+    {
+      "scope": "candidate",
+      "path": "dashboard/server.py",
+      "sha256": "5a48b38a72de9a5c501a1ae28baaa630cff321f2ad913d39887e780ce4078177",
+      "pkill_lines": [
+        10112
+      ]
+    },
+    {
+      "scope": "installed_code_read_only",
+      "path": "/Users/huyuhutaru/.agentstack/dashboard/server.py",
+      "sha256": "f58a763c9368867ee5f15477d0763f9b6590b36144da16785ae1bc355ead302f",
+      "pkill_lines": [
+        5529
+      ]
+    }
+  ],
+  "upstream_introducing_commit": "a79fcd2",
+  "parent_decisions": [
+    35280,
+    35281
+  ],
+  "product_cleanup_changed": false,
+  "initial_rehearsal_prior_ttyd_census": "unmeasured; head measured ttyd=0, fleet sessions=15 and dashboard HTTP200 after report (mail35280)",
+  "final_isolated_refusal": [
+    "pkill refused"
+  ],
+  "production_mail_listener_observation": {
+    "port": 18765,
+    "pid": 64127,
+    "method": "lsof TCP LISTEN; no DB access"
+  }
+}

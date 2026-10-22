@@ -96,3 +96,5 @@ Telemetry 自体の操作は、header の `HELP MAP`（NETWORK では `SETTINGS`
 - [Fleet artifact: orrery-up-2/upstream-changes.md](orrery-up-2/upstream-changes.md)
 
 - [ORRERY-UP-2 改造対応表](orrery-up-2/migration-map.md)
+
+- [ORRERY-UP-2 赤の発生点と修正記録](orrery-up-2/test-history.md)

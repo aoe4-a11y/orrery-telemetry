@@ -1,0 +1,207 @@
+traffic: [orrery-up-2-suite] running (slot slot-1, mem 14067MB, disk 55GiB)
+bringing up nodes...
+bringing up nodes...
+
+........................................................................ [  0%]
+........................................................................ [  1%]
+........................................................................ [  2%]
+........................................................................ [  3%]
+........................................................................ [  4%]
+........................................................................ [  5%]
+........................................................................ [  6%]
+........................................................................ [  7%]
+........................................................................ [  8%]
+........................................................................ [  9%]
+........................................................................ [ 10%]
+........................................................................ [ 10%]
+........................................................................ [ 11%]
+........................................................................ [ 12%]
+........................................................................ [ 13%]
+........................................................................ [ 14%]
+........................................................................ [ 15%]
+........................................................................ [ 16%]
+......................................s................................. [ 17%]
+........................................................................ [ 18%]
+........................................................................ [ 19%]
+........................................................................ [ 20%]
+........................................................................ [ 21%]
+........................................................ss.............. [ 21%]
+.............................................................s.......... [ 22%]
+........................................................................ [ 23%]
+........................................................................ [ 24%]
+........................................................................ [ 25%]
+........................................................................ [ 26%]
+........................................................................ [ 27%]
+........................................................................ [ 28%]
+........................................................................ [ 29%]
+........................................................................ [ 30%]
+........................................................................ [ 31%]
+........................................................................ [ 32%]
+........................................................................ [ 32%]
+........................................................................ [ 33%]
+........................................................................ [ 34%]
+........................................................................ [ 35%]
+........................................................................ [ 36%]
+........................................................................ [ 37%]
+........................................................................ [ 38%]
+........................................................................ [ 39%]
+........................................................................ [ 40%]
+........................................................................ [ 41%]
+........................................................................ [ 42%]
+........................................................................ [ 43%]
+........................................................................ [ 43%]
+........................................................................ [ 44%]
+........................................................................ [ 45%]
+........................................................................ [ 46%]
+........................................................................ [ 47%]
+........................................................................ [ 48%]
+........................................................................ [ 49%]
+........................................................................ [ 50%]
+........................................................................ [ 51%]
+........................................................................ [ 52%]
+........................................................................ [ 53%]
+........................................................................ [ 54%]
+........................................................................ [ 54%]
+........................................................................ [ 55%]
+........................................................................ [ 56%]
+........................................................................ [ 57%]
+........................................................................ [ 58%]
+........................................................................ [ 59%]
+........................................................................ [ 60%]
+........................................................................ [ 61%]
+........................................................................ [ 62%]
+........................................................................ [ 63%]
+........................................................................ [ 64%]
+........................................................................ [ 65%]
+........................................................................ [ 65%]
+...................................................sssssssssssssssssssss [ 66%]
+sssss................................................................... [ 67%]
+........................................................................ [ 68%]
+........................................................................ [ 69%]
+........................................................................ [ 70%]
+............s.sss....................................................... [ 71%]
+...........................uuuu..uuuu.uuuu.uuuu...........uu.....uu....s [ 72%]
+s....................................................................... [ 73%]
+........................................................................ [ 73%]
+........................................................................ [ 74%]
+....................................................uu.................. [ 75%]
+........................................................................ [ 76%]
+.......................................................................u [ 77%]
+uuuuuuuuuuu............................................................u [ 78%]
+uuu....uuuuuuu.uuuuu...uuuuuu..u..........u.u.u......uu..uuuu........... [ 78%]
+..............................u.u..........u.u.......................... [ 79%]
+...................u.................u....u....u......u...........uuuuuu [ 80%]
+uuuuuuuuuuu..................u...................u...................... [ 81%]
+........................................................................ [ 82%]
+........................................................................ [ 83%]
+........................................................................ [ 83%]
+......................s................................................. [ 84%]
+..................................uuu...uuu............................. [ 85%]
+........................................................................ [ 86%]
+........................................................................ [ 87%]
+.........................................................ssssssss....... [ 88%]
+........................................................................ [ 89%]
+..........................uuuu.....................uu..uu............... [ 90%]
+........................uuuu..uuuuuuu.uu.uu.---.sss..ssssssss........... [ 90%]
+........................................................................ [ 91%]
+..uu......................sss..........................................u [ 92%]
+uuu.uuu....s...........................................................s [ 93%]
+ss..........................................................s.uuuuuu.uu. [ 94%]
+...............................s........................................ [ 95%]
+...............................................................uu....uuu [ 96%]
+uuuu...........................sssss.................................... [ 96%]
+...................u.u.......uu..uu.uuuuuuuuu...s................ssss... [ 97%]
+.....uu................................................................. [ 98%]
+............................----.ss...............---------.--------.--- [ 99%]
+----....s..........uuu.......ss.....ss...sssss.s...s................     [100%]
+=============================== warnings summary ===============================
+.venv/lib/python3.13/site-packages/fastmcp/server/auth/providers/jwt.py:10
+.venv/lib/python3.13/site-packages/fastmcp/server/auth/providers/jwt.py:10
+.venv/lib/python3.13/site-packages/fastmcp/server/auth/providers/jwt.py:10
+.venv/lib/python3.13/site-packages/fastmcp/server/auth/providers/jwt.py:10
+  /Users/huyuhutaru/.dev-storage-governor/examforge/20261022T063810Z-build-cache-e4007ade/source/.venv/lib/python3.13/site-packages/fastmcp/server/auth/providers/jwt.py:10: AuthlibDeprecationWarning: authlib.jose module is deprecated, please use joserfc instead.
+  It will be compatible before version 2.0.0.
+    from authlib.jose import JsonWebKey, JsonWebToken
+
+.venv/lib/python3.13/site-packages/authlib/integrations/httpx_client/assertion_client.py:5
+.venv/lib/python3.13/site-packages/authlib/integrations/httpx_client/assertion_client.py:5
+.venv/lib/python3.13/site-packages/authlib/integrations/httpx_client/assertion_client.py:5
+.venv/lib/python3.13/site-packages/authlib/integrations/httpx_client/assertion_client.py:5
+  /Users/huyuhutaru/.dev-storage-governor/examforge/20261022T063810Z-build-cache-e4007ade/source/.venv/lib/python3.13/site-packages/authlib/integrations/httpx_client/assertion_client.py:5: AuthlibDeprecationWarning: The httpx module is deprecated; please use httpx2 instead.
+    from ._compat import httpx2
+
+packages/agentstack_mail/tests/test_global_server_s2c.py: 9 warnings
+tests/test_global_runtime_client.py: 886 warnings
+packages/agentstack_mail/tests/test_global_server_s2b.py: 17 warnings
+packages/agentstack_mail/tests/test_service.py: 4 warnings
+packages/agentstack_mail/tests/test_global_server_s2a.py: 4 warnings
+packages/agentstack_mail/tests/test_global_server.py: 467 warnings
+tests/test_global_runtime_delivery.py: 90 warnings
+tests/test_runtime_target_http.py: 48 warnings
+tests/test_global_runtime_observation.py: 46 warnings
+tests/test_global_child_client.py: 38 warnings
+tests/test_global_operator_client.py: 30 warnings
+tests/test_global_runtime_client_s2a.py: 30 warnings
+tests/test_global_dashboard_backend.py: 29 warnings
+tests/r2_tb_v3/test_lifecycle_interruptions.py: 27 warnings
+tests/test_global_runtime_delivery_recovery.py: 51 warnings
+tests/test_runtime_mode_watch_service.py: 24 warnings
+tests/test_global_child_reviewfix.py: 23 warnings
+tests/r2_tb_v3/test_lifecycle_v3_red.py: 15 warnings
+tests/r2_tb_v3/test_review_recovery.py: 15 warnings
+tests/test_global_dashboard_view.py: 8 warnings
+tests/test_global_runtime_delivery_cleanup.py: 21 warnings
+tests/test_global_child_entry.py: 11 warnings
+tests/r2_tb_v3/test_ended_slot_recovery.py: 10 warnings
+tests/r2_tb_v3/test_lifecycle_cooperative.py: 7 warnings
+tests/test_global_child_dashboard.py: 1 warning
+tests/r2_tb_v3/test_recovery_v3_red.py: 5 warnings
+tests/test_runtime_target_worker_guards.py: 4 warnings
+packages/agentstack_mail/tests/test_global_runtime_4c.py: 14 warnings
+tests/r2_tb_v3/test_lifecycle_native.py: 3 warnings
+tests/test_global_runtime_delivery_slots.py: 12 warnings
+tests/r2_tb_v3/test_operator_confirmation.py: 2 warnings
+  /Users/huyuhutaru/.local/share/uv/python/cpython-3.13.12-macos-aarch64-none/lib/python3.13/contextlib.py:109: DeprecationWarning: Use `streamable_http_client` instead.
+    self.gen = func(*args, **kwds)
+
+packages/agentstack_mail/tests/test_consumer.py::test_hard_process_exit_reuses_stages_and_leaves_no_debris
+  /Users/huyuhutaru/.dev-storage-governor/examforge/20261022T063810Z-build-cache-e4007ade/source/packages/agentstack_mail/tests/test_consumer.py:1132: DeprecationWarning: This process (pid=16505) is multi-threaded, use of fork() may lead to deadlocks in the child.
+    pid = os.fork()
+
+packages/agentstack_mail/tests/test_commit_async.py::test_async_commit_returns_first_then_lands
+  /Users/huyuhutaru/.dev-storage-governor/examforge/20261022T063810Z-build-cache-e4007ade/source/packages/agentstack_mail/src/agentstack_mail/storage.py:1030: RuntimeWarning: coroutine '_to_thread' was never awaited
+    await task
+  Enable tracemalloc to get traceback where the object was allocated.
+  See https://docs.pytest.org/en/stable/how-to/capture-warnings.html#resource-warnings for more info.
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+============================= slowest 25 durations =============================
+82.08s call     bin/test_agentstack_unstick_seats.py::UnstickFixtureTests::test_native_processes_real_eighty_second_gate
+30.25s call     tests/test_mail_autostart.py::test_the_sweep_leaves_a_deliberately_stopped_server_alone
+21.48s call     tests/test_fleet_upgrade_v2.py::test_three_entrances_preserve_current_generation_identity[restart-seat]
+20.93s call     tests/test_install_agentstack_mail.py::test_default_provisions_isolated_state_and_serves_health
+19.73s call     tests/test_install_mail_update.py::test_an_interrupted_switch_restores_the_previous_build[SIGINT]
+19.70s call     tests/test_install_mail_update.py::test_an_interrupted_switch_restores_the_previous_build[SIGTERM]
+19.42s call     tests/test_install_mail_update.py::test_update_back_to_the_previous_candidate_reuses_its_render
+19.13s call     tests/test_spawn_child_codex_bin.py::test_slow_usable_cli_keeps_launcher_api_and_delegate_defaults_stable[0.159.1-gpt-6.1-sol]
+19.07s call     tests/test_spawn_child_codex_bin.py::test_slow_usable_cli_keeps_launcher_api_and_delegate_defaults_stable[0.158.0-gpt-6-sol]
+18.84s call     tests/test_install_mail_update.py::test_a_budget_with_a_leading_zero_is_read_as_decimal[0009]
+18.46s call     tests/test_install_mail_update.py::test_update_rolls_back_when_the_new_build_does_not_serve
+18.43s call     tests/test_install_mail_update.py::test_a_budget_with_a_leading_zero_is_read_as_decimal[09]
+18.27s call     tests/test_install_mail_update.py::test_auto_that_cannot_switch_keeps_the_running_build_and_succeeds[broken1-rolled-back-start_failed_rolled_back]
+17.97s call     tests/test_install_mail_update.py::test_auto_keeps_the_running_build_when_the_outage_would_be_too_long
+17.06s call     tests/test_install_mail_update.py::test_update_switches_the_running_build_and_keeps_state
+16.69s call     tests/test_install_mail_update.py::test_auto_switches_to_a_newer_build
+16.08s call     tests/test_install_mail_update.py::test_a_rerun_keeps_the_running_build_by_default_and_a_dry_run_changes_nothing[keep1-keep_requested]
+15.70s call     tests/test_install_mail_update.py::test_a_rerun_keeps_the_running_build_by_default_and_a_dry_run_changes_nothing[keep3-keep_requested]
+15.69s call     tests/test_install_mail_update.py::test_a_rerun_keeps_the_running_build_by_default_and_a_dry_run_changes_nothing[keep2-keep_requested]
+15.61s call     tests/test_install_mail_update.py::test_a_rerun_keeps_the_running_build_by_default_and_a_dry_run_changes_nothing[keep0-keep_default]
+15.39s call     tests/test_fleet_upgrade_v2.py::test_three_entrances_preserve_current_generation_identity[spawn-codex]
+14.15s call     tests/test_fleet_upgrade_v2.py::test_three_entrances_preserve_current_generation_identity[spawn_child]
+13.75s call     tests/test_mailctl_launchd.py::test_a_later_start_finds_the_runner_instead_of_racing_a_second_one
+13.37s call     tests/test_install_mail_update.py::test_update_never_uses_an_occupied_scratch_port_or_the_live_one
+13.28s call     tests/test_install_mail_update.py::test_update_on_a_systemd_install_leaves_the_timer_starting_the_new_build
+7771 passed, 120 skipped, 1961 warnings, 169 subtests passed in 961.81s (0:16:01)
+traffic: [orrery-up-2-suite] done (exit 0)
+
+EXIT_CODE=0

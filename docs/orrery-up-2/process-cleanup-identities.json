@@ -1,0 +1,87 @@
+[
+  {
+    "pid": 23711,
+    "executable": "/opt/homebrew/bin/tmux",
+    "owned_paths_in_argv": [
+      "/Users/huyuhutaru/.dev-storage-governor/examforge/20261022T063810Z-build-cache-e4007ade/source/.venv/bin/python",
+      "/Users/huyuhutaru/.dev-storage-governor/examforge/20261022T063810Z-build-cache-e4007ade/source/scripts/measure_mail_notice.py",
+      "/Users/huyuhutaru/.dev-storage-governor/examforge/20261022T063810Z-build-cache-e4007ade/focused-fixes-temp/popen-gw2/test_unchanged_watcher_deliver0/events.fifo"
+    ],
+    "listeners": [],
+    "cwd": [
+      "p23711",
+      "fcwd",
+      "n/Users/huyuhutaru/.dev-storage-governor/examforge/20261022T063810Z-build-cache-e4007ade/source"
+    ]
+  },
+  {
+    "pid": 23733,
+    "executable": "/bin/bash",
+    "owned_paths_in_argv": [
+      "/Users/huyuhutaru/.dev-storage-governor/examforge/20261022T063810Z-build-cache-e4007ade/focused-fixes-temp/popen-gw2/test_unchanged_watcher_deliver0/home/.agentstack/hooks/watch_agent_mail_signals.sh"
+    ],
+    "listeners": [],
+    "cwd": [
+      "p23733",
+      "fcwd",
+      "n/Users/huyuhutaru/.dev-storage-governor/examforge/20261022T063810Z-build-cache-e4007ade/source"
+    ]
+  },
+  {
+    "pid": 36801,
+    "executable": "/Users/huyuhutaru/.dev-storage-governor/examforge/20261022T063810Z-build-cache-e4007ade/source/.venv/bin/python",
+    "owned_paths_in_argv": [
+      "/Users/huyuhutaru/.dev-storage-governor/examforge/20261022T063810Z-build-cache-e4007ade/source/.venv/bin/python",
+      "/Users/huyuhutaru/.dev-storage-governor/examforge/20261022T063810Z-build-cache-e4007ade/source/.venv/bin/agentstack-mail"
+    ],
+    "listeners": [
+      "localhost:57672"
+    ],
+    "cwd": [
+      "p36801",
+      "fcwd",
+      "n/Users/huyuhutaru/.dev-storage-governor/examforge/20261022T063810Z-build-cache-e4007ade/focused-fixes-third-temp/popen-gw1/test_supervised_in_place_upgra0/installer-repo"
+    ]
+  },
+  {
+    "pid": 42934,
+    "executable": "/Users/huyuhutaru/.dev-storage-governor/examforge/20261022T063810Z-build-cache-e4007ade/source/.venv/bin/python",
+    "owned_paths_in_argv": [
+      "/Users/huyuhutaru/.dev-storage-governor/examforge/20261022T063810Z-build-cache-e4007ade/source/.venv/bin/python",
+      "/Users/huyuhutaru/.dev-storage-governor/examforge/20261022T063810Z-build-cache-e4007ade/source/.venv/bin/agentstack-mail"
+    ],
+    "listeners": [
+      "localhost:57888"
+    ],
+    "cwd": [
+      "p42934",
+      "fcwd",
+      "n/Users/huyuhutaru/.dev-storage-governor/examforge/20261022T063810Z-build-cache-e4007ade/dashboard-diagnosis-temp/test_supervised_in_place_upgra0/installer-repo"
+    ]
+  },
+  {
+    "pid": 23720,
+    "executable": "/Users/huyuhutaru/.dev-storage-governor/examforge/20261022T063810Z-build-cache-e4007ade/source/.venv/bin/python",
+    "owned_paths_in_argv": [
+      "/Users/huyuhutaru/.dev-storage-governor/examforge/20261022T063810Z-build-cache-e4007ade/source/.venv/bin/python",
+      "/Users/huyuhutaru/.dev-storage-governor/examforge/20261022T063810Z-build-cache-e4007ade/source/scripts/measure_mail_notice.py",
+      "/Users/huyuhutaru/.dev-storage-governor/examforge/20261022T063810Z-build-cache-e4007ade/focused-fixes-temp/popen-gw2/test_unchanged_watcher_deliver0/events.fifo"
+    ],
+    "listeners": [],
+    "cwd": [
+      "p23720",
+      "fcwd",
+      "n/Users/huyuhutaru/.dev-storage-governor/examforge/20261022T063810Z-build-cache-e4007ade/source"
+    ]
+  },
+  {
+    "watcher_root_pid": 23733,
+    "verified_descendants": [
+      {
+        "pid": 35586,
+        "ppid": 23733,
+        "comm": "<defunct>"
+      }
+    ]
+  }
+]

@@ -1,0 +1,253 @@
+traffic: [orrery-up-2-rehearsal] running (slot slot-1, mem 14573MB, disk 76GiB)
+{"operation": "snapshot", "records": 353, "manifest": "/Users/huyuhutaru/.dev-storage-governor/examforge/20261022T063810Z-build-cache-e4007ade/rehearsal/rollback/payload-before-upgrade/manifest.json", "manifest_sha256": "344a6aa77106cba2b20032e137010753c42fe479050d0febebbb93e7353c50ea", "mail_and_runtime": "untouched"}
+Rollback snapshot: /Users/huyuhutaru/.dev-storage-governor/examforge/20261022T063810Z-build-cache-e4007ade/rehearsal/rollback/payload-before-upgrade
+warning: AGENTSTACK_WORKTREE_ROOT: directory does not exist yet: /Users/huyuhutaru/.dev-storage-governor/examforge/20261022T063810Z-build-cache-e4007ade/rehearsal/rehearsal-home/.agentstack/worktrees
+ORRERY Telemetry core installer
+tier: tier2
+install dir: /Users/huyuhutaru/.dev-storage-governor/examforge/20261022T063810Z-build-cache-e4007ade/rehearsal/rehearsal-home/.agentstack
+project key: /Users/huyuhutaru/.dev-storage-governor/examforge/20261022T063810Z-build-cache-e4007ade/rehearsal/rehearsal-home/project
+dashboard port: 61006
+label prefix: org.agentstack.test.orrery-up-2
+terminal: none
+ORRERY Mail MCP URL: http://127.0.0.1:61005/mcp
+spawn dirs: /Users/huyuhutaru/.dev-storage-governor/examforge/20261022T063810Z-build-cache-e4007ade/rehearsal/rehearsal-home/project
+spawn roots: /Users/huyuhutaru/.dev-storage-governor/examforge/20261022T063810Z-build-cache-e4007ade/rehearsal/rehearsal-home
+worktree root: /Users/huyuhutaru/.dev-storage-governor/examforge/20261022T063810Z-build-cache-e4007ade/rehearsal/rehearsal-home/.agentstack/worktrees
+automatically open child terminals: 0 (set AGENTSTACK_AUTO_OPEN_CHILD=0 on reinstall to disable auto-open while keeping Deck Open tmux)
+codex child approval: never
+codex child config overlay: (disabled)
+codex network: on
+child default tools: none
+codex bin: /Users/huyuhutaru/.dev-storage-governor/examforge/20261022T063810Z-build-cache-e4007ade/rehearsal/rehearsal-home/.local/bin/codex-native-tls
+codex add dirs: (none beyond project, spawn dirs/roots, install dir, worktrees, ~/.claude, ~/.codex)
+Claude/Codex child resume retention: 30 day(s)
+preflight: supported OS Linux (systemd --user unavailable; supervised background mode will be used)
+python: /Users/huyuhutaru/.dev-storage-governor/examforge/20261022T063810Z-build-cache-e4007ade/source/.venv/bin/python (3.13.12)
+preflight: ORRERY Mail port 61005 is available
+preflight: passed
+Phase 3a note: Tier2 project enable is a placeholder; no project settings are modified.
+no native listener or state found; installer will provision ORRERY Mail at http://127.0.0.1:61005/mcp
+planned service mode: nohup (falls back to supervised background if it cannot start)
+create install layout under /Users/huyuhutaru/.dev-storage-governor/examforge/20261022T063810Z-build-cache-e4007ade/rehearsal/rehearsal-home/.agentstack
+copy /Users/huyuhutaru/.dev-storage-governor/examforge/20261022T063810Z-build-cache-e4007ade/source/hooks -> /Users/huyuhutaru/.dev-storage-governor/examforge/20261022T063810Z-build-cache-e4007ade/rehearsal/rehearsal-home/.agentstack/hooks (core files; optional provider payload excluded)
+copy /Users/huyuhutaru/.dev-storage-governor/examforge/20261022T063810Z-build-cache-e4007ade/source/skills -> /Users/huyuhutaru/.dev-storage-governor/examforge/20261022T063810Z-build-cache-e4007ade/rehearsal/rehearsal-home/.agentstack/skills
+copy /Users/huyuhutaru/.dev-storage-governor/examforge/20261022T063810Z-build-cache-e4007ade/source/codex -> /Users/huyuhutaru/.dev-storage-governor/examforge/20261022T063810Z-build-cache-e4007ade/rehearsal/rehearsal-home/.agentstack/codex
+copy /Users/huyuhutaru/.dev-storage-governor/examforge/20261022T063810Z-build-cache-e4007ade/source/claude -> /Users/huyuhutaru/.dev-storage-governor/examforge/20261022T063810Z-build-cache-e4007ade/rehearsal/rehearsal-home/.agentstack/claude
+install child MCP proxy -> /Users/huyuhutaru/.dev-storage-governor/examforge/20261022T063810Z-build-cache-e4007ade/rehearsal/rehearsal-home/.agentstack/integrations/codex_app
+seed absent fleet lint config -> /Users/huyuhutaru/.dev-storage-governor/examforge/20261022T063810Z-build-cache-e4007ade/rehearsal/rehearsal-home/.agentstack/config/head-send-lint.json
+copy /Users/huyuhutaru/.dev-storage-governor/examforge/20261022T063810Z-build-cache-e4007ade/source/dashboard -> /Users/huyuhutaru/.dev-storage-governor/examforge/20261022T063810Z-build-cache-e4007ade/rehearsal/rehearsal-home/.agentstack/dashboard (core files; optional provider payload excluded)
+copy VERSION -> /Users/huyuhutaru/.dev-storage-governor/examforge/20261022T063810Z-build-cache-e4007ade/rehearsal/rehearsal-home/.agentstack/VERSION
+install helper scripts into /Users/huyuhutaru/.dev-storage-governor/examforge/20261022T063810Z-build-cache-e4007ade/rehearsal/rehearsal-home/.agentstack/bin
+create Claude standard skills directory /Users/huyuhutaru/.dev-storage-governor/examforge/20261022T063810Z-build-cache-e4007ade/rehearsal/rehearsal-home/.claude/skills
+link Claude skill /Users/huyuhutaru/.dev-storage-governor/examforge/20261022T063810Z-build-cache-e4007ade/rehearsal/rehearsal-home/.claude/skills/delegate -> /Users/huyuhutaru/.dev-storage-governor/examforge/20261022T063810Z-build-cache-e4007ade/rehearsal/rehearsal-home/.agentstack/skills/delegate
+link Claude skill /Users/huyuhutaru/.dev-storage-governor/examforge/20261022T063810Z-build-cache-e4007ade/rehearsal/rehearsal-home/.claude/skills/log -> /Users/huyuhutaru/.dev-storage-governor/examforge/20261022T063810Z-build-cache-e4007ade/rehearsal/rehearsal-home/.agentstack/skills/log
+create Codex standard skills directory /Users/huyuhutaru/.dev-storage-governor/examforge/20261022T063810Z-build-cache-e4007ade/rehearsal/rehearsal-home/.codex/skills
+link Codex skill /Users/huyuhutaru/.dev-storage-governor/examforge/20261022T063810Z-build-cache-e4007ade/rehearsal/rehearsal-home/.codex/skills/delegate -> /Users/huyuhutaru/.dev-storage-governor/examforge/20261022T063810Z-build-cache-e4007ade/rehearsal/rehearsal-home/.agentstack/skills/delegate
+link Codex skill /Users/huyuhutaru/.dev-storage-governor/examforge/20261022T063810Z-build-cache-e4007ade/rehearsal/rehearsal-home/.codex/skills/log -> /Users/huyuhutaru/.dev-storage-governor/examforge/20261022T063810Z-build-cache-e4007ade/rehearsal/rehearsal-home/.agentstack/skills/log
+render hook settings template token -> /Users/huyuhutaru/.dev-storage-governor/examforge/20261022T063810Z-build-cache-e4007ade/rehearsal/rehearsal-home/.agentstack/hooks
+create immutable ORRERY Mail candidate venv /Users/huyuhutaru/.dev-storage-governor/examforge/20261022T063810Z-build-cache-e4007ade/rehearsal/rehearsal-home/.agentstack/mail-service/candidates/3125c0b423470b865f79a66e3adc0d0a870d9e04/venv
+install bundled ORRERY Mail package from /Users/huyuhutaru/.dev-storage-governor/examforge/20261022T063810Z-build-cache-e4007ade/source/packages/agentstack_mail
+Using CPython 3.13.12 interpreter at: .venv/bin/python
+Creating virtual environment at: /Users/huyuhutaru/.dev-storage-governor/examforge/20261022T063810Z-build-cache-e4007ade/rehearsal/rehearsal-home/.agentstack/mail-service/candidates/3125c0b423470b865f79a66e3adc0d0a870d9e04/venv
+Activate with: source /Users/huyuhutaru/.dev-storage-governor/examforge/20261022T063810Z-build-cache-e4007ade/rehearsal/rehearsal-home/.agentstack/mail-service/candidates/3125c0b423470b865f79a66e3adc0d0a870d9e04/venv/bin/activate
+Using Python 3.13.12 environment at: /Users/huyuhutaru/.dev-storage-governor/examforge/20261022T063810Z-build-cache-e4007ade/rehearsal/rehearsal-home/.agentstack/mail-service/candidates/3125c0b423470b865f79a66e3adc0d0a870d9e04/venv
+Resolved 73 packages in 1.84s
+   Building agentstack-mail @ file:///Users/huyuhutaru/.dev-storage-governor/examforge/20261022T063810Z-build-cache-e4007ade/source/packages/agentstack_mail
+Downloading pygments (1.2MiB)
+Downloading pillow (4.6MiB)
+Downloading pydantic-core (1.8MiB)
+Downloading beartype (1.5MiB)
+Downloading sqlalchemy (2.4MiB)
+Downloading cryptography (3.7MiB)
+      Built agentstack-mail @ file:///Users/huyuhutaru/.dev-storage-governor/examforge/20261022T063810Z-build-cache-e4007ade/source/packages/agentstack_mail
+ Downloaded pygments
+ Downloaded beartype
+ Downloaded pydantic-core
+ Downloaded sqlalchemy
+ Downloaded cryptography
+ Downloaded pillow
+Prepared 73 packages in 6.31s
+Installed 73 packages in 69ms
+ + agentstack-mail==0.0.0 (from file:///Users/huyuhutaru/.dev-storage-governor/examforge/20261022T063810Z-build-cache-e4007ade/source/packages/agentstack_mail)
+ + aiosqlite==0.22.1
+ + annotated-types==0.8.0
+ + anyio==4.15.1
+ + attrs==26.1.0
+ + authlib==1.9.1
+ + beartype==0.23.1
+ + cachetools==7.2.4
+ + certifi==2026.10.19
+ + cffi==2.1.1
+ + click==8.5.0
+ + cryptography==50.0.2
+ + cyclopts==5.2.0
+ + diskcache==5.6.3
+ + dnspython==2.9.0
+ + docstring-parser==0.18.0
+ + email-validator==2.3.0
+ + exceptiongroup==1.3.1
+ + fastmcp==2.13.0.2
+ + filelock==4.2.4
+ + gitdb==4.0.12
+ + gitpython==3.2.1
+ + greenlet==3.5.6
+ + h11==0.16.0
+ + httpcore==1.0.9
+ + httpx==0.28.1
+ + httpx-sse==0.4.3
+ + idna==3.20
+ + jaraco-classes==3.4.0
+ + jaraco-context==6.1.2
+ + jaraco-functools==4.6.0
+ + joserfc==1.7.7
+ + jsonschema==4.26.0
+ + jsonschema-path==0.5.0
+ + jsonschema-specifications==2025.9.1
+ + keyring==25.7.0
+ + markdown-it-py==4.2.0
+ + mcp==1.30.0
+ + mdurl==0.1.2
+ + more-itertools==11.2.1
+ + openapi-pydantic==0.6.0
+ + pathable==0.6.0
+ + pathspec==1.1.1
+ + pathvalidate==3.3.1
+ + pillow==13.0.0
+ + platformdirs==4.13.5
+ + psutil==7.2.2
+ + py-key-value-aio==0.2.8
+ + py-key-value-shared==0.2.8
+ + pycparser==3.11
+ + pydantic==2.12.5
+ + pydantic-core==2.41.5
+ + pydantic-settings==2.16.1
+ + pygments==2.21.0
+ + pyjwt==2.15.1
+ + pyperclip==1.11.0
+ + python-decouple==3.8
+ + python-dotenv==1.2.4
+ + python-multipart==0.0.32
+ + pyyaml==6.0.3
+ + referencing==0.37.0
+ + rich==15.0.0
+ + rich-rst==2.2.0
+ + rpds-py==2026.9.1
+ + smmap==5.0.3
+ + sqlalchemy==2.1.6
+ + sqlmodel==0.0.48
+ + sse-starlette==3.5.0
+ + starlette==1.9.0
+ + typing-extensions==4.16.0
+ + typing-inspection==0.4.4
+ + uvicorn==0.52.1
+ + websockets==17.3
+render namespaced ORRERY Mail service env /Users/huyuhutaru/.dev-storage-governor/examforge/20261022T063810Z-build-cache-e4007ade/rehearsal/rehearsal-home/.agentstack/mail-service/renders/3125c0b423470b865f79a66e3adc0d0a870d9e04-735f6202c0ab37818de5/service.env
+initialize empty ORRERY Mail state at /Users/huyuhutaru/.dev-storage-governor/examforge/20261022T063810Z-build-cache-e4007ade/rehearsal/rehearsal-home/.agentstack/mail
+start ORRERY Mail with agentstack-mailctl at http://127.0.0.1:61005/mcp
+ORRERY Mail started (pid 97770, endpoint http://127.0.0.1:61005/mcp, ready after 3s)
+ORRERY Mail ready at http://127.0.0.1:61005/mcp (database: /Users/huyuhutaru/.dev-storage-governor/examforge/20261022T063810Z-build-cache-e4007ade/rehearsal/rehearsal-home/.agentstack/mail/storage.sqlite3)
+ORRERY Mail requested-name handling: honored (passthrough)
+write local operator enrollment connection profile /Users/huyuhutaru/.dev-storage-governor/examforge/20261022T063810Z-build-cache-e4007ade/rehearsal/rehearsal-home/.agentstack/connections/local.json
+write /Users/huyuhutaru/.dev-storage-governor/examforge/20261022T063810Z-build-cache-e4007ade/rehearsal/rehearsal-home/.agentstack/env.sh (mode 600, token-free)
+render systemd user units /Users/huyuhutaru/.dev-storage-governor/examforge/20261022T063810Z-build-cache-e4007ade/rehearsal/rehearsal-home/.config/systemd/user/org.agentstack.test.orrery-up-2.mail.service and /Users/huyuhutaru/.dev-storage-governor/examforge/20261022T063810Z-build-cache-e4007ade/rehearsal/rehearsal-home/.config/systemd/user/org.agentstack.test.orrery-up-2.mail.timer (ORRERY Mail autostart)
+warning: could not register the ORRERY Mail autostart unit; mail will NOT restart after a reboot. Start it manually with: /Users/huyuhutaru/.dev-storage-governor/examforge/20261022T063810Z-build-cache-e4007ade/rehearsal/rehearsal-home/.agentstack/bin/agentstack-mailctl start
+render systemd user unit /Users/huyuhutaru/.dev-storage-governor/examforge/20261022T063810Z-build-cache-e4007ade/rehearsal/rehearsal-home/.config/systemd/user/org.agentstack.test.orrery-up-2.mail-watcher.service (ORRERY Mail watcher)
+warning: could not register the ORRERY Mail watcher unit; agents spawned from the dashboard will not receive Mail notifications until an agent started with /Users/huyuhutaru/.dev-storage-governor/examforge/20261022T063810Z-build-cache-e4007ade/rehearsal/rehearsal-home/.agentstack/bin/agent-start brings the watcher up
+{"fleet_files": 41, "default": "legacy", "upstream": "explicit opt-in"}
+start dashboard in supervised background mode, pidfile /Users/huyuhutaru/.dev-storage-governor/examforge/20261022T063810Z-build-cache-e4007ade/rehearsal/rehearsal-home/.agentstack/runtime/dashboard.pid
+write manifest /Users/huyuhutaru/.dev-storage-governor/examforge/20261022T063810Z-build-cache-e4007ade/rehearsal/rehearsal-home/.agentstack/install-state.json
+distribute inactive native harness examples; keep existing files
+static inactive examples only; runtime setup is still required
+{"fleet_files": 41, "default": "legacy", "upstream": "explicit opt-in"}
+verify dashboard API responds at http://127.0.0.1:61006/api/agents
+dashboard healthy: http://127.0.0.1:61006/api/agents
+Install complete: http://127.0.0.1:61006/
+Manifest: /Users/huyuhutaru/.dev-storage-governor/examforge/20261022T063810Z-build-cache-e4007ade/rehearsal/rehearsal-home/.agentstack/install-state.json
+Dashboard log: /Users/huyuhutaru/.dev-storage-governor/examforge/20261022T063810Z-build-cache-e4007ade/rehearsal/rehearsal-home/.agentstack/runtime/dashboard.log
+Run doctor: /Users/huyuhutaru/.dev-storage-governor/examforge/20261022T063810Z-build-cache-e4007ade/rehearsal/rehearsal-home/.agentstack/bin/agentstack-doctor
+Verify operation: /Users/huyuhutaru/.dev-storage-governor/examforge/20261022T063810Z-build-cache-e4007ade/rehearsal/rehearsal-home/.agentstack/bin/agentstack-selftest
+Runtime updated; managed instructions differ. Agents started now still read the old block:
+  warn: Codex AGENTS.md managed block in /Users/huyuhutaru/.dev-storage-governor/examforge/20261022T063810Z-build-cache-e4007ade/rehearsal/rehearsal-home/.codex/AGENTS.md; block hash unknown; managed block not found in /Users/huyuhutaru/.dev-storage-governor/examforge/20261022T063810Z-build-cache-e4007ade/rehearsal/rehearsal-home/.codex/AGENTS.md; add it with: env AGENTSTACK_HOME=/Users/huyuhutaru/.dev-storage-governor/examforge/20261022T063810Z-build-cache-e4007ade/rehearsal/rehearsal-home/.agentstack CODEX_HOME=/Users/huyuhutaru/.dev-storage-governor/examforge/20261022T063810Z-build-cache-e4007ade/rehearsal/rehearsal-home/.codex AGENTSTACK_PROJECT_KEY=/Users/huyuhutaru/.dev-storage-governor/examforge/20261022T063810Z-build-cache-e4007ade/rehearsal/rehearsal-home/project /Users/huyuhutaru/.dev-storage-governor/examforge/20261022T063810Z-build-cache-e4007ade/rehearsal/rehearsal-home/.agentstack/bin/agentstack-codex-setup
+  warn: Claude CLAUDE.md managed block in /Users/huyuhutaru/.dev-storage-governor/examforge/20261022T063810Z-build-cache-e4007ade/rehearsal/rehearsal-home/.claude/CLAUDE.md; block hash unknown; managed block not found in /Users/huyuhutaru/.dev-storage-governor/examforge/20261022T063810Z-build-cache-e4007ade/rehearsal/rehearsal-home/.claude/CLAUDE.md; add it with: env AGENTSTACK_HOME=/Users/huyuhutaru/.dev-storage-governor/examforge/20261022T063810Z-build-cache-e4007ade/rehearsal/rehearsal-home/.agentstack CLAUDE_CONFIG_DIR=/Users/huyuhutaru/.dev-storage-governor/examforge/20261022T063810Z-build-cache-e4007ade/rehearsal/rehearsal-home/.claude AGENTSTACK_PROJECT_KEY=/Users/huyuhutaru/.dev-storage-governor/examforge/20261022T063810Z-build-cache-e4007ade/rehearsal/rehearsal-home/project /Users/huyuhutaru/.dev-storage-governor/examforge/20261022T063810Z-build-cache-e4007ade/rehearsal/rehearsal-home/.agentstack/bin/agentstack-claude-setup
+mail-result: installed mode=keep from= to=3125c0b423470b865f79a66e3adc0d0a870d9e04 running=3125c0b423470b865f79a66e3adc0d0a870d9e04 outage_s=0 reason=no_running_mail
+Fleet installer exit: 0
+ok: env /Users/huyuhutaru/.dev-storage-governor/examforge/20261022T063810Z-build-cache-e4007ade/rehearsal/rehearsal-home/.agentstack/env.sh
+ok: Python 3.11+ (/Users/huyuhutaru/.dev-storage-governor/examforge/20261022T063810Z-build-cache-e4007ade/source/.venv/bin/python)
+ok: tmux
+ok: git
+ok: uv
+ok: manifest /Users/huyuhutaru/.dev-storage-governor/examforge/20261022T063810Z-build-cache-e4007ade/rehearsal/rehearsal-home/.agentstack/install-state.json
+ok: hooks installed
+ok: ORRERY Mail database /Users/huyuhutaru/.dev-storage-governor/examforge/20261022T063810Z-build-cache-e4007ade/rehearsal/rehearsal-home/.agentstack/mail/storage.sqlite3
+ok: ORRERY Mail transport uses owner tokens without a legacy HTTP bearer
+ok: ORRERY Mail health serving /Users/huyuhutaru/.dev-storage-governor/examforge/20261022T063810Z-build-cache-e4007ade/rehearsal/rehearsal-home/.agentstack/mail/storage.sqlite3
+ok: ORRERY Mail has every feature this install relies on
+mail-features: status=ok missing= running=3125c0b423470b865f79a66e3adc0d0a870d9e04
+warn: Claude MCP orrery-mail is not registered for http://127.0.0.1:61005/mcp in /Users/huyuhutaru/.dev-storage-governor/examforge/20261022T063810Z-build-cache-e4007ade/rehearsal/rehearsal-home/.claude.json
+      /delegate cannot use ORRERY Mail until this fixed-name entry exists.
+      preview: /Users/huyuhutaru/.dev-storage-governor/examforge/20261022T063810Z-build-cache-e4007ade/source/.venv/bin/python /Users/huyuhutaru/.dev-storage-governor/examforge/20261022T063810Z-build-cache-e4007ade/rehearsal/rehearsal-home/.agentstack/bin/agentstack-merge-claude-mcp --dry-run --config /Users/huyuhutaru/.dev-storage-governor/examforge/20261022T063810Z-build-cache-e4007ade/rehearsal/rehearsal-home/.claude.json --mcp-url http://127.0.0.1:61005/mcp --mail-env /Users/huyuhutaru/.dev-storage-governor/examforge/20261022T063810Z-build-cache-e4007ade/rehearsal/rehearsal-home/.agentstack/mail-service/renders/3125c0b423470b865f79a66e3adc0d0a870d9e04-735f6202c0ab37818de5/service.env --backup-dir /Users/huyuhutaru/.dev-storage-governor/examforge/20261022T063810Z-build-cache-e4007ade/rehearsal/rehearsal-home/.agentstack/backups
+      apply:   /Users/huyuhutaru/.dev-storage-governor/examforge/20261022T063810Z-build-cache-e4007ade/source/.venv/bin/python /Users/huyuhutaru/.dev-storage-governor/examforge/20261022T063810Z-build-cache-e4007ade/rehearsal/rehearsal-home/.agentstack/bin/agentstack-merge-claude-mcp --config /Users/huyuhutaru/.dev-storage-governor/examforge/20261022T063810Z-build-cache-e4007ade/rehearsal/rehearsal-home/.claude.json --mcp-url http://127.0.0.1:61005/mcp --mail-env /Users/huyuhutaru/.dev-storage-governor/examforge/20261022T063810Z-build-cache-e4007ade/rehearsal/rehearsal-home/.agentstack/mail-service/renders/3125c0b423470b865f79a66e3adc0d0a870d9e04-735f6202c0ab37818de5/service.env --backup-dir /Users/huyuhutaru/.dev-storage-governor/examforge/20261022T063810Z-build-cache-e4007ade/rehearsal/rehearsal-home/.agentstack/backups --existing-result /Users/huyuhutaru/.dev-storage-governor/examforge/20261022T063810Z-build-cache-e4007ade/rehearsal/rehearsal-home/.agentstack/runtime/claude-mcp-merge-result.json
+warn: Claude Code's first-run setup is not finished (/Users/huyuhutaru/.dev-storage-governor/examforge/20261022T063810Z-build-cache-e4007ade/rehearsal/rehearsal-home/.claude.json has no hasCompletedOnboarding)
+      Children launched now stop on its setup screens. Run 'claude' once in a terminal and go
+      through text style, login, Security notes and trusting the folder until the normal
+      input prompt appears; answer any other one-time question it asks, then /exit.
+ok: dashboard installed
+ok: dashboard log /Users/huyuhutaru/.dev-storage-governor/examforge/20261022T063810Z-build-cache-e4007ade/rehearsal/rehearsal-home/.agentstack/runtime/dashboard.log
+ok: dashboard endpoint serving (http://127.0.0.1:61006/api/version)
+warn: mail watcher health is red (dashboard /api/mail-watcher-health: watcher_running=0, signals=0, actionable=0, orphan=0)
+      mail delivered to an agent waiting for input may not wake it; see docs/troubleshooting*.md (mail watcher)
+ok: dashboard service mode supervised-background (pid 97888)
+ok: child MCP proxy installed
+ok: Codex launcher binary /Users/huyuhutaru/.dev-storage-governor/examforge/20261022T063810Z-build-cache-e4007ade/rehearsal/rehearsal-home/.local/bin/codex-native-tls
+ok: Codex launcher CODEX_HOME /Users/huyuhutaru/.dev-storage-governor/examforge/20261022T063810Z-build-cache-e4007ade/rehearsal/rehearsal-home/.codex (source for per-child homes)
+warn: Codex apply_patch reservation guard is not installed; edits may be unguarded. Install the optional plugin and review /hooks.
+note: Codex history binding plugin is not installed in /Users/huyuhutaru/.dev-storage-governor/examforge/20261022T063810Z-build-cache-e4007ade/rehearsal/rehearsal-home/.codex; Codex CLI history requires this optional plugin; see docs/codex-app.md for setup and /hooks approval. Claude-only use is unaffected.
+warn: Codex AGENTS.md managed block in /Users/huyuhutaru/.dev-storage-governor/examforge/20261022T063810Z-build-cache-e4007ade/rehearsal/rehearsal-home/.codex/AGENTS.md; block hash unknown; managed block not found in /Users/huyuhutaru/.dev-storage-governor/examforge/20261022T063810Z-build-cache-e4007ade/rehearsal/rehearsal-home/.codex/AGENTS.md; add it with: env AGENTSTACK_HOME=/Users/huyuhutaru/.dev-storage-governor/examforge/20261022T063810Z-build-cache-e4007ade/rehearsal/rehearsal-home/.agentstack CODEX_HOME=/Users/huyuhutaru/.dev-storage-governor/examforge/20261022T063810Z-build-cache-e4007ade/rehearsal/rehearsal-home/.codex AGENTSTACK_PROJECT_KEY=/Users/huyuhutaru/.dev-storage-governor/examforge/20261022T063810Z-build-cache-e4007ade/rehearsal/rehearsal-home/project /Users/huyuhutaru/.dev-storage-governor/examforge/20261022T063810Z-build-cache-e4007ade/rehearsal/rehearsal-home/.agentstack/bin/agentstack-codex-setup
+note: Claude model aliases use the bundled table for some models (no readable local Claude Code model catalog): opus=claude-opus-5-5, sonnet=claude-sonnet-5-5, haiku=claude-haiku-4-5-20251001, fable=claude-fable-5-1. Starting Claude Code refreshes its catalog; a versioned alias such as sonnet-5-5 pins a model.
+warn: Claude CLAUDE.md managed block in /Users/huyuhutaru/.dev-storage-governor/examforge/20261022T063810Z-build-cache-e4007ade/rehearsal/rehearsal-home/.claude/CLAUDE.md; block hash unknown; managed block not found in /Users/huyuhutaru/.dev-storage-governor/examforge/20261022T063810Z-build-cache-e4007ade/rehearsal/rehearsal-home/.claude/CLAUDE.md; add it with: env AGENTSTACK_HOME=/Users/huyuhutaru/.dev-storage-governor/examforge/20261022T063810Z-build-cache-e4007ade/rehearsal/rehearsal-home/.agentstack CLAUDE_CONFIG_DIR=/Users/huyuhutaru/.dev-storage-governor/examforge/20261022T063810Z-build-cache-e4007ade/rehearsal/rehearsal-home/.claude AGENTSTACK_PROJECT_KEY=/Users/huyuhutaru/.dev-storage-governor/examforge/20261022T063810Z-build-cache-e4007ade/rehearsal/rehearsal-home/project /Users/huyuhutaru/.dev-storage-governor/examforge/20261022T063810Z-build-cache-e4007ade/rehearsal/rehearsal-home/.agentstack/bin/agentstack-claude-setup
+ok: worktree root has no entries (/Users/huyuhutaru/.dev-storage-governor/examforge/20261022T063810Z-build-cache-e4007ade/rehearsal/rehearsal-home/.agentstack/worktrees)
+ok: no expired child resume material awaiting purge
+warn: no managed agent records found for scientist suffix check
+hint: tmux mouse mode is off — wheel-scroll won't reach agent scrollback.
+      add 'set -g mouse on' to ~/.tmux.conf (see README Troubleshooting).
+Fleet doctor exit: 1
+{
+  "home": "/Users/huyuhutaru/.dev-storage-governor/examforge/20261022T063810Z-build-cache-e4007ade/rehearsal/rehearsal-home",
+  "mail_port": 61005,
+  "dashboard_port": 61006,
+  "seeded": 354,
+  "mode": "real isolated native Mail and dashboard; fake no-service Linux manager; scoped approvals skipped",
+  "wrapper_exit": 0,
+  "installer_exit": 0,
+  "doctor_exit": 1,
+  "doctor_warnings_expected": "isolated scoped install with stub service manager; original warnings retained in log",
+  "mail_health": "ready",
+  "mail_database_matches": true,
+  "comparison_failed": 18,
+  "native_tls_bin_retained": true,
+  "native_tls_comments_retained": true,
+  "native_tls_manifest_retained": true,
+  "custom_exports_retained": true,
+  "optional_env_preserved": true,
+  "version": "2026.10.22",
+  "dashboard_version": {
+    "name": "orrery-telemetry",
+    "version": "2026.10.22",
+    "api": 26
+  },
+  "rollback_snapshot": "/Users/huyuhutaru/.dev-storage-governor/examforge/20261022T063810Z-build-cache-e4007ade/rehearsal/rollback/payload-before-upgrade",
+  "helper_processes_stopped": true,
+  "mail_port_closed": true,
+  "dashboard_port_closed": true
+}
+Traceback (most recent call last):
+  File "/Users/huyuhutaru/.dev-storage-governor/examforge/20261022T063810Z-build-cache-e4007ade/source/scripts/rehearse-fleet-upgrade.py", line 167, in <module>
+    if __name__=='__main__':main()
+                            ~~~~^^
+  File "/Users/huyuhutaru/.dev-storage-governor/examforge/20261022T063810Z-build-cache-e4007ade/source/scripts/rehearse-fleet-upgrade.py", line 149, in main
+    if result['comparison_failed'] or not result['custom_exports_retained'] or not all(result[k] for k in ('native_tls_bin_retained','native_tls_comments_retained','native_tls_manifest_retained')):raise RuntimeError('customization comparison failed')
+                                                                                                                                                                                                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+RuntimeError: customization comparison failed
+traffic: [orrery-up-2-rehearsal] done (exit 1)
+
+EXIT_CODE=1

@@ -1,0 +1,5 @@
+traffic: [orrery-up-2-parity] running (slot slot-1, mem 12138MB, disk 56GiB)
+{"entrances": 3, "equal": 3}
+traffic: [orrery-up-2-parity] done (exit 0)
+
+EXIT_CODE=0

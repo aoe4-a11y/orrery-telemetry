@@ -1,0 +1,17 @@
+traffic: [orrery-up-2-rollback] running (slot slot-2, mem 14343MB, disk 70GiB)
+{"operation": "restore", "records": 353, "manifest": "/Users/huyuhutaru/.dev-storage-governor/examforge/20261022T063810Z-build-cache-e4007ade/rehearsal/rollback/payload-before-upgrade/manifest.json", "manifest_sha256": "572152086634466eacebe71cc2903eb21fc3ee3714f421bb3938195785c3ef35", "mail_and_runtime": "untouched"}
+{
+  "restore_exit": 0,
+  "snapshot_records": 353,
+  "mutated_payload_sha256": "d41e94b10feb0aa755d922e6739ce70aab592403735b8ca169f7c3bd69242b31",
+  "expected_payload_sha256": "e4e3764422a4a8d9c03b2b2406e487f71c0d977e5693e7285a6603dc5052d001",
+  "restored_payload_sha256": "e4e3764422a4a8d9c03b2b2406e487f71c0d977e5693e7285a6603dc5052d001",
+  "payload_restored": true,
+  "isolated_database_unchanged": true,
+  "runtime_sentinel_preserved": true,
+  "new_core_alternate_retained": true,
+  "scope": "actual isolated snapshot and standalone restore tool; production paths not written"
+}
+traffic: [orrery-up-2-rollback] done (exit 0)
+
+EXIT_CODE=0

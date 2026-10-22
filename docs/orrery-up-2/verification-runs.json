@@ -1,0 +1,277 @@
+{
+  "runs": [
+    {
+      "log": "docs/orrery-up-2/dashboard-diagnosis.log",
+      "sha256": "19e1755a9bf545bb5e7164e79b54971192a14cc99d6b0d5d8263868469f87883",
+      "bytes": 18686,
+      "exit_code": 1,
+      "exit_source": "log EXIT_CODE",
+      "pytest_summary": [
+        "2 failed in 14.27s"
+      ]
+    },
+    {
+      "log": "docs/orrery-up-2/dashboard-fixed.log",
+      "sha256": "0b1bf5739d05f9995f43374cc041ceff8752c081a54d8905fdb5ba0bc938629f",
+      "bytes": 4009,
+      "exit_code": 1,
+      "exit_source": "log EXIT_CODE",
+      "pytest_summary": [
+        "1 failed, 1 passed in 17.22s"
+      ]
+    },
+    {
+      "log": "docs/orrery-up-2/final-focused.log",
+      "sha256": "96c6fc7300f7387c6e2282185dcaa2de8488771ed7749572a0c5489491bff7ee",
+      "bytes": 5422,
+      "exit_code": 1,
+      "exit_source": "log EXIT_CODE",
+      "pytest_summary": [
+        "328 passed, 890 warnings, 4 errors in 163.58s (0:02:43)"
+      ]
+    },
+    {
+      "log": "docs/orrery-up-2/focused-first.log",
+      "sha256": "55fc0041d5cb8eeae4a33034008232fcc6cd434878d02c718378cbbc6997ca64",
+      "bytes": 40347,
+      "exit_code": 1,
+      "exit_source": "log EXIT_CODE",
+      "pytest_summary": [
+        "13 failed, 200 passed in 172.65s (0:02:52)"
+      ]
+    },
+    {
+      "log": "docs/orrery-up-2/focused-fixes-second.log",
+      "sha256": "48b6ce5b10f1937c0066ed356f336fd76c600aa2d5b4ea10fc671c86bd6c32ed",
+      "bytes": 50962,
+      "exit_code": 1,
+      "exit_source": "log EXIT_CODE",
+      "pytest_summary": [
+        "8 failed, 689 passed, 6 skipped, 1048 warnings, 2 errors, 14 subtests passed in 209.43s (0:03:29)"
+      ]
+    },
+    {
+      "log": "docs/orrery-up-2/focused-fixes-third.log",
+      "sha256": "609062b2c1a4f8162b8f6af1264ab726a2374176650c50fffd7132ff74ab66e7",
+      "bytes": 20388,
+      "exit_code": 1,
+      "exit_source": "log EXIT_CODE",
+      "pytest_summary": [
+        "2 failed, 137 passed, 6 skipped, 16 warnings in 54.43s"
+      ]
+    },
+    {
+      "log": "docs/orrery-up-2/focused-fixes.log",
+      "sha256": "f0a8cde8b37d15507fd1655ee3dc8cd68d94d3b7b3fccafe3545be3071ebbf48",
+      "bytes": 428,
+      "exit_code": 2,
+      "exit_source": "completion watcher",
+      "pytest_summary": [],
+      "wrapper_exit": 130,
+      "child_exit": 2,
+      "result": "interrupted by station because TMPDIR containment was wrong; no test pass claimed"
+    },
+    {
+      "log": "docs/orrery-up-2/focused-second.log",
+      "sha256": "5e153b3c6fa12318b02b1b4f0a186947b69674498d754e37521f973f90fedad4",
+      "bytes": 12086,
+      "exit_code": 1,
+      "exit_source": "log EXIT_CODE",
+      "pytest_summary": [
+        "3 failed, 97 passed in 50.03s"
+      ]
+    },
+    {
+      "log": "docs/orrery-up-2/full-suite-first.log",
+      "sha256": "5f4acc91532f01a99e0218c5fc66553b6ee912f3fadc28128d743a16f3b4d834",
+      "bytes": 125793,
+      "exit_code": 1,
+      "exit_source": "log EXIT_CODE",
+      "pytest_summary": [
+        "35 failed, 7725 passed, 120 skipped, 3360 warnings, 8 errors, 167 subtests passed in 1009.16s (0:16:49)"
+      ]
+    },
+    {
+      "log": "docs/orrery-up-2/full-suite-second.log",
+      "sha256": "7825a38b359d275a9bea68905d3b3ed1560752c8e11d96610c1cfbd3ef1e6994",
+      "bytes": 587743,
+      "exit_code": 1,
+      "exit_source": "log EXIT_CODE",
+      "pytest_summary": [
+        "53 failed, 7714 passed, 120 skipped, 1977 warnings, 169 subtests passed in 976.06s (0:16:16)"
+      ]
+    },
+    {
+      "log": "docs/orrery-up-2/parity-old-dependencies.log",
+      "sha256": "f7dd542eeb24c7787bab1be71753b60433c231edc5395b29a9ec6dfb69d3568e",
+      "bytes": 163,
+      "exit_code": 0,
+      "exit_source": "log EXIT_CODE",
+      "pytest_summary": []
+    },
+    {
+      "log": "docs/orrery-up-2/parity-tls.log",
+      "sha256": "9dc9a88908cb95f6102aca5f86a4fdc842a8e834e6eeda122eaf09bd372a999f",
+      "bytes": 708,
+      "exit_code": 0,
+      "exit_source": "log EXIT_CODE",
+      "pytest_summary": [
+        "4 passed in 52.05s"
+      ]
+    },
+    {
+      "log": "docs/orrery-up-2/parity.log",
+      "sha256": "efdf2c3e42d083cf9ee1f7f346ddc5a043322959cad939d30d25735110209155",
+      "bytes": 700,
+      "exit_code": 0,
+      "exit_source": "log EXIT_CODE",
+      "pytest_summary": [
+        "4 passed in 49.99s"
+      ]
+    },
+    {
+      "log": "docs/orrery-up-2/rehearsal-comparison-final.log",
+      "sha256": "d5d6f9c2a9f518c8b67f853622baac87c70ac13d271db299a67bf1b2143d123f",
+      "bytes": 165,
+      "exit_code": 0,
+      "exit_source": "log EXIT_CODE",
+      "pytest_summary": []
+    },
+    {
+      "log": "docs/orrery-up-2/rehearsal-final-audited.log",
+      "sha256": "5ca27f93461f17422ceefd978565884159603cec4ceed359188efb2d6e3c72bf",
+      "bytes": 25324,
+      "exit_code": 0,
+      "exit_source": "log EXIT_CODE",
+      "pytest_summary": []
+    },
+    {
+      "log": "docs/orrery-up-2/rehearsal-final.log",
+      "sha256": "6fe490e6d19b76b15071f1b33c5948b9c2062d9c9dc30a794081c07a1773773d",
+      "bytes": 25022,
+      "exit_code": 0,
+      "exit_source": "log EXIT_CODE",
+      "pytest_summary": []
+    },
+    {
+      "log": "docs/orrery-up-2/rehearsal-first.log",
+      "sha256": "ea299e699095d5a66cbd9b92f053f9a232d1aaaa433f08e29d4cd1beb16d5a46",
+      "bytes": 2200,
+      "exit_code": 1,
+      "exit_source": "log EXIT_CODE",
+      "pytest_summary": []
+    },
+    {
+      "log": "docs/orrery-up-2/rehearsal-second.log",
+      "sha256": "e12f98bf083f15993c263d2c2cd558116966230ae85a0039952a9bb0a7dbd513",
+      "bytes": 24873,
+      "exit_code": 1,
+      "exit_source": "log EXIT_CODE",
+      "pytest_summary": []
+    },
+    {
+      "log": "docs/orrery-up-2/rehearsal-stubbed.log",
+      "sha256": "51a785a753d23639e8b9bdbb679370f9bc622f41a870e39f54286f02d866282c",
+      "bytes": 25070,
+      "exit_code": 0,
+      "exit_source": "log EXIT_CODE",
+      "pytest_summary": []
+    },
+    {
+      "log": "docs/orrery-up-2/rehearsal-third.log",
+      "sha256": "58bfa48a621a4af0b94329ad263bd87424e913d294dd2662d638092a07b4098d",
+      "bytes": 25994,
+      "exit_code": 1,
+      "exit_source": "log EXIT_CODE",
+      "pytest_summary": []
+    },
+    {
+      "log": "docs/orrery-up-2/rehearsal-verified.log",
+      "sha256": "c7954a9f36ce3ff465bd9eae9f807187c0c6d471710e798dcf2af948d05e9e6f",
+      "bytes": 25992,
+      "exit_code": 1,
+      "exit_source": "log EXIT_CODE",
+      "pytest_summary": []
+    },
+    {
+      "log": "docs/orrery-up-2/rollback-final.log",
+      "sha256": "fd9e050909fd9e7d6914df329dc54a30aafd59ee35eac48908582daa8f80833b",
+      "bytes": 1088,
+      "exit_code": 0,
+      "exit_source": "log EXIT_CODE",
+      "pytest_summary": []
+    },
+    {
+      "log": "docs/orrery-up-2/rollback.log",
+      "sha256": "8c983c8fde952edc4301a0810b9a32c4eb5d12dd13a19916f0bd13bd327e30c7",
+      "bytes": 1040,
+      "exit_code": 0,
+      "exit_source": "log EXIT_CODE",
+      "pytest_summary": []
+    },
+    {
+      "log": "docs/orrery-up-2/sandbox-resolution-fixed.log",
+      "sha256": "7c4bd33a35976d42bd7f701d8ca2f5c374f02e46b012e87133cf21dfb3b96d8a",
+      "bytes": 804,
+      "exit_code": 0,
+      "exit_source": "log EXIT_CODE",
+      "pytest_summary": [
+        "7 passed in 10.69s"
+      ]
+    },
+    {
+      "log": "docs/orrery-up-2/sandbox-resolution.log",
+      "sha256": "1ac180cdb663e137d3288ef31e91c7ee372e8962af402a40628eda8f30686729",
+      "bytes": 10344,
+      "exit_code": 1,
+      "exit_source": "log EXIT_CODE",
+      "pytest_summary": [
+        "4 failed, 3 passed in 3.18s"
+      ]
+    },
+    {
+      "log": "docs/orrery-up-2/upstream-red-controls-git.log",
+      "sha256": "ac63728434e4e607871f9fc4ef8ebe88ac8a8cb925e78efffa002c07adff542a",
+      "bytes": 57845,
+      "exit_code": 1,
+      "exit_source": "log EXIT_CODE",
+      "pytest_summary": [
+        "16 failed, 587 passed, 6 skipped, 1073 warnings, 2 subtests passed in 186.96s (0:03:06)"
+      ]
+    },
+    {
+      "log": "docs/orrery-up-2/upstream-red-controls.log",
+      "sha256": "960aed949c778e07e268161111c9a6fd3efa93d4776335b889efa8b3a94910e4",
+      "bytes": 69554,
+      "exit_code": 1,
+      "exit_source": "log EXIT_CODE",
+      "pytest_summary": [
+        "18 failed, 585 passed, 6 skipped, 1064 warnings, 2 subtests passed in 184.16s (0:03:04)"
+      ]
+    },
+    {
+      "log": "docs/orrery-up-2/venv.log",
+      "sha256": "bd611f97f76ee7b1e6adaebcf23465356ef90df89c25a35a2547b6c40ad60e73",
+      "bytes": 2829,
+      "exit_code": 0,
+      "exit_source": "log EXIT_CODE",
+      "pytest_summary": []
+    },
+    {
+      "log": "docs/orrery-up-2/full-suite-third.log",
+      "sha256": "58924401f31f1e3320c74192f9c3eae2715eceddcc055789a5d8fa12a683d82c",
+      "bytes": 16685,
+      "exit_code": 0,
+      "exit_source": "log EXIT_CODE and completion watcher",
+      "pytest_summary": [
+        "7771 passed, 120 skipped, 1961 warnings, 169 subtests passed in 961.81s (0:16:01)"
+      ],
+      "code_sha": "711878cc15bbbb83e60a01aa654cb3d52cc61cf2",
+      "TMPDIR": "/private/tmp",
+      "basetemp": "owned governor root/full-suite-third-temp",
+      "PATH_prefix": "owned root/refuse-process-cleanup"
+    }
+  ],
+  "full_final": "full-suite-third.log",
+  "test_output_policy": "unfiltered durable logs; standalone exits; no tail/pipe as verdict"
+}

@@ -1,0 +1,1077 @@
+traffic: [orrery-up-2-upstream-control] running (slot slot-2, mem 13238MB, disk 68GiB)
+bringing up nodes...
+bringing up nodes...
+
+........................................................................ [ 11%]
+........................................................................ [ 23%]
+..F....F........................................F......F.....F.....F.... [ 35%]
+......F...................................F................F..FF........ [ 47%]
+...................................F.................................... [ 59%]
+........................................................................ [ 70%]
+..........FF.F...F...............................................F...... [ 82%]
+.....sss..........sss......................uu........................... [ 94%]
+........F..........................                                      [100%]
+=================================== FAILURES ===================================
+____ test_launchd_in_place_upgrade_replaces_its_own_listener_with_new_code _____
+[gw3] darwin -- Python 3.13.12 /Users/huyuhutaru/.dev-storage-governor/examforge/20261022T063810Z-build-cache-e4007ade/source/.venv/bin/python
+
+tmp_path = PosixPath('/Users/huyuhutaru/.dev-storage-governor/examforge/20261022T063810Z-build-cache-e4007ade/upstream-control-temp/popen-gw3/test_launchd_in_place_upgrade_0')
+
+    @pytest.mark.skipif(
+        os.environ.get("GITHUB_ACTIONS") == "true",
+        reason="starts a real dashboard/service process; fails only on GitHub-hosted runners (no interactive user session), cause not isolated yet — run 33846626836",
+    )
+    def test_launchd_in_place_upgrade_replaces_its_own_listener_with_new_code(
+        tmp_path,
+    ):
+        repo = _isolated_installer_repo(tmp_path)
+        _write_marker_dashboard(repo / "dashboard" / "server.py", "new-launchd")
+        fake_bin = tmp_path / "fake-bin"
+        fake_bin.mkdir()
+        new_pidfile = tmp_path / "new-launchd.pid"
+        for name, body in {
+            "tmux": "#!/bin/sh\nexit 0\n",
+            "uname": "#!/bin/sh\necho Darwin\n",
+            "uv": "#!/bin/sh\nexit 0\n",
+            "launchctl": """#!/bin/sh
+    case "$*" in
+      *agentdashboard*) ;;
+      *) [ "$1" = print ] && exit 1; exit 0 ;;
+    esac
+    case "$1" in
+      print)
+        [ -f "$AGENTSTACK_TEST_LOADED_MARKER" ] || exit 1
+        printf '{\n    pid = %s\n}\n' "$AGENTSTACK_TEST_OLD_PID"
+        ;;
+      bootout)
+        if kill -0 "$AGENTSTACK_TEST_OLD_PID" 2>/dev/null; then
+          kill "$AGENTSTACK_TEST_OLD_PID" 2>/dev/null || true
+          attempts=0
+          while kill -0 "$AGENTSTACK_TEST_OLD_PID" 2>/dev/null && [ "$attempts" -lt 50 ]; do
+            sleep 0.1
+            attempts=$((attempts + 1))
+          done
+        fi
+        rm -f "$AGENTSTACK_TEST_LOADED_MARKER"
+        ;;
+      bootstrap)
+        nohup "$AGENTSTACK_PYTHON" \
+          "$AGENTSTACK_HOME/dashboard/service_runner.py" >/dev/null 2>&1 &
+        echo $! > "$AGENTSTACK_TEST_NEW_PIDFILE"
+        ;;
+    esac
+    exit 0
+    """,
+        }.items():
+            command = fake_bin / name
+            command.write_text(body, encoding="utf-8")
+            command.chmod(0o755)
+    
+        with socket.socket() as probe:
+            probe.bind(("127.0.0.1", 0))
+            port = probe.getsockname()[1]
+        env, install_dir = _installer_upgrade_env(tmp_path, fake_bin, port)
+        old_server = tmp_path / "old-dashboard.py"
+        _write_marker_dashboard(old_server, "old-launchd")
+        env["AGENTSTACK_CHILD_DEFAULT_TOOLS"] = "browser,screen:read:windows-mcp"
+        old_process = subprocess.Popen(
+            [sys.executable, str(old_server)],
+            env=env,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+        loaded_marker = tmp_path / "launchd-loaded"
+        loaded_marker.touch()
+        env.update({
+            "AGENTSTACK_TEST_OLD_PID": str(old_process.pid),
+            "AGENTSTACK_TEST_NEW_PIDFILE": str(new_pidfile),
+            "AGENTSTACK_TEST_LOADED_MARKER": str(loaded_marker),
+        })
+        try:
+            _wait_for_marker(port, "old-launchd")
+>           result = subprocess.run(
+                [
+                    "bash",
+                    str(repo / "scripts" / "install.sh"),
+                    "--dashboard-only",
+                ],
+                cwd=repo,
+                env=env,
+                text=True,
+                capture_output=True,
+                check=True,
+            )
+
+tests/test_dashboard_service.py:570: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+input = None, capture_output = True, timeout = None, check = True
+popenargs = (['bash', '/Users/huyuhutaru/.dev-storage-governor/examforge/20261022T063810Z-build-cache-e4007ade/upstream-control-temp/popen-gw3/test_launchd_in_place_upgrade_0/installer-repo/scripts/install.sh', '--dashboard-only'],)
+kwargs = {'cwd': PosixPath('/Users/huyuhutaru/.dev-storage-governor/examforge/20261022T063810Z-build-cache-e4007ade/upstream-co...: '67a22f8ee33d9a34c2dce22888ff7689', 'NoDefaultCurrentDirectoryInExePath': '1', ...}, 'text': True, 'stdout': -1, ...}
+
+    def run(*popenargs,
+            input=None, capture_output=False, timeout=None, check=False, **kwargs):
+        """Run command with arguments and return a CompletedProcess instance.
+    
+        The returned instance will have attributes args, returncode, stdout and
+        stderr. By default, stdout and stderr are not captured, and those attributes
+        will be None. Pass stdout=PIPE and/or stderr=PIPE in order to capture them,
+        or pass capture_output=True to capture both.
+    
+        If check is True and the exit code was non-zero, it raises a
+        CalledProcessError. The CalledProcessError object will have the return code
+        in the returncode attribute, and output & stderr attributes if those streams
+        were captured.
+    
+        If timeout (seconds) is given and the process takes too long,
+         a TimeoutExpired exception will be raised.
+    
+        There is an optional argument "input", allowing you to
+        pass bytes or a string to the subprocess's stdin.  If you use this argument
+        you may not also use the Popen constructor's "stdin" argument, as
+        it will be used internally.
+    
+        By default, all communication is in bytes, and therefore any "input" should
+        be bytes, and the stdout and stderr will be bytes. If in text mode, any
+        "input" should be a string, and stdout and stderr will be strings decoded
+        according to locale encoding, or by "encoding" if set. Text mode is
+        triggered by setting any of text, encoding, errors or universal_newlines.
+    
+        The other arguments are the same as for the Popen constructor.
+        """
+        if input is not None:
+            if kwargs.get('stdin') is not None:
+                raise ValueError('stdin and input arguments may not both be used.')
+            kwargs['stdin'] = PIPE
+    
+        if capture_output:
+            if kwargs.get('stdout') is not None or kwargs.get('stderr') is not None:
+                raise ValueError('stdout and stderr arguments may not be used '
+                                 'with capture_output.')
+            kwargs['stdout'] = PIPE
+            kwargs['stderr'] = PIPE
+    
+        with Popen(*popenargs, **kwargs) as process:
+            try:
+                stdout, stderr = process.communicate(input, timeout=timeout)
+            except TimeoutExpired as exc:
+                process.kill()
+                if _mswindows:
+                    # Windows accumulates the output in a single blocking
+                    # read() call run on child threads, with the timeout
+                    # being done in a join() on those threads.  communicate()
+                    # _after_ kill() is required to collect that and add it
+                    # to the exception.
+                    exc.stdout, exc.stderr = process.communicate()
+                else:
+                    # POSIX _communicate already populated the output so
+                    # far into the TimeoutExpired exception.
+                    process.wait()
+                raise
+            except:  # Including KeyboardInterrupt, communicate handled that.
+                process.kill()
+                # We don't call process.wait() as .__exit__ does that for us.
+                raise
+            retcode = process.poll()
+            if check and retcode:
+>               raise CalledProcessError(retcode, process.args,
+                                         output=stdout, stderr=stderr)
+E               subprocess.CalledProcessError: Command '['bash', '/Users/huyuhutaru/.dev-storage-governor/examforge/20261022T063810Z-build-cache-e4007ade/upstream-control-temp/popen-gw3/test_launchd_in_place_upgrade_0/installer-repo/scripts/install.sh', '--dashboard-only']' returned non-zero exit status 1.
+
+../../../../.local/share/uv/python/cpython-3.13.12-macos-aarch64-none/lib/python3.13/subprocess.py:577: CalledProcessError
+_______ test_supervised_in_place_upgrade_stops_old_pid_and_runs_new_code _______
+[gw3] darwin -- Python 3.13.12 /Users/huyuhutaru/.dev-storage-governor/examforge/20261022T063810Z-build-cache-e4007ade/source/.venv/bin/python
+
+tmp_path = PosixPath('/Users/huyuhutaru/.dev-storage-governor/examforge/20261022T063810Z-build-cache-e4007ade/upstream-control-temp/popen-gw3/test_supervised_in_place_upgra0')
+
+    @pytest.mark.skipif(
+        os.environ.get("GITHUB_ACTIONS") == "true",
+        reason="starts a real dashboard/service process; fails only on GitHub-hosted runners (no interactive user session), cause not isolated yet — run 33846626836",
+    )
+    def test_supervised_in_place_upgrade_stops_old_pid_and_runs_new_code(tmp_path):
+        repo = _isolated_installer_repo(tmp_path)
+        _write_marker_dashboard(repo / "dashboard" / "server.py", "supervised-v1")
+        fake_bin = tmp_path / "fake-bin"
+        fake_bin.mkdir()
+        for name, body in {
+            "tmux": "#!/bin/sh\nexit 0\n",
+            "uname": "#!/bin/sh\necho Darwin\n",
+            "uv": "#!/bin/sh\nexit 0\n",
+            "launchctl": """#!/bin/sh
+    case "$1" in
+      print) exit 1 ;;
+      bootstrap) exit 125 ;;
+    esac
+    exit 0
+    """,
+        }.items():
+            command = fake_bin / name
+            command.write_text(body, encoding="utf-8")
+            command.chmod(0o755)
+    
+        with socket.socket() as probe:
+            probe.bind(("127.0.0.1", 0))
+            port = probe.getsockname()[1]
+        env, install_dir = _installer_upgrade_env(tmp_path, fake_bin, port)
+        command = [
+            "bash",
+            str(repo / "scripts" / "install.sh"),
+            "--dashboard-only",
+        ]
+>       first = subprocess.run(
+            command,
+            cwd=repo,
+            env=env,
+            text=True,
+            capture_output=True,
+            check=True,
+        )
+
+tests/test_dashboard_service.py:710: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+input = None, capture_output = True, timeout = None, check = True
+popenargs = (['bash', '/Users/huyuhutaru/.dev-storage-governor/examforge/20261022T063810Z-build-cache-e4007ade/upstream-control-temp/popen-gw3/test_supervised_in_place_upgra0/installer-repo/scripts/install.sh', '--dashboard-only'],)
+kwargs = {'cwd': PosixPath('/Users/huyuhutaru/.dev-storage-governor/examforge/20261022T063810Z-build-cache-e4007ade/upstream-co...: '67a22f8ee33d9a34c2dce22888ff7689', 'NoDefaultCurrentDirectoryInExePath': '1', ...}, 'text': True, 'stdout': -1, ...}
+
+    def run(*popenargs,
+            input=None, capture_output=False, timeout=None, check=False, **kwargs):
+        """Run command with arguments and return a CompletedProcess instance.
+    
+        The returned instance will have attributes args, returncode, stdout and
+        stderr. By default, stdout and stderr are not captured, and those attributes
+        will be None. Pass stdout=PIPE and/or stderr=PIPE in order to capture them,
+        or pass capture_output=True to capture both.
+    
+        If check is True and the exit code was non-zero, it raises a
+        CalledProcessError. The CalledProcessError object will have the return code
+        in the returncode attribute, and output & stderr attributes if those streams
+        were captured.
+    
+        If timeout (seconds) is given and the process takes too long,
+         a TimeoutExpired exception will be raised.
+    
+        There is an optional argument "input", allowing you to
+        pass bytes or a string to the subprocess's stdin.  If you use this argument
+        you may not also use the Popen constructor's "stdin" argument, as
+        it will be used internally.
+    
+        By default, all communication is in bytes, and therefore any "input" should
+        be bytes, and the stdout and stderr will be bytes. If in text mode, any
+        "input" should be a string, and stdout and stderr will be strings decoded
+        according to locale encoding, or by "encoding" if set. Text mode is
+        triggered by setting any of text, encoding, errors or universal_newlines.
+    
+        The other arguments are the same as for the Popen constructor.
+        """
+        if input is not None:
+            if kwargs.get('stdin') is not None:
+                raise ValueError('stdin and input arguments may not both be used.')
+            kwargs['stdin'] = PIPE
+    
+        if capture_output:
+            if kwargs.get('stdout') is not None or kwargs.get('stderr') is not None:
+                raise ValueError('stdout and stderr arguments may not be used '
+                                 'with capture_output.')
+            kwargs['stdout'] = PIPE
+            kwargs['stderr'] = PIPE
+    
+        with Popen(*popenargs, **kwargs) as process:
+            try:
+                stdout, stderr = process.communicate(input, timeout=timeout)
+            except TimeoutExpired as exc:
+                process.kill()
+                if _mswindows:
+                    # Windows accumulates the output in a single blocking
+                    # read() call run on child threads, with the timeout
+                    # being done in a join() on those threads.  communicate()
+                    # _after_ kill() is required to collect that and add it
+                    # to the exception.
+                    exc.stdout, exc.stderr = process.communicate()
+                else:
+                    # POSIX _communicate already populated the output so
+                    # far into the TimeoutExpired exception.
+                    process.wait()
+                raise
+            except:  # Including KeyboardInterrupt, communicate handled that.
+                process.kill()
+                # We don't call process.wait() as .__exit__ does that for us.
+                raise
+            retcode = process.poll()
+            if check and retcode:
+>               raise CalledProcessError(retcode, process.args,
+                                         output=stdout, stderr=stderr)
+E               subprocess.CalledProcessError: Command '['bash', '/Users/huyuhutaru/.dev-storage-governor/examforge/20261022T063810Z-build-cache-e4007ade/upstream-control-temp/popen-gw3/test_supervised_in_place_upgra0/installer-repo/scripts/install.sh', '--dashboard-only']' returned non-zero exit status 1.
+
+../../../../.local/share/uv/python/cpython-3.13.12-macos-aarch64-none/lib/python3.13/subprocess.py:577: CalledProcessError
+______________ test_persistent_configure_run_and_actual_bot_reply ______________
+[gw2] darwin -- Python 3.13.12 /Users/huyuhutaru/.dev-storage-governor/examforge/20261022T063810Z-build-cache-e4007ade/source/.venv/bin/python
+
+short_socket_server = {'root': PosixPath('/private/tmp/s2a-__sifbnj'), 'source': SourceBundle(mail=PosixPath('/private/tmp/s2a-__sifbnj/sour...'}, 'wake_recovery': ['["/fixture/two","Alpha",105]'], ...}, 'request_id': '2bd212e2-482c-47a6-9ce3-870337cdeecf', ...}
+
+    def test_persistent_configure_run_and_actual_bot_reply(short_socket_server):
+        server=short_socket_server
+        import os
+        import subprocess
+        import time
+        client=context(server,'persistent-e2e',window=False)
+        client.save_profile()
+        delivery=api['runtime_delivery'](client)
+        worker=client.isolation/'fixture-reply-worker.py'
+        worker.write_text('''import json, os, runpy, socket, sys
+    from pathlib import Path
+    api=runpy.run_path(sys.argv[1]);client=api['RuntimeClient'](Path(os.environ['AGENTSTACK_CLIENT_CONFIG']))
+    delivery=api['runtime_delivery'](client)
+    sid=os.environ['AGENTSTACK_LAUNCH_ID']
+    delivery.session_start({'session_id':sid,'provider_pid':None,'cwd':os.getcwd()})
+    path=Path(os.environ['AGENTSTACK_PERSISTENT_WAKE_SOCKET'])
+    try:
+        with socket.socket(socket.AF_UNIX) as listener:
+            listener.bind(str(path));path.chmod(0o600);listener.listen(1);listener.settimeout(15)
+            with listener.accept()[0] as stream:
+                raw=b''
+                while not raw.endswith(b'\\n'):raw+=stream.recv(4096)
+                request=json.loads(raw)
+                result=client.call('reply_message',{'message_id':request['message']['id'],'body_md':'actual process reply','request_id':request['reply_request_id']})
+                stream.sendall(json.dumps({'version':1,'contract':request['contract'],'status':'replied','message_id':request['message']['id']}).encode()+b'\\n')
+    finally:
+        path.unlink(missing_ok=True)
+        client.end_session({'session_id':sid})
+    ''')
+        delivery.configure_execution({'argv':[sys.executable,str(worker),str(ROOT/'bin/lib/runtime_client.py')],
+            'interaction':'headless','cwd':str(client.isolation)})
+        env={**os.environ,'HOME':str(client.isolation/'home'),'AGENTSTACK_CLIENT_CONFIG':str(client.path),
+             'AGENTSTACK_HOME':str(ROOT), 'AGENTSTACK_LABEL_PREFIX':TEST_LABEL_PREFIX}
+        process=subprocess.Popen([sys.executable,str(ROOT/'bin/agentstack-persistent'),'run','--profile',str(client.profile_path)],
+            env=env,cwd=client.isolation,stdout=subprocess.PIPE,stderr=subprocess.PIPE,text=True)
+        try:
+            socket_path=client.runtime_dir/'provider-home/daemon/wake.sock'
+            deadline=time.monotonic()+15
+            while not socket_path.exists():
+                if process.poll() is not None:
+>                   out,err=process.communicate();pytest.fail(f'bot exited {process.returncode}: {out} {err}')
+                                                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E                   Failed: bot exited 2:  {"docs":"docs/persistent-agents.md","ok":false,"reason":"GLOBAL_TMUX_REQUIRED"}
+
+tests/test_global_runtime_delivery.py:298: Failed
+_______________ test_global_selftest_runs_real_fixed_profile_bot _______________
+[gw2] darwin -- Python 3.13.12 /Users/huyuhutaru/.dev-storage-governor/examforge/20261022T063810Z-build-cache-e4007ade/source/.venv/bin/python
+
+short_socket_server = {'root': PosixPath('/private/tmp/s2a-1pfgrxtt'), 'source': SourceBundle(mail=PosixPath('/private/tmp/s2a-1pfgrxtt/sour...'}, 'wake_recovery': ['["/fixture/two","Alpha",105]'], ...}, 'request_id': '57e8912c-d215-457f-a5a7-2aa6fc564387', ...}
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x10bf17930>
+capsys = <_pytest.capture.CaptureFixture object at 0x10c2a5160>
+
+    def test_global_selftest_runs_real_fixed_profile_bot(short_socket_server,monkeypatch,capsys):
+        server=short_socket_server
+        import runpy
+        client=context(server,'selftest-parent',window=False)
+        monkeypatch.setenv('AGENTSTACK_HOME',str(ROOT))
+        api_test=runpy.run_path(str(ROOT/'scripts/selftest.py'))
+>       assert api_test['global_selftest'](api,client)==0
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/test_global_runtime_delivery.py:351: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+api = {'__name__': '<run_path>', '__doc__': 'Explicit isolated global client; an absent context preserves the legacy path.\n...ct routing, automatic enrollment, installed cutover or proxy are added.\n', '__package__': '', '__loader__': None, ...}
+client = <<run_path>.RuntimeClient object at 0x113fc9590>
+
+    def global_selftest(api, client):
+        """Exercise real launch, owner messaging and notification completion."""
+        import uuid
+        key=uuid.uuid4().hex
+        prepared=client.prepare_child({'child_client_name':'st-'+key[:8],'name':'SelfTest'+key,
+            'program':'daemon','model':'deterministic','task_description':'Isolated runtime selftest','prepare_only':True})
+        child=api['RuntimeClient'](pathlib.Path(prepared['client_config']))
+        sender_prepared=client.prepare_child({'child_client_name':'ss-'+key[:8],'name':'SelfTestSender'+key,
+            'program':'daemon','model':'deterministic','task_description':'Isolated runtime selftest sender','prepare_only':True})
+        sender=api['RuntimeClient'](pathlib.Path(sender_prepared['client_config']))
+        # Both endpoints belong to this explicit selftest. Do not change the
+        # operator's identity, policy, or existing contact links.
+        sender.call('request_contact',{'to_agent_id':child.identity['agent_id']})
+        child.call('respond_contact',{'from_agent_id':sender.identity['agent_id'],'accept':True})
+        child.call('request_contact',{'to_agent_id':sender.identity['agent_id']})
+        sender.call('respond_contact',{'from_agent_id':child.identity['agent_id'],'accept':True})
+        child.save_profile()
+        delivery=api['runtime_delivery'](child)
+        delivery.configure_execution({'argv':[sys.executable,str(pathlib.Path(__file__).resolve()),'--global-reply-stub'],
+            'interaction':'headless','cwd':str(child.isolation)})
+        env=dict(os.environ,AGENTSTACK_CLIENT_CONFIG=str(child.path),AGENTSTACK_HOME=child.config['wrapper_root'])
+        helper=pathlib.Path(child.config['wrapper_root'])/'bin/lib/runtime_client.py'
+        process=subprocess.Popen([sys.executable,str(helper),'--context',str(child.path),'launch','daemon',str(child.isolation)],
+            cwd=child.isolation,env=env,stdout=subprocess.PIPE,stderr=subprocess.PIPE,text=True)
+        try:
+            socket_path=child.runtime_dir/'provider-home/daemon/wake.sock'
+            deadline=time.monotonic()+20
+            while not socket_path.exists():
+                if process.poll() is not None:
+                    out,err=process.communicate()
+>                   raise Fail('selftest worker exited before readiness: '+err.strip())
+E                   <run_path>.Fail: selftest worker exited before readiness: runtime-client: GLOBAL_TMUX_REQUIRED
+
+scripts/selftest.py:534: Fail
+___ test_actual_claude_launch_runs_generated_session_and_notification_hooks ____
+[gw2] darwin -- Python 3.13.12 /Users/huyuhutaru/.dev-storage-governor/examforge/20261022T063810Z-build-cache-e4007ade/source/.venv/bin/python
+
+server = {'root': PosixPath('/private/tmp/s2a-e1j3us8w'), 'source': SourceBundle(mail=PosixPath('/private/tmp/s2a-e1j3us8w/sour...'}, 'wake_recovery': ['["/fixture/two","Alpha",105]'], ...}, 'request_id': '2e6d00d6-120c-414b-bce5-12adc87b2935', ...}
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x113fcedd0>
+
+    def test_actual_claude_launch_runs_generated_session_and_notification_hooks(server,monkeypatch):
+        import os
+        import subprocess
+        client=context(server,'claude-hooks',window=False)
+        worker=client.isolation/'synthetic-provider-worker.py'
+        worker.write_text('#!'+sys.executable+'\n'+r'''
+    import json, os, shlex, subprocess, sys
+    settings=json.load(open(sys.argv[sys.argv.index('--settings')+1]))
+    payload={'session_id':'fixture-claude','cwd':os.getcwd()}
+    def hooks(event):
+        results=[]
+        for group in settings['hooks'][event]:
+            if group.get('matcher'):continue
+            for hook in group['hooks']:
+                result=subprocess.run(shlex.split(hook['command']),input=json.dumps(payload),text=True,capture_output=True)
+                if result.returncode:raise RuntimeError(result.stderr)
+                results.append(json.loads(result.stdout))
+        return results
+    print(json.dumps(hooks('SessionStart')),flush=True)
+    sys.stdin.readline()
+    print(json.dumps(hooks('PostToolUse')),flush=True)
+    sys.stdin.readline()
+    print(json.dumps(hooks('SessionEnd')),flush=True)
+    ''')
+        worker.chmod(0o700)
+        env=dict(os.environ,AGENTSTACK_CLAUDE_BIN=str(worker),AGENTSTACK_CLIENT_CONFIG=str(client.path))
+        helper=ROOT/'bin/lib/runtime_client.py'
+        process=subprocess.Popen([sys.executable,str(helper),'--context',str(client.path),'launch','claude',str(client.isolation)],
+            stdin=subprocess.PIPE,stdout=subprocess.PIPE,stderr=subprocess.PIPE,text=True,cwd=client.isolation,env=env)
+        try:
+>           started=json.loads(process.stdout.readline())
+                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/test_global_runtime_delivery.py:398: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+../../../../.local/share/uv/python/cpython-3.13.12-macos-aarch64-none/lib/python3.13/json/__init__.py:352: in loads
+    return _default_decoder.decode(s)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^
+../../../../.local/share/uv/python/cpython-3.13.12-macos-aarch64-none/lib/python3.13/json/decoder.py:345: in decode
+    obj, end = self.raw_decode(s, idx=_w(s, 0).end())
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <json.decoder.JSONDecoder object at 0x101c17b60>, s = '', idx = 0
+
+    def raw_decode(self, s, idx=0):
+        """Decode a JSON document from ``s`` (a ``str`` beginning with
+        a JSON document) and return a 2-tuple of the Python
+        representation and the index in ``s`` where the document ended.
+    
+        This can be used to decode a JSON document from a string that may
+        have extraneous data at the end.
+    
+        """
+        try:
+            obj, end = self.scan_once(s, idx)
+        except StopIteration as err:
+>           raise JSONDecodeError("Expecting value", s, err.value) from None
+E           json.decoder.JSONDecodeError: Expecting value: line 1 column 1 (char 0)
+
+../../../../.local/share/uv/python/cpython-3.13.12-macos-aarch64-none/lib/python3.13/json/decoder.py:363: JSONDecodeError
+___ test_gemini_child_uses_native_fixed_home_and_real_stream_receipt[False] ____
+[gw2] darwin -- Python 3.13.12 /Users/huyuhutaru/.dev-storage-governor/examforge/20261022T063810Z-build-cache-e4007ade/source/.venv/bin/python
+
+server = {'root': PosixPath('/private/tmp/s2a-ealv5o2x'), 'source': SourceBundle(mail=PosixPath('/private/tmp/s2a-ealv5o2x/sour...'}, 'wake_recovery': ['["/fixture/two","Alpha",105]'], ...}, 'request_id': '6e8393aa-1215-4a7d-ba08-267206537a91', ...}
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x113fe6120>
+emit_init = False
+
+    @pytest.mark.parametrize('emit_init',[False,True])
+    def test_gemini_child_uses_native_fixed_home_and_real_stream_receipt(server,monkeypatch,emit_init):
+        import os
+        import subprocess
+        parent=context(server,'gemini-parent',window=False)
+        prepared=parent.prepare_child({'child_client_name':'gemini-child','name':'StreamChild',
+            'program':'antigravity','model':'fixture-model','task_description':'fixture','embed_task':True,'prepare_only':True})
+        child=api['RuntimeClient'](Path(prepared['client_config']))
+        task=child.outputs['task'];api['atomic_bytes'](task,b'Canonical embedded task')
+        worker=child.isolation/'synthetic-stream-provider.py'
+        worker.write_text('#!'+sys.executable+'\n'+r'''
+    import json,os,pathlib,sys
+    assert '--input-format' in sys.argv and '--output-format' in sys.argv
+    home=pathlib.Path(os.environ['HOME'])
+    assert 'GEMINI_CLI_HOME' not in os.environ
+    config=json.loads((home/'.gemini/config/mcp_config.json').read_text())
+    assert list(config['mcpServers'])==['orrery-mail']
+    event=json.loads(sys.stdin.readline())
+    assert event['message']['content']=='Canonical embedded task'
+    if os.environ['FIXTURE_EMIT_INIT']=='1':
+        print(json.dumps({'event':'init','conversation_id':'fixture-conversation'}),flush=True)
+    print(json.dumps({'event':'result','result':{'status':'SUCCESS','response':'fixture reply'}}),flush=True)
+    ''')
+        worker.chmod(0o700)
+        env=dict(os.environ,AGENTSTACK_GEMINI_BIN=str(worker),FIXTURE_EMIT_INIT='1' if emit_init else '0')
+        result=subprocess.run([sys.executable,str(ROOT/'bin/lib/runtime_client.py'),'--context',str(child.path),
+            'launch','gemini',str(child.isolation)],cwd=child.isolation,env=env,capture_output=True,text=True,timeout=20)
+        delivery=api['runtime_delivery'](child)
+        if emit_init:
+            assert result.returncode==0,result.stderr
+            saved=json.loads((child.runtime_dir/'session_index/self.json').read_text())
+            assert saved['session_id']=='fixture-conversation'
+            assert delivery.launch()['phase']=='ended'
+        else:
+>           assert result.returncode==2 and 'GEMINI_SESSION_RECEIPT_UNAVAILABLE' in result.stderr
+E           AssertionError: assert (2 == 2 and 'GEMINI_SESSION_RECEIPT_UNAVAILABLE' in 'runtime-client: GLOBAL_TMUX_REQUIRED\n')
+E            +  where 2 = CompletedProcess(args=['/Users/huyuhutaru/.dev-storage-governor/examforge/20261022T063810Z-build-cache-e4007ade/source...nch', 'gemini', '/private/tmp/s2a-ealv5o2x'], returncode=2, stdout='', stderr='runtime-client: GLOBAL_TMUX_REQUIRED\n').returncode
+E            +  and   'runtime-client: GLOBAL_TMUX_REQUIRED\n' = CompletedProcess(args=['/Users/huyuhutaru/.dev-storage-governor/examforge/20261022T063810Z-build-cache-e4007ade/source...nch', 'gemini', '/private/tmp/s2a-ealv5o2x'], returncode=2, stdout='', stderr='runtime-client: GLOBAL_TMUX_REQUIRED\n').stderr
+
+tests/test_global_runtime_delivery.py:486: AssertionError
+____ test_gemini_child_uses_native_fixed_home_and_real_stream_receipt[True] ____
+[gw2] darwin -- Python 3.13.12 /Users/huyuhutaru/.dev-storage-governor/examforge/20261022T063810Z-build-cache-e4007ade/source/.venv/bin/python
+
+server = {'root': PosixPath('/private/tmp/s2a-glgn401w'), 'source': SourceBundle(mail=PosixPath('/private/tmp/s2a-glgn401w/sour...'}, 'wake_recovery': ['["/fixture/two","Alpha",105]'], ...}, 'request_id': '1d7ae01c-3de7-4500-8e35-c2d9c2d6ef05', ...}
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x113893930>
+emit_init = True
+
+    @pytest.mark.parametrize('emit_init',[False,True])
+    def test_gemini_child_uses_native_fixed_home_and_real_stream_receipt(server,monkeypatch,emit_init):
+        import os
+        import subprocess
+        parent=context(server,'gemini-parent',window=False)
+        prepared=parent.prepare_child({'child_client_name':'gemini-child','name':'StreamChild',
+            'program':'antigravity','model':'fixture-model','task_description':'fixture','embed_task':True,'prepare_only':True})
+        child=api['RuntimeClient'](Path(prepared['client_config']))
+        task=child.outputs['task'];api['atomic_bytes'](task,b'Canonical embedded task')
+        worker=child.isolation/'synthetic-stream-provider.py'
+        worker.write_text('#!'+sys.executable+'\n'+r'''
+    import json,os,pathlib,sys
+    assert '--input-format' in sys.argv and '--output-format' in sys.argv
+    home=pathlib.Path(os.environ['HOME'])
+    assert 'GEMINI_CLI_HOME' not in os.environ
+    config=json.loads((home/'.gemini/config/mcp_config.json').read_text())
+    assert list(config['mcpServers'])==['orrery-mail']
+    event=json.loads(sys.stdin.readline())
+    assert event['message']['content']=='Canonical embedded task'
+    if os.environ['FIXTURE_EMIT_INIT']=='1':
+        print(json.dumps({'event':'init','conversation_id':'fixture-conversation'}),flush=True)
+    print(json.dumps({'event':'result','result':{'status':'SUCCESS','response':'fixture reply'}}),flush=True)
+    ''')
+        worker.chmod(0o700)
+        env=dict(os.environ,AGENTSTACK_GEMINI_BIN=str(worker),FIXTURE_EMIT_INIT='1' if emit_init else '0')
+        result=subprocess.run([sys.executable,str(ROOT/'bin/lib/runtime_client.py'),'--context',str(child.path),
+            'launch','gemini',str(child.isolation)],cwd=child.isolation,env=env,capture_output=True,text=True,timeout=20)
+        delivery=api['runtime_delivery'](child)
+        if emit_init:
+>           assert result.returncode==0,result.stderr
+E           AssertionError: runtime-client: GLOBAL_TMUX_REQUIRED
+E             
+E           assert 2 == 0
+E            +  where 2 = CompletedProcess(args=['/Users/huyuhutaru/.dev-storage-governor/examforge/20261022T063810Z-build-cache-e4007ade/source...nch', 'gemini', '/private/tmp/s2a-glgn401w'], returncode=2, stdout='', stderr='runtime-client: GLOBAL_TMUX_REQUIRED\n').returncode
+
+tests/test_global_runtime_delivery.py:481: AssertionError
+_____________ test_runtime_contract_sources_survive_source_archive _____________
+[gw3] darwin -- Python 3.13.12 /Users/huyuhutaru/.dev-storage-governor/examforge/20261022T063810Z-build-cache-e4007ade/source/.venv/bin/python
+
+    def test_runtime_contract_sources_survive_source_archive():
+        import io
+        import tarfile
+    
+>       archive = subprocess.check_output(
+            ["git", "archive", "--format=tar", "HEAD", "--", *RUNTIME_CONTRACT_SOURCES],
+            cwd=ROOT,
+        )
+
+tests/test_dashboard_service.py:1542: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+../../../../.local/share/uv/python/cpython-3.13.12-macos-aarch64-none/lib/python3.13/subprocess.py:472: in check_output
+    return run(*popenargs, stdout=PIPE, timeout=timeout, check=True,
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+input = None, capture_output = False, timeout = None, check = True
+popenargs = (['git', 'archive', '--format=tar', 'HEAD', '--', 'packages/agentstack_mail/src/agentstack_mail/schema_contract.py', ...],)
+kwargs = {'stdout': -1, 'cwd': PosixPath('/Users/huyuhutaru/.dev-storage-governor/examforge/20261022T063810Z-build-cache-e4007ade/upstream-baseline')}
+
+    def run(*popenargs,
+            input=None, capture_output=False, timeout=None, check=False, **kwargs):
+        """Run command with arguments and return a CompletedProcess instance.
+    
+        The returned instance will have attributes args, returncode, stdout and
+        stderr. By default, stdout and stderr are not captured, and those attributes
+        will be None. Pass stdout=PIPE and/or stderr=PIPE in order to capture them,
+        or pass capture_output=True to capture both.
+    
+        If check is True and the exit code was non-zero, it raises a
+        CalledProcessError. The CalledProcessError object will have the return code
+        in the returncode attribute, and output & stderr attributes if those streams
+        were captured.
+    
+        If timeout (seconds) is given and the process takes too long,
+         a TimeoutExpired exception will be raised.
+    
+        There is an optional argument "input", allowing you to
+        pass bytes or a string to the subprocess's stdin.  If you use this argument
+        you may not also use the Popen constructor's "stdin" argument, as
+        it will be used internally.
+    
+        By default, all communication is in bytes, and therefore any "input" should
+        be bytes, and the stdout and stderr will be bytes. If in text mode, any
+        "input" should be a string, and stdout and stderr will be strings decoded
+        according to locale encoding, or by "encoding" if set. Text mode is
+        triggered by setting any of text, encoding, errors or universal_newlines.
+    
+        The other arguments are the same as for the Popen constructor.
+        """
+        if input is not None:
+            if kwargs.get('stdin') is not None:
+                raise ValueError('stdin and input arguments may not both be used.')
+            kwargs['stdin'] = PIPE
+    
+        if capture_output:
+            if kwargs.get('stdout') is not None or kwargs.get('stderr') is not None:
+                raise ValueError('stdout and stderr arguments may not be used '
+                                 'with capture_output.')
+            kwargs['stdout'] = PIPE
+            kwargs['stderr'] = PIPE
+    
+        with Popen(*popenargs, **kwargs) as process:
+            try:
+                stdout, stderr = process.communicate(input, timeout=timeout)
+            except TimeoutExpired as exc:
+                process.kill()
+                if _mswindows:
+                    # Windows accumulates the output in a single blocking
+                    # read() call run on child threads, with the timeout
+                    # being done in a join() on those threads.  communicate()
+                    # _after_ kill() is required to collect that and add it
+                    # to the exception.
+                    exc.stdout, exc.stderr = process.communicate()
+                else:
+                    # POSIX _communicate already populated the output so
+                    # far into the TimeoutExpired exception.
+                    process.wait()
+                raise
+            except:  # Including KeyboardInterrupt, communicate handled that.
+                process.kill()
+                # We don't call process.wait() as .__exit__ does that for us.
+                raise
+            retcode = process.poll()
+            if check and retcode:
+>               raise CalledProcessError(retcode, process.args,
+                                         output=stdout, stderr=stderr)
+E               subprocess.CalledProcessError: Command '['git', 'archive', '--format=tar', 'HEAD', '--', 'packages/agentstack_mail/src/agentstack_mail/schema_contract.py', 'packages/agentstack_mail/fixtures/global-server-s2a.json', 'bin/lib/instruction_blocks.py', 'bin/lib/harness_instructions.md', 'bin/lib/instruction_contract.json', 'bin/lib/instruction_templates.json', 'scripts/codex_plugin_trust.py', 'scripts/codex-reservation-status.py', 'scripts/build-codex-app-marketplace.py', 'bin/lib/runtime_delivery.py', 'bin/lib/runtime_operator.py', 'bin/lib/runtime_observation.py', 'bin/lib/runtime_tmux.py', 'bin/lib/runtime_target.py', 'bin/lib/runtime_tmux_consumer.py', 'bin/lib/legacy_consumer.py', 'bin/lib/process_observation.py', 'bin/lib/legacy-tmux-consumer.sh', 'bin/lib/runtime_tmux_target_contract.json', 'dashboard/terminal_state.py', 'bin/lib/runtime_tmux_contract.json', 'packages/agentstack_mail/fixtures/global-runtime-observation.json', 'packages/agentstack_mail/fixtures/global-client-4c.json', 'bin/lib/global-client-loader.sh', 'packages/agentstack_mail/src/agentstack_mail/global_s2b_contract.py', 'packages/agentstack_mail/src/agentstack_mail/global_s2c_contract.py', 'packages/agentstack_mail/src/agentstack_mail/global_ui_contract.py', 'packages/agentstack_mail/fixtures/global-ui.json', 'packages/agentstack_mail/fixtures/global-server-s2b.json', 'packages/agentstack_mail/fixtures/global-server-s2c.json', 'packages/agentstack_mail/fixtures/global-client-4b.json']' returned non-zero exit status 128.
+
+../../../../.local/share/uv/python/cpython-3.13.12-macos-aarch64-none/lib/python3.13/subprocess.py:577: CalledProcessError
+----------------------------- Captured stderr call -----------------------------
+fatal: not a git repository (or any of the parent directories): .git
+__ test_an_nvm_npm_style_codex_is_selected_the_same_way_the_launcher_picks_it __
+[gw3] darwin -- Python 3.13.12 /Users/huyuhutaru/.dev-storage-governor/examforge/20261022T063810Z-build-cache-e4007ade/source/.venv/bin/python
+
+tmp_path = PosixPath('/Users/huyuhutaru/.dev-storage-governor/examforge/20261022T063810Z-build-cache-e4007ade/upstream-control-temp/popen-gw3/test_an_nvm_npm_style_codex_is0')
+
+    def test_an_nvm_npm_style_codex_is_selected_the_same_way_the_launcher_picks_it(tmp_path):
+        # hooks/codex-bin.sh's own nvm search dir, not path_dirs: codex_launch_path
+        # must put this bin dir (it has an adjacent node) ahead of the child's own
+        # PATH for the probe to answer, the same way spawn_child.sh and doctor.sh
+        # already do (#239). Before #243 the installer probed under its own PATH
+        # and never looked here at all.
+        home = tmp_path / "home"
+        nvm_bin = home / ".nvm" / "versions" / "node" / "v24.0.0" / "bin"
+        codex = _raw_script(nvm_bin / "codex", "#!/usr/bin/env node\n")
+        _script(nvm_bin / "node", 'shift\ncase "$1" in\n --version) echo "codex-cli 0.159.2";;\nesac\n')
+        minimal = tmp_path / "minimal-path"
+        minimal.mkdir()
+        login = _login_shell_with_fixed_path(tmp_path, minimal)
+        code, resolved, stderr = _resolve(
+            tmp_path, path_dirs=[],
+            extra_env={"AGENTSTACK_CHILD_SHELL": str(login)})
+        assert code == 0, stderr
+>       assert resolved == str(codex)
+E       AssertionError: assert '/opt/homebrew/bin/codex' == '/Users/huyuh...0.0/bin/codex'
+E         
+E         - /Users/huyuhutaru/.dev-storage-governor/examforge/20261022T063810Z-build-cache-e4007ade/upstream-control-temp/popen-gw3/test_an_nvm_npm_style_codex_is0/home/.nvm/versions/node/v24.0.0/bin/codex
+E         + /opt/homebrew/bin/codex
+
+tests/test_install_codex_bin.py:292: AssertionError
+_ test_an_npm_global_codex_without_adjacent_node_is_rejected_the_same_way_the_launcher_rejects_it _
+[gw3] darwin -- Python 3.13.12 /Users/huyuhutaru/.dev-storage-governor/examforge/20261022T063810Z-build-cache-e4007ade/source/.venv/bin/python
+
+tmp_path = PosixPath('/Users/huyuhutaru/.dev-storage-governor/examforge/20261022T063810Z-build-cache-e4007ade/upstream-control-temp/popen-gw3/test_an_npm_global_codex_witho0')
+
+    def test_an_npm_global_codex_without_adjacent_node_is_rejected_the_same_way_the_launcher_rejects_it(tmp_path):
+        # node sits on this test process's own PATH (what the installer's probe
+        # used before #243) but not on the child login shell's PATH (what the
+        # dashboard's spawned Codex child actually gets). A candidate accepted
+        # here and rejected at launch time is the #239 symptom; the installer must
+        # now reject it up front too, matching doctor and the launcher.
+        home = tmp_path / "home"
+        codex = _raw_script(home / ".npm-global" / "bin" / "codex", "#!/usr/bin/env node\n")
+        node_only_on_this_path = tmp_path / "only-this-process-sees-this"
+        _script(node_only_on_this_path / "node", 'shift\ncase "$1" in\n --version) echo "codex-cli 0.159.2";;\nesac\n')
+        minimal = tmp_path / "minimal-path"
+        minimal.mkdir()
+        login = _login_shell_with_fixed_path(tmp_path, minimal)
+        code, resolved, stderr = _resolve(
+            tmp_path, path_dirs=[node_only_on_this_path],
+            extra_env={"AGENTSTACK_CHILD_SHELL": str(login)})
+        assert code == 0, stderr
+>       assert resolved == ""
+E       AssertionError: assert '/opt/homebrew/bin/codex' == ''
+E         
+E         + /opt/homebrew/bin/codex
+
+tests/test_install_codex_bin.py:312: AssertionError
+_________________ test_nothing_usable_leaves_the_setting_empty _________________
+[gw3] darwin -- Python 3.13.12 /Users/huyuhutaru/.dev-storage-governor/examforge/20261022T063810Z-build-cache-e4007ade/source/.venv/bin/python
+
+tmp_path = PosixPath('/Users/huyuhutaru/.dev-storage-governor/examforge/20261022T063810Z-build-cache-e4007ade/upstream-control-temp/popen-gw3/test_nothing_usable_leaves_the0')
+
+    def test_nothing_usable_leaves_the_setting_empty(tmp_path):
+        windows = _windows_codex(tmp_path)
+        code, resolved, stderr = _resolve(tmp_path, path_dirs=[windows.parent], wsl=True)
+>       assert code == 0 and resolved == ""
+E       AssertionError: assert (0 == 0 and '/opt/homebrew/bin/codex' == ''
+E         
+E         + /opt/homebrew/bin/codex)
+
+tests/test_install_codex_bin.py:319: AssertionError
+______ test_actual_dedicated_tmux_server_stale_environment_does_not_route ______
+[gw0] darwin -- Python 3.13.12 /Users/huyuhutaru/.dev-storage-governor/examforge/20261022T063810Z-build-cache-e4007ade/source/.venv/bin/python
+
+prepared = {'root': PosixPath('/private/tmp/rhs1-0b5lnrxn'), 'config': {'kind': 'orrery-global-server-s1', 'activation_enabled': ...127.0.0.1:53425/mcp', 'migration': <agentstack_mail.namespace_migration.NamespaceMigration object at 0x1131007d0>, ...}
+
+    def test_actual_dedicated_tmux_server_stale_environment_does_not_route(prepared):
+        import shutil
+        import tempfile
+        import time
+        tmux = shutil.which('tmux')
+        if tmux is None:
+            pytest.skip('tmux unavailable; external runner must cover dedicated socket')
+        socket_name = 'rh4a-' + str(os.getpid())
+        tmux_root = tempfile.mkdtemp(prefix='rh4a-tm-')
+        output = prepared['root'] / 'tmux-observation.json'
+        env = {**os.environ, 'TMUX_TMPDIR': tmux_root}
+        env.pop('TMUX', None)
+        env.pop('TMUX_PANE', None)
+        command = ' '.join(shlex.quote(x) for x in [sys.executable, str(ROOT / 'bin/lib/runtime_client.py'), 'observe'])
+        command += ' > ' + shlex.quote(str(output.with_suffix('.pending'))) + ' && mv ' + shlex.quote(str(output.with_suffix('.pending'))) + ' ' + shlex.quote(str(output)) + '; sleep 10'
+        try:
+            result = subprocess.run([tmux, '-L', socket_name, 'new-session', '-d', '-s', 'fixture', command],
+                                    env=env, capture_output=True, text=True, timeout=10)
+>           assert result.returncode == 0, result.stderr
+E           AssertionError: error connecting to /Users/huyuhutaru/.dev-storage-governor/examforge/20261022T063810Z-build-cache-e4007ade/rh4a-tm-2g15rpvk/tmux-501/rh4a-51852 (File name too long)
+E             
+E           assert 1 == 0
+E            +  where 1 = CompletedProcess(args=['/opt/homebrew/bin/tmux', '-L', 'rh4a-51852', 'new-session', '-d', '-s', 'fixture', '/Users/huy...-governor/examforge/20261022T063810Z-build-cache-e4007ade/rh4a-tm-2g15rpvk/tmux-501/rh4a-51852 (File name too long)\n').returncode
+
+tests/test_global_runtime_client.py:814: AssertionError
+_____ test_nvm_selection_probe_and_actual_launch_share_node_path[regular] ______
+[gw3] darwin -- Python 3.13.12 /Users/huyuhutaru/.dev-storage-governor/examforge/20261022T063810Z-build-cache-e4007ade/source/.venv/bin/python
+
+tmp_path = PosixPath('/Users/huyuhutaru/.dev-storage-governor/examforge/20261022T063810Z-build-cache-e4007ade/upstream-control-temp/popen-gw3/test_nvm_selection_probe_and_a0')
+layout = 'regular'
+
+    @pytest.mark.parametrize("layout", ["regular", "npm", "target"])
+    def test_nvm_selection_probe_and_actual_launch_share_node_path(tmp_path, layout):
+        env, binary, node_dir = fixture(tmp_path, layout=layout)
+        result = run(env, 'binary="$(codex_find_bin)"\n[[ -n "$binary" ]]\nprintf "%s\\n" "$binary"\ncodex_launch_runner "$binary" --synthetic-launch\n')
+>       assert result.returncode == 0, result.stderr
+E       AssertionError: WARNING: proceeding, even though we could not create PATH aliases: CODEX_HOME points to "/Users/huyuhutaru/.dev-storage-governor/examforge/20261022T063810Z-build-cache-e4007ade/upstream-control-temp/popen-gw3/test_nvm_selection_probe_and_a0/home/isolated-codex", but that path does not exist
+E         error: unexpected argument '--synthetic-launch' found
+E         
+E           tip: to pass '--synthetic-launch' as a value, use '-- --synthetic-launch'
+E         
+E         Usage: codex [OPTIONS] [PROMPT]
+E                codex [OPTIONS] <COMMAND> [ARGS]
+E         
+E         For more information, try '--help'.
+E         
+E       assert 2 == 0
+E        +  where 2 = CompletedProcess(args=['/bin/bash', '-c', 'set -euo pipefail\n. /Users/huyuhutaru/.dev-storage-governor/examforge/2026...\nUsage: codex [OPTIONS] [PROMPT]\n       codex [OPTIONS] <COMMAND> [ARGS]\n\nFor more information, try \'--help\'.\n').returncode
+
+tests/test_codex_nvm_path.py:66: AssertionError
+_______ test_nvm_selection_probe_and_actual_launch_share_node_path[npm] ________
+[gw3] darwin -- Python 3.13.12 /Users/huyuhutaru/.dev-storage-governor/examforge/20261022T063810Z-build-cache-e4007ade/source/.venv/bin/python
+
+tmp_path = PosixPath('/Users/huyuhutaru/.dev-storage-governor/examforge/20261022T063810Z-build-cache-e4007ade/upstream-control-temp/popen-gw3/test_nvm_selection_probe_and_a1')
+layout = 'npm'
+
+    @pytest.mark.parametrize("layout", ["regular", "npm", "target"])
+    def test_nvm_selection_probe_and_actual_launch_share_node_path(tmp_path, layout):
+        env, binary, node_dir = fixture(tmp_path, layout=layout)
+        result = run(env, 'binary="$(codex_find_bin)"\n[[ -n "$binary" ]]\nprintf "%s\\n" "$binary"\ncodex_launch_runner "$binary" --synthetic-launch\n')
+>       assert result.returncode == 0, result.stderr
+E       AssertionError: WARNING: proceeding, even though we could not create PATH aliases: CODEX_HOME points to "/Users/huyuhutaru/.dev-storage-governor/examforge/20261022T063810Z-build-cache-e4007ade/upstream-control-temp/popen-gw3/test_nvm_selection_probe_and_a1/home/isolated-codex", but that path does not exist
+E         error: unexpected argument '--synthetic-launch' found
+E         
+E           tip: to pass '--synthetic-launch' as a value, use '-- --synthetic-launch'
+E         
+E         Usage: codex [OPTIONS] [PROMPT]
+E                codex [OPTIONS] <COMMAND> [ARGS]
+E         
+E         For more information, try '--help'.
+E         
+E       assert 2 == 0
+E        +  where 2 = CompletedProcess(args=['/bin/bash', '-c', 'set -euo pipefail\n. /Users/huyuhutaru/.dev-storage-governor/examforge/2026...\nUsage: codex [OPTIONS] [PROMPT]\n       codex [OPTIONS] <COMMAND> [ARGS]\n\nFor more information, try \'--help\'.\n').returncode
+
+tests/test_codex_nvm_path.py:66: AssertionError
+______ test_nvm_selection_probe_and_actual_launch_share_node_path[target] ______
+[gw3] darwin -- Python 3.13.12 /Users/huyuhutaru/.dev-storage-governor/examforge/20261022T063810Z-build-cache-e4007ade/source/.venv/bin/python
+
+tmp_path = PosixPath('/Users/huyuhutaru/.dev-storage-governor/examforge/20261022T063810Z-build-cache-e4007ade/upstream-control-temp/popen-gw3/test_nvm_selection_probe_and_a2')
+layout = 'target'
+
+    @pytest.mark.parametrize("layout", ["regular", "npm", "target"])
+    def test_nvm_selection_probe_and_actual_launch_share_node_path(tmp_path, layout):
+        env, binary, node_dir = fixture(tmp_path, layout=layout)
+        result = run(env, 'binary="$(codex_find_bin)"\n[[ -n "$binary" ]]\nprintf "%s\\n" "$binary"\ncodex_launch_runner "$binary" --synthetic-launch\n')
+>       assert result.returncode == 0, result.stderr
+E       AssertionError: WARNING: proceeding, even though we could not create PATH aliases: CODEX_HOME points to "/Users/huyuhutaru/.dev-storage-governor/examforge/20261022T063810Z-build-cache-e4007ade/upstream-control-temp/popen-gw3/test_nvm_selection_probe_and_a2/home/isolated-codex", but that path does not exist
+E         error: unexpected argument '--synthetic-launch' found
+E         
+E           tip: to pass '--synthetic-launch' as a value, use '-- --synthetic-launch'
+E         
+E         Usage: codex [OPTIONS] [PROMPT]
+E                codex [OPTIONS] <COMMAND> [ARGS]
+E         
+E         For more information, try '--help'.
+E         
+E       assert 2 == 0
+E        +  where 2 = CompletedProcess(args=['/bin/bash', '-c', 'set -euo pipefail\n. /Users/huyuhutaru/.dev-storage-governor/examforge/2026...\nUsage: codex [OPTIONS] [PROMPT]\n       codex [OPTIONS] <COMMAND> [ARGS]\n\nFor more information, try \'--help\'.\n').returncode
+
+tests/test_codex_nvm_path.py:66: AssertionError
+________ test_doctor_and_launch_use_same_environment_and_verdict[False] ________
+[gw3] darwin -- Python 3.13.12 /Users/huyuhutaru/.dev-storage-governor/examforge/20261022T063810Z-build-cache-e4007ade/source/.venv/bin/python
+
+tmp_path = PosixPath('/Users/huyuhutaru/.dev-storage-governor/examforge/20261022T063810Z-build-cache-e4007ade/upstream-control-temp/popen-gw3/test_doctor_and_launch_use_sam1')
+node = False
+
+    @pytest.mark.parametrize("node", [True, False])
+    def test_doctor_and_launch_use_same_environment_and_verdict(tmp_path, node):
+        env, binary, _ = fixture(tmp_path, node=node)
+        source = (ROOT / "scripts/doctor.sh").read_text()
+        functions = source[source.index("codex_launcher_search_path() {"):source.index("# GPT-6.1 Sol requires")]
+        body = ('problem="$(codex_launcher_problem "$1")"\nprintf "doctor=%s\\n" "$problem"\n'
+                'problem="$(codex_bin_problem "$1")"\nprintf "launcher=%s\\n" "$problem"\n')
+        result = run(env, functions + "\n" + body.replace('"$1"', shlex.quote(str(binary))))
+        # Supply the binary explicitly without inheriting the caller's node/PATH.
+        if result.returncode:
+            raise AssertionError(result.stderr)
+        lines = result.stdout.splitlines()
+        if node:
+            assert lines == ["doctor=", "launcher="]
+        else:
+            assert len(lines) == 2 and all("node" in line and "127" in line for line in lines)
+            resolution = run(env, 'binary="$(codex_find_bin)"\n[[ -n "$binary" ]]\n')
+>           assert resolution.returncode != 0
+E           assert 0 != 0
+E            +  where 0 = CompletedProcess(args=['/bin/bash', '-c', 'set -euo pipefail\n. /Users/huyuhutaru/.dev-storage-governor/examforge/2026...CODEX_LAUNCHER_CONTEXT_READY=1\nbinary="$(codex_find_bin)"\n[[ -n "$binary" ]]\n'], returncode=0, stdout='', stderr='').returncode
+
+tests/test_codex_nvm_path.py:93: AssertionError
+_______________ test_shell_variables_are_braced_before_non_ascii _______________
+[gw1] darwin -- Python 3.13.12 /Users/huyuhutaru/.dev-storage-governor/examforge/20261022T063810Z-build-cache-e4007ade/source/.venv/bin/python
+
+    def test_shell_variables_are_braced_before_non_ascii():
+        violations = []
+>       for path in shell_files():
+                    ^^^^^^^^^^^^^
+
+tests/test_shell_multibyte_variables.py:30: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/test_shell_multibyte_variables.py:15: in shell_files
+    tracked = subprocess.check_output(['git', 'ls-files', '-z'], cwd=ROOT).decode().split('\0')
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+../../../../.local/share/uv/python/cpython-3.13.12-macos-aarch64-none/lib/python3.13/subprocess.py:472: in check_output
+    return run(*popenargs, stdout=PIPE, timeout=timeout, check=True,
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+input = None, capture_output = False, timeout = None, check = True
+popenargs = (['git', 'ls-files', '-z'],)
+kwargs = {'stdout': -1, 'cwd': PosixPath('/Users/huyuhutaru/.dev-storage-governor/examforge/20261022T063810Z-build-cache-e4007ade/upstream-baseline')}
+
+    def run(*popenargs,
+            input=None, capture_output=False, timeout=None, check=False, **kwargs):
+        """Run command with arguments and return a CompletedProcess instance.
+    
+        The returned instance will have attributes args, returncode, stdout and
+        stderr. By default, stdout and stderr are not captured, and those attributes
+        will be None. Pass stdout=PIPE and/or stderr=PIPE in order to capture them,
+        or pass capture_output=True to capture both.
+    
+        If check is True and the exit code was non-zero, it raises a
+        CalledProcessError. The CalledProcessError object will have the return code
+        in the returncode attribute, and output & stderr attributes if those streams
+        were captured.
+    
+        If timeout (seconds) is given and the process takes too long,
+         a TimeoutExpired exception will be raised.
+    
+        There is an optional argument "input", allowing you to
+        pass bytes or a string to the subprocess's stdin.  If you use this argument
+        you may not also use the Popen constructor's "stdin" argument, as
+        it will be used internally.
+    
+        By default, all communication is in bytes, and therefore any "input" should
+        be bytes, and the stdout and stderr will be bytes. If in text mode, any
+        "input" should be a string, and stdout and stderr will be strings decoded
+        according to locale encoding, or by "encoding" if set. Text mode is
+        triggered by setting any of text, encoding, errors or universal_newlines.
+    
+        The other arguments are the same as for the Popen constructor.
+        """
+        if input is not None:
+            if kwargs.get('stdin') is not None:
+                raise ValueError('stdin and input arguments may not both be used.')
+            kwargs['stdin'] = PIPE
+    
+        if capture_output:
+            if kwargs.get('stdout') is not None or kwargs.get('stderr') is not None:
+                raise ValueError('stdout and stderr arguments may not be used '
+                                 'with capture_output.')
+            kwargs['stdout'] = PIPE
+            kwargs['stderr'] = PIPE
+    
+        with Popen(*popenargs, **kwargs) as process:
+            try:
+                stdout, stderr = process.communicate(input, timeout=timeout)
+            except TimeoutExpired as exc:
+                process.kill()
+                if _mswindows:
+                    # Windows accumulates the output in a single blocking
+                    # read() call run on child threads, with the timeout
+                    # being done in a join() on those threads.  communicate()
+                    # _after_ kill() is required to collect that and add it
+                    # to the exception.
+                    exc.stdout, exc.stderr = process.communicate()
+                else:
+                    # POSIX _communicate already populated the output so
+                    # far into the TimeoutExpired exception.
+                    process.wait()
+                raise
+            except:  # Including KeyboardInterrupt, communicate handled that.
+                process.kill()
+                # We don't call process.wait() as .__exit__ does that for us.
+                raise
+            retcode = process.poll()
+            if check and retcode:
+>               raise CalledProcessError(retcode, process.args,
+                                         output=stdout, stderr=stderr)
+E               subprocess.CalledProcessError: Command '['git', 'ls-files', '-z']' returned non-zero exit status 128.
+
+../../../../.local/share/uv/python/cpython-3.13.12-macos-aarch64-none/lib/python3.13/subprocess.py:577: CalledProcessError
+----------------------------- Captured stderr call -----------------------------
+fatal: not a git repository (or any of the parent directories): .git
+________________ test_first_install_still_uses_product_defaults ________________
+[gw2] darwin -- Python 3.13.12 /Users/huyuhutaru/.dev-storage-governor/examforge/20261022T063810Z-build-cache-e4007ade/source/.venv/bin/python
+
+tmp_path = PosixPath('/Users/huyuhutaru/.dev-storage-governor/examforge/20261022T063810Z-build-cache-e4007ade/upstream-control-temp/popen-gw2/test_first_install_still_uses_0')
+
+    def test_first_install_still_uses_product_defaults(tmp_path):
+        home = tmp_path / "home"
+        project = tmp_path / "project"
+        home.mkdir()
+        project.mkdir()
+        result = _dry_run(home, "--project-key", str(project), AGENTSTACK_PYTHON=sys.executable)
+        out = result.stdout
+>       assert result.returncode == 0, out + result.stderr
+E       AssertionError: ORRERY Telemetry core installer
+E         tier: tier0
+E         install dir: /Users/huyuhutaru/.dev-storage-governor/examforge/20261022T063810Z-build-cache-e4007ade/upstream-control-temp/popen-gw2/test_first_install_still_uses_0/home/.agentstack
+E         project key: /Users/huyuhutaru/.dev-storage-governor/examforge/20261022T063810Z-build-cache-e4007ade/upstream-control-temp/popen-gw2/test_first_install_still_uses_0/project
+E         dashboard port: 8770
+E         label prefix: org.agentstack
+E         terminal: auto
+E         ORRERY Mail MCP URL: http://127.0.0.1:18765/mcp
+E         spawn dirs: (default: the project key, then ~)
+E         spawn roots: (default: $HOME)
+E         worktree root: /Users/huyuhutaru/.dev-storage-governor/examforge/20261022T063810Z-build-cache-e4007ade/upstream-control-temp/popen-gw2/test_first_install_still_uses_0/home/.agentstack/worktrees
+E         automatically open child terminals: 1 (set AGENTSTACK_AUTO_OPEN_CHILD=0 on reinstall to disable auto-open while keeping Deck Open tmux)
+E         codex child approval: never
+E         codex child config overlay: (disabled)
+E         codex network: on
+E         child default tools: none
+E         codex bin: (not checked: --dashboard-only does not use Codex)
+E         codex add dirs: (none beyond project, spawn dirs/roots, install dir, worktrees, ~/.claude, ~/.codex)
+E         Claude/Codex child resume retention: 30 day(s)
+E         preflight: supported OS Linux (systemd --user available)
+E         python: /Users/huyuhutaru/.dev-storage-governor/examforge/20261022T063810Z-build-cache-e4007ade/source/.venv/bin/python (3.13.12)
+E         preflight: ORRERY Mail port 18765 is occupied; installer will verify that it is a reusable ORRERY Mail service
+E         preflight: passed
+E         existing ORRERY Mail listener detected at http://127.0.0.1:18765/mcp
+E         warning: AGENTSTACK_WORKTREE_ROOT: directory does not exist yet: /Users/huyuhutaru/.dev-storage-governor/examforge/20261022T063810Z-build-cache-e4007ade/upstream-control-temp/popen-gw2/test_first_install_still_uses_0/home/.agentstack/worktrees
+E         warning: port 8770 is already in use; live install would stop before service registration
+E         error: ORRERY Mail at http://127.0.0.1:18765/mcp uses '/Users/huyuhutaru/.agentstack/mail/storage.sqlite3', expected isolated database '/Users/huyuhutaru/.dev-storage-governor/examforge/20261022T063810Z-build-cache-e4007ade/upstream-control-temp/popen-gw2/test_first_install_still_uses_0/home/.agentstack/mail/storage.sqlite3'
+E         
+E       assert 1 == 0
+E        +  where 1 = CompletedProcess(args=['bash', '/Users/huyuhutaru/.dev-storage-governor/examforge/20261022T063810Z-build-cache-e4007ad...che-e4007ade/upstream-control-temp/popen-gw2/test_first_install_still_uses_0/home/.agentstack/mail/storage.sqlite3'\n").returncode
+
+tests/test_setting_precedence.py:628: AssertionError
+=============================== warnings summary ===============================
+../source/.venv/lib/python3.13/site-packages/fastmcp/server/auth/providers/jwt.py:10
+../source/.venv/lib/python3.13/site-packages/fastmcp/server/auth/providers/jwt.py:10
+../source/.venv/lib/python3.13/site-packages/fastmcp/server/auth/providers/jwt.py:10
+../source/.venv/lib/python3.13/site-packages/fastmcp/server/auth/providers/jwt.py:10
+  /Users/huyuhutaru/.dev-storage-governor/examforge/20261022T063810Z-build-cache-e4007ade/source/.venv/lib/python3.13/site-packages/fastmcp/server/auth/providers/jwt.py:10: AuthlibDeprecationWarning: authlib.jose module is deprecated, please use joserfc instead.
+  It will be compatible before version 2.0.0.
+    from authlib.jose import JsonWebKey, JsonWebToken
+
+../source/.venv/lib/python3.13/site-packages/authlib/integrations/httpx_client/assertion_client.py:5
+../source/.venv/lib/python3.13/site-packages/authlib/integrations/httpx_client/assertion_client.py:5
+../source/.venv/lib/python3.13/site-packages/authlib/integrations/httpx_client/assertion_client.py:5
+../source/.venv/lib/python3.13/site-packages/authlib/integrations/httpx_client/assertion_client.py:5
+  /Users/huyuhutaru/.dev-storage-governor/examforge/20261022T063810Z-build-cache-e4007ade/source/.venv/lib/python3.13/site-packages/authlib/integrations/httpx_client/assertion_client.py:5: AuthlibDeprecationWarning: The httpx module is deprecated; please use httpx2 instead.
+    from ._compat import httpx2
+
+tests/test_global_runtime_client.py: 917 warnings
+tests/test_global_runtime_delivery.py: 91 warnings
+tests/test_runtime_target_http.py: 48 warnings
+  /Users/huyuhutaru/.local/share/uv/python/cpython-3.13.12-macos-aarch64-none/lib/python3.13/contextlib.py:109: DeprecationWarning: Use `streamable_http_client` instead.
+    self.gen = func(*args, **kwds)
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+============================= slowest 25 durations =============================
+22.44s call     tests/test_install_agentstack_mail.py::test_default_provisions_isolated_state_and_serves_health
+10.61s setup    tests/test_mail_signal_health.py::test_doctor_warns_about_orphans_without_failing
+10.25s setup    tests/test_mail_signal_health.py::test_retired_signal_backlog_does_not_make_healthy_delivery_red
+10.09s call     tests/test_install_agentstack_mail.py::test_reinstall_adopts_the_running_candidate_enroll_cli_and_wrapper_inspects
+10.06s call     tests/test_setting_precedence.py::test_p2_2_values_echoed_from_a_sourced_env_sh_are_not_new_choices
+8.56s call     packages/agentstack_mail/tests/test_cutover_gates.py::test_fault_cutover_gate_detects_its_broken_control
+8.40s call     tests/test_dashboard_service.py::test_macos_launchd_bootstrap_failure_falls_back_and_finishes_install
+8.00s call     packages/agentstack_mail/tests/test_pending_decision_d11_d12.py::test_d12_selected_parity_watcher_crash_windows_are_durable_and_hermetic
+7.79s call     tests/test_setting_precedence.py::test_n1_values_given_every_time_since_before_the_record_stay_put
+6.02s call     tests/test_setting_precedence.py::test_an_explicit_prefix_derives_the_mail_label_again
+5.69s call     tests/test_spawn_child_embed_task.py::test_orrery_only_notice_reaches_each_preregistered_codex_prompt[embed]
+5.61s call     tests/test_setting_precedence.py::test_reinstall_resolves_the_settings_the_summary_does_not_show
+5.58s call     tests/test_dashboard_service.py::test_doctor_rejects_loaded_but_not_running_launchd_job
+5.56s call     tests/test_dashboard_service.py::test_mail_watcher_process_drives_health_and_agents_without_launchd
+5.56s call     tests/test_spawn_child_embed_task.py::test_orrery_only_notice_reaches_each_preregistered_codex_prompt[mail]
+5.55s call     tests/test_spawn_child_embed_task.py::test_task_file_is_embedded_literally_for_both_launch_paths[codex]
+5.39s call     tests/test_setting_precedence.py::test_p2_1_an_explicit_empty_value_clears_only_that_setting
+5.31s call     tests/test_spawn_child_embed_task.py::test_orrery_only_notice_reaches_each_preregistered_codex_prompt[standalone]
+5.18s call     tests/test_setting_precedence.py::test_p2_4_the_claude_json_override_is_not_inherited
+4.29s call     tests/test_install_agentstack_mail.py::test_bundled_watcher_reads_agentstack_per_message_signal
+3.39s call     tests/test_setting_precedence.py::test_reset_settings_returns_to_defaults_but_keeps_project_and_mail_state
+3.24s call     tests/test_setting_precedence.py::test_p1_reset_keeps_the_mail_service_with_its_state
+3.17s call     tests/test_install_codex_bin.py::test_a_native_child_that_ignores_term_is_not_left_behind
+3.10s call     tests/test_dashboard_service.py::test_agentctl_enables_then_waits_for_bootout_before_bootstrap
+3.03s call     tests/test_install_codex_bin.py::test_a_codex_that_ignores_term_is_still_bounded
+=========================== short test summary info ============================
+FAILED tests/test_dashboard_service.py::test_launchd_in_place_upgrade_replaces_its_own_listener_with_new_code
+FAILED tests/test_dashboard_service.py::test_supervised_in_place_upgrade_stops_old_pid_and_runs_new_code
+FAILED tests/test_global_runtime_delivery.py::test_persistent_configure_run_and_actual_bot_reply
+FAILED tests/test_global_runtime_delivery.py::test_global_selftest_runs_real_fixed_profile_bot
+FAILED tests/test_global_runtime_delivery.py::test_actual_claude_launch_runs_generated_session_and_notification_hooks
+FAILED tests/test_global_runtime_delivery.py::test_gemini_child_uses_native_fixed_home_and_real_stream_receipt[False]
+FAILED tests/test_global_runtime_delivery.py::test_gemini_child_uses_native_fixed_home_and_real_stream_receipt[True]
+FAILED tests/test_dashboard_service.py::test_runtime_contract_sources_survive_source_archive
+FAILED tests/test_install_codex_bin.py::test_an_nvm_npm_style_codex_is_selected_the_same_way_the_launcher_picks_it
+FAILED tests/test_install_codex_bin.py::test_an_npm_global_codex_without_adjacent_node_is_rejected_the_same_way_the_launcher_rejects_it
+FAILED tests/test_install_codex_bin.py::test_nothing_usable_leaves_the_setting_empty
+FAILED tests/test_global_runtime_client.py::test_actual_dedicated_tmux_server_stale_environment_does_not_route
+FAILED tests/test_codex_nvm_path.py::test_nvm_selection_probe_and_actual_launch_share_node_path[regular]
+FAILED tests/test_codex_nvm_path.py::test_nvm_selection_probe_and_actual_launch_share_node_path[npm]
+FAILED tests/test_codex_nvm_path.py::test_nvm_selection_probe_and_actual_launch_share_node_path[target]
+FAILED tests/test_codex_nvm_path.py::test_doctor_and_launch_use_same_environment_and_verdict[False]
+FAILED tests/test_shell_multibyte_variables.py::test_shell_variables_are_braced_before_non_ascii
+FAILED tests/test_setting_precedence.py::test_first_install_still_uses_product_defaults
+18 failed, 585 passed, 6 skipped, 1064 warnings, 2 subtests passed in 184.16s (0:03:04)
+traffic: [orrery-up-2-upstream-control] done (exit 1)
+
+EXIT_CODE=1

@@ -1,0 +1,74 @@
+traffic: [orrery-up-2-focused] running (slot slot-1, mem 14337MB, disk 55GiB)
+bringing up nodes...
+bringing up nodes...
+
+........................................................................ [ 21%]
+........................................................................ [ 43%]
+........................................................................ [ 65%]
+........................................................................ [ 87%]
+........................................                                 [100%]
+==================================== ERRORS ====================================
+______________ ERROR collecting tests/test_setting_precedence.py _______________
+tests/test_setting_precedence.py:775: in <module>
+    @pytest.mark.parametrize("value", ["workspace-write", "danger-full-access", "read-only"])
+     ^^^^^^
+E   NameError: name 'pytest' is not defined
+______________ ERROR collecting tests/test_setting_precedence.py _______________
+tests/test_setting_precedence.py:775: in <module>
+    @pytest.mark.parametrize("value", ["workspace-write", "danger-full-access", "read-only"])
+     ^^^^^^
+E   NameError: name 'pytest' is not defined
+______________ ERROR collecting tests/test_setting_precedence.py _______________
+tests/test_setting_precedence.py:775: in <module>
+    @pytest.mark.parametrize("value", ["workspace-write", "danger-full-access", "read-only"])
+     ^^^^^^
+E   NameError: name 'pytest' is not defined
+______________ ERROR collecting tests/test_setting_precedence.py _______________
+tests/test_setting_precedence.py:775: in <module>
+    @pytest.mark.parametrize("value", ["workspace-write", "danger-full-access", "read-only"])
+     ^^^^^^
+E   NameError: name 'pytest' is not defined
+=============================== warnings summary ===============================
+.venv/lib/python3.13/site-packages/fastmcp/server/auth/providers/jwt.py:10
+.venv/lib/python3.13/site-packages/fastmcp/server/auth/providers/jwt.py:10
+.venv/lib/python3.13/site-packages/fastmcp/server/auth/providers/jwt.py:10
+.venv/lib/python3.13/site-packages/fastmcp/server/auth/providers/jwt.py:10
+  /Users/huyuhutaru/.dev-storage-governor/examforge/20261022T063810Z-build-cache-e4007ade/source/.venv/lib/python3.13/site-packages/fastmcp/server/auth/providers/jwt.py:10: AuthlibDeprecationWarning: authlib.jose module is deprecated, please use joserfc instead.
+  It will be compatible before version 2.0.0.
+    from authlib.jose import JsonWebKey, JsonWebToken
+
+.venv/lib/python3.13/site-packages/authlib/integrations/httpx_client/assertion_client.py:5
+.venv/lib/python3.13/site-packages/authlib/integrations/httpx_client/assertion_client.py:5
+.venv/lib/python3.13/site-packages/authlib/integrations/httpx_client/assertion_client.py:5
+.venv/lib/python3.13/site-packages/authlib/integrations/httpx_client/assertion_client.py:5
+  /Users/huyuhutaru/.dev-storage-governor/examforge/20261022T063810Z-build-cache-e4007ade/source/.venv/lib/python3.13/site-packages/authlib/integrations/httpx_client/assertion_client.py:5: AuthlibDeprecationWarning: The httpx module is deprecated; please use httpx2 instead.
+    from ._compat import httpx2
+
+tests/test_global_runtime_client.py: 882 warnings
+  /Users/huyuhutaru/.local/share/uv/python/cpython-3.13.12-macos-aarch64-none/lib/python3.13/contextlib.py:109: DeprecationWarning: Use `streamable_http_client` instead.
+    self.gen = func(*args, **kwds)
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+============================= slowest 25 durations =============================
+21.14s call     tests/test_fleet_upgrade_v2.py::test_three_entrances_preserve_current_generation_identity[restart-seat]
+15.28s call     tests/test_fleet_upgrade_v2.py::test_three_entrances_preserve_current_generation_identity[spawn-codex]
+13.98s call     tests/test_fleet_upgrade_v2.py::test_three_entrances_preserve_current_generation_identity[spawn_child]
+1.55s call     tests/test_register_tokenless.py::test_agent_start_actually_execs_claude_inside_tmux
+1.45s call     tests/test_register_tokenless.py::test_agent_start_registers_and_reaches_the_launch_stage
+1.12s call     tests/test_global_runtime_client.py::test_regular_growth_never_blocks_register_profile_session_or_fresh_client[provider_files]
+1.11s call     tests/test_global_runtime_client.py::test_regular_growth_never_blocks_register_profile_session_or_fresh_client[session_history]
+1.09s call     tests/test_global_runtime_client.py::test_regular_growth_never_blocks_register_profile_session_or_fresh_client[directories]
+1.07s call     tests/test_claude_resume_mail.py::test_real_mail_cleanup_resume_receive_and_reply[True-True]
+1.03s setup    tests/test_global_runtime_client.py::test_real_s1_reconnect_ignores_old_scope_and_name
+1.00s call     tests/test_global_runtime_client.py::test_operator_daemon_creation_uses_shared_global_profile_without_project
+
+(14 durations < 1s hidden.)
+=========================== short test summary info ============================
+ERROR tests/test_setting_precedence.py - NameError: name 'pytest' is not defined
+ERROR tests/test_setting_precedence.py - NameError: name 'pytest' is not defined
+ERROR tests/test_setting_precedence.py - NameError: name 'pytest' is not defined
+ERROR tests/test_setting_precedence.py - NameError: name 'pytest' is not defined
+328 passed, 890 warnings, 4 errors in 163.58s (0:02:43)
+traffic: [orrery-up-2-focused] done (exit 1)
+
+EXIT_CODE=1

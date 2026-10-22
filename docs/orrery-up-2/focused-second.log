@@ -1,0 +1,161 @@
+traffic: [orrery-up-2-focused] running (slot slot-1, mem 14248MB, disk 81GiB)
+bringing up nodes...
+bringing up nodes...
+
+....................................F.......F..F........................ [ 72%]
+............................                                             [100%]
+=================================== FAILURES ===================================
+___ test_three_entrances_preserve_current_generation_identity[restart-seat] ____
+[gw2] darwin -- Python 3.13.12 /Users/huyuhutaru/.dev-storage-governor/examforge/20261022T063810Z-build-cache-e4007ade/source/.venv/bin/python
+
+tmp_path = PosixPath('/Users/huyuhutaru/.dev-storage-governor/examforge/20261022T063810Z-build-cache-e4007ade/focused-temp/popen-gw2/test_three_entrances_preserve_0')
+entry = 'restart-seat'
+
+    @pytest.mark.parametrize('entry',['restart-seat','spawn-codex','spawn_child'])
+    def test_three_entrances_preserve_current_generation_identity(tmp_path,entry):
+>       old=run_arm(tmp_path/'old',entry,False);new=run_arm(tmp_path/'new',entry,True)
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/test_fleet_upgrade_v2.py:117: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/test_fleet_upgrade_v2.py:110: in run_arm
+    'child_process_environment':json.loads((home/'tls-process-env.json').read_text()),
+                                           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+../../../../.local/share/uv/python/cpython-3.13.12-macos-aarch64-none/lib/python3.13/pathlib/_local.py:546: in read_text
+    return PathBase.read_text(self, encoding, errors, newline)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+../../../../.local/share/uv/python/cpython-3.13.12-macos-aarch64-none/lib/python3.13/pathlib/_abc.py:632: in read_text
+    with self.open(mode='r', encoding=encoding, errors=errors, newline=newline) as f:
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = PosixPath('/Users/huyuhutaru/.dev-storage-governor/examforge/20261022T063810Z-build-cache-e4007ade/focused-temp/popen-gw2/test_three_entrances_preserve_0/old/home/tls-process-env.json')
+mode = 'r', buffering = -1, encoding = 'locale', errors = None, newline = None
+
+    def open(self, mode='r', buffering=-1, encoding=None,
+             errors=None, newline=None):
+        """
+        Open the file pointed to by this path and return a file object, as
+        the built-in open() function does.
+        """
+        if "b" not in mode:
+            encoding = io.text_encoding(encoding)
+>       return io.open(self, mode, buffering, encoding, errors, newline)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       FileNotFoundError: [Errno 2] No such file or directory: '/Users/huyuhutaru/.dev-storage-governor/examforge/20261022T063810Z-build-cache-e4007ade/focused-temp/popen-gw2/test_three_entrances_preserve_0/old/home/tls-process-env.json'
+
+../../../../.local/share/uv/python/cpython-3.13.12-macos-aarch64-none/lib/python3.13/pathlib/_local.py:537: FileNotFoundError
+____ test_three_entrances_preserve_current_generation_identity[spawn-codex] ____
+[gw2] darwin -- Python 3.13.12 /Users/huyuhutaru/.dev-storage-governor/examforge/20261022T063810Z-build-cache-e4007ade/source/.venv/bin/python
+
+tmp_path = PosixPath('/Users/huyuhutaru/.dev-storage-governor/examforge/20261022T063810Z-build-cache-e4007ade/focused-temp/popen-gw2/test_three_entrances_preserve_1')
+entry = 'spawn-codex'
+
+    @pytest.mark.parametrize('entry',['restart-seat','spawn-codex','spawn_child'])
+    def test_three_entrances_preserve_current_generation_identity(tmp_path,entry):
+>       old=run_arm(tmp_path/'old',entry,False);new=run_arm(tmp_path/'new',entry,True)
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/test_fleet_upgrade_v2.py:117: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/test_fleet_upgrade_v2.py:110: in run_arm
+    'child_process_environment':json.loads((home/'tls-process-env.json').read_text()),
+                                           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+../../../../.local/share/uv/python/cpython-3.13.12-macos-aarch64-none/lib/python3.13/pathlib/_local.py:546: in read_text
+    return PathBase.read_text(self, encoding, errors, newline)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+../../../../.local/share/uv/python/cpython-3.13.12-macos-aarch64-none/lib/python3.13/pathlib/_abc.py:632: in read_text
+    with self.open(mode='r', encoding=encoding, errors=errors, newline=newline) as f:
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = PosixPath('/Users/huyuhutaru/.dev-storage-governor/examforge/20261022T063810Z-build-cache-e4007ade/focused-temp/popen-gw2/test_three_entrances_preserve_1/old/home/tls-process-env.json')
+mode = 'r', buffering = -1, encoding = 'locale', errors = None, newline = None
+
+    def open(self, mode='r', buffering=-1, encoding=None,
+             errors=None, newline=None):
+        """
+        Open the file pointed to by this path and return a file object, as
+        the built-in open() function does.
+        """
+        if "b" not in mode:
+            encoding = io.text_encoding(encoding)
+>       return io.open(self, mode, buffering, encoding, errors, newline)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       FileNotFoundError: [Errno 2] No such file or directory: '/Users/huyuhutaru/.dev-storage-governor/examforge/20261022T063810Z-build-cache-e4007ade/focused-temp/popen-gw2/test_three_entrances_preserve_1/old/home/tls-process-env.json'
+
+../../../../.local/share/uv/python/cpython-3.13.12-macos-aarch64-none/lib/python3.13/pathlib/_local.py:537: FileNotFoundError
+____ test_three_entrances_preserve_current_generation_identity[spawn_child] ____
+[gw2] darwin -- Python 3.13.12 /Users/huyuhutaru/.dev-storage-governor/examforge/20261022T063810Z-build-cache-e4007ade/source/.venv/bin/python
+
+tmp_path = PosixPath('/Users/huyuhutaru/.dev-storage-governor/examforge/20261022T063810Z-build-cache-e4007ade/focused-temp/popen-gw2/test_three_entrances_preserve_2')
+entry = 'spawn_child'
+
+    @pytest.mark.parametrize('entry',['restart-seat','spawn-codex','spawn_child'])
+    def test_three_entrances_preserve_current_generation_identity(tmp_path,entry):
+>       old=run_arm(tmp_path/'old',entry,False);new=run_arm(tmp_path/'new',entry,True)
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/test_fleet_upgrade_v2.py:117: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/test_fleet_upgrade_v2.py:110: in run_arm
+    'child_process_environment':json.loads((home/'tls-process-env.json').read_text()),
+                                           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+../../../../.local/share/uv/python/cpython-3.13.12-macos-aarch64-none/lib/python3.13/pathlib/_local.py:546: in read_text
+    return PathBase.read_text(self, encoding, errors, newline)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+../../../../.local/share/uv/python/cpython-3.13.12-macos-aarch64-none/lib/python3.13/pathlib/_abc.py:632: in read_text
+    with self.open(mode='r', encoding=encoding, errors=errors, newline=newline) as f:
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = PosixPath('/Users/huyuhutaru/.dev-storage-governor/examforge/20261022T063810Z-build-cache-e4007ade/focused-temp/popen-gw2/test_three_entrances_preserve_2/old/home/tls-process-env.json')
+mode = 'r', buffering = -1, encoding = 'locale', errors = None, newline = None
+
+    def open(self, mode='r', buffering=-1, encoding=None,
+             errors=None, newline=None):
+        """
+        Open the file pointed to by this path and return a file object, as
+        the built-in open() function does.
+        """
+        if "b" not in mode:
+            encoding = io.text_encoding(encoding)
+>       return io.open(self, mode, buffering, encoding, errors, newline)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       FileNotFoundError: [Errno 2] No such file or directory: '/Users/huyuhutaru/.dev-storage-governor/examforge/20261022T063810Z-build-cache-e4007ade/focused-temp/popen-gw2/test_three_entrances_preserve_2/old/home/tls-process-env.json'
+
+../../../../.local/share/uv/python/cpython-3.13.12-macos-aarch64-none/lib/python3.13/pathlib/_local.py:537: FileNotFoundError
+============================= slowest 25 durations =============================
+14.99s call     tests/test_runtime_defaults.py::test_noninteractive_assume_yes_is_explicit_audited_approval
+14.67s call     tests/test_runtime_defaults.py::test_isolated_installer_migrates_annotations_and_matches_manifest_sample
+11.71s call     tests/test_fleet_upgrade_v2.py::test_three_entrances_preserve_current_generation_identity[restart-seat]
+8.37s call     tests/test_fleet_upgrade_v2.py::test_three_entrances_preserve_current_generation_identity[spawn-codex]
+7.37s call     tests/test_fleet_upgrade_v2.py::test_three_entrances_preserve_current_generation_identity[spawn_child]
+7.29s call     tests/test_runtime_defaults.py::test_an_explicit_mail_label_is_not_overwritten_by_the_derived_one
+7.21s call     tests/test_runtime_defaults.py::test_installer_preserves_conflicting_user_skill
+5.05s call     tests/test_claude_child_chrome.py::test_env_default_is_ignored_for_codex_children
+4.95s call     tests/test_claude_child_chrome.py::test_codex_child_process_does_not_inherit_the_chrome_env
+3.58s call     tests/test_claude_child_chrome.py::test_default_spawn_matches_the_pre_chrome_launcher_exactly
+3.48s call     tests/test_claude_child_chrome.py::test_default_spawn_still_claims_a_ready_warm_session[sonnet]
+3.28s call     tests/test_claude_child_chrome.py::test_default_spawn_still_claims_a_ready_warm_session[opus]
+2.20s call     tests/test_claude_child_chrome.py::test_a_later_launch_never_changes_an_earlier_conversation[chrome]
+2.00s call     tests/test_claude_child_chrome.py::test_a_later_launch_never_changes_an_earlier_conversation[inherit]
+1.80s call     tests/test_claude_child_chrome.py::test_a_later_launch_never_changes_an_earlier_conversation[failed-chrome]
+1.51s call     tests/test_claude_child_chrome.py::test_a_claim_that_cannot_promise_the_model_falls_back_to_cold_start[pool1]
+1.46s call     tests/test_claude_child_chrome.py::test_policy_reaches_every_first_prompt[standalone]
+1.43s call     tests/test_claude_child_chrome.py::test_a_warm_session_of_another_or_unknown_model_is_not_claimed[opus ready (claude-opus-5)\nsonnet ready (claude-sonnet-5)]
+1.35s call     tests/test_claude_child_chrome.py::test_a_warm_session_of_another_or_unknown_model_is_not_claimed[opus ready\nsonnet ready]
+1.32s call     tests/test_claude_child_chrome.py::test_default_spawn_passes_no_launch_id
+1.29s call     tests/test_claude_child_chrome.py::test_policy_reaches_every_first_prompt[mail]
+1.26s call     tests/test_claude_child_chrome.py::test_policy_reaches_every_first_prompt[embed]
+1.26s call     tests/test_claude_child_chrome.py::test_warm_handoff_refuses_a_different_resolved_identity
+1.23s call     tests/test_claude_child_chrome.py::test_chrome_spawn_writes_only_a_pending_record_for_its_launch
+1.21s call     tests/test_claude_child_chrome.py::test_without_a_device_the_child_holds_all_browser_actions
+=========================== short test summary info ============================
+FAILED tests/test_fleet_upgrade_v2.py::test_three_entrances_preserve_current_generation_identity[restart-seat]
+FAILED tests/test_fleet_upgrade_v2.py::test_three_entrances_preserve_current_generation_identity[spawn-codex]
+FAILED tests/test_fleet_upgrade_v2.py::test_three_entrances_preserve_current_generation_identity[spawn_child]
+3 failed, 97 passed in 50.03s
+traffic: [orrery-up-2-focused] done (exit 1)
+
+EXIT_CODE=1

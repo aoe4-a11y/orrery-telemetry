@@ -1,0 +1,357 @@
+traffic: [orrery-up-2-fixes] running (slot slot-1, mem 13874MB, disk 64GiB)
+bringing up nodes...
+bringing up nodes...
+
+....sss................................................................. [ 49%]
+.sss........................F.F......................................... [ 99%]
+.                                                                        [100%]
+=================================== FAILURES ===================================
+____ test_launchd_in_place_upgrade_replaces_its_own_listener_with_new_code _____
+[gw1] darwin -- Python 3.13.12 /Users/huyuhutaru/.dev-storage-governor/examforge/20261022T063810Z-build-cache-e4007ade/source/.venv/bin/python
+
+tmp_path = PosixPath('/Users/huyuhutaru/.dev-storage-governor/examforge/20261022T063810Z-build-cache-e4007ade/focused-fixes-third-temp/popen-gw1/test_launchd_in_place_upgrade_0')
+
+    @pytest.mark.skipif(
+        os.environ.get("GITHUB_ACTIONS") == "true",
+        reason="starts a real dashboard/service process; fails only on GitHub-hosted runners (no interactive user session), cause not isolated yet — run 33846626836",
+    )
+    def test_launchd_in_place_upgrade_replaces_its_own_listener_with_new_code(
+        tmp_path,
+    ):
+        repo = _isolated_installer_repo(tmp_path)
+        _write_marker_dashboard(repo / "dashboard" / "server.py", "new-launchd")
+        fake_bin = tmp_path / "fake-bin"
+        fake_bin.mkdir()
+        new_pidfile = tmp_path / "new-launchd.pid"
+        for name, body in {
+            "tmux": "#!/bin/sh\nexit 0\n",
+            "uname": "#!/bin/sh\necho Darwin\n",
+            "uv": "#!/bin/sh\nexit 0\n",
+            "launchctl": """#!/bin/sh
+    case "$*" in
+      *agentdashboard*) ;;
+      *) [ "$1" = print ] && exit 1; exit 0 ;;
+    esac
+    case "$1" in
+      print)
+        [ -f "$AGENTSTACK_TEST_LOADED_MARKER" ] || exit 1
+        printf '{\n    pid = %s\n}\n' "$AGENTSTACK_TEST_OLD_PID"
+        ;;
+      bootout)
+        if kill -0 "$AGENTSTACK_TEST_OLD_PID" 2>/dev/null; then
+          kill "$AGENTSTACK_TEST_OLD_PID" 2>/dev/null || true
+          attempts=0
+          while kill -0 "$AGENTSTACK_TEST_OLD_PID" 2>/dev/null && [ "$attempts" -lt 50 ]; do
+            sleep 0.1
+            attempts=$((attempts + 1))
+          done
+        fi
+        rm -f "$AGENTSTACK_TEST_LOADED_MARKER"
+        ;;
+      bootstrap)
+        nohup "$AGENTSTACK_PYTHON" \
+          "$AGENTSTACK_HOME/dashboard/service_runner.py" >/dev/null 2>&1 &
+        echo $! > "$AGENTSTACK_TEST_NEW_PIDFILE"
+        ;;
+    esac
+    exit 0
+    """,
+        }.items():
+            command = fake_bin / name
+            command.write_text(body, encoding="utf-8")
+            command.chmod(0o755)
+    
+        with socket.socket() as probe:
+            probe.bind(("127.0.0.1", 0))
+            port = probe.getsockname()[1]
+        env, install_dir = _installer_upgrade_env(tmp_path, fake_bin, port)
+        old_server = tmp_path / "old-dashboard.py"
+        _write_marker_dashboard(old_server, "old-launchd")
+        env["AGENTSTACK_CHILD_DEFAULT_TOOLS"] = "browser,screen:read:windows-mcp"
+        old_process = subprocess.Popen(
+            [sys.executable, str(old_server)],
+            env=env,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+        loaded_marker = tmp_path / "launchd-loaded"
+        loaded_marker.touch()
+        env.update({
+            "AGENTSTACK_TEST_OLD_PID": str(old_process.pid),
+            "AGENTSTACK_TEST_NEW_PIDFILE": str(new_pidfile),
+            "AGENTSTACK_TEST_LOADED_MARKER": str(loaded_marker),
+        })
+        try:
+            _wait_for_marker(port, "old-launchd")
+>           result = subprocess.run(
+                [
+                    "bash",
+                    str(repo / "scripts" / "install.sh"),
+                    "--dashboard-only",
+                ],
+                cwd=repo,
+                env=env,
+                text=True,
+                capture_output=True,
+                check=True,
+            )
+
+tests/test_dashboard_service.py:571: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+input = None, capture_output = True, timeout = None, check = True
+popenargs = (['bash', '/Users/huyuhutaru/.dev-storage-governor/examforge/20261022T063810Z-build-cache-e4007ade/focused-fixes-third-temp/popen-gw1/test_launchd_in_place_upgrade_0/installer-repo/scripts/install.sh', '--dashboard-only'],)
+kwargs = {'cwd': PosixPath('/Users/huyuhutaru/.dev-storage-governor/examforge/20261022T063810Z-build-cache-e4007ade/focused-fix...: '67a22f8ee33d9a34c2dce22888ff7689', 'NoDefaultCurrentDirectoryInExePath': '1', ...}, 'text': True, 'stdout': -1, ...}
+
+    def run(*popenargs,
+            input=None, capture_output=False, timeout=None, check=False, **kwargs):
+        """Run command with arguments and return a CompletedProcess instance.
+    
+        The returned instance will have attributes args, returncode, stdout and
+        stderr. By default, stdout and stderr are not captured, and those attributes
+        will be None. Pass stdout=PIPE and/or stderr=PIPE in order to capture them,
+        or pass capture_output=True to capture both.
+    
+        If check is True and the exit code was non-zero, it raises a
+        CalledProcessError. The CalledProcessError object will have the return code
+        in the returncode attribute, and output & stderr attributes if those streams
+        were captured.
+    
+        If timeout (seconds) is given and the process takes too long,
+         a TimeoutExpired exception will be raised.
+    
+        There is an optional argument "input", allowing you to
+        pass bytes or a string to the subprocess's stdin.  If you use this argument
+        you may not also use the Popen constructor's "stdin" argument, as
+        it will be used internally.
+    
+        By default, all communication is in bytes, and therefore any "input" should
+        be bytes, and the stdout and stderr will be bytes. If in text mode, any
+        "input" should be a string, and stdout and stderr will be strings decoded
+        according to locale encoding, or by "encoding" if set. Text mode is
+        triggered by setting any of text, encoding, errors or universal_newlines.
+    
+        The other arguments are the same as for the Popen constructor.
+        """
+        if input is not None:
+            if kwargs.get('stdin') is not None:
+                raise ValueError('stdin and input arguments may not both be used.')
+            kwargs['stdin'] = PIPE
+    
+        if capture_output:
+            if kwargs.get('stdout') is not None or kwargs.get('stderr') is not None:
+                raise ValueError('stdout and stderr arguments may not be used '
+                                 'with capture_output.')
+            kwargs['stdout'] = PIPE
+            kwargs['stderr'] = PIPE
+    
+        with Popen(*popenargs, **kwargs) as process:
+            try:
+                stdout, stderr = process.communicate(input, timeout=timeout)
+            except TimeoutExpired as exc:
+                process.kill()
+                if _mswindows:
+                    # Windows accumulates the output in a single blocking
+                    # read() call run on child threads, with the timeout
+                    # being done in a join() on those threads.  communicate()
+                    # _after_ kill() is required to collect that and add it
+                    # to the exception.
+                    exc.stdout, exc.stderr = process.communicate()
+                else:
+                    # POSIX _communicate already populated the output so
+                    # far into the TimeoutExpired exception.
+                    process.wait()
+                raise
+            except:  # Including KeyboardInterrupt, communicate handled that.
+                process.kill()
+                # We don't call process.wait() as .__exit__ does that for us.
+                raise
+            retcode = process.poll()
+            if check and retcode:
+>               raise CalledProcessError(retcode, process.args,
+                                         output=stdout, stderr=stderr)
+E               subprocess.CalledProcessError: Command '['bash', '/Users/huyuhutaru/.dev-storage-governor/examforge/20261022T063810Z-build-cache-e4007ade/focused-fixes-third-temp/popen-gw1/test_launchd_in_place_upgrade_0/installer-repo/scripts/install.sh', '--dashboard-only']' returned non-zero exit status 1.
+
+../../../../.local/share/uv/python/cpython-3.13.12-macos-aarch64-none/lib/python3.13/subprocess.py:577: CalledProcessError
+_______ test_supervised_in_place_upgrade_stops_old_pid_and_runs_new_code _______
+[gw1] darwin -- Python 3.13.12 /Users/huyuhutaru/.dev-storage-governor/examforge/20261022T063810Z-build-cache-e4007ade/source/.venv/bin/python
+
+tmp_path = PosixPath('/Users/huyuhutaru/.dev-storage-governor/examforge/20261022T063810Z-build-cache-e4007ade/focused-fixes-third-temp/popen-gw1/test_supervised_in_place_upgra0')
+
+    @pytest.mark.skipif(
+        os.environ.get("GITHUB_ACTIONS") == "true",
+        reason="starts a real dashboard/service process; fails only on GitHub-hosted runners (no interactive user session), cause not isolated yet — run 33846626836",
+    )
+    def test_supervised_in_place_upgrade_stops_old_pid_and_runs_new_code(tmp_path):
+        repo = _isolated_installer_repo(tmp_path)
+        _write_marker_dashboard(repo / "dashboard" / "server.py", "supervised-v1")
+        fake_bin = tmp_path / "fake-bin"
+        fake_bin.mkdir()
+        for name, body in {
+            "tmux": "#!/bin/sh\nexit 0\n",
+            "uname": "#!/bin/sh\necho Darwin\n",
+            "uv": "#!/bin/sh\nexit 0\n",
+            "launchctl": """#!/bin/sh
+    case "$1" in
+      print) exit 1 ;;
+      bootstrap) exit 125 ;;
+    esac
+    exit 0
+    """,
+        }.items():
+            command = fake_bin / name
+            command.write_text(body, encoding="utf-8")
+            command.chmod(0o755)
+    
+        with socket.socket() as probe:
+            probe.bind(("127.0.0.1", 0))
+            port = probe.getsockname()[1]
+        env, install_dir = _installer_upgrade_env(tmp_path, fake_bin, port)
+        command = [
+            "bash",
+            str(repo / "scripts" / "install.sh"),
+            "--dashboard-only",
+        ]
+>       first = subprocess.run(
+            command,
+            cwd=repo,
+            env=env,
+            text=True,
+            capture_output=True,
+            check=True,
+        )
+
+tests/test_dashboard_service.py:711: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+input = None, capture_output = True, timeout = None, check = True
+popenargs = (['bash', '/Users/huyuhutaru/.dev-storage-governor/examforge/20261022T063810Z-build-cache-e4007ade/focused-fixes-third-temp/popen-gw1/test_supervised_in_place_upgra0/installer-repo/scripts/install.sh', '--dashboard-only'],)
+kwargs = {'cwd': PosixPath('/Users/huyuhutaru/.dev-storage-governor/examforge/20261022T063810Z-build-cache-e4007ade/focused-fix...: '67a22f8ee33d9a34c2dce22888ff7689', 'NoDefaultCurrentDirectoryInExePath': '1', ...}, 'text': True, 'stdout': -1, ...}
+
+    def run(*popenargs,
+            input=None, capture_output=False, timeout=None, check=False, **kwargs):
+        """Run command with arguments and return a CompletedProcess instance.
+    
+        The returned instance will have attributes args, returncode, stdout and
+        stderr. By default, stdout and stderr are not captured, and those attributes
+        will be None. Pass stdout=PIPE and/or stderr=PIPE in order to capture them,
+        or pass capture_output=True to capture both.
+    
+        If check is True and the exit code was non-zero, it raises a
+        CalledProcessError. The CalledProcessError object will have the return code
+        in the returncode attribute, and output & stderr attributes if those streams
+        were captured.
+    
+        If timeout (seconds) is given and the process takes too long,
+         a TimeoutExpired exception will be raised.
+    
+        There is an optional argument "input", allowing you to
+        pass bytes or a string to the subprocess's stdin.  If you use this argument
+        you may not also use the Popen constructor's "stdin" argument, as
+        it will be used internally.
+    
+        By default, all communication is in bytes, and therefore any "input" should
+        be bytes, and the stdout and stderr will be bytes. If in text mode, any
+        "input" should be a string, and stdout and stderr will be strings decoded
+        according to locale encoding, or by "encoding" if set. Text mode is
+        triggered by setting any of text, encoding, errors or universal_newlines.
+    
+        The other arguments are the same as for the Popen constructor.
+        """
+        if input is not None:
+            if kwargs.get('stdin') is not None:
+                raise ValueError('stdin and input arguments may not both be used.')
+            kwargs['stdin'] = PIPE
+    
+        if capture_output:
+            if kwargs.get('stdout') is not None or kwargs.get('stderr') is not None:
+                raise ValueError('stdout and stderr arguments may not be used '
+                                 'with capture_output.')
+            kwargs['stdout'] = PIPE
+            kwargs['stderr'] = PIPE
+    
+        with Popen(*popenargs, **kwargs) as process:
+            try:
+                stdout, stderr = process.communicate(input, timeout=timeout)
+            except TimeoutExpired as exc:
+                process.kill()
+                if _mswindows:
+                    # Windows accumulates the output in a single blocking
+                    # read() call run on child threads, with the timeout
+                    # being done in a join() on those threads.  communicate()
+                    # _after_ kill() is required to collect that and add it
+                    # to the exception.
+                    exc.stdout, exc.stderr = process.communicate()
+                else:
+                    # POSIX _communicate already populated the output so
+                    # far into the TimeoutExpired exception.
+                    process.wait()
+                raise
+            except:  # Including KeyboardInterrupt, communicate handled that.
+                process.kill()
+                # We don't call process.wait() as .__exit__ does that for us.
+                raise
+            retcode = process.poll()
+            if check and retcode:
+>               raise CalledProcessError(retcode, process.args,
+                                         output=stdout, stderr=stderr)
+E               subprocess.CalledProcessError: Command '['bash', '/Users/huyuhutaru/.dev-storage-governor/examforge/20261022T063810Z-build-cache-e4007ade/focused-fixes-third-temp/popen-gw1/test_supervised_in_place_upgra0/installer-repo/scripts/install.sh', '--dashboard-only']' returned non-zero exit status 1.
+
+../../../../.local/share/uv/python/cpython-3.13.12-macos-aarch64-none/lib/python3.13/subprocess.py:577: CalledProcessError
+=============================== warnings summary ===============================
+.venv/lib/python3.13/site-packages/fastmcp/server/auth/providers/jwt.py:10
+.venv/lib/python3.13/site-packages/fastmcp/server/auth/providers/jwt.py:10
+.venv/lib/python3.13/site-packages/fastmcp/server/auth/providers/jwt.py:10
+.venv/lib/python3.13/site-packages/fastmcp/server/auth/providers/jwt.py:10
+  /Users/huyuhutaru/.dev-storage-governor/examforge/20261022T063810Z-build-cache-e4007ade/source/.venv/lib/python3.13/site-packages/fastmcp/server/auth/providers/jwt.py:10: AuthlibDeprecationWarning: authlib.jose module is deprecated, please use joserfc instead.
+  It will be compatible before version 2.0.0.
+    from authlib.jose import JsonWebKey, JsonWebToken
+
+.venv/lib/python3.13/site-packages/authlib/integrations/httpx_client/assertion_client.py:5
+.venv/lib/python3.13/site-packages/authlib/integrations/httpx_client/assertion_client.py:5
+.venv/lib/python3.13/site-packages/authlib/integrations/httpx_client/assertion_client.py:5
+.venv/lib/python3.13/site-packages/authlib/integrations/httpx_client/assertion_client.py:5
+  /Users/huyuhutaru/.dev-storage-governor/examforge/20261022T063810Z-build-cache-e4007ade/source/.venv/lib/python3.13/site-packages/authlib/integrations/httpx_client/assertion_client.py:5: AuthlibDeprecationWarning: The httpx module is deprecated; please use httpx2 instead.
+    from ._compat import httpx2
+
+tests/test_global_runtime_delivery.py::test_actual_claude_launch_runs_generated_session_and_notification_hooks
+tests/test_global_runtime_delivery.py::test_actual_claude_launch_runs_generated_session_and_notification_hooks
+tests/test_global_runtime_client.py::test_actual_dedicated_tmux_server_stale_environment_does_not_route
+tests/test_global_runtime_client.py::test_actual_dedicated_tmux_server_stale_environment_does_not_route
+tests/test_global_runtime_client.py::test_actual_dedicated_tmux_server_stale_environment_does_not_route
+tests/test_global_runtime_client.py::test_actual_dedicated_tmux_server_stale_environment_does_not_route
+tests/test_global_runtime_client.py::test_actual_dedicated_tmux_server_stale_environment_does_not_route
+tests/test_global_runtime_client.py::test_actual_dedicated_tmux_server_stale_environment_does_not_route
+  /Users/huyuhutaru/.local/share/uv/python/cpython-3.13.12-macos-aarch64-none/lib/python3.13/contextlib.py:109: DeprecationWarning: Use `streamable_http_client` instead.
+    self.gen = func(*args, **kwds)
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+============================= slowest 25 durations =============================
+10.53s call     tests/test_dashboard_service.py::test_launchd_in_place_upgrade_replaces_its_own_listener_with_new_code
+9.54s call     packages/agentstack_mail/tests/test_pending_decision_d11_d12.py::test_d12_selected_parity_watcher_crash_windows_are_durable_and_hermetic
+9.10s setup    tests/test_mail_signal_health.py::test_retired_signal_backlog_does_not_make_healthy_delivery_red
+8.72s setup    tests/test_mail_signal_health.py::test_doctor_warns_about_orphans_without_failing
+8.50s call     tests/test_dashboard_service.py::test_macos_launchd_bootstrap_failure_falls_back_and_finishes_install
+8.00s call     packages/agentstack_mail/tests/test_cutover_gates.py::test_fault_cutover_gate_detects_its_broken_control
+5.81s call     tests/test_dashboard_service.py::test_mail_watcher_process_drives_health_and_agents_without_launchd
+5.04s call     tests/test_dashboard_service.py::test_doctor_rejects_loaded_but_not_running_launchd_job
+4.12s call     tests/test_dashboard_service.py::test_supervised_in_place_upgrade_stops_old_pid_and_runs_new_code
+3.08s call     tests/test_dashboard_service.py::test_agentctl_enables_then_waits_for_bootout_before_bootstrap
+2.96s call     tests/test_mail_notice_measure.py::test_unchanged_watcher_delivers_into_real_tmux_tty_sink
+1.99s call     tests/test_dashboard_service.py::test_agentctl_restart_reinstalls_selected_launchd_environment[legacy-None-legacy-None]
+1.95s call     tests/test_dashboard_service.py::test_agentctl_restart_reinstalls_selected_launchd_environment[global-first-global-second]
+1.89s call     tests/test_dashboard_service.py::test_agentctl_restart_reinstalls_selected_launchd_environment[global-first-legacy-None]
+1.86s call     tests/test_dashboard_service.py::test_agentctl_restart_reinstalls_selected_launchd_environment[legacy-None-global-first]
+1.74s call     packages/agentstack_mail/tests/test_pending_decision_d11_d12.py::test_d12_selected_parity_watcher_failure_cooldown_retries_without_loss
+1.57s call     tests/test_global_runtime_delivery.py::test_actual_claude_launch_runs_generated_session_and_notification_hooks
+1.14s call     tests/test_dashboard_service.py::test_mail_watcher_publishes_pidfile_and_live_heartbeat
+1.03s call     tests/test_mail_notice_measure.py::test_collector_preserves_events_and_rejects_extra_fields[False]
+
+(6 durations < 1s hidden.)
+=========================== short test summary info ============================
+FAILED tests/test_dashboard_service.py::test_launchd_in_place_upgrade_replaces_its_own_listener_with_new_code
+FAILED tests/test_dashboard_service.py::test_supervised_in_place_upgrade_stops_old_pid_and_runs_new_code
+2 failed, 137 passed, 6 skipped, 16 warnings in 54.43s
+traffic: [orrery-up-2-fixes] done (exit 1)
+
+EXIT_CODE=1

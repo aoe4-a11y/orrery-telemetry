@@ -1,0 +1,44 @@
+{
+  "actions": [
+    {
+      "pid": 23733,
+      "start": "Thu Oct 22 16:48:47 2026",
+      "args_sha256": "c7b4ffc734032fb9e5771e2b4aa1d4f31df62e59826b362afd58d87cb678afc1",
+      "signal": "SIGTERM then SIGKILL (same start and argv hash; own watcher retained defunct child)",
+      "owned_cwd": true,
+      "production_mail_port": false,
+      "stopped": true
+    },
+    {
+      "pid": 36801,
+      "start": "Thu Oct 22 16:56:25 2026",
+      "args_sha256": "d32c550ec92dbc7e11b602c68da7cd130f4f2428bd5f71e20bf87426397b812e",
+      "signal": "SIGTERM",
+      "owned_cwd": true,
+      "production_mail_port": false,
+      "stopped": true
+    },
+    {
+      "pid": 42934,
+      "start": "Thu Oct 22 16:57:35 2026",
+      "args_sha256": "d32c550ec92dbc7e11b602c68da7cd130f4f2428bd5f71e20bf87426397b812e",
+      "signal": "SIGTERM",
+      "owned_cwd": true,
+      "production_mail_port": false,
+      "stopped": true
+    },
+    {
+      "tmux_socket": "/private/tmp/notice-tty-x8ise4x3/tmux-501/default",
+      "action": "kill-session",
+      "exact_session": "=ProbeReceiver",
+      "exit": 0
+    }
+  ],
+  "isolated_mail_ports_closed": [
+    57672,
+    57888
+  ],
+  "shared_tmux_server_touched": false,
+  "production_mail_port": 18765,
+  "private_tmux_server_and_sink_gone": true
+}
