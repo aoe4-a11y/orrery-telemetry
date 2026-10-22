@@ -45,7 +45,7 @@ def snapshot(home, dest, project_key=None, codex_home=None):
     for p in (home/'Library/LaunchAgents').glob('org.agentstack*.plist'):
         if p.is_file():copy(p,p.relative_to(home))
     shutil.copy2(pathlib.Path(__file__),dest/'restore-tool.py.txt')
-    manifest={'restore_tool_sha256':digest(dest/'restore-tool.py.txt'),'home':str(home),'records':records,'excluded':['.agentstack/mail','.agentstack/runtime','.agentstack/mail-service']}
+    manifest={'restore_tool_sha256':digest(dest/'restore-tool.py.txt'),'home':str(home),'records':records,'excluded':['.agentstack/mail','.agentstack/runtime state except six named code inputs','.agentstack/mail-service']}
     (dest/'manifest.json').write_text(json.dumps(manifest,indent=2)+'\n');os.chmod(dest/'manifest.json',0o600)
     return len(records)
 
@@ -71,5 +71,5 @@ def main():
     ap=argparse.ArgumentParser();ap.add_argument('operation',choices=['snapshot','restore']);ap.add_argument('--home',type=pathlib.Path,required=True);ap.add_argument('--directory',type=pathlib.Path,required=True);ap.add_argument('--project-key',type=pathlib.Path);ap.add_argument('--codex-home',type=pathlib.Path);a=ap.parse_args()
     if not a.home.is_absolute() or not a.directory.is_absolute():ap.error('absolute paths required')
     n=snapshot(a.home,a.directory,a.project_key,a.codex_home) if a.operation=='snapshot' else restore(a.home,a.directory)
-    print(json.dumps({'operation':a.operation,'records':n,'manifest':str(a.directory/'manifest.json'),'manifest_sha256':digest(a.directory/'manifest.json'),'mail_and_runtime':'untouched'}))
+    print(json.dumps({'operation':a.operation,'records':n,'manifest':str(a.directory/'manifest.json'),'manifest_sha256':digest(a.directory/'manifest.json'),'mail_and_runtime_state':'untouched; six named runtime code files are payload'}))
 if __name__=='__main__':main()

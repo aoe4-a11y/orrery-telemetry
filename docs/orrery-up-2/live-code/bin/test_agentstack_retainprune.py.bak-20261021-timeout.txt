@@ -1,0 +1,420 @@
+"""Real CurrentProtection fixtures; no live manifest/transport mutations."""
+import copy
+import errno
+import importlib.util
+import json
+import os
+from pathlib import Path
+import sys
+from unittest.mock import patch
+
+import pytest
+import agentstack_retainprune as p
+sys.path.insert(0, str(p.RELEASE))
+from dev_storage_governor import storage_v6 as v6
+
+
+@pytest.fixture
+def env(tmp_path):
+    keep = tmp_path / 'keep.bin'
+    keep.write_bytes(b'protected unchanged')
+    manifest = tmp_path / 'current.json'
+    value = dict(version=1, complete=True, protected_paths=[str(keep)],
+                 current_builds=[], current_inputs=[], distributed_archives=[],
+                 scope={'existing': 'preserve'})
+    manifest.write_text(json.dumps(value))
+    policy = tmp_path / 'policy.json'
+    policy.write_text(json.dumps(dict(retention_policy_version='6.0', retention_current_manifest=str(manifest))))
+    notices = []
+    def sender(event):
+        notices.append(event)
+        return {'id': len(notices)}
+    def run(**kw):
+        return p.sweep(policy, manifest, tmp_path / 'state.json', sender=sender, **kw)
+    with patch.object(v6, 'process_paths', return_value=set()):
+        yield dict(root=tmp_path, keep=keep, manifest=manifest, policy=policy,
+                   value=value, notices=notices, run=run)
+
+
+def put(e, change):
+    value = copy.deepcopy(e['value'])
+    change(value)
+    e['manifest'].write_text(json.dumps(value))
+    return e['manifest'].read_bytes()
+
+
+def test_healthy_no_write_no_mail(env):
+    before = env['manifest'].stat().st_mtime_ns
+    assert env['run']()['kind'] == 'healthy'
+    assert env['manifest'].stat().st_mtime_ns == before
+    assert not env['notices']
+    assert not list(env['root'].glob('*.bak-*'))
+
+
+@pytest.mark.parametrize('field', p.FIELDS)
+def test_missing_prunes_only_absent_with_real_governor(env, field):
+    absent = str(env['root'] / 'absent')
+    before = put(env, lambda value: value[field].append(absent))
+    result = env['run']()
+    assert result['kind'] == 'pruned'
+    assert result['count'] == 1
+    assert env['keep'].read_bytes() == b'protected unchanged'
+    value = json.loads(env['manifest'].read_bytes())
+    assert absent not in value[field]
+    assert value['protected_paths'] == [str(env['keep'])]
+    assert value['scope']['existing'] == 'preserve'
+    assert Path(result['backup']).read_bytes() == before
+    assert p.sha(env['manifest'].read_bytes()) == result['after_sha256']
+    assert json.loads(Path(result['audit']).read_bytes())['phase'] == 'applied'
+    p.validator(json.loads(env['policy'].read_bytes()))
+    assert env['run']()['kind'] == 'healthy'
+    assert len(env['notices']) == 1
+
+
+def test_broken_config_kept_and_alert_once(env):
+    config = env['root'] / 'bad.json'
+    config.write_text('{broken')
+    before = put(env, lambda value: value['current_inputs'].append(str(config)))
+    for _ in range(2):
+        result = env['run']()
+        assert result['kind'] == 'error'
+        assert result['error_type'] == 'ValueError'
+    assert env['manifest'].read_bytes() == before
+    assert len(env['notices']) == 1
+    assert not list(env['root'].glob('*.bak-*'))
+
+
+def test_missing_and_broken_config_never_replace(env):
+    config = env['root'] / 'bad.json'
+    config.write_text('broken')
+    def change(value):
+        value['protected_paths'].append(str(env['root'] / 'absent'))
+        value['current_inputs'].append(str(config))
+    before = put(env, change)
+    assert env['run']()['kind'] == 'error'
+    assert env['manifest'].read_bytes() == before
+    assert len(env['notices']) == 1
+    assert not list(env['root'].glob('.retain-prune-*'))
+
+
+@pytest.mark.parametrize('change', [
+    lambda v: v.update(complete=False),
+    lambda v: v.update(current_builds='invalid'),
+    lambda v: v['current_inputs'].append('relative'),
+    lambda v: v.update(scope={'pruned_missing': {}}),
+])
+def test_bad_shape_kept(env, change):
+    # Include absent first so local preflight must not silently repair bad schema.
+    def combined(value):
+        value['protected_paths'].append(str(env['root'] / 'absent'))
+        change(value)
+    before = put(env, combined)
+    assert env['run']()['kind'] == 'error'
+    assert env['manifest'].read_bytes() == before
+
+
+def test_directory_input_kept(env):
+    before = put(env, lambda value: value['current_inputs'].append(str(env['root'])))
+    assert env['run']()['kind'] == 'error'
+    assert env['manifest'].read_bytes() == before
+
+
+def test_dangling_link_is_existing_entry_not_pruned(env):
+    link = env['root'] / 'link'
+    link.symlink_to(env['root'] / 'gone')
+    before = put(env, lambda value: value['protected_paths'].append(str(link)))
+    assert env['run']()['kind'] == 'error'
+    assert env['manifest'].read_bytes() == before
+    assert link.is_symlink()
+
+
+def test_permission_denial_not_missing(env):
+    before = put(env, lambda value: value['protected_paths'].append(str(env['root'] / 'absent')))
+    real = Path.lstat
+    def denied(path, *args, **kwargs):
+        if path.name == 'absent':
+            raise PermissionError(errno.EACCES, 'denied', str(path))
+        return real(path, *args, **kwargs)
+    with patch.object(Path, 'lstat', denied):
+        assert env['run']()['error_type'] == 'PermissionError'
+    assert env['manifest'].read_bytes() == before
+
+
+def test_unmounted_volume_not_missing(env):
+    before = put(env, lambda value: value['protected_paths'].append('/Volumes/NO-SUCH-TEST-VOLUME/absent'))
+    assert env['run'](mounted=lambda _: False)['kind'] == 'error'
+    assert env['manifest'].read_bytes() == before
+
+
+def test_policy_drift_not_overwritten(env):
+    before = put(env, lambda value: value['protected_paths'].append(str(env['root'] / 'absent')))
+    def validate(policy):
+        result = p.validator(policy)
+        env['policy'].write_text(env['policy'].read_text() + '\n')
+        return result
+    assert env['run'](validate=validate)['kind'] == 'error'
+    assert env['manifest'].read_bytes() == before
+
+
+def test_manifest_drift_not_overwritten(env):
+    put(env, lambda value: value['protected_paths'].append(str(env['root'] / 'absent')))
+    concurrent = env['manifest'].read_bytes() + b'\n'
+    def validate(policy):
+        result = p.validator(policy)
+        env['manifest'].write_bytes(concurrent)
+        return result
+    assert env['run'](validate=validate)['kind'] == 'error'
+    assert env['manifest'].read_bytes() == concurrent
+
+
+def test_missing_path_reappearing_not_pruned(env):
+    path = env['root'] / 'absent'
+    before = put(env, lambda value: value['protected_paths'].append(str(path)))
+    def validate(policy):
+        result = p.validator(policy)
+        path.write_bytes(b'new current input')
+        return result
+    assert env['run'](validate=validate)['kind'] == 'error'
+    assert env['manifest'].read_bytes() == before
+    assert path.read_bytes() == b'new current input'
+
+
+def test_config_drift_refused(env):
+    config = env['root'] / 'good.json'
+    config.write_text('{}')
+    def change(value):
+        value['protected_paths'].append(str(env['root'] / 'absent'))
+        value['current_inputs'].append(str(config))
+    before = put(env, change)
+    def validate(policy):
+        result = p.validator(policy)
+        config.write_text('{"changed":true}')
+        return result
+    assert env['run'](validate=validate)['kind'] == 'error'
+    assert env['manifest'].read_bytes() == before
+
+
+def test_backup_collision_refused(env):
+    before = put(env, lambda value: value['protected_paths'].append(str(env['root'] / 'absent')))
+    backup = env['manifest'].with_name('current.json.bak-' + p.sha(before)[:8])
+    backup.write_bytes(b'other record')
+    assert env['run']()['kind'] == 'error'
+    assert env['manifest'].read_bytes() == before
+    assert backup.read_bytes() == b'other record'
+
+
+def test_transport_uncertain_at_most_once(env):
+    calls = []
+    def sender(event):
+        calls.append(event)
+        raise RuntimeError('uncertain transport')
+    put(env, lambda value: value.update(complete=False))
+    for _ in range(2):
+        p.sweep(env['policy'], env['manifest'], env['root'] / 'state.json', sender=sender)
+    assert len(calls) == 1
+
+
+def test_new_bad_sha_rearms_alert(env):
+    put(env, lambda value: value.update(complete=False))
+    env['run']()
+    env['manifest'].write_text(env['manifest'].read_text() + '\n')
+    env['run']()
+    assert len(env['notices']) == 2
+
+
+def test_dry_run_no_files_or_mail(env):
+    put(env, lambda value: value['protected_paths'].append(str(env['root'] / 'absent')))
+    before = {p.name: p.read_bytes() for p in env['root'].iterdir()}
+    assert env['run'](dry_run=True)['kind'] == 'would_validate_prune'
+    assert {p.name: p.read_bytes() for p in env['root'].iterdir()} == before
+    assert not env['notices']
+
+
+def test_other_file_not_found_is_not_pruned(env):
+    before = put(env, lambda value: value['protected_paths'].append(str(env['root'] / 'absent')))
+    def validate(_):
+        raise FileNotFoundError(errno.ENOENT, 'other scanner error', '/other/not-found')
+    assert env['run'](validate=validate)['kind'] == 'error'
+    assert env['manifest'].read_bytes() == before
+
+
+def test_duplicate_missing_entries_preserve_remaining_order(env):
+    missing = str(env['root'] / 'absent')
+    put(env, lambda value: value['protected_paths'].extend([missing, str(env['keep']), missing]))
+    assert env['run']()['kind'] == 'pruned'
+    assert json.loads(env['manifest'].read_text())['protected_paths'] == [str(env['keep'])] * 2
+
+
+@pytest.mark.parametrize('arguments,expected', [
+    ([], ['retain', 'orphan', 'main']),
+    (['--jobend-only'], ['main']),
+    (['--orphan-only'], ['orphan']),
+])
+def test_watcher_dispatch_preserves_existing_detectors(tmp_path, monkeypatch, arguments, expected):
+    import agentstack_orphan
+    candidate = os.environ.get('RETAINPRUNE_WATCHER_CANDIDATE', str(Path.home() / '.agentstack/bin/agentstack-seat-stall-watch.py'))
+    spec = importlib.util.spec_from_file_location('tested_watch', candidate)
+    watcher = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(watcher)
+    calls = []
+    monkeypatch.setattr(watcher, 'STATE', str(tmp_path / 'watch-state'))
+    monkeypatch.setattr(watcher, 'DRYRUN', False)
+    monkeypatch.setattr(watcher, 'main', lambda: calls.append('main'))
+    monkeypatch.setattr(watcher, 'log', lambda _: None)
+    monkeypatch.setattr(p, 'sweep', lambda **_: calls.append('retain') or {'kind': 'healthy'})
+    monkeypatch.setattr(agentstack_orphan, 'sweep', lambda **_: calls.append('orphan') or [])
+    monkeypatch.setattr(sys, 'argv', ['watcher'] + arguments)
+    watcher.guarded_main()
+    assert calls == expected
+
+
+def test_watcher_retain_failure_does_not_skip_existing_detection(tmp_path, monkeypatch):
+    import agentstack_orphan
+    candidate = os.environ.get('RETAINPRUNE_WATCHER_CANDIDATE', str(Path.home() / '.agentstack/bin/agentstack-seat-stall-watch.py'))
+    spec = importlib.util.spec_from_file_location('tested_watch_failure', candidate)
+    watcher = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(watcher)
+    calls = []
+    monkeypatch.setattr(watcher, 'STATE', str(tmp_path / 'watch-state'))
+    monkeypatch.setattr(watcher, 'DRYRUN', False)
+    monkeypatch.setattr(watcher, 'main', lambda: calls.append('main'))
+    monkeypatch.setattr(watcher, 'log', lambda _: None)
+    def fail(**kw):
+        raise RuntimeError('test only')
+    monkeypatch.setattr(p, 'sweep', fail)
+    monkeypatch.setattr(agentstack_orphan, 'sweep', lambda **_: calls.append('orphan') or [])
+    monkeypatch.setattr(sys, 'argv', ['watcher'])
+    watcher.guarded_main()
+    assert calls == ['orphan', 'main']
+
+
+def test_apple_handoff_failure_notifies_once_without_replacement(env, monkeypatch):
+    before = env['manifest'].read_bytes()
+    monkeypatch.setattr(p.sys, 'version_info', (3, 9))
+    def fail(*args, **kw):
+        raise OSError('test unavailable interpreter')
+    monkeypatch.setattr(p.subprocess, 'run', fail)
+    monkeypatch.setattr(p, 'send_server', lambda event: env['notices'].append(event) or {'id': 1})
+    for _ in range(2):
+        result = p.sweep(env['policy'], env['manifest'], env['root'] / 'state.json')
+        assert result['kind'] == 'error'
+    assert len(env['notices']) == 1
+    assert env['manifest'].read_bytes() == before
+
+
+def test_apple_handoff_keeps_custom_scratch_paths(env, monkeypatch):
+    monkeypatch.setattr(p.sys, 'version_info', (3, 9))
+    from types import SimpleNamespace
+    def run(args, **kw):
+        assert args[args.index('--policy') + 1] == str(env['policy'])
+        assert args[args.index('--manifest') + 1] == str(env['manifest'])
+        assert args[args.index('--state') + 1] == str(env['root'] / 'state.json')
+        assert '--dry-run' in args
+        return SimpleNamespace(returncode=0, stdout='{"kind":"healthy"}')
+    monkeypatch.setattr(p.subprocess, 'run', run)
+    assert env['run'](dry_run=True) == {'kind': 'healthy'}
+
+
+@pytest.fixture
+def role_copy(tmp_path, monkeypatch):
+    # Reuse the governor's existing isolated fixture contract; production
+    # approval constants are patched only inside this scratch test fixture.
+    spec = importlib.util.spec_from_file_location('governor_role_test_contract',
+        '/Users/huyuhutaru/tools/dev-storage-governor/tests/test_fixture_roles.py')
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    c = module.cohort(monkeypatch, tmp_path / 'role-copy', 'valid')
+    policy = tmp_path / 'role-policy.json'
+    policy.write_text(json.dumps(c['policy']))
+    c['policy_file'] = policy
+    c['state_file'] = tmp_path / 'role-state.json'
+    return c
+
+
+def test_fixture_roles_healthy_no_alert_no_mutation(role_copy):
+    c = role_copy
+    before = {path: path.read_bytes() for path in c['index'].parent.rglob('*') if path.is_file()}
+    notices = []
+    result = p.check_fixtures(c['policy_file'], c['state_file'], sender=lambda v: notices.append(v) or {'id': 1})
+    assert result['kind'] == 'healthy'
+    assert result['records'] == 1
+    assert notices == []
+    assert all(path.read_bytes() == raw for path, raw in before.items())
+
+
+def test_fixture_missing_producer_one_alert_no_restore(role_copy):
+    c = role_copy
+    producer_hash = p.sha(c['producer'].read_bytes())
+    c['producer'].unlink()
+    before = {path: path.read_bytes() for path in c['index'].parent.rglob('*') if path.is_file()}
+    notices = []
+    for _ in range(2):
+        result = p.check_fixtures(c['policy_file'], c['state_file'], sender=lambda v: notices.append(v) or {'id': 1})
+        assert result['kind'] == 'fixture_held'
+        assert result['count'] == 1
+        assert result['components'] == [dict(path=str(c['producer']), expected_sha256=producer_hash)]
+    assert len(notices) == 1
+    assert 'held records: 1' in notices[0]['body_md']
+    assert producer_hash in notices[0]['body_md']
+    assert not c['producer'].exists()
+    assert all(path.read_bytes() == raw for path, raw in before.items())
+
+
+def test_fixture_hash_drift_alert_without_changing_producer(role_copy):
+    c = role_copy
+    c['producer'].write_text('# drift')
+    before = c['producer'].read_bytes()
+    notices = []
+    result = p.check_fixtures(c['policy_file'], c['state_file'], sender=lambda v: notices.append(v) or {'id': 1})
+    assert result['kind'] == 'fixture_held'
+    assert len(notices) == 1
+    assert c['producer'].read_bytes() == before
+
+
+def test_fixture_dryrun_does_not_consume_notice(role_copy):
+    c = role_copy
+    c['producer'].unlink()
+    notices = []
+    sender = lambda v: notices.append(v) or {'id': 1}
+    assert p.check_fixtures(c['policy_file'], c['state_file'], dry_run=True, sender=sender)['kind'] == 'fixture_held'
+    assert not Path(str(c['state_file']) + '.fixture-roles.json').exists()
+    assert notices == []
+    assert p.check_fixtures(c['policy_file'], c['state_file'], sender=sender)['kind'] == 'fixture_held'
+    assert len(notices) == 1
+
+
+def test_fixture_components_at_most_ten_and_no_restore(role_copy):
+    from types import SimpleNamespace
+    c = role_copy
+    holds = {str(i): {'components': [dict(path='/opaque/' + str(i), expected_sha256='a' * 64)]} for i in range(14)}
+    fake = SimpleNamespace(holds=holds, records={})
+    notices = []
+    result = p.check_fixtures(c['policy_file'], c['state_file'], load_roles=lambda _: fake,
+                             sender=lambda v: notices.append(v) or {'id': 1})
+    assert result['count'] == 14
+    assert result['total_components'] == 14
+    assert len(result['components']) == 10
+    assert notices[0]['body_md'].count('expected_sha256=') == 10
+
+
+def test_fixture_error_dedup_and_manifest_independent(env, role_copy):
+    c = role_copy
+    c['index'].write_text('{bad')
+    notices = []
+    for _ in range(2):
+        result = p.check_fixtures(c['policy_file'], c['state_file'], sender=lambda v: notices.append(v) or {'id': 1})
+        assert result['kind'] == 'error'
+    assert len(notices) == 1
+
+
+def test_broken_manifest_still_checks_fixture_roles(env, role_copy):
+    c = role_copy
+    policy = json.loads(env['policy'].read_text())
+    policy.update(c['policy'])
+    env['policy'].write_text(json.dumps(policy))
+    c['producer'].unlink()
+    put(env, lambda value: value.update(complete=False))
+    result = env['run']()
+    assert result['kind'] == 'error'
+    assert result['fixture_roles']['kind'] == 'fixture_held'
+    assert len(env['notices']) == 2

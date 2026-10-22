@@ -559,8 +559,9 @@ notification_is_in_input() {
 # interrupt a working agent or flush its already-accepted tool-call queue.
 inject_notification() (
     local session_name="$1" agent_name="$2" marker="$3" prompt="$4"
-    acquire_delivery_lease "$agent_name" "notification-pane" || return 4
-    trap 'release_delivery_lease "$agent_name" "notification-pane"' EXIT
+    local pane_lease_owner
+    pane_lease_owner=$(acquire_delivery_lease "$agent_name" "notification-pane") || return 4
+    trap 'release_delivery_lease "$agent_name" "notification-pane" "$pane_lease_owner"' EXIT
     local screen
     screen=$(run_to "$TMUX_TIMEOUT" tmux capture-pane -t "$session_name" -p 2>/dev/null) || return 2
     if printf '%s\n' "$screen" | notification_is_in_input "$marker"; then

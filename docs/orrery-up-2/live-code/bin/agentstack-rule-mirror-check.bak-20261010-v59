@@ -1,0 +1,89 @@
+#!/usr/bin/env python3
+"""OPS-1 (c): find rule copies that lag the canonical rules.
+
+The canonical storage policy version is the `[storage vX.Y` header in
+~/.claude/CLAUDE.md. Every mirror must state that version and carry the rules
+listed for it. Prints one line per mismatch and exits 1 if there is any.
+
+Usage: agentstack-rule-mirror-check [EXAMFORGE_REPO]
+  Without an argument the examforge docs are read from the mainline ref
+  origin/plan/first-experience in ~/tools/examforge (no checkout needed, so a
+  stale worktree cannot hide or fake a mismatch; 2026-10-07 R-078). Pass a
+  checkout to check its working-tree docs instead.
+"""
+import re
+import subprocess
+import sys
+from pathlib import Path
+
+HOME = Path.home()
+CANON = HOME / ".claude/CLAUDE.md"
+MAINLINE_REF = "origin/plan/first-experience"
+EXAMFORGE_GIT = HOME / "tools/examforge"
+repo = Path(sys.argv[1]) if len(sys.argv) > 1 else None
+
+# (file, rules that must appear: (label, regex))
+STORAGE_RULES = [
+    ("R-073 途中の run の片づけ", r"R-073"),
+    ("R-074 閉じた run の可逆 archive", r"R-074"),
+    ("R-078 閉じた駅の作り直せる途中の画像", r"R-078"),
+]
+MIRRORS = [
+    (HOME / ".codex/AGENTS.md", STORAGE_RULES + [
+        ("LOCK-PRIO EXAMFORGE_HEAVY_PRIORITY", r"EXAMFORGE_HEAVY_PRIORITY"),
+        ("iOS 27 壁紙キャッシュ PRBPosterExtensionDataStore", r"PRBPosterExtensionDataStore"),
+        ("重い作業の見張り OPS-1 (b)", r"OPS-1 \(b\)"),
+    ]),
+    (HOME / ".agentstack/runtime/station-template.md", [
+        ("R-073 途中の run の片づけ", r"R-073"),
+        ("R-078 閉じた駅の作り直せる途中の画像", r"R-078"),
+        ("LOCK-PRIO EXAMFORGE_HEAVY_PRIORITY", r"EXAMFORGE_HEAVY_PRIORITY"),
+        ("iOS 27 壁紙キャッシュ PRBPosterExtensionDataStore", r"PRBPosterExtensionDataStore"),
+        ("重い作業の見張り OPS-1 (b)", r"OPS-1 \(b\)"),
+    ]),
+    ("examforge:docs/RESOURCE_BUDGET.md", STORAGE_RULES),
+    ("examforge:docs/TWO_SEAT_OPERATIONS_JA.md", STORAGE_RULES),
+]
+VERSIONED = {HOME / ".codex/AGENTS.md", "examforge:docs/RESOURCE_BUDGET.md", "examforge:docs/TWO_SEAT_OPERATIONS_JA.md"}
+
+
+def read_mirror(path):
+    """Return (label, text or None) for a mirror path or an examforge doc."""
+    if isinstance(path, str) and path.startswith("examforge:"):
+        rel = path.split(":", 1)[1]
+        if repo is not None:
+            full = repo / rel
+            return str(full), (full.read_text() if full.exists() else None)
+        out = subprocess.run(["git", "-C", str(EXAMFORGE_GIT), "show", f"{MAINLINE_REF}:{rel}"],
+                             capture_output=True, text=True)
+        return f"{MAINLINE_REF}:{rel}", (out.stdout if out.returncode == 0 else None)
+    return str(path), (path.read_text() if path.exists() else None)
+
+
+def storage_version(text: str):
+    m = re.search(r"storage v(\d+\.\d+)", text)
+    return m.group(1) if m else None
+
+
+canon = storage_version(CANON.read_text())
+if not canon:
+    print(f"canonical storage version not found in {CANON}")
+    sys.exit(2)
+problems = []
+for path, rules in MIRRORS:
+    label_path, text = read_mirror(path)
+    if text is None:
+        problems.append(f"{label_path}: missing file")
+        continue
+    if path in VERSIONED:
+        headers = re.findall(r"\[storage v(\d+\.\d+)", text) or [storage_version(text)]
+        for found in sorted(set(headers)):
+            if found != canon:
+                problems.append(f"{label_path}: storage v{found} (canonical v{canon})")
+    for label, pattern in rules:
+        if not re.search(pattern, text):
+            problems.append(f"{label_path}: lacks {label}")
+for line in problems:
+    print(line)
+print(f"rule-mirror-check: canonical storage v{canon}, mismatches {len(problems)}")
+sys.exit(1 if problems else 0)

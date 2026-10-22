@@ -1,0 +1,44 @@
+{
+  "transport": "real isolated tmux; synthetic provider/Mail; no paid API",
+  "old": {
+    "token_name": "agent_token_SunnyCurie",
+    "token_mode": 384,
+    "state_name": "SunnyCurie.json",
+    "state_mode": 384,
+    "state_keys": [
+      "agent_name",
+      "project_key",
+      "registration_token"
+    ],
+    "state_identity": "SunnyCurie",
+    "server_certificate_variable_positive_control": true,
+    "child_process_environment": {
+      "ssl_cert_file_present": false,
+      "codex_ca_certificate_present": false
+    },
+    "pane_session": "SunnyCurie",
+    "pane_alive": true,
+    "launcher_exit": 0
+  },
+  "new": {
+    "token_name": "agent_token_SunnyCurie",
+    "token_mode": 384,
+    "state_name": "SunnyCurie.json",
+    "state_mode": 384,
+    "state_keys": [
+      "agent_name",
+      "project_key",
+      "registration_token"
+    ],
+    "state_identity": "SunnyCurie",
+    "server_certificate_variable_positive_control": true,
+    "child_process_environment": {
+      "ssl_cert_file_present": false,
+      "codex_ca_certificate_present": false
+    },
+    "pane_session": "SunnyCurie",
+    "pane_alive": true,
+    "launcher_exit": 0
+  },
+  "equal": true
+}

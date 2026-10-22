@@ -234,7 +234,8 @@ else:sys.exit(2)
         module_path=str(SCRIPT.with_name('agentstack_unstick_seats.py'))
         code="import importlib.util,json,os,sys,time; s=importlib.util.spec_from_file_location('native_watchdog',"+repr(module_path)+"); m=importlib.util.module_from_spec(s); s.loader.exec_module(m); w=object.__new__(m.Watchdog); w.test=False; print(json.dumps({'pid':os.getpid(),'version':list(sys.version_info[:3]),'value':w.monotonic(),'uptime':time.clock_gettime(time.CLOCK_UPTIME_RAW)}))"
         evidence=[]
-        for executable,version in [('/usr/bin/python3',[3,9,6]),('/opt/homebrew/bin/python3',[3,14,7])]:
+        for executable in ['/usr/bin/python3','/opt/homebrew/bin/python3']:
+            version=json.loads(subprocess.check_output([executable,'-c','import json,sys; print(json.dumps(list(sys.version_info[:3])))']))
             samples=[]
             for _ in range(2):
                 child=subprocess.run([executable,'-c',code],capture_output=True,text=True)

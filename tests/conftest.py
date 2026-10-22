@@ -452,3 +452,19 @@ def pytest_sessionfinish(session, exitstatus):
         if reporter is not None:
             reporter.write_sep('=', 'production-service monitor failed', red=True)
             reporter.write_line(str(exc), red=True)
+
+
+@pytest.fixture(autouse=True, scope="session")
+def _refuse_process_wide_cleanup(tmp_path_factory):
+    """Isolated services may never kill another installation's web terminals."""
+    directory = tmp_path_factory.mktemp("refuse-process-cleanup")
+    for name in ("pkill", "killall"):
+        path = directory / name
+        path.write_text("#!/bin/sh\necho isolated-process-cleanup-refused >&2\nexit 1\n")
+        path.chmod(0o755)
+    previous = os.environ.get("PATH", "")
+    os.environ["PATH"] = str(directory) + os.pathsep + previous
+    try:
+        yield
+    finally:
+        os.environ["PATH"] = previous

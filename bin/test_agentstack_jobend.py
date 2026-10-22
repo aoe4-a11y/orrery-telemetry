@@ -200,7 +200,7 @@ class JobEndTests(unittest.TestCase):
         here = Path(__file__).parent
         baseline = here / 'before-watch.py.txt'
         if not baseline.exists():
-            baseline = here / 'agentstack-seat-stall-watch.py.bak-20261020-jobend'
+            baseline = here.parent / 'docs/orrery-up-2/live-code/bin/agentstack-seat-stall-watch.py.bak-20261020-jobend'
         def functions(path):
             tree = ast.parse(path.read_text())
             return {n.name: n for n in tree.body if isinstance(n, ast.FunctionDef)}

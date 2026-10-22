@@ -1,0 +1,6 @@
+{
+  "path": "/Users/huyuhutaru/tools/examforge/scripts/heavy_job_lock.sh",
+  "sha256": "fb4a5b6aa0595686f326bc2604e1e64bb0ed4d595a4a71fe8447c00f66e5d1f5",
+  "priority_environment": 2,
+  "watcher": "scripts/run-upgrade-job.py starts independent completion watcher thread before waiting; writes .done and EXIT_CODE"
+}

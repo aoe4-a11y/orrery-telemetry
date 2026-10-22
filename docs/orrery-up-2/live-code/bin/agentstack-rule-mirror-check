@@ -1,0 +1,110 @@
+#!/usr/bin/env python3
+"""OPS-1 (c): find rule copies that lag the canonical rules.
+
+The canonical storage policy version is the `[storage vX.Y` header in
+~/.claude/CLAUDE.md. Every mirror must state that version and carry the rules
+listed for it. Prints one line per mismatch and exits 1 if there is any.
+
+Usage: agentstack-rule-mirror-check [EXAMFORGE_REPO]
+  Without an argument the examforge docs are read from the mainline ref
+  origin/plan/first-experience in ~/tools/examforge (no checkout needed, so a
+  stale worktree cannot hide or fake a mismatch; 2026-10-07 R-078). Pass a
+  checkout to check its working-tree docs instead.
+"""
+import re
+import subprocess
+import sys
+from pathlib import Path
+
+HOME = Path.home()
+CANON = HOME / ".claude/CLAUDE.md"
+MAINLINE_REF = "origin/plan/first-experience"
+EXAMFORGE_GIT = HOME / "tools/examforge"
+repo = Path(sys.argv[1]) if len(sys.argv) > 1 else None
+
+# (file, rules that must appear: (label, regex))
+STORAGE_RULES = [
+    ("R-095 storage v6.0", r"R-095"),
+    ("残す物は 5 つだけ", r"残す物は次の 5 つだけ"),
+    ("head が一度に消す", r"一度に消し"),
+    ("NAS を前提にしない", r"NAS は前提にしない"),
+]
+MIRRORS = [
+    (HOME / ".codex/AGENTS.md", STORAGE_RULES + [
+        ("LOCK-PRIO EXAMFORGE_HEAVY_PRIORITY", r"EXAMFORGE_HEAVY_PRIORITY"),
+        ("iOS 27 壁紙キャッシュ PRBPosterExtensionDataStore", r"PRBPosterExtensionDataStore"),
+        ("重い作業の見張り OPS-1 (b)", r"OPS-1 \(b\)"),
+    ]),
+    (HOME / ".agentstack/runtime/station-template.md", STORAGE_RULES + [
+        ("LOCK-PRIO EXAMFORGE_HEAVY_PRIORITY", r"EXAMFORGE_HEAVY_PRIORITY"),
+        ("iOS 27 壁紙キャッシュ PRBPosterExtensionDataStore", r"PRBPosterExtensionDataStore"),
+        ("重い作業の見張り OPS-1 (b)", r"OPS-1 \(b\)"),
+    ]),
+    (HOME / "tools/osce-trainer-main/AGENTS.md", STORAGE_RULES),
+    (HOME / "tools/osce-trainer-main/CLAUDE.md", STORAGE_RULES),
+    (HOME / "tools/osce-trainer/AGENTS.md", STORAGE_RULES),
+    (HOME / "tools/osce-trainer/CLAUDE.md", STORAGE_RULES),
+    (HOME / ".codex/RULES_REGISTRY.md", [("R-095 storage v6.0", r"R-095")]),
+    ("examforge:docs/RESOURCE_BUDGET.md", STORAGE_RULES),
+    ("examforge:docs/TWO_SEAT_OPERATIONS_JA.md", STORAGE_RULES),
+]
+VERSIONED = {path for path, _ in MIRRORS}
+POLICY_MIRRORS = VERSIONED - {HOME / ".codex/RULES_REGISTRY.md"}
+
+
+def read_mirror(path):
+    """Return (label, text or None) for a mirror path or an examforge doc."""
+    if isinstance(path, str) and path.startswith("examforge:"):
+        rel = path.split(":", 1)[1]
+        if repo is not None:
+            full = repo / rel
+            return str(full), (full.read_text() if full.exists() else None)
+        out = subprocess.run(["git", "-C", str(EXAMFORGE_GIT), "show", f"{MAINLINE_REF}:{rel}"],
+                             capture_output=True, text=True)
+        return f"{MAINLINE_REF}:{rel}", (out.stdout if out.returncode == 0 else None)
+    return str(path), (path.read_text() if path.exists() else None)
+
+
+def storage_version(text: str):
+    m = re.search(r"storage v(\d+\.\d+)", text)
+    return m.group(1) if m else None
+
+
+def storage_body(text: str):
+    """Compare the approved wording independently of each mirror header history."""
+    matches = re.findall(r"<!-- BEGIN STORAGE V5 -->\n\[storage [^\n]+\]\n(.*?)<!-- END STORAGE V5 -->", text, re.S)
+    return [body.strip() for body in matches]
+
+
+canon_text = CANON.read_text()
+canon = storage_version(canon_text)
+canon_bodies = storage_body(canon_text)
+canon_body = canon_bodies[0] if len(canon_bodies) == 1 else None
+if not canon:
+    print(f"canonical storage version not found in {CANON}")
+    sys.exit(2)
+problems = []
+for path, rules in MIRRORS:
+    label_path, text = read_mirror(path)
+    if text is None:
+        problems.append(f"{label_path}: missing file")
+        continue
+    if path in VERSIONED:
+        if path == HOME / ".codex/RULES_REGISTRY.md":
+            headers = re.findall(r"^\| 記憶容量（storage） \| v(\d+\.\d+)", text, re.M) or [None]
+            if "`~/.claude/CLAUDE.md` Global development storage policy" not in text:
+                problems.append(f"{label_path}: canonical storage path differs")
+        else:
+            headers = re.findall(r"\[storage v(\d+\.\d+)", text) or [storage_version(text)]
+        for found in sorted(set(headers)):
+            if found != canon:
+                problems.append(f"{label_path}: storage v{found} (canonical v{canon})")
+    if path in POLICY_MIRRORS and (canon_body is None or not storage_body(text) or any(body != canon_body for body in storage_body(text))):
+        problems.append(f"{label_path}: marked storage text differs from canonical")
+    for label, pattern in rules:
+        if not re.search(pattern, text):
+            problems.append(f"{label_path}: lacks {label}")
+for line in problems:
+    print(line)
+print(f"rule-mirror-check: canonical storage v{canon}, mismatches {len(problems)}")
+sys.exit(1 if problems else 0)

@@ -1,0 +1,23 @@
+#!/usr/bin/env bash
+# One-shot: pre-register + spawn a Codex tmux child with an embedded task file.
+# Usage: agentstack-spawn-codex <model> <task-file> [workdir] [task-description] [effort]
+# Env: PARENT_AGENT (default ProudTuring), AGENTSTACK_PROJECT_KEY
+# Env: AGENTSTACK_PROJECT_KEY (default: /Users/huyuhutaru/tools/examforge)
+set -euo pipefail
+[ -f "$HOME/.agentstack/env.sh" ] && source "$HOME/.agentstack/env.sh"
+export AGENTSTACK_HOME="${AGENTSTACK_HOME:-$HOME/.agentstack}"
+HOOKS_DIR="${AGENTSTACK_LIFECYCLE_HOOKS_DIR:-${AGENTSTACK_HOOKS_DIR:-$HOME/.agentstack/hooks}}"
+export AGENTSTACK_HOOKS_DIR="${AGENTSTACK_HOOKS_DIR:-$AGENTSTACK_HOME/hooks}"
+MODEL="${1:?model (e.g. gpt-5.6-sol)}"; TASK="${2:?task file}"; WORKDIR="${3:-$PWD}"; DESC="${4:-$(head -1 "$TASK" | sed 's/^# *//' | python3 -c 'import sys; print(sys.stdin.read().strip()[:60])')}"; EFFORT="${5:-medium}"
+export PARENT_AGENT="${PARENT_AGENT:-ProudTuring}"
+export AGENTSTACK_PROJECT_KEY="${AGENTSTACK_PROJECT_KEY:-/Users/huyuhutaru/tools/examforge}"
+HANDOFF_DIR="${AGENTSTACK_RUNTIME_DIR:-${AGENTSTACK_HOME:-$HOME/.agentstack}/runtime}/spawn-tokens"
+mkdir -p "$HANDOFF_DIR"
+chmod 700 "$HANDOFF_DIR"
+TOK="$HANDOFF_DIR/$(python3 -c 'import uuid; print(uuid.uuid4().hex)').token"
+OUT="$("$HOME/.agentstack/bin/agentstack-preregister-child" --project-key "$AGENTSTACK_PROJECT_KEY" --program codex --model "$MODEL" --task-description "$DESC" --token-file-out "$TOK" 2>&1)"
+NAME="$(printf '%s\n' "$OUT" | tail -1 | tr -d '[:space:]')"
+[[ "$NAME" =~ ^[A-Z][a-z]+[A-Z][a-z]+$ ]] || { echo "preregister failed:"; echo "$OUT"; exit 1; }
+cd "$WORKDIR"
+"$HOOKS_DIR/spawn_child.sh" --codex --model "$MODEL" --effort "$EFFORT" --pre-registered "$NAME" --child-token-file "$TOK" --embed-task --task-file "$TASK" "$WORKDIR"
+echo "spawned: $NAME (tmux session $NAME, model $MODEL, effort $EFFORT, parent $PARENT_AGENT, workdir $WORKDIR)"

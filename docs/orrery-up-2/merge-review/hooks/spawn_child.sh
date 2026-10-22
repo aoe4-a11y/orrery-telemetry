@@ -1,0 +1,5351 @@
+#!/bin/bash
+
+# Decide explicit global context before loading any legacy environment/state.
+_ags_global_loader="$(cd "$(dirname "${BASH_SOURCE[0]}")/../bin/lib" && pwd)/global-client-loader.sh"
+. "$_ags_global_loader"
+_ags_legacy_consumer="$(dirname "$_ags_global_loader")/legacy-tmux-consumer.sh"
+if [[ -f "$_ags_legacy_consumer" ]]; then . "$_ags_legacy_consumer"; fi || exit 2
+if declare -F ags_client_entry >/dev/null; then
+  if ags_client_entry spawn-child "$@"; then exit 0; else _ags_global_rc=$?; fi
+  if [[ "$_ags_global_rc" != 125 ]]; then
+    exit "$_ags_global_rc"
+  fi
+
+fi
+# spawn_child.sh - launch a child agent (Claude / Codex) in a new tmux session
+#
+# Usage:
+#   spawn_child.sh --resources "path1,path2" "<task>" [<workdir>]
+#   spawn_child.sh --resources "docs/**" --codex "<task>"
+#   spawn_child.sh --unsafe-no-resources "<task>"
+#   spawn_child.sh --model opus --resources "path" "<task>"
+#   spawn_child.sh --worktree --resources "path" "<task>"
+#   spawn_child.sh --pre-registered <name> --child-token-file <path> "<task>"
+#   spawn_child.sh --pre-registered <name> --child-token-file <path> --embed-task --task-file <path> [<workdir>]
+#   spawn_child.sh --pre-registered <name> --codex --embed-task --task-file <path> [<workdir>]
+#   spawn_child.sh --pre-registered <name> --codex --codex-mcp orrery-only "<task>"
+#   spawn_child.sh --pre-registered <name> --child-token-file <path> --standalone "<task>"
+#   spawn_child.sh --pre-registered <name> --child-token-file <path> --claude-chrome-device <id> "<task>"
+#
+# ブラウザ操作（Claude の子だけ）:
+#   既定は inherit: 起動コマンドを変えず、Claude 自身の設定（claudeInChromeDefaultEnabled 等）に従う。
+#   --claude-chrome              子の claude に --chrome を付ける（Claude in Chrome）
+#   --claude-chrome-device ID    使うブラウザの deviceId を子に指示する（--claude-chrome を含む）
+#   env AGENTSTACK_CLAUDE_CHILD_CHROME=1 / AGENTSTACK_CLAUDE_CHILD_CHROME_DEVICE=ID でも同じ。
+#     CLI が env より優先。env は Claude の子にだけ効く（--codex では無視）。
+#   deviceId は起動 prompt と SessionStart hook で渡す選択ポリシーであり、
+#   他のブラウザの操作を技術的に禁止するものではない。
+#   chrome を要求した子は warm pool を使わず cold start する。
+#
+# 子に渡す道具（base / tools。hooks/child_tools.py が解釈する）:
+#   --base default|mail-only   省略・default は今までと同じ起動。mail-only は ORRERY Mail と
+#                              --tools で選んだものだけを渡す（Claude は --no-chrome も付ける）
+#   --tools SPEC               繰り返し・カンマ区切り可: browser[:deviceId] / screen[:read|:operate]
+#                              / screen:<read|operate>:<server> / mcp:<server>
+#   選択（mail-only かいずれかの tools）がある子は fail closed: Mail の proxy が作れない、
+#   選んだ server を写せない、computer use が有効な project での mail-only などは起動しない。
+#   これは子への方針であって、技術的な隔離ではない。
+#
+# モデル指定（--model。Codex は CLI 0.159.0+ なら gpt-6.1-sol 既定、古ければ gpt-6-sol）:
+#   --model 省略/opus    → 現行の Opus（ローカルの Claude Code model catalog の main 行。
+#                          読めなければ dashboard/claude_models.py の同梱表。warm pool 対象）
+#   --model opus-5-5 / opus55 → claude-opus-5-5（版つき。追従しない）
+#   --model opus[1m]     → claude-opus-4-8[1m]（legacy 1M。要シングルクォート: glob 回避）
+#   --model opus-1m      → claude-opus-4-8[1m]（旧来の friendly 表記を正規化）
+#   --model opus-5-5[1m] → claude-opus-5-5[1m]（current 1M。要シングルクォート: glob 回避）
+#   --model claude-opus-5 / opus-5 → 旧 200K Opus を明示指定（引き続き有効）
+#   --model sonnet       → 現行の Sonnet（opus と同じ解決。warm pool 対象）
+#   --model sonnet-5-5 / sonnet55 → claude-sonnet-5-5、sonnet-5 / sonnet5 → claude-sonnet-5（版つき）
+#   --model haiku/fable  → 現行の Haiku / Fable（同じ解決）。haiku-4-5 / fable-5-1 は版つき
+#   版の区切りは . でもよい（sonnet-5.5 / sonnet5.5 / opus-5.5 → それぞれ 5-5 と同じ）
+#   --codex --model 省略 → gpt-6.1-sol（CLI が古ければ gpt-6-sol、版不明なら catalog 判定）。sol も同じ。luna / astra → GPT-6、terra → GPT-5.6。
+#   未知の形             → 明確なエラーで停止（claude-* 接頭の正式 ID は前方互換で素通り）
+#   ※ 正規化は normalize_claude_model() / normalize_codex_model() が担当。warm pool は要求モデルが
+#     事前起動モデル（opus / sonnet の別名の解決結果）と
+#     完全一致するときだけ claim する（[1m]/fable 等は cold-start で正しく起動）。
+#
+# リソース管理:
+#   --resources CSV       対象リソースパス（カンマ区切り、必須）
+#   --resource-ttl SEC    reservation有効期限（デフォルト14400秒）
+#   --unsafe-no-resources resource宣言なしの明示的opt-out
+#
+# 分離モード:
+#   --worktree            子を独立した git worktree (別ブランチ・別ディレクトリ) で動かす
+#                          - worktree dir: ${AGENTSTACK_WORKTREE_ROOT:-<install-root>/worktrees}/<AGENT_NAME>
+#                          - branch:       exp/<AGENT_NAME>
+#                          - 子の tmux cwd は worktree dir
+#                          - 元 source は WORK_DIR (引数 $2 / pre-registered モードは $3)
+#                          - クリーンアップ: 子の作業完了後、親側から
+#                              git -C <source> worktree remove <worktree-dir>
+#                              git -C <source> branch -D exp/<NAME>
+#   --worktree-base REV   --worktree と併用。worktree の起点 commit/branch/tag を明示指定。
+#                          未指定時は spawn 実行時の HEAD (時間差で drift する可能性あり)。
+#                          複数 sub-agent を同一 baseline で並列実行したい場合に使う。
+#                          REV は git rev-parse で解決できる任意の参照 (例: main, 22f327b, v1.0)。
+#
+# 環境変数:
+#   PARENT_AGENT  - 親エージェント名（省略時: tmuxセッション名）
+#   PROJECT_KEY   - ORRERY Mail のプロジェクトキー（省略時: デフォルト）
+#   AGENTSTACK_WORKTREE_ROOT - worktree の永続 root（既定: install root/worktrees）
+#
+# 終了コード:
+#   0  - 成功
+#   1  - 引数不正 / サーバー接続失敗 / worktree 作成失敗
+#   2  - --resources も --unsafe-no-resources も未指定
+#   21 - リソース競合（conflict検知）
+#
+# 出力（stdout）: 子エージェント名
+# ログ（stderr）: 詳細ログ
+
+set -euo pipefail
+<<<<<<< /Users/huyuhutaru/.dev-storage-governor/examforge/20261022T063810Z-build-cache-e4007ade/source/hooks/spawn_child.sh
+
+HOOKS_DIR="${AGENTSTACK_HOOKS_DIR:-$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)}"
+# Policy belongs to this launcher version, not an optional hooks override.
+CODEX_MODEL_HELPER="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/dashboard/codex_models.py"
+CLAUDE_MODEL_HELPER="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/dashboard/claude_models.py"
+RUNTIME_DIR="${AGENTSTACK_RUNTIME_DIR:-$HOME/.agentstack/runtime}"
+=======
+ORIGINAL_ARGV=("$@")
+
+HOOKS_DIR="${AGENTSTACK_LIFECYCLE_HOOKS_DIR:-${AGENTSTACK_HOOKS_DIR:-$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)}}"
+LIFECYCLE_HELPER="$HOOKS_DIR/seat_lifecycle.py"
+export AGENTSTACK_LIFECYCLE_HOOKS_DIR="$HOOKS_DIR"
+export AGENTSTACK_HOOKS_DIR="${AGENTSTACK_HOOKS_DIR:-${AGENTSTACK_HOME:-$HOME/.agentstack}/hooks}"
+RUNTIME_DIR="${AGENTSTACK_RUNTIME_DIR:-${AGENTSTACK_HOME:-$HOME/.agentstack}/runtime}"
+export AGENTSTACK_RUNTIME_DIR="$RUNTIME_DIR"
+>>>>>>> /Users/huyuhutaru/.dev-storage-governor/examforge/20261022T063810Z-build-cache-e4007ade/source/docs/orrery-up-2/merge-inputs/hooks/spawn_child.sh.local
+MANAGED_FILE="${AGENTSTACK_MANAGED_AGENTS_FILE:-$RUNTIME_DIR/managed_agents.txt}"
+MAIL_ENV="${AGENTSTACK_MAIL_ENV:-$HOME/.agentstack/mail/.env}"
+MCP_URL="${AGENTSTACK_MCP_URL:-${MCP_URL:-http://127.0.0.1:18765/mcp}}"
+HTTP_BEARER_MODE="${AGENTSTACK_MAIL_HTTP_BEARER_MODE:-auto}"
+CHILD_RESUME_RETENTION_DAYS="${AGENTSTACK_CHILD_RESUME_RETENTION_DAYS:-30}"
+PROJECT_KEY="${PROJECT_KEY:-${AGENTSTACK_PROJECT_KEY:-}}"
+TERMINAL_SETTING="${AGENTSTACK_TERMINAL:-auto}"
+AUTO_OPEN_CHILD="${AGENTSTACK_AUTO_OPEN_CHILD:-1}"
+AGENTSTACK_HOME_DIR="${AGENTSTACK_HOME:-}"
+if [[ -z "$AGENTSTACK_HOME_DIR" ]]; then
+    # A partial release hooks directory is never the installation root.
+    AGENTSTACK_HOME_DIR="$HOME/.agentstack"
+fi
+export AGENTSTACK_HOME="$AGENTSTACK_HOME_DIR"
+REREGISTER_HELPER="${AGENTSTACK_HOME_DIR:+$AGENTSTACK_HOME_DIR/bin/agentstack-reregister}"
+
+# Internal foreground entry for the dashboard's already prepared gated pane.
+NATIVE_RESUME_CONTRACT=1
+if [[ "${1:-}" == --resume-native ]]; then
+    if [[ "$#" != 2 ]]; then
+        echo "Error: --resume-native requires one retained child name" >&2
+        exit 1
+    fi
+    _native_resume_command="$("${AGENTSTACK_PYTHON:-python3}" "$HOOKS_DIR/harness_child.py" resume \
+        --runtime-dir "$RUNTIME_DIR" --agent-name "$2" --project-key "$PROJECT_KEY")" || exit 1
+    # Native nonzero exit must reach the helper-provided cleanup below it.
+    set +e
+    # The product helper returns quoted argv and the normal exit cleanup.
+    eval "$_native_resume_command"
+    exit $?
+fi
+
+# Source the shared register lib early (function definitions only — no side
+# effects) so the macOS TCC access guard is available in every launch path,
+# including pre-registered mode which returns before the rest of the script.
+if ! declare -F ags_warn_tcc_access >/dev/null 2>&1; then
+    _ags_reglib="${AGENTSTACK_REGISTER_LIB:-$AGENTSTACK_HOME_DIR/bin/lib/agentstack-register.sh}"
+    [[ -f "$_ags_reglib" ]] && . "$_ags_reglib" 2>/dev/null || true
+fi
+
+get_agentstack_token() {
+    if [[ -n "${MCP_AGENT_MAIL_TOKEN:-}" ]]; then
+        printf '%s' "$MCP_AGENT_MAIL_TOKEN"
+        return 0
+    fi
+    if [[ -x "$HOOKS_DIR/get-mcp-agent-mail-token.sh" ]]; then
+        bash "$HOOKS_DIR/get-mcp-agent-mail-token.sh" 2>/dev/null && return 0
+    fi
+    if command -v security >/dev/null 2>&1; then
+        local keychain_token
+        keychain_token=$(security find-generic-password -s "mcp-agent-mail" -a "HTTP_BEARER_TOKEN" -w 2>/dev/null || true)
+        if [[ -n "$keychain_token" ]]; then
+            printf '%s' "$keychain_token"
+            return 0
+        fi
+    fi
+    if [[ -f "$MAIL_ENV" ]]; then
+        sed -n 's/^HTTP_BEARER_TOKEN=//p' "$MAIL_ENV" | tr -d '[:space:]'
+        return 0
+    fi
+    return 1
+}
+
+legacy_http_bearer_enabled() {
+    case "$HTTP_BEARER_MODE" in
+        enabled|auto) return 0 ;;
+        disabled) return 1 ;;
+        *)
+            echo "Invalid AGENTSTACK_MAIL_HTTP_BEARER_MODE: $HTTP_BEARER_MODE" >&2
+            return 2
+            ;;
+    esac
+}
+
+mac_app_exists() {
+    [[ -d "/Applications/$1" || -d "$HOME/Applications/$1" ]]
+}
+
+terminal_adapter() {
+    local setting
+    setting="$(printf '%s' "$TERMINAL_SETTING" | tr '[:upper:]' '[:lower:]')"
+    case "$setting" in
+        ""|auto)
+            if [[ "$(uname -s 2>/dev/null)" != "Darwin" ]]; then
+                echo "none"
+            elif mac_app_exists "Ghostty.app" || command -v ghostty >/dev/null 2>&1; then
+                echo "ghostty"
+            elif mac_app_exists "iTerm.app" || mac_app_exists "iTerm2.app"; then
+                echo "iterm"
+            elif mac_app_exists "Terminal.app" || [[ -d "/System/Applications/Utilities/Terminal.app" ]]; then
+                echo "terminal"
+            else
+                echo "none"
+            fi
+            ;;
+        ghostty|iterm|terminal|none)
+            echo "$setting"
+            ;;
+        *)
+            echo "none"
+            ;;
+    esac
+}
+
+_open_child_terminal() {
+    local child_name="$1"
+    local adapter shell_child shell_cmd shell_helper
+    adapter="$(terminal_adapter)"
+    [[ "$adapter" == "none" ]] && return 0
+
+    printf -v shell_child '%q' "$child_name"
+    printf -v shell_helper '%q' "$(dirname "$_ags_global_loader")/runtime_tmux_consumer.py"
+    shell_cmd="env -u TMUX -u TMUX_PANE python3 $shell_helper attach-session -t $shell_child"
+    # Spawning a child is a background event: the window is opened so the user
+    # CAN watch it, not so it steals what they are doing. `open -g` keeps it
+    # behind the current app. Set AGENTSTACK_FOCUS_CHILD=1 to bring it forward.
+    local open_bg=(-g)
+    [[ "${AGENTSTACK_FOCUS_CHILD:-}" == "1" ]] && open_bg=()
+    case "$adapter" in
+        ghostty)
+            if env -u TMUX -u TMUX_PANE open ${open_bg[@]+"${open_bg[@]}"} -na Ghostty.app --args --title="$child_name" -e python3 "$(dirname "$_ags_global_loader")/runtime_tmux_consumer.py" attach-session -t "$child_name" 2>/dev/null; then
+                echo "[spawn_child] Opened terminal window (${child_name}, adapter: ghostty)" >&2
+            fi
+            ;;
+        iterm)
+            if command -v osascript >/dev/null 2>&1; then
+                # `activate` is what pulls the app in front, so it is applied
+                # only when the user asked for the child to take focus.
+                local iterm_activate=""
+                [[ "${AGENTSTACK_FOCUS_CHILD:-}" == "1" ]] && iterm_activate="activate"
+                osascript -e 'on run argv
+                  set cmd to item 1 of argv
+                  tell application "iTerm2"
+                    '"$iterm_activate"'
+                    create window with default profile command cmd
+                  end tell
+                end run' "$shell_cmd" >/dev/null 2>&1 || true
+            fi
+            ;;
+        terminal)
+            if command -v osascript >/dev/null 2>&1; then
+                local terminal_activate=""
+                [[ "${AGENTSTACK_FOCUS_CHILD:-}" == "1" ]] && terminal_activate="activate"
+                osascript -e 'on run argv
+                  set cmd to item 1 of argv
+                  tell application "Terminal"
+                    '"$terminal_activate"'
+                    do script cmd
+                  end tell
+                end run' "$shell_cmd" >/dev/null 2>&1 || true
+            fi
+            ;;
+    esac
+    return 0
+}
+
+# Automatic terminal opening is on by default (AGENTSTACK_AUTO_OPEN_CHILD=0 turns it off); Deck Open tmux remains independent.
+# Terminal activation is an optional observer side effect, never part of child
+# readiness. On headless macOS, `open` / `osascript` can wait indefinitely for
+# a GUI application, which used to keep a successful spawn_child.sh call stuck
+# after the tmux child was already alive. Detach it from the launcher's critical
+# path; failures remain best-effort diagnostics from the worker above.
+open_child_terminal() {
+<<<<<<< /Users/huyuhutaru/.dev-storage-governor/examforge/20261022T063810Z-build-cache-e4007ade/source/hooks/spawn_child.sh
+    [[ "$AUTO_OPEN_CHILD" == "1" ]] || return 0
+    (_open_child_terminal "$1") </dev/null >/dev/null 2>&1 &
+=======
+    (unset AGENTSTACK_SEAT_LOCK_FD AGENTSTACK_LIFECYCLE_HOOKS_DIR AGENTSTACK_PRESERVE_SEAT_IDENTITY AGENTSTACK_LAUNCH_AUTH_OWNERSHIP AGENTSTACK_LAUNCH_ARTIFACT_OWNERSHIP AGENTSTACK_DIRECT_CANDIDATE AGENTSTACK_LIFECYCLE_NAME AGENTSTACK_LAUNCH_JOURNAL AGENTSTACK_LAUNCH_ATTEMPT_ID AGENTSTACK_MATERIALS_APPENDED AGENTSTACK_REFRESH_CHILD_CONFIG AGENTSTACK_DIRECT_REGISTRATION_NAME; _open_child_terminal "$1") 9>&- </dev/null >/dev/null 2>&1 &
+>>>>>>> /Users/huyuhutaru/.dev-storage-governor/examforge/20261022T063810Z-build-cache-e4007ade/source/docs/orrery-up-2/merge-inputs/hooks/spawn_child.sh.local
+    return 0
+}
+
+# フラグの処理
+USE_CODEX=false
+HARNESS=""
+HARNESS_BACKEND=""
+HARNESS_HELPER_MODEL=""
+HARNESS_STATE=""
+HARNESS_HELPER="${AGENTSTACK_HARNESS_CHILD_HELPER:-$HOOKS_DIR/harness_child.py}"
+CLAUDE_MODEL=""
+CODEX_EFFORT=""
+CLAUDE_CHILD_EFFORT=""
+CODEX_MCP_PROFILE="inherit"
+RESOURCES=""
+RESOURCE_TTL=14400
+UNSAFE_NO_RESOURCES=false
+PRE_REGISTERED=""
+CHILD_TOKEN_FILE=""
+STANDALONE=false
+EMBED_TASK=false
+TASK_FILE=""
+USE_WORKTREE=false
+# Claude in Chrome: CLI flags win over the env defaults, and the env defaults
+# apply to Claude children only (a Codex spawn ignores them). Unset / "" / 0
+# means inherit: no flag is added and the user's own Claude settings decide.
+CLAUDE_CHILD_CHROME=false
+CLAUDE_CHILD_CHROME_CLI=false
+CLAUDE_CHILD_CHROME_DEVICE=""
+CLAUDE_CHILD_CHROME_DEVICE_CLI=false
+CODEX_MCP_PROFILE_CLI=false
+# Tools selection (hooks/child_tools.py). Empty base and no --tools keep the
+# launch exactly as before; any selection makes the launch fail closed.
+CHILD_TOOLS_BASE=""
+CHILD_TOOLS_ARGS=()
+CHILD_TOOLS_SPEC=""
+CHILD_TOOLS_RESTRICTIVE=false
+CHILD_TOOLS_FROM_DEFAULTS=false
+CHILD_DEFAULT_TOOLS_NOTICE=""
+CLAUDE_CHILD_TOOL_FLAGS=""
+WORKTREE_BASE="${AGENTSTACK_WORKTREE_ROOT:-${AGENTSTACK_HOME_DIR:-$HOME/.agentstack}/worktrees}"
+if [[ "$WORKTREE_BASE" == "~" ]]; then
+    WORKTREE_BASE="$HOME"
+elif [[ "$WORKTREE_BASE" == "~/"* ]]; then
+    WORKTREE_BASE="$HOME/${WORKTREE_BASE#\~/}"
+fi
+WORKTREE_BASE_REV=""   # --worktree-base で指定された起点 rev (空=HEAD)
+WORKTREE_BASE_RESOLVED="" # rev-parse 後の commit hash (記録用)
+WORKTREE_DIR=""        # 後で maybe_create_worktree がセット
+WORKTREE_SOURCE=""     # worktree の元 git repo（クリーンアップ用）
+while [[ "${1:-}" == --* ]]; do
+    case "$1" in
+        --codex)
+            USE_CODEX=true
+            shift
+            ;;
+        --harness|--backend)
+            if [[ $# -lt 2 || -z "${2:-}" ]]; then
+                echo "Error: $1 requires a value" >&2
+                exit 1
+            fi
+            if [[ "$1" == --harness ]]; then HARNESS="$2"; else HARNESS_BACKEND="$2"; fi
+            shift 2
+            ;;
+        --helper-model)
+            if [[ $# -lt 2 || -z "${2:-}" ]]; then
+                echo "Error: --helper-model requires a value" >&2
+                exit 1
+            fi
+            HARNESS_HELPER_MODEL="$2"
+            shift 2
+            ;;
+        --model)
+            CLAUDE_MODEL="$2"
+            shift 2
+            ;;
+        --effort)
+            CODEX_EFFORT="$2"
+            shift 2
+            ;;
+        --codex-mcp)
+            if [[ $# -lt 2 || -z "${2:-}" ]]; then
+                echo "Error: --codex-mcp requires inherit or orrery-only" >&2
+                exit 1
+            fi
+            CODEX_MCP_PROFILE="$2"
+            CODEX_MCP_PROFILE_CLI=true
+            shift 2
+            ;;
+        --base)
+            if [[ $# -lt 2 || -z "${2:-}" ]]; then
+                echo "Error: --base requires default or mail-only" >&2
+                exit 1
+            fi
+            CHILD_TOOLS_BASE="$2"
+            shift 2
+            ;;
+        --tools)
+            if [[ $# -lt 2 || -z "${2:-}" ]]; then
+                echo "Error: --tools requires a selection (browser, screen:read, mcp:<name>, ...)" >&2
+                exit 1
+            fi
+            CHILD_TOOLS_ARGS+=(--tools "$2")
+            shift 2
+            ;;
+        --resources)
+            RESOURCES="$2"
+            shift 2
+            ;;
+        --resource-ttl)
+            RESOURCE_TTL="$2"
+            shift 2
+            ;;
+        --unsafe-no-resources)
+            UNSAFE_NO_RESOURCES=true
+            shift
+            ;;
+        --pre-registered)
+            PRE_REGISTERED="$2"
+            shift 2
+            ;;
+        --child-token-file|--token-file)
+            CHILD_TOKEN_FILE="$2"
+            shift 2
+            ;;
+        --standalone)
+            STANDALONE=true
+            shift
+            ;;
+        --embed-task)
+            EMBED_TASK=true
+            shift
+            ;;
+        --task-file)
+            if [[ $# -lt 2 || -z "${2:-}" ]]; then
+                echo "Error: --task-file requires a path" >&2
+                exit 1
+            fi
+            TASK_FILE="$2"
+            shift 2
+            ;;
+        --claude-chrome)
+            CLAUDE_CHILD_CHROME=true
+            CLAUDE_CHILD_CHROME_CLI=true
+            shift
+            ;;
+        --claude-chrome-device)
+            if [[ $# -lt 2 || -z "${2:-}" ]]; then
+                echo "Error: --claude-chrome-device requires a deviceId" >&2
+                exit 1
+            fi
+            CLAUDE_CHILD_CHROME=true
+            CLAUDE_CHILD_CHROME_CLI=true
+            CLAUDE_CHILD_CHROME_DEVICE="$2"
+            CLAUDE_CHILD_CHROME_DEVICE_CLI=true
+            shift 2
+            ;;
+        --worktree)
+            USE_WORKTREE=true
+            shift
+            ;;
+        --worktree-base)
+            WORKTREE_BASE_REV="$2"
+            shift 2
+            ;;
+        *)
+            echo "Unknown flag: $1" >&2
+            exit 1
+            ;;
+    esac
+done
+
+if [[ -n "$HARNESS" || -n "$HARNESS_BACKEND" ]]; then
+    case "$HARNESS:$HARNESS_BACKEND" in
+        dsh:deepseek|dsh:strata|hermes:deepseek|hermes:strata) ;;
+        *) echo "Error: --harness dsh|hermes requires --backend deepseek|strata" >&2; exit 1 ;;
+    esac
+    if [[ "$USE_CODEX" == true || "$CODEX_MCP_PROFILE_CLI" == true \
+        || "$CLAUDE_CHILD_CHROME_CLI" == true ]]; then
+        echo "Error: native harness flags/tools cannot be mixed with --harness" >&2
+        exit 1
+    fi
+    "${AGENTSTACK_PYTHON:-python3}" "$HARNESS_HELPER" validate --harness "$HARNESS" \
+        --backend "$HARNESS_BACKEND" --model "$CLAUDE_MODEL" \
+        --manifest "${AGENTSTACK_MANAGED_SPAWN_CONFIG:-}" ${CODEX_EFFORT:+--effort "$CODEX_EFFORT"} || exit 1
+fi
+
+if [[ -n "$HARNESS_HELPER_MODEL" && -z "$HARNESS" ]]; then
+    echo "Error: --helper-model requires --harness" >&2
+    exit 1
+fi
+
+case "$CODEX_MCP_PROFILE" in
+    inherit|orrery-only) ;;
+    *)
+        echo "Error: --codex-mcp must be inherit or orrery-only: $CODEX_MCP_PROFILE" >&2
+        exit 1
+        ;;
+esac
+if [[ "$CODEX_MCP_PROFILE" != "inherit" && "$USE_CODEX" != true ]]; then
+    echo "Error: --codex-mcp is only valid with --codex" >&2
+    exit 1
+fi
+
+if [[ "$CLAUDE_CHILD_CHROME_CLI" == true && "$USE_CODEX" == true ]]; then
+    echo "Error: --claude-chrome is only valid for Claude children (not with --codex)" >&2
+    exit 1
+fi
+if [[ "$USE_CODEX" != true && -z "$HARNESS" ]]; then
+    case "${AGENTSTACK_CLAUDE_CHILD_CHROME:-}" in
+        ""|0) ;;
+        1) CLAUDE_CHILD_CHROME=true ;;
+        *)
+            echo "Error: AGENTSTACK_CLAUDE_CHILD_CHROME must be 1, 0 or unset" >&2
+            exit 1
+            ;;
+    esac
+    if [[ "$CLAUDE_CHILD_CHROME_DEVICE_CLI" != true \
+        && -n "${AGENTSTACK_CLAUDE_CHILD_CHROME_DEVICE:-}" ]]; then
+        CLAUDE_CHILD_CHROME=true
+        CLAUDE_CHILD_CHROME_DEVICE="$AGENTSTACK_CLAUDE_CHILD_CHROME_DEVICE"
+    fi
+fi
+if [[ -n "$CLAUDE_CHILD_CHROME_DEVICE" ]] \
+    && ! [[ "$CLAUDE_CHILD_CHROME_DEVICE" =~ ^[A-Za-z0-9._:-]{1,128}$ ]]; then
+    echo "Error: --claude-chrome-device must match [A-Za-z0-9._:-]{1,128}" >&2
+    exit 1
+fi
+
+# Tools selection. Parsed here so that an invalid request stops before any
+# registration or tmux work; what can only be checked in the child's final
+# directory (servers, computer use) is checked again just before launch.
+if [[ -n "$HARNESS" && -n "${AGENTSTACK_CHILD_DEFAULT_TOOLS:-}" \
+        && -z "$CHILD_TOOLS_BASE" && ${#CHILD_TOOLS_ARGS[@]} -eq 0 ]]; then
+    echo "Error: native_default_tools_unsupported: choose explicit --base and --tools for this harness" >&2
+    exit 1
+fi
+if [[ -n "${AGENTSTACK_CHILD_DEFAULT_TOOLS:-}" && -z "$HARNESS" ]]; then
+    # Resolve defaults only after the final directory is known. Explicit base
+    # or tools/profile bypass them entirely, including --base default and the
+    # legacy --codex-mcp reduction. Defaults must never widen that reduction.
+    if [[ -z "$CHILD_TOOLS_BASE" && ${#CHILD_TOOLS_ARGS[@]} -eq 0 \
+            && "$CODEX_MCP_PROFILE_CLI" != true ]]; then
+        CHILD_TOOLS_FROM_DEFAULTS=true
+    else
+        CHILD_DEFAULT_TOOLS_NOTICE="Default tools were not applied because an explicit base, tools or MCP profile takes precedence."
+        echo "[spawn_child] Notice: $CHILD_DEFAULT_TOOLS_NOTICE" >&2
+    fi
+fi
+if [[ -n "$CHILD_TOOLS_BASE" || ${#CHILD_TOOLS_ARGS[@]} -gt 0 ]]; then
+    if [[ "$CHILD_TOOLS_BASE" == "mail-only" || ${#CHILD_TOOLS_ARGS[@]} -gt 0 ]]; then
+        CHILD_TOOLS_RESTRICTIVE=true
+    fi
+    if [[ "$USE_CODEX" == true && "$CHILD_TOOLS_BASE" == "mail-only" ]]; then
+        if [[ "$CODEX_MCP_PROFILE_CLI" == true && "$CODEX_MCP_PROFILE" != "orrery-only" ]]; then
+            echo "Error: --base mail-only contradicts --codex-mcp $CODEX_MCP_PROFILE" >&2
+            exit 1
+        fi
+        CODEX_MCP_PROFILE="orrery-only"
+    fi
+    if ! CHILD_TOOLS_PARSED="$(python3 "$HOOKS_DIR/child_tools.py" parse \
+            --provider "${HARNESS:-$([[ "$USE_CODEX" == true ]] && echo codex || echo claude)}" \
+            --base "$CHILD_TOOLS_BASE" ${CHILD_TOOLS_ARGS[@]+"${CHILD_TOOLS_ARGS[@]}"} \
+            --chrome "$([[ "$CLAUDE_CHILD_CHROME" == true ]] && echo 1 || echo 0)" \
+            --chrome-device "$CLAUDE_CHILD_CHROME_DEVICE")"; then
+        exit 1
+    fi
+    IFS=$'\t' read -r CHILD_TOOLS_SPEC _tools_chrome _tools_device <<< "$CHILD_TOOLS_PARSED"
+    if [[ "$USE_CODEX" != true && -z "$HARNESS" && "$_tools_chrome" == 1 ]]; then
+        CLAUDE_CHILD_CHROME=true
+        CLAUDE_CHILD_CHROME_DEVICE="$_tools_device"
+    fi
+fi
+
+# --worktree-base は --worktree とのみ意味を持つ
+if [[ -n "$WORKTREE_BASE_REV" && "$USE_WORKTREE" != true ]]; then
+    echo "Error: --worktree-base requires --worktree" >&2
+    exit 1
+fi
+
+if [[ "$STANDALONE" == true && -z "$PRE_REGISTERED" ]]; then
+    echo "Error: --standalone requires --pre-registered" >&2
+    exit 1
+fi
+
+if [[ "$EMBED_TASK" == true && -z "$PRE_REGISTERED" ]]; then
+    echo "Error: --embed-task requires --pre-registered" >&2
+    exit 1
+fi
+
+if [[ "$EMBED_TASK" == true && "$STANDALONE" == true ]]; then
+    echo "Error: --embed-task cannot be combined with --standalone" >&2
+    exit 1
+fi
+
+child_token_file_path() {
+    local agent_name="$1" key
+    key="$(printf '%s' "$agent_name" | LC_ALL=C tr -c 'A-Za-z0-9_.-' '_')"
+    [[ -n "$key" ]] || return 1
+    printf '%s/agent_token_%s\n' "$RUNTIME_DIR" "$key"
+}
+
+<<<<<<< /Users/huyuhutaru/.dev-storage-governor/examforge/20261022T063810Z-build-cache-e4007ade/source/hooks/spawn_child.sh
+# Stage only formally verified credentials; the undo record protects existing
+# canonical material until startup succeeds. Never consume a failed handoff.
+stage_child_registration() {
+    local agent_name="$1" program="$2" source_file="${3:-}" legacy_agent_id="${4:-}"
+    local helper="${AGENTSTACK_CHILD_RESUME_HELPER:-$HOOKS_DIR/child_resume.py}"
+    [[ -f "$helper" ]] || return 1
+    local source_args=()
+    if [[ -n "$source_file" ]]; then
+        source_args=(--source "$source_file" --binding "${source_file}.binding.json")
+    elif [[ -n "$legacy_agent_id" ]]; then
+        source_args=(--legacy-agent-id "$legacy_agent_id")
+    fi
+    "${AGENTSTACK_PYTHON:-python3}" "$helper" stage-registration \
+        --runtime-dir "$RUNTIME_DIR" --agent-name "$agent_name" \
+        --project-key "$PROJECT_KEY" --program "$program" --generation "$CHILD_REGISTRATION_GENERATION" ${source_args[@]+"${source_args[@]}"}
+}
+
+# A Claude child spawned by an earlier version kept only a three-field state
+# (agent_name, project_key, registration_token). Before this launcher adopts it,
+# ORRERY Mail must confirm that the saved credential owns the row with that
+# exact name, project and program -- the same existing-owner check the
+# dashboard's resume makes (#140/#141). Nothing is registered or claimed.
+#
+# Prints "<agent_id><TAB><program>" for a confirmed legacy child and nothing
+# for any other state. Exit 2: Mail predates existing-owner authentication.
+# Exit 1: not confirmed; the reason is on stderr.
+authenticate_legacy_claude_child() {
+    local agent_name="$1" token_file bearer="" bearer_status=0
+    token_file="$(child_token_file_path "$agent_name")" || return 1
+    if legacy_http_bearer_enabled; then
+        bearer="$(get_agentstack_token 2>/dev/null || true)"
+    else
+        bearer_status=$?
+        [[ "$bearer_status" != 2 ]] || return 1
+    fi
+    printf '%s' "$bearer" | "${AGENTSTACK_PYTHON:-python3}" - \
+        "$CHILD_STATE_DIR/$agent_name.json" "$token_file" "$agent_name" \
+        "$PROJECT_KEY" "$MCP_URL" <<'PY'
+import hmac
+import http.client
+=======
+# Copy a child token from a 0600 file into the durable per-child runtime files.
+# The secret is read inside Python and never appears in a process argv or tmux
+# environment. Existing files authenticate the handoff and stay byte-identical.
+# A dashboard handoff is consumed only after missing durable files are installed.
+adopt_child_token_file() {
+    local agent_name="$1" project_key="$2" source_file="$3"
+    local consume_source="${4:-false}" report_ownership="${5:-false}" token_file state_file
+    token_file="$(child_token_file_path "$agent_name")" || return 1
+    state_file="$CHILD_STATE_DIR/$agent_name.json"
+    python3 - "$agent_name" "$project_key" "$source_file" "$token_file" \
+        "$state_file" "$consume_source" "$report_ownership" <<'PY'
+import hmac
+>>>>>>> /Users/huyuhutaru/.dev-storage-governor/examforge/20261022T063810Z-build-cache-e4007ade/source/docs/orrery-up-2/merge-inputs/hooks/spawn_child.sh.local
+import json
+import os
+import stat
+import sys
+<<<<<<< /Users/huyuhutaru/.dev-storage-governor/examforge/20261022T063810Z-build-cache-e4007ade/source/hooks/spawn_child.sh
+from urllib.parse import urlparse
+
+state_file, token_file, agent_name, project_key, url = sys.argv[1:6]
+bearer = sys.stdin.read()
+LEGACY_KEYS = {"agent_name", "project_key", "registration_token"}
+
+
+def read_private(path):
+    flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0)
+    descriptor = os.open(path, flags)
+    try:
+        info = os.fstat(descriptor)
+        if not stat.S_ISREG(info.st_mode) or stat.S_IMODE(info.st_mode) & 0o077:
+            raise PermissionError(f"{path} must be a private regular file")
+        return os.read(descriptor, 65537).decode("utf-8")
+    finally:
+        os.close(descriptor)
+
+
+def fail(message, code=1):
+    print(message, file=sys.stderr)
+    raise SystemExit(code)
+
+
+try:
+    state = json.loads(read_private(state_file))
+except FileNotFoundError:
+    raise SystemExit(0)
+except (OSError, ValueError) as exc:
+    fail(f"child state is unreadable: {exc}")
+if not isinstance(state, dict) or set(state) != LEGACY_KEYS:
+    raise SystemExit(0)
+if state["agent_name"] != agent_name or state["project_key"] != project_key:
+    fail("the earlier-version state names another agent or project")
+try:
+    token = read_private(token_file).strip()
+except OSError as exc:
+    fail(f"the saved owner credential is unavailable: {exc}")
+saved = state["registration_token"]
+if not token or not isinstance(saved, str) or not hmac.compare_digest(token.encode(), saved.encode()):
+    fail("the saved state and owner credential are from different registrations")
+=======
+sys.path.insert(0, os.environ.get("AGENTSTACK_LIFECYCLE_HOOKS_DIR") or os.environ.get("AGENTSTACK_HOOKS_DIR", ""))
+from seat_lifecycle import record_intent, check_handoff
+
+agent_name, project_key, source, token_file, state_file, consume = sys.argv[1:7]
+report_ownership = len(sys.argv) > 7 and sys.argv[7] == "true"
+source_path = pathlib.Path(source)
+token_path = pathlib.Path(token_file)
+state_path = pathlib.Path(state_file)
+# A one-shot may alias this child's own canonical token, but another seat's
+# credential or child state is never consumable launch material.
+resolved_source = source_path.resolve(strict=True)
+token_namespace = token_path.parent.resolve()
+state_namespace = state_path.parent.resolve()
+if ((resolved_source.parent == token_namespace
+     and resolved_source.name.startswith("agent_token_")
+     and resolved_source != token_path.resolve(strict=False))
+        or resolved_source.is_relative_to(state_namespace)):
+    raise ValueError("handoff refers to protected canonical seat state")
+token_preexisted = token_path.exists() or token_path.is_symlink()
+state_preexisted = state_path.exists() or state_path.is_symlink()
+observed = []
+flags = os.O_RDONLY
+if hasattr(os, "O_NOFOLLOW"):
+    flags |= os.O_NOFOLLOW
+fd = os.open(source_path, flags)
+try:
+    info = os.fstat(fd)
+    if not stat.S_ISREG(info.st_mode):
+        raise ValueError("token handoff is not a regular file")
+    if stat.S_IMODE(info.st_mode) & 0o077:
+        raise PermissionError("token handoff permissions must be 0600")
+    raw_token = os.read(fd, 4097)
+    registration_token = raw_token.decode("utf-8").strip()
+finally:
+    os.close(fd)
+if not registration_token or len(raw_token) > 4096:
+    raise ValueError("token handoff is empty or too large")
+if not (token_preexisted and os.path.samefile(source_path, token_path)):
+    check_handoff(token_path.parent, source_path, agent_name, project_key, info, raw_token)
+
+# An existing durable identity is authoritative. A handoff may authenticate it,
+# but cannot rotate its token or replace its metadata as a launch side effect.
+for path, preexisted, is_state in (
+    (token_path, token_preexisted, False),
+    (state_path, state_preexisted, True),
+):
+    if not preexisted:
+        continue
+    existing_fd = os.open(path, flags)
+    with os.fdopen(existing_fd, "r", encoding="utf-8") as handle:
+        identity = os.fstat(handle.fileno())
+        if not stat.S_ISREG(identity.st_mode):
+            raise ValueError("existing child identity is not a regular file")
+        existing = handle.read()
+        observed.append((path, identity.st_dev, identity.st_ino))
+    if is_state:
+        metadata = json.loads(existing)
+        if metadata.get("project_key") != project_key or metadata.get("agent_name") != agent_name:
+            raise ValueError("existing state belongs to another project or name")
+        existing = metadata.get("registration_token")
+    else:
+        existing = existing.strip()
+    if not isinstance(existing, str) or not hmac.compare_digest(
+        existing.encode("utf-8"), registration_token.encode("utf-8")
+    ):
+        raise ValueError("token handoff conflicts with existing child identity")
+>>>>>>> /Users/huyuhutaru/.dev-storage-governor/examforge/20261022T063810Z-build-cache-e4007ade/source/docs/orrery-up-2/merge-inputs/hooks/spawn_child.sh.local
+
+parsed = urlparse(url)
+
+<<<<<<< /Users/huyuhutaru/.dev-storage-governor/examforge/20261022T063810Z-build-cache-e4007ade/source/hooks/spawn_child.sh
+
+def rpc(method, params):
+    body = json.dumps({"jsonrpc": "2.0", "id": 1, "method": method, "params": params}).encode()
+    headers = {"Content-Type": "application/json", "Accept": "application/json", "Connection": "close"}
+    if bearer:
+        headers["Authorization"] = f"Bearer {bearer}"
+    try:
+        connection = http.client.HTTPConnection(parsed.hostname, parsed.port, timeout=30)
+        connection.request("POST", parsed.path, body=body, headers=headers)
+        reply = json.loads(connection.getresponse().read().decode("utf-8"))
+        connection.close()
+    except (OSError, ValueError) as exc:
+        fail(f"ORRERY Mail at {url} did not answer: {exc}")
+    if not isinstance(reply, dict) or reply.get("error"):
+        fail(f"ORRERY Mail refused {params.get('name', method)}: {reply.get('error') if isinstance(reply, dict) else reply}")
+    return reply.get("result") or {}
+
+
+def call(name, arguments):
+    result = rpc("tools/call", {"name": name, "arguments": arguments})
+    text = ""
+    for part in result.get("content") or []:
+        if isinstance(part, dict) and isinstance(part.get("text"), str):
+            text = part["text"]
+            break
+    if result.get("isError"):
+        fail(f"ORRERY Mail refused {name}: {text or 'no reason given'}")
+    data = result.get("structuredContent")
+    if not isinstance(data, dict):
+        try:
+            data = json.loads(text)
+        except ValueError:
+            data = None
+    if not isinstance(data, dict):
+        fail(f"ORRERY Mail returned no profile for {name}")
+    return data
+
+
+listing = rpc("tools/list", {})
+schemas = {tool.get("name"): tool.get("inputSchema") or {} for tool in listing.get("tools") or [] if isinstance(tool, dict)}
+if "existing_agent_id" not in (schemas.get("register_agent") or {}).get("properties", {}):
+    fail("the running ORRERY Mail cannot confirm an existing owner (existing_agent_id)", 2)
+profile = call("whois", {"project_key": project_key, "agent_name": agent_name, "include_recent_commits": False})
+agent_id, program = profile.get("id"), profile.get("program")
+if type(agent_id) is not int or agent_id <= 0 or profile.get("name") != agent_name:
+    fail("ORRERY Mail has no registration with this exact name")
+if program not in {"claude", "claude-code"}:
+    fail(f"the registration with this name belongs to {program!r}, not Claude")
+owner = call("register_agent", {
+    "project_key": project_key, "name": agent_name, "program": program,
+    "registration_token": token, "existing_agent_id": agent_id,
+})
+if (owner.get("id") != agent_id or owner.get("name") != agent_name or owner.get("program") != program
+        or type(owner.get("project_id")) is not int):
+    fail("ORRERY Mail confirmed a different identity")
+print(f"{agent_id}\t{program}")
+PY
+}
+
+# What the child's state says about earlier runs, read before adoption
+# (prepare-active clears the retirement marker): "retired" when its cleanup
+# retired it, "ran" when it was launched before, nothing for a child that has
+# never run (a fresh preregistration).
+child_run_history() {
+    local agent_name="$1"
+    "${AGENTSTACK_PYTHON:-python3}" - "$CHILD_STATE_DIR/$agent_name.json" <<'PY' 2>/dev/null
+import json
+import sys
+
+try:
+    with open(sys.argv[1], encoding="utf-8") as handle:
+        state = json.load(handle)
+except (OSError, ValueError):
+    raise SystemExit(0)
+if not isinstance(state, dict):
+    raise SystemExit(0)
+retired = state.get("retired_at")
+if isinstance(retired, str) and retired:
+    print("retired")
+elif "launch_origin" in state or set(state) == {"agent_name", "project_key", "registration_token"}:
+    print("ran")
+PY
+}
+
+# A pre-registered child's Mail row. "status" prints retired/active from whois;
+# "unretire" / "retire" set it, as the child itself: its owner token is read
+# from the canonical file inside Python and never appears in argv. The
+# dashboard's resume does the same; a relaunch that skipped it left a child
+# nobody could message (Mail refuses mail to a retired agent). Mail, not the
+# local state, decides: a row can be retired with the state saying nothing
+# (the dashboard's retire button, an earlier-version child).
+preregistered_child_mail() {
+    local agent_name="$1" token_file="$2" action="$3" bearer=""
+    if legacy_http_bearer_enabled; then
+        bearer="$(get_agentstack_token 2>/dev/null || true)"
+    elif [[ $? == 2 ]]; then
+        return 1
+    fi
+    printf '%s' "$bearer" | "${AGENTSTACK_PYTHON:-python3}" - \
+        "$action" "$agent_name" "$PROJECT_KEY" "$token_file" "$MCP_URL" <<'PY'
+import http.client
+import json
+import sys
+from urllib.parse import urlparse
+
+action, agent_name, project_key, token_file, url = sys.argv[1:6]
+bearer = sys.stdin.read()
+if action == "status":
+    tool, arguments = "whois", {"project_key": project_key, "agent_name": agent_name,
+                                "include_recent_commits": False}
+else:
+    try:
+        with open(token_file, encoding="utf-8") as handle:
+            token = handle.read().strip()
+    except OSError as exc:
+        print(f"the owner credential is unavailable: {exc}", file=sys.stderr)
+        raise SystemExit(1)
+    tool = f"{action}_agent"
+    arguments = {"project_key": project_key, "agent_name": agent_name, "registration_token": token}
+parsed = urlparse(url)
+body = json.dumps({"jsonrpc": "2.0", "id": 1, "method": "tools/call",
+                   "params": {"name": tool, "arguments": arguments}}).encode()
+headers = {"Content-Type": "application/json", "Accept": "application/json", "Connection": "close"}
+if bearer:
+    headers["Authorization"] = f"Bearer {bearer}"
+try:
+    connection = http.client.HTTPConnection(parsed.hostname, parsed.port, timeout=30)
+    connection.request("POST", parsed.path, body=body, headers=headers)
+    reply = json.loads(connection.getresponse().read().decode("utf-8"))
+    connection.close()
+except (OSError, ValueError) as exc:
+    print(f"ORRERY Mail at {url} did not answer: {exc}", file=sys.stderr)
+    raise SystemExit(1)
+result = reply.get("result") if isinstance(reply, dict) else None
+if not isinstance(result, dict) or reply.get("error") or result.get("isError"):
+    print(f"ORRERY Mail refused {tool}", file=sys.stderr)
+    raise SystemExit(1)
+data = result.get("structuredContent")
+if not isinstance(data, dict):
+    try:
+        data = json.loads(result["content"][0]["text"])
+    except (KeyError, IndexError, TypeError, ValueError):
+        data = {}
+if action == "status":
+    if data.get("name") != agent_name:
+        print(f"ORRERY Mail has no profile for {agent_name}", file=sys.stderr)
+        raise SystemExit(1)
+    print("retired" if data.get("retired_at") else "active")
+    raise SystemExit(0)
+expected = {"unretire": "active", "retire": "retired"}[action]
+if (data.get("status") != expected or data.get("agent_name") != agent_name
+        or data.get("project_key") != project_key):
+    print(f"ORRERY Mail did not confirm {agent_name} as {expected}", file=sys.stderr)
+    raise SystemExit(1)
+PY
+}
+
+finish_child_registration() {
+    local agent_name="$1" rollback="${2:-false}"
+    local helper="${AGENTSTACK_CHILD_RESUME_HELPER:-$HOOKS_DIR/child_resume.py}"
+    local rollback_args=()
+    [[ "$rollback" != true ]] || rollback_args=(--rollback)
+    "${AGENTSTACK_PYTHON:-python3}" "$helper" finish-registration \
+        --runtime-dir "$RUNTIME_DIR" --agent-name "$agent_name" --generation "$CHILD_REGISTRATION_GENERATION" ${rollback_args[@]+"${rollback_args[@]}"}
+}
+
+# Verify that a Codex token and its formal registration metadata belong to the
+# same preregistration before preparing a launch. The state token is the join
+# key between the two atomic files: a crash or same-name re-registration that
+# leaves one old and one new is rejected rather than silently mixed. When the
+# canonical token file is absent, a complete 0600 state file may restore it.
+validate_codex_child_registration_state() {
+    local agent_name="$1" project_key="$2" token_file="$3" state_file="$4"
+    "${AGENTSTACK_PYTHON:-python3}" - \
+        "$agent_name" "$project_key" "$token_file" "$state_file" <<'PY'
+import hmac
+=======
+state_payload = json.dumps({
+        "agent_name": agent_name,
+        "project_key": project_key,
+        "registration_token": registration_token,
+})
+temporary = []
+created = []
+try:
+    for path, preexisted, payload in (
+        (token_path, token_preexisted, registration_token),
+        (state_path, state_preexisted, state_payload),
+    ):
+        if preexisted:
+            continue
+        tmp = path.with_name(path.name + f".tmp.{os.getpid()}")
+        with open(tmp, "x", encoding="utf-8") as handle:
+            temporary.append(tmp)
+            os.chmod(tmp, 0o600)
+            handle.write(payload)
+            handle.flush()
+            os.fsync(handle.fileno())
+            identity = os.fstat(handle.fileno())
+        # Never overwrite an identity that appeared after the preflight check.
+        record_intent(auth={"owned": [(str(path), identity.st_dev, identity.st_ino)]})
+        os.link(tmp, path)
+        created.append((path, identity.st_dev, identity.st_ino))
+    record_intent(auth={"owned": [(str(p), d, i) for p, d, i in created],
+                        "observed": [(str(p), d, i) for p, d, i in observed + created]})
+    if consume == "true" and not os.path.samefile(source_path, token_path):
+        current = source_path.lstat()
+        if (current.st_dev, current.st_ino) == (info.st_dev, info.st_ino):
+            source_path.unlink()
+except BaseException:
+    for path, device, inode in reversed(created):
+        try:
+            current = path.lstat()
+        except FileNotFoundError:
+            continue
+        if (current.st_dev, current.st_ino) == (device, inode):
+            path.unlink()
+    raise
+finally:
+    for tmp in temporary:
+        tmp.unlink(missing_ok=True)
+if report_ownership:
+    print(json.dumps({
+        "owned": [(str(path), device, inode) for path, device, inode in created],
+        "observed": [(str(path), device, inode) for path, device, inode in observed + created],
+    }))
+else:
+    print(token_path)
+PY
+}
+
+# Restore the canonical token file from an existing 0600 state file without
+# exposing the token to the shell.  This is compatibility-only; new dashboard
+# spawns always arrive through adopt_child_token_file's one-shot path.
+restore_child_token_file_from_state() {
+    local agent_name="$1" report_ownership="${2:-false}" state_file token_file
+    state_file="$CHILD_STATE_DIR/$agent_name.json"
+    token_file="$(child_token_file_path "$agent_name")" || return 1
+    [[ -f "$state_file" ]] || return 1
+    python3 - "$state_file" "$token_file" "$report_ownership" "$PROJECT_KEY" "$agent_name" <<'PY'
+>>>>>>> /Users/huyuhutaru/.dev-storage-governor/examforge/20261022T063810Z-build-cache-e4007ade/source/docs/orrery-up-2/merge-inputs/hooks/spawn_child.sh.local
+import json
+import os
+import pathlib
+import re
+import stat
+import sys
+sys.path.insert(0, os.environ.get("AGENTSTACK_LIFECYCLE_HOOKS_DIR") or os.environ.get("AGENTSTACK_HOOKS_DIR", ""))
+from seat_lifecycle import record_intent
+
+<<<<<<< /Users/huyuhutaru/.dev-storage-governor/examforge/20261022T063810Z-build-cache-e4007ade/source/hooks/spawn_child.sh
+agent_name, project_key, token_file, state_file = sys.argv[1:5]
+token_path = pathlib.Path(token_file)
+state_path = pathlib.Path(state_file)
+
+if not re.fullmatch(r"[A-Za-z0-9_.-]+", agent_name):
+    raise ValueError("unsafe child identity")
+
+flags = os.O_RDONLY
+if hasattr(os, "O_NOFOLLOW"):
+    flags |= os.O_NOFOLLOW
+
+
+def read_private_regular(path, label, limit):
+    descriptor = os.open(path, flags)
+    try:
+        info = os.fstat(descriptor)
+        if not stat.S_ISREG(info.st_mode):
+            raise ValueError(f"{label} is not a regular file")
+        if stat.S_IMODE(info.st_mode) & 0o077:
+            raise PermissionError(f"{label} permissions must be 0600")
+        raw = os.read(descriptor, limit + 1)
+    finally:
+        os.close(descriptor)
+    if len(raw) > limit:
+        raise ValueError(f"{label} is too large")
+    return raw.decode("utf-8")
+
+
+state = json.loads(read_private_regular(state_path, "child state", 65536))
+if not isinstance(state, dict):
+    raise ValueError("child state must contain an object")
+if type(state.get("agent_id")) is not int or state["agent_id"] <= 0:
+    raise ValueError("child state has no positive numeric agent_id")
+if state.get("agent_name") != agent_name:
+    raise ValueError("child state belongs to another agent_name")
+if state.get("project_key") != project_key:
+    raise ValueError("child state belongs to another project_key")
+if state.get("program") not in {"codex", "codex-cli"}:
+    raise ValueError("child state is not for Codex CLI")
+state_token = state.get("registration_token")
+if not isinstance(state_token, str) or not state_token or len(state_token) > 4096:
+    raise ValueError("child state has no usable registration token")
+
+if token_path.exists() or token_path.is_symlink():
+    token = read_private_regular(token_path, "canonical token", 4096).strip()
+    if not token or not hmac.compare_digest(token, state_token):
+        raise ValueError("canonical token and child state are from different registrations")
+else:
+    token_path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
+    os.chmod(token_path.parent, 0o700)
+    temporary = token_path.with_name(token_path.name + f".tmp.{os.getpid()}")
+    try:
+        with open(temporary, "x", encoding="utf-8") as handle:
+            handle.write(state_token)
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.chmod(temporary, 0o600)
+        os.replace(temporary, token_path)
+        os.chmod(token_path, 0o600)
+    finally:
+        temporary.unlink(missing_ok=True)
+=======
+state_path = pathlib.Path(sys.argv[1])
+token_path = pathlib.Path(sys.argv[2])
+fd = os.open(state_path, os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0))
+with os.fdopen(fd, "r", encoding="utf-8") as handle:
+    state_identity = os.fstat(handle.fileno())
+    if not stat.S_ISREG(state_identity.st_mode) or stat.S_IMODE(state_identity.st_mode) & 0o077:
+        raise PermissionError("child state must be a regular 0600 file")
+    data = json.load(handle)
+if data.get("project_key") != sys.argv[4] or data.get("agent_name") != sys.argv[5]:
+    raise ValueError("existing state belongs to another project or name")
+token = data.get("registration_token")
+if not isinstance(token, str) or not token:
+    raise ValueError("child state has no registration token")
+token_path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
+tmp = token_path.with_name(token_path.name + f".tmp.{os.getpid()}")
+try:
+    with open(tmp, "x", encoding="utf-8") as handle:
+        os.chmod(tmp, 0o600)
+        handle.write(token)
+        handle.flush()
+        os.fsync(handle.fileno())
+        identity = os.fstat(handle.fileno())
+    record_intent(auth={"owned": [(str(token_path), identity.st_dev, identity.st_ino)], "observed": [(str(state_path), state_identity.st_dev, state_identity.st_ino)]})
+    os.link(tmp, token_path)
+finally:
+    tmp.unlink(missing_ok=True)
+if sys.argv[3] == "true":
+    print(json.dumps({
+        "owned": [(str(token_path), identity.st_dev, identity.st_ino)],
+        "observed": [(str(token_path), identity.st_dev, identity.st_ino),
+                     (str(state_path), state_identity.st_dev, state_identity.st_ino)],
+    }))
+else:
+    print(token_path)
+>>>>>>> /Users/huyuhutaru/.dev-storage-governor/examforge/20261022T063810Z-build-cache-e4007ade/source/docs/orrery-up-2/merge-inputs/hooks/spawn_child.sh.local
+PY
+}
+
+# Add the non-secret launch provenance and retention schema only after the
+# canonical state/token pair has passed the identity join above.  The helper
+# also clears a prior purge tombstone when the same numeric registration is
+# intentionally launched again.
+prepare_codex_child_resume_state() {
+    local agent_name="$1" mcp_profile="$2"
+    local helper="${AGENTSTACK_CHILD_RESUME_HELPER:-$HOOKS_DIR/child_resume.py}"
+    [[ -f "$helper" ]] || return 1
+    local generation_args=()
+    if [[ -n "${CHILD_REGISTRATION_GENERATION:-}" ]]; then
+        generation_args=(--generation "$CHILD_REGISTRATION_GENERATION")
+    fi
+    "${AGENTSTACK_PYTHON:-python3}" "$helper" prepare-active \
+        --runtime-dir "$RUNTIME_DIR" \
+        --agent-name "$agent_name" \
+        --project-key "$PROJECT_KEY" \
+        --mcp-profile "$mcp_profile" --program codex --parent-agent "$(recordable_parent_name)" ${generation_args[@]+"${generation_args[@]}"}
+}
+
+# The parent recorded in the child's state, for the Mail proxy a later resume
+# rebuilds. Empty for a standalone child, and for a name the proxy would refuse
+# (a launch that uses the proxy is stopped over such a name before it starts).
+recordable_parent_name() {
+    if [[ "${PARENT_NAME:-}" =~ ^[A-Za-z][A-Za-z0-9-]{0,127}$ ]]; then
+        printf '%s' "$PARENT_NAME"
+    fi
+}
+
+prepare_claude_child_resume_state() {
+    local agent_name="$1"
+    local helper="${AGENTSTACK_CHILD_RESUME_HELPER:-$HOOKS_DIR/child_resume.py}"
+    [[ -f "$helper" ]] || return 1
+    local generation_args=()
+    if [[ -n "${CHILD_REGISTRATION_GENERATION:-}" ]]; then
+        generation_args=(--generation "$CHILD_REGISTRATION_GENERATION")
+    fi
+    "${AGENTSTACK_PYTHON:-python3}" "$helper" prepare-active \
+        --runtime-dir "$RUNTIME_DIR" --agent-name "$agent_name" \
+        --project-key "$PROJECT_KEY" --program claude-code --parent-agent "$(recordable_parent_name)" ${generation_args[@]+"${generation_args[@]}"}
+}
+
+# Start one launch expectation from a registration receipt. Output is
+# "<stable metadata path><TAB><fresh launch id>". This is a startup
+# precondition: if no new generation can be persisted, starting another CLI
+# under the same registered identity could leave the old receipt authoritative.
+prepare_codex_launch_binding() {
+    local registration_file="$1" launch_kind="${2:-startup}"
+    local mcp_profile="${3:-inherit}"
+    local helper="$HOOKS_DIR/prepare-codex-session-binding.py"
+    [[ -f "$helper" && -f "$registration_file" ]] || return 1
+    "${AGENTSTACK_PYTHON:-python3}" "$helper" \
+        --runtime-dir "$RUNTIME_DIR" \
+        --registration-file "$registration_file" \
+        --launch-kind "$launch_kind" \
+        --history-mode enabled \
+        --launch-origin child \
+        --codex-mcp-profile "$mcp_profile"
+}
+
+# --- Child model catalog -------------------------------------------------
+# Both launch paths normalize through the functions below instead of carrying
+# their own generation names. The unversioned aliases (omitted / opus / sonnet
+# / haiku / fable) and the warm-pool identities are not fixed here: they come
+# from dashboard/claude_models.py (local Claude Code catalog, else its bundled
+# table) via load_claude_aliases. The IDs below are versioned aliases, which
+# pin a generation on purpose.
+CLAUDE_OPUS_5_5_MODEL="claude-opus-5-5"
+CLAUDE_SONNET_5_5_MODEL="claude-sonnet-5-5"
+CLAUDE_SONNET_5_MODEL="claude-sonnet-5"
+CLAUDE_CURRENT_OPUS_1M_MODEL="claude-opus-5-5[1m]"
+CLAUDE_LEGACY_OPUS_5_MODEL="claude-opus-5"
+CLAUDE_LEGACY_OPUS_5_1M_MODEL="claude-opus-5[1m]"
+CLAUDE_LEGACY_OPUS_MODEL="claude-opus-4-8"
+CLAUDE_LEGACY_OPUS_1M_MODEL="claude-opus-4-8[1m]"
+CLAUDE_LEGACY_SONNET_MODEL="claude-sonnet-4-6"
+CLAUDE_LEGACY_SONNET_1M_MODEL="claude-sonnet-4-6[1m]"
+CLAUDE_HAIKU_4_5_MODEL="claude-haiku-4-5-20251001"
+CLAUDE_FABLE_5_1_MODEL="claude-fable-5-1"
+CLAUDE_ALIASES_LOADED=false
+CLAUDE_ALIAS_OPUS="" CLAUDE_ALIAS_SONNET="" CLAUDE_ALIAS_HAIKU="" CLAUDE_ALIAS_FABLE=""
+CLAUDE_WARM_OPUS_MODEL="" CLAUDE_WARM_SONNET_MODEL=""
+# Codex candidates, aliases and effort policy live in dashboard/codex_models.py.
+
+# Resolve the unversioned aliases once, in the launching shell (not in a
+# command substitution, or the result would be lost). Fails closed: a guessed
+# model would launch something the operator did not ask for.
+load_claude_aliases() {
+    [[ "$CLAUDE_ALIASES_LOADED" == true ]] && return 0
+    local out family model source note
+    # Check versions against the binary the child will run, and pin it below.
+    resolve_claude_child_bin
+    if ! out="$("${AGENTSTACK_PYTHON:-python3}" "$CLAUDE_MODEL_HELPER" aliases --claude-bin "$CLAUDE_CHILD_BIN")"; then
+        echo "Error: could not resolve the Claude model aliases with $CLAUDE_MODEL_HELPER" >&2
+        return 1
+    fi
+    while IFS=$'\t' read -r family model source note; do
+        [[ -n "$note" ]] && source="$source: $note"
+        case "$family" in
+            opus)   CLAUDE_ALIAS_OPUS="$model";   CLAUDE_ALIAS_OPUS_ORIGIN="$source" ;;
+            sonnet) CLAUDE_ALIAS_SONNET="$model"; CLAUDE_ALIAS_SONNET_ORIGIN="$source" ;;
+            haiku)  CLAUDE_ALIAS_HAIKU="$model";  CLAUDE_ALIAS_HAIKU_ORIGIN="$source" ;;
+            fable)  CLAUDE_ALIAS_FABLE="$model";  CLAUDE_ALIAS_FABLE_ORIGIN="$source" ;;
+        esac
+    done <<< "$out"
+    if [[ -z "$CLAUDE_ALIAS_OPUS" || -z "$CLAUDE_ALIAS_SONNET" || -z "$CLAUDE_ALIAS_HAIKU" || -z "$CLAUDE_ALIAS_FABLE" ]]; then
+        echo "Error: $CLAUDE_MODEL_HELPER did not resolve every Claude model alias" >&2
+        return 1
+    fi
+    CLAUDE_WARM_OPUS_MODEL="$CLAUDE_ALIAS_OPUS"
+    CLAUDE_WARM_SONNET_MODEL="$CLAUDE_ALIAS_SONNET"
+    CLAUDE_ALIASES_LOADED=true
+}
+
+# The `claude` the child's login shell finds once ~/.local/bin is first on
+# PATH (hooks/claude-child-bin.sh, which the dashboard runs too) --
+# claude_child_launch_command then runs this exact path. Empty when it cannot
+# be found; the child then runs bare `claude` and its version counts as unknown.
+CLAUDE_CHILD_BIN=""
+resolve_claude_child_bin() {
+    CLAUDE_CHILD_BIN=""
+    if ! declare -F claude_child_bin >/dev/null && [[ -f "$HOOKS_DIR/claude-child-bin.sh" ]]; then
+        . "$HOOKS_DIR/claude-child-bin.sh"
+    fi
+    declare -F claude_child_bin >/dev/null || return 0
+    CLAUDE_CHILD_BIN="$(claude_child_bin "$CHILD_SHELL")"
+}
+
+# A warm session may have been started before the catalog changed. The status
+# line for that type must name the exact model ID in parentheses, e.g.
+# "opus ready (claude-opus-5-5)" -- a cheap pre-check only; the claim itself is
+# claim_warm_session below.
+warm_pool_has_model() {
+    local warm_type="$1" model="$2" status="$3"
+    [[ -n "$model" && "$warm_type" != "__skip_warm__" ]] || return 1
+    printf '%s\n' "$status" | grep -E "^[[:space:]]*${warm_type}[^[:alnum:]].*ready" | grep -qF "($model)"
+}
+
+# Claim a warm session started with exactly $3. The pool must implement
+# `claim-model <type> <child> <model>`: claim atomically only a session started
+# with that model, and print "<child> <model>". A pool without it (the older
+# `claim <type> <child>` cannot be told the model) fails here, and the caller
+# cold starts. A claim that reports another model is stopped: that session
+# would run a model other than the one registered.
+claim_warm_session() {
+    local warm_type="$1" child="$2" model="$3" out
+    out="$(bash "$WARM_POOL" claim-model "$warm_type" "$child" "$model" 2>/dev/null)" || return 1
+    out="$(printf '%s\n' "$out" | tail -n 1)"
+    [[ "$out" == "$child $model" ]] && return 0
+    echo "Error: the warm pool claimed a session for $child but reported '${out}' instead of '$child $model'; stopping it" >&2
+    tmux kill-session -t "=$child" 2>/dev/null || true
+    return 2
+}
+
+claude_alias_value() {
+    if [[ -z "${1:-}" ]]; then
+        echo "Error: Claude model aliases were not resolved (load_claude_aliases must run first)" >&2
+        return 1
+    fi
+    printf '%s\n' "$1"
+}
+
+# Say where an unversioned alias pointed, so a stale or unreadable catalog is
+# visible in the launcher output rather than only in the running model.
+report_claude_alias() {
+    local m origin=""
+    m="$(printf '%s' "${1:-}" | tr '[:upper:]' '[:lower:]' | tr -d '[:space:]')"
+    case "$m" in
+        ""|opus) origin="$CLAUDE_ALIAS_OPUS_ORIGIN" ;;
+        sonnet)  origin="$CLAUDE_ALIAS_SONNET_ORIGIN" ;;
+        haiku)   origin="$CLAUDE_ALIAS_HAIKU_ORIGIN" ;;
+        fable)   origin="$CLAUDE_ALIAS_FABLE_ORIGIN" ;;
+        *) return 0 ;;
+    esac
+    echo "[spawn_child] Claude model ${m:-(default opus)} -> $2 ($origin)" >&2
+}
+
+# --- Claude モデル名の正規化 ---
+# friendly エイリアス / 略記を `claude --model` が受け付ける正式 model string に変換する。
+#   - unversioned opus / sonnet / haiku / fable follow load_claude_aliases
+#     (call it first); versioned forms (sonnet-5, opus-5-5 ...) pin a generation.
+#   - generic 1M aliases remain on the known legacy 1M models; old explicit
+#     model IDs remain valid for existing automation.
+#   - 未知の形は stderr に明確なエラーを出して非ゼロで返す（set -e 下で呼び出し側が停止する）。
+#     ただし claude-* 接頭の正式 ID は前方互換のため素通りさせる（新モデル ID 対応）。
+# 注意: Codex 経路では呼ばない。
+normalize_claude_model() {
+    local raw="${1:-}"
+    # 小文字化 + 空白除去で正規化キーを作る（出力は固定の正式文字列）
+    local m
+    m="$(printf '%s' "$raw" | tr '[:upper:]' '[:lower:]' | tr -d '[:space:]')"
+    # 「Sonnet 5.5」の版区切り . は - と同じに扱う（sonnet5.5 → sonnet5-5。正式 ID には触れない）
+    case "$m" in claude-*) ;; *) m="${m//./-}" ;; esac
+
+    case "$m" in
+        ""|opus)
+            claude_alias_value "$CLAUDE_ALIAS_OPUS" || return 1 ;;
+        opus-5-5|opus55|opus5-5|"$CLAUDE_OPUS_5_5_MODEL")
+            printf '%s\n' "$CLAUDE_OPUS_5_5_MODEL" ;;
+        opus-5|opus5|"$CLAUDE_LEGACY_OPUS_5_MODEL")
+            printf '%s\n' "$CLAUDE_LEGACY_OPUS_5_MODEL" ;;
+        opus-1m|opus1m|"opus[1m]"|claude-opus-4-8-1m|"$CLAUDE_LEGACY_OPUS_1M_MODEL")
+            printf '%s\n' "$CLAUDE_LEGACY_OPUS_1M_MODEL" ;;
+        opus-200k|opus200k|"$CLAUDE_LEGACY_OPUS_MODEL")
+            printf '%s\n' "$CLAUDE_LEGACY_OPUS_MODEL" ;;
+        opus-5-1m|opus51m|"opus-5[1m]"|"opus5[1m]"|"$CLAUDE_LEGACY_OPUS_5_1M_MODEL")
+            printf '%s\n' "$CLAUDE_LEGACY_OPUS_5_1M_MODEL" ;;
+        opus-5-5-1m|opus551m|"opus-5-5[1m]"|"opus55[1m]"|"opus5-5[1m]"|"$CLAUDE_CURRENT_OPUS_1M_MODEL")
+            printf '%s\n' "$CLAUDE_CURRENT_OPUS_1M_MODEL" ;;
+        sonnet)
+            claude_alias_value "$CLAUDE_ALIAS_SONNET" || return 1 ;;
+        sonnet-5-5|sonnet55|sonnet5-5|"$CLAUDE_SONNET_5_5_MODEL")
+            printf '%s\n' "$CLAUDE_SONNET_5_5_MODEL" ;;
+        sonnet-5|sonnet5|"$CLAUDE_SONNET_5_MODEL")
+            printf '%s\n' "$CLAUDE_SONNET_5_MODEL" ;;
+        sonnet-4-6|sonnet46|"$CLAUDE_LEGACY_SONNET_MODEL")
+            printf '%s\n' "$CLAUDE_LEGACY_SONNET_MODEL" ;;
+        sonnet-1m|sonnet1m|"sonnet[1m]"|"$CLAUDE_LEGACY_SONNET_1M_MODEL")
+            printf '%s\n' "$CLAUDE_LEGACY_SONNET_1M_MODEL" ;;
+        haiku)
+            claude_alias_value "$CLAUDE_ALIAS_HAIKU" || return 1 ;;
+        haiku-4-5|haiku45|haiku4-5|claude-haiku-4-5|"$CLAUDE_HAIKU_4_5_MODEL")
+            printf '%s\n' "$CLAUDE_HAIKU_4_5_MODEL" ;;
+        fable)
+            claude_alias_value "$CLAUDE_ALIAS_FABLE" || return 1 ;;
+        fable-5-1|fable51|fable5-1|"$CLAUDE_FABLE_5_1_MODEL")
+            printf '%s\n' "$CLAUDE_FABLE_5_1_MODEL" ;;
+        *)
+            if [[ "$m" == claude-* ]]; then
+                # 正式 ID は前方互換で素通り（新モデル ID 対応）
+                printf '%s\n' "$m"
+            else
+                echo "Error: unknown model '$raw'. Valid forms: opus / opus-5-5 / opus[1m] / opus-5[1m] / opus-5-5[1m] / claude-opus-5 / claude-opus-4-8 / sonnet / sonnet-5-5 / sonnet-5 / sonnet-4-6 / haiku / fable / claude-<id>" >&2
+                return 1
+            fi
+            ;;
+    esac
+    return 0
+}
+
+normalize_codex_model() {
+    "${AGENTSTACK_PYTHON:-python3}" "$CODEX_MODEL_HELPER" normalize "${1:-}"
+}
+
+validate_claude_effort() {
+    "${AGENTSTACK_PYTHON:-python3}" "$CLAUDE_MODEL_HELPER" effort "$1" "${2:-}"
+}
+
+validate_codex_effort() {
+    "${AGENTSTACK_PYTHON:-python3}" "$CODEX_MODEL_HELPER" effort "$1" "${2:-}"
+}
+
+# 子用に独立した git worktree を作って WORK_DIR を上書きするヘルパー。
+# 呼び出し前に CHILD_NAME と WORK_DIR が確定している必要がある。
+# 成功時: WORKTREE_DIR / WORKTREE_SOURCE をセットし、return 0
+# 失敗時: stderr にエラーを吐いて return 1
+maybe_create_worktree() {
+    local child_name="$1"
+    local source_dir="$2"
+
+    if [[ "$USE_WORKTREE" != true ]]; then
+        return 0
+    fi
+
+    if ! git -C "$source_dir" rev-parse --git-dir > /dev/null 2>&1; then
+        echo "Error: --worktree requires source_dir to be a git repository: $source_dir" >&2
+        return 1
+    fi
+
+    if [[ "$WORKTREE_BASE" != /* ]]; then
+        echo "Error: AGENTSTACK_WORKTREE_ROOT must be an absolute path: $WORKTREE_BASE" >&2
+        return 1
+    fi
+
+    local worktree_dir="${WORKTREE_BASE}/${child_name}"
+    local branch_name="exp/${child_name}"
+
+    # Keep generated worktrees outside common synced/vault folders to avoid
+    # sync conflicts.
+    case "$worktree_dir" in
+        *Syncthing*|*Obsidian*)
+            echo "Error: worktree path must be outside synced/vault folders: $worktree_dir" >&2
+            return 1
+            ;;
+    esac
+
+    mkdir -p "$WORKTREE_BASE"
+
+    if [[ -e "$worktree_dir" ]]; then
+        echo "Error: worktree dir already exists: $worktree_dir (delete it or pick another name)" >&2
+        return 1
+    fi
+
+    if git -C "$source_dir" show-ref --verify --quiet "refs/heads/$branch_name"; then
+        echo "Error: branch $branch_name already exists in $source_dir (delete it first: git -C $source_dir branch -D $branch_name)" >&2
+        return 1
+    fi
+
+    # --worktree-base 指定時: rev を rev-parse で解決して起点 commit を確定
+    local base_args=()
+    local base_label="HEAD"
+    if [[ -n "$WORKTREE_BASE_REV" ]]; then
+        local resolved
+        if ! resolved=$(git -C "$source_dir" rev-parse --verify "${WORKTREE_BASE_REV}^{commit}" 2>/dev/null); then
+            echo "Error: cannot resolve --worktree-base '$WORKTREE_BASE_REV' (commit/branch/tag not found)" >&2
+            return 1
+        fi
+        WORKTREE_BASE_RESOLVED="$resolved"
+        base_args=("$resolved")
+        base_label="${WORKTREE_BASE_REV} (${resolved:0:8})"
+    fi
+
+    echo "[spawn_child] Creating git worktree: $worktree_dir (branch: $branch_name, base: $base_label)" >&2
+    # set -u 下で空配列展開を許容する慣用句: ${base_args[@]+"${base_args[@]}"}
+    if ! git -C "$source_dir" worktree add "$worktree_dir" -b "$branch_name" ${base_args[@]+"${base_args[@]}"} >&2; then
+        echo "Error: git worktree add failed" >&2
+        return 1
+    fi
+
+    WORKTREE_DIR="$worktree_dir"
+    WORKTREE_SOURCE="$source_dir"
+    return 0
+}
+
+# worktree クリーンアップ (失敗時 rollback 用)
+cleanup_worktree() {
+    # Handed to codex_update_watch: never removed under a codex still updating.
+    [[ "${CODEX_UPDATE_LEFT_RUNNING:-false}" == true ]] && return 0
+    if [[ -n "${WORKTREE_DIR:-}" && -d "$WORKTREE_DIR" && -n "${WORKTREE_SOURCE:-}" ]]; then
+        echo "[spawn_child] cleanup: removing worktree $WORKTREE_DIR" >&2
+        if ! git -C "$WORKTREE_SOURCE" worktree remove "$WORKTREE_DIR" 2>/dev/null; then
+            echo "[spawn_child] worktree has changes or dependencies; preserving it" >&2
+            return
+        fi
+        if [[ -n "${CHILD_NAME:-}" ]]; then
+            git -C "$WORKTREE_SOURCE" branch -D "exp/${CHILD_NAME}" 2>/dev/null || true
+        fi
+    fi
+}
+
+# --- Codex launch helpers -------------------------------------------------
+# Kept here (before both launch paths) so the pre-registered and normal paths
+# share one definition of "which flags does this codex accept" and "is the
+# child actually ready".
+
+# Approval/sandbox flags for the installed Codex CLI.
+#
+# `--full-auto` was removed from the Codex CLI: 0.144.6 answers
+# "error: unexpected argument '--full-auto' found" and exits 2, so the child
+# died instantly and the launcher then sat through its full readiness timeout.
+# Probe --help instead of pinning a version, so both old and new CLIs work.
+# Printed as one line and handed to the child through the tmux environment, so
+# the child's login shell can word-split it (unquoted command substitution,
+# which zsh and bash both expand).
+#
+# The policy comes from AGENTSTACK_CODEX_CHILD_APPROVAL (installer setting,
+# default `never`): a spawned child works unattended, so every "may I run this"
+# prompt is a stall nobody is watching. The probe resolves the binary the same
+# way the child will (PATH plus ~/.local/bin, or AGENTSTACK_CODEX_BIN); when
+# the dashboard's minimal launchd PATH cannot find codex at all, the modern flag
+# is emitted instead of nothing — an empty result silently reverted every child
+# to Codex's own `on-request` default (2026-09-04).
+# The child's tmux session runs `<shell> -lc '<launch>'`. This used to be a
+# hard-coded zsh path, which does not exist on a stock Ubuntu (WSL2 included):
+# the session died two seconds after spawn with nothing in the pane. Prefer zsh
+# when present (macOS default, and where every operator so far has run this),
+# otherwise bash; AGENTSTACK_CHILD_SHELL overrides both. The launch snippets
+# above are written in the syntax subset both shells share.
+load_codex_launch_context() {
+    if [[ ! -f "$HOOKS_DIR/codex-bin.sh" ]]; then
+        echo "Error: required launcher helper is missing: $HOOKS_DIR/codex-bin.sh; re-run the installer" >&2
+        return 1
+    fi
+    # shellcheck disable=SC1090
+    . "$HOOKS_DIR/codex-bin.sh"
+    local helper
+    for helper in codex_launch_shell codex_launch_path codex_launch_path_setup codex_launch_runner codex_launch_search_path codex_find_bin codex_bin_problem; do
+        if ! declare -F "$helper" >/dev/null; then
+            echo "Error: launcher helper is incompatible ($helper missing); re-run the installer" >&2
+            return 1
+        fi
+    done
+}
+if [[ -z "$HARNESS" ]]; then
+    load_codex_launch_context || exit 1
+fi
+
+# CHILD_SHELL, CODEX_CHILD_PATH_SETUP and CODEX_PROBE_RUNNER (read by name
+# below) are one definition shared with doctor and the installer
+# (codex_launch_context, hooks/codex-bin.sh, #243).
+#
+# How a Codex child's shell sets PATH before it runs codex: a login shell of
+# CHILD_SHELL (the user's profile may add nvm, nodebrew, ...) and ~/.local/bin in
+# front. Both Codex launch commands splice in this one string, and the codex
+# probes (--version, --help) run through CODEX_PROBE_RUNNER, so a candidate is
+# judged under the PATH it will run with. Probing with the launcher's own PATH
+# rejected a codex whose `#!/usr/bin/env node` finds node only there (2026-09-29).
+if [[ -z "$HARNESS" ]]; then
+    codex_launch_context || exit 1
+fi
+# tmux receives a shell command containing a single-quoted login script.
+# Escape the shared setup for that outer shell; probes use the raw script.
+CODEX_CHILD_PATH_SETUP_QUOTED="$(printf '%s' "${CODEX_CHILD_PATH_SETUP:-}" | sed "s/'/'\\\\''/g")"
+
+# The probe's login shell also gets the guard variables the child's session
+# has (TMUX_ENV_ARGS below): a profile or exit hook that checks CLAUDECODE, or
+# the reserved-identity marker, must behave as it will for the child.
+# The latest point, in seconds of this launcher's run, at which the Codex start
+# watch ends: the dashboard signals a launcher after 120s, and a poll plus the
+# final note need a few seconds after the deadline.
+CODEX_WATCH_END_BY=105
+
+# Per-user Node prefixes where `npm install -g @openai/codex` lands. The
+# dashboard runs under launchd / systemd with the minimal AGENTSTACK_PATH, so
+# without this list a NEW AGENT Codex spawn failed with "Codex CLI not found"
+# on a host where `codex` worked from every shell (2026-09-08, nodebrew). The
+# installer now persists AGENTSTACK_CODEX_BIN; this is the fallback for
+# installs that predate it and for hosts where the setting is empty.
+# The env.sh reader defines functions only; binary rules are loaded above.
+# shellcheck disable=SC1090
+[[ -f "$HOOKS_DIR/project-context.sh" ]] && . "$HOOKS_DIR/project-context.sh"
+
+codex_search_path() {
+    codex_launch_search_path "$@"
+}
+
+# The codex a Codex child runs: AGENTSTACK_CODEX_BIN from the environment,
+# else the one the installer saved in env.sh (read as one line, not sourced),
+# else the first usable one on the search path. A candidate that cannot run
+# (see hooks/codex-bin.sh: a Windows install under /mnt on WSL, or no answer to
+# --version) is skipped with its reason on stderr. An agent's own shell often
+# lacks AGENTSTACK_CODEX_BIN, and on WSL its PATH starts with /mnt/c, so the
+# old PATH fallback picked the Windows npm shim (2026-09-29).
+#
+# One spawn resolves once: prime_codex_bin runs in the launcher's own shell
+# before the approval probe and the launch, and both reuse its answer. Each
+# path is probed at most once, and all probes share one time budget, so an
+# unresponsive saved codex cannot eat the dashboard's 120 seconds.
+find_codex_bin() {
+    codex_find_bin "$@"
+}
+
+prime_codex_bin() {
+    [[ -n "${CODEX_BIN_PRIMED:-}" ]] && return 0
+    CODEX_BIN_RESOLVED="$(find_codex_bin)"
+    CODEX_BIN_PRIMED=1
+}
+
+resolve_codex_bin() {
+    local codex_bin
+    codex_bin="$(find_codex_bin)"
+    if [[ -z "$codex_bin" ]]; then
+        echo "Error: no usable Codex CLI found (reasons above, if any candidate was found). Install Codex where this shell can run it, or set AGENTSTACK_CODEX_BIN to its path (on WSL, a codex under /mnt is the Windows install and cannot run here)." >&2
+        return 1
+    fi
+    printf '%s\n' "$codex_bin"
+}
+
+codex_approval_flags() {
+    local help_text codex_bin policy
+    policy="${AGENTSTACK_CODEX_CHILD_APPROVAL:-never}"
+    codex_bin="$(find_codex_bin)"
+    if [[ -z "$codex_bin" ]]; then
+        printf '%s\n' "--ask-for-approval $policy"
+        return 0
+    fi
+    local status=0
+    help_text="$(${CODEX_PROBE_RUNNER:-} "$codex_bin" --help 2>/dev/null)" || status=$?
+    if [[ "$status" -ne 0 || -z "$help_text" ]]; then
+        # The binary is on the path but could not answer. That says nothing
+        # about which flags it takes, so it must not be read as "neither flag":
+        # a child launched without the flag runs under Codex's own on-request
+        # default, and the approvals the operator's policy had turned off
+        # come back -- the opposite of an unattended child. Pin the policy the same way a
+        # missing binary does (2026-09-17: an npm wrapper crashing on a missing
+        # optional dependency answered --help with an error, and the child
+        # spawned from that shell asked for approval of its pytest runs).
+        echo "Warning: $codex_bin --help failed (status $status, $(printf '%s' "$help_text" | wc -c | tr -d ' ') bytes); pinning --ask-for-approval $policy" >&2
+        printf '%s\n' "--ask-for-approval $policy"
+        return 0
+    fi
+    if printf '%s' "$help_text" | grep -q -- "--ask-for-approval"; then
+        printf '%s\n' "--ask-for-approval $policy"
+    elif printf '%s' "$help_text" | grep -q -- "--full-auto"; then
+        printf '%s\n' "--full-auto"
+    fi
+    # Help answered and names neither flag: emit nothing and let codex use its
+    # own defaults rather than passing an argument this build will reject.
+}
+
+# Writable roots for a Codex child, ':'-separated, handed to the child through
+# the tmux environment (AGENTSTACK_CODEX_ADD_DIRS_RESOLVED). The child turns each
+# entry into `--add-dir`; a ':' list survives spaces in directory names where a
+# word-split flag string would not.
+#
+# Order and membership mirror what an unattended child actually touches: the
+# project, every NEW AGENT launch preset and typeahead root, the install dir
+# (runtime state, spool, tokens), the worktree base, the pre-#57 worktree root
+# (remove after that migration window), the user's Claude and Codex homes, the
+# child's own CODEX_HOME, then anything the operator added with
+# AGENTSTACK_CODEX_ADD_DIRS. Missing directories are dropped so codex does not
+# refuse to start on a path that is not there yet.
+codex_child_add_dirs() {
+    local child_codex_home="$1" raw entry expanded resolved
+    local -a candidates=() seen=()
+    raw="${AGENTSTACK_PROJECT_KEY:-$PROJECT_KEY}"
+    raw="$raw:${AGENTSTACK_SPAWN_DIRS:-}:${AGENTSTACK_SPAWN_ROOTS:-}"
+    raw="$raw:${AGENTSTACK_HOME_DIR:-$HOME/.agentstack}:$WORKTREE_BASE"
+    raw="$raw:/tmp/cc-worktrees" # #57 migration compatibility; remove later.
+    raw="$raw:$HOME/.claude:$HOME/.codex:$child_codex_home"
+    raw="$raw:${AGENTSTACK_CODEX_ADD_DIRS:-}"
+    IFS=':' read -r -a candidates <<< "$raw"
+    for entry in "${candidates[@]}"; do
+        [[ -n "$entry" ]] || continue
+        expanded="$entry"
+        if [[ "$entry" == "~" ]]; then
+            expanded="$HOME"
+        elif [[ "$entry" == "~/"* ]]; then
+            expanded="$HOME/${entry#\~/}"
+        fi
+        [[ -d "$expanded" ]] || continue
+        # Codex compares realpaths (macOS /tmp -> /private/tmp), so hand it the
+        # resolved form and use that for de-duplication too.
+        resolved="$(cd "$expanded" 2>/dev/null && pwd -P)" || continue
+        local dup=false
+        local kept
+        for kept in ${seen[@]+"${seen[@]}"}; do
+            [[ "$kept" == "$resolved" ]] && { dup=true; break; }
+        done
+        [[ "$dup" == true ]] && continue
+        seen+=("$resolved")
+    done
+    local IFS=':'
+    printf '%s\n' "${seen[*]-}"
+}
+
+# Both Codex launch lines below also pass -c check_for_update_on_startup=false
+# (#60). An unattended child must not show Codex's "Update available" screen:
+# its default choice runs `npm install -g @openai/codex`, nobody is there to
+# decline it, and a launcher that stops the child mid-install leaves the
+# machine's codex half replaced. Updating Codex is the operator's call.
+#
+# Sandbox network flag for a Codex child. workspace-write blocks the network
+# by default, which turns every curl / git fetch / ssh into an approval prompt
+# (or a hard failure under `never`). AGENTSTACK_CODEX_NETWORK (installer
+# setting, default on) controls it.
+codex_network_flags() {
+    case "${AGENTSTACK_CODEX_NETWORK:-1}" in
+        0|off|false|no) ;;
+        *) printf '%s\n' "-c sandbox_workspace_write.network_access=true" ;;
+    esac
+}
+
+# True while the child's tmux session still exists. A child that died (bad
+# flag, crash, sign-in failure) must fail fast instead of burning the whole
+# readiness timeout.
+codex_session_alive() {
+    tmux has-session -t "=$1" 2>/dev/null
+}
+
+# Last N non-blank lines of a pane capture. `capture-pane` pads the output to
+# the window height, so a plain `tail` on a tall window sees only blank lines
+# and every footer-based readiness check fails (2026-09-03: Codex 0.153 timed
+# out for 90s with a ready REPL on screen).
+pane_nonblank_tail() {
+    local count="$1"
+    awk '{ lines[NR] = $0 }
+         END {
+             n = NR
+             while (n > 0 && lines[n] ~ /^[[:space:]]*$/) n--
+             for (i = 1; i <= n; i++) print lines[i]
+         }' | tail -n "$count"
+}
+
+# Dialog detectors read the visible screen only: the Codex polls below capture
+# without scrollback, because a capture that included history kept showing an
+# already-accepted dialog and the launcher pressed Enter on every poll.
+# Codex 0.153-0.157 replaced "Do you trust the contents of this directory?"
+# with "Trust this folder? ..." / "› 1. Trust and continue  2. Quit" /
+# "enter continue · esc quit". Missing it read the dialog as readiness and left
+# the task pasted but unsent (WSL, 2026-09-28). Both wordings are a modal.
+codex_trust_dialog_present() {
+    printf '%s' "$1" | grep -qiE "Do you trust|Trust this folder|Trust and continue"
+}
+
+# Claude Code 2.1.259 replaced "Do you trust ..." with a "Quick safety check"
+# whose default row is "No, exit". Both wordings are a modal, never readiness.
+claude_trust_dialog_present() {
+    printf '%s' "$1" | grep -qiE "Do you trust|Quick safety check|Yes, I trust this folder"
+}
+
+# Accept Codex's untrusted-directory prompt.  tmux's symbolic `Enter` did not
+# submit this dialog on Codex 0.144.x; the carriage return key `C-m` does.
+# Bound repeated detections so a future dialog change fails through the normal
+# pre-registration cleanup path instead of hanging the dashboard request.
+codex_accept_trust_dialog() {
+    local session_name="$1"
+    local attempt="$2"
+    local max_attempts="$3"
+    local log_prefix="${4:-spawn_child}"
+    if (( attempt > max_attempts )); then
+        echo "[$log_prefix] Trust dialog persisted after ${max_attempts} attempts; aborting" >&2
+        return 1
+    fi
+    local pane_text
+    pane_text="$(tmux capture-pane -t "$session_name" -p 2>/dev/null || true)"
+    # The legacy C-m is allowed only for a screen positively identified as the
+    # old dialog. The new dialog, an empty capture, or anything unrecognised
+    # gets Enter only once the "1. Trust ..." row is seen selected: a narrow
+    # pane can wrap the label ("1. Trust and" / "continue"), and Enter on
+    # "Quit" ends the child.
+    if printf '%s' "$pane_text" | grep -q "Do you trust" \
+        && ! printf '%s' "$pane_text" | grep -qE "Trust this folder|Trust and|enter continue"; then
+        echo "[$log_prefix] Trust dialog detected; accepting with C-m (${attempt}/${max_attempts})" >&2
+        tmux send-keys -t "$session_name" C-m
+        return 0
+    fi
+    if ! codex_trust_row_selected "$pane_text"; then
+        tmux send-keys -t "$session_name" Up
+        sleep 1
+        pane_text="$(tmux capture-pane -t "$session_name" -p 2>/dev/null || true)"
+    fi
+    if codex_trust_row_selected "$pane_text"; then
+        echo "[$log_prefix] Trust dialog detected; selecting 'Trust and continue' with C-m (${attempt}/${max_attempts})" >&2
+        tmux send-keys -t "$session_name" C-m
+    else
+        echo "[$log_prefix] Trust dialog detected but 'Trust and continue' is not selected; not pressing Enter (${attempt}/${max_attempts})" >&2
+    fi
+    return 0
+}
+
+# The selected row is the cursor glyph followed by "1. Trust"; the rest of the
+# label may have wrapped onto the next line.
+codex_trust_row_selected() {
+    printf '%s' "$1" | pane_normalize_nbsp \
+        | grep -qE '^[[:space:]]*(›|❯|>)[[:space:]]*1\.[[:space:]]*Trust([[:space:]]|$)'
+}
+
+# Claude Code shows the same trust gate on a directory it has never opened.
+# A fresh ~/code/<project> therefore cannot reach the normal input prompt until
+# this is accepted. Keep the detector separate from readiness so task text is
+# never injected into a modal dialog.
+# Claude Code 2.1.26x renders the empty input row as "❯" followed by a
+# NO-BREAK SPACE (U+00A0). Under LC_ALL=C that byte pair is not [[:space:]],
+# so normalize it to a plain space before matching (observed 2026-09-05).
+pane_normalize_nbsp() {
+    LC_ALL=C sed $'s/\xc2\xa0/ /g'
+}
+
+claude_pane_ready() {
+    local pane_text="$1" reader
+    claude_trust_dialog_present "$pane_text" && return 1
+<<<<<<< /Users/huyuhutaru/.dev-storage-governor/examforge/20261022T063810Z-build-cache-e4007ade/source/hooks/spawn_child.sh
+    reader="$(dirname "$_ags_global_loader")/terminal_state.py"
+    if [[ ! -f "$reader" ]]; then reader="$(dirname "$_ags_global_loader")/../../dashboard/terminal_state.py"; fi
+    printf '%s' "$pane_text" | python3 "$reader" spawn-ready
+}
+
+# Classifies the bottom-most active choice on the screen, by structure rather
+# than by listing words. Prints one of:
+#   trust-yes -- the active choice is Claude's trust dialog, "Yes" selected
+#   trust-no  -- the active choice is Claude's trust dialog, "No" selected
+#   trust-old -- the old trust wording (no cursor; Enter accepts)
+#   other     -- some other choice is active (never answered by the launcher)
+#   none      -- no active choice (a ready prompt, startup output, ...)
+# The selected row comes from the same active block, never from a match
+# anywhere on the screen: an earlier dialog left above can show its own
+# selected "Yes" row while the current one has "No" selected.
+# The active choice is the lowest selected row ("❯ <text>") together with the
+# rows aligned to its text column directly above and below it (Claude draws
+# unselected options at that column). It is the trust dialog only when its
+# options are exactly "Yes, I trust this folder" and "No, exit" and nothing but
+# the confirm footer follows it. The old wording ("Do you trust ...", plain
+# Yes / No rows, no cursor) counts only when nothing but those rows and the
+# footer follows the question. A trust line left higher on the screen never
+# makes a later, different choice a trust dialog.
+claude_choice_block_kind() {
+    printf '%s\n' "$1" | pane_normalize_nbsp | LC_ALL=C awk '
+        function trim(t) { sub(/^[[:space:]]+/, "", t); sub(/[[:space:]]+$/, "", t); return t }
+        function unnumber(t) { sub(/^[0-9]+\.[[:space:]]*/, "", t); return t }
+        function footer(t) { return t ~ /Enter to confirm/ || t ~ /Esc to / }
+        function lead(t,   k) { k = match(t, /[^ ]/); return k ? k : 0 }
+        { line[NR] = $0 }
+        END {
+            n = NR
+            while (n > 0 && line[n] ~ /^[[:space:]]*$/) n--
+            glyph = "\342\235\257"   # U+276F, the selection cursor
+            sel = 0
+            for (i = n; i >= 1; i--) {
+                c = index(line[i], glyph)
+                if (c == 0 || substr(line[i], 1, c - 1) !~ /^ *$/) continue
+                rest = substr(line[i], c + 3)
+                if (rest !~ /[^[:space:]]/ || rest ~ /^[[:space:]]*Try "/) continue
+                sel = i; break
+            }
+            if (sel == 0) {
+                q = 0
+                for (i = n; i >= 1; i--) if (line[i] ~ /Do you trust/) { q = i; break }
+                if (q == 0) {
+                    for (i = 1; i <= n; i++) if (line[i] ~ /Enter to confirm/) { print "other"; exit }
+                    print "none"; exit
+                }
+                opts = 0
+                for (i = q + 1; i <= n; i++) {
+                    t = unnumber(trim(line[i]))
+                    if (t == "" || footer(t)) continue
+                    if (t != "Yes" && t != "No") { print "other"; exit }
+                    opts++
+                }
+                print (opts > 0 ? "trust-old" : "none"); exit
+            }
+            rest = substr(line[sel], c + 3)
+            textcol = c + 1 + (match(rest, /[^ ]/) - 1)
+            first = sel; last = sel
+            for (i = sel - 1; i >= 1 && line[i] !~ /^[[:space:]]*$/ && index(line[i], glyph) == 0 && lead(line[i]) == textcol; i--) first = i
+            for (i = sel + 1; i <= n && line[i] !~ /^[[:space:]]*$/ && index(line[i], glyph) == 0 && lead(line[i]) == textcol; i++) last = i
+            count = 0; yes = 0; no = 0; unknown = 0; picked = ""
+            for (i = first; i <= last; i++) {
+                t = (i == sel) ? rest : line[i]
+                t = unnumber(trim(t))
+                count++
+                if (t == "Yes, I trust this folder") { yes++; if (i == sel) picked = "yes" }
+                else if (t == "No, exit") { no++; if (i == sel) picked = "no" }
+                else unknown++
+            }
+            trailing = 0
+            for (i = last + 1; i <= n; i++) {
+                t = trim(line[i])
+                if (t == "" || footer(t)) continue
+                trailing++
+            }
+            if (count < 2) {
+                # A single row with text is an input line, not a choice,
+                # unless a confirm footer says otherwise.
+                for (i = sel; i <= n; i++) if (line[i] ~ /Enter to confirm/) { print "other"; exit }
+                print "none"; exit
+            }
+            if (yes == 1 && no == 1 && unknown == 0 && trailing == 0) print "trust-" picked
+            else print "other"
+        }'
+}
+
+# The active choice is the trust dialog and no user question is on screen.
+claude_trust_screen_to_answer() {
+    [[ "$(claude_choice_block_kind "$1")" == trust-* ]] \
+        && ! claude_user_prompt_present "$1"
+}
+
+# The active choice is something other than the trust dialog.
+claude_unknown_choice_present() {
+    [[ "$(claude_choice_block_kind "$1")" == other ]]
+=======
+    last_lines="$(printf '%s' "$pane_text" | pane_normalize_nbsp | pane_nonblank_tail 8)"
+    printf '%s' "$last_lines" | grep -qE 'for shortcuts' && return 0
+    # Only an empty input row counts. A selected dialog row also starts with
+    # the cursor glyph ("❯ No, exit") and must not read as ready.
+    printf '%s' "$last_lines" | grep -qE '^[[:space:]]*❯[[:space:]]*$' && return 0
+    # Claude Code 2.1.286 fills the empty input row with a placeholder
+    # ('❯ Try "edit <file> to..."') and drops "? for shortcuts" from the footer.
+    # The placeholder only appears on an empty input row, never on a dialog row.
+    printf '%s' "$last_lines" | grep -qE '^[[:space:]]*❯[[:space:]]+Try "' && return 0
+    return 1
+>>>>>>> /Users/huyuhutaru/.dev-storage-governor/examforge/20261022T063810Z-build-cache-e4007ade/source/docs/orrery-up-2/merge-inputs/hooks/spawn_child.sh.local
+}
+
+claude_accept_trust_dialog() {
+    local session_name="$1"
+    local attempt="$2"
+    local max_attempts="$3"
+    local log_prefix="${4:-spawn_child}"
+    if (( attempt > max_attempts )); then
+        echo "[$log_prefix] Claude trust dialog persisted after ${max_attempts} attempts; aborting" >&2
+        return 1
+    fi
+    local pane_text kind
+    pane_text="$(tmux capture-pane -t "$session_name" -p 2>/dev/null || true)"
+    # Decide from the screen captured just before any key. The one the caller
+    # saw may already be gone: Claude can replace the trust dialog with the
+    # user's one-time Chrome question, and a key sent now would answer it.
+    # Which row is selected is read from the active dialog only.
+    kind="$(claude_choice_block_kind "$pane_text")"
+    if [[ "$kind" != trust-* ]] || claude_user_prompt_present "$pane_text"; then
+        echo "[$log_prefix] Claude trust dialog is no longer on screen; not pressing a key (${attempt}/${max_attempts})" >&2
+        return 0
+    fi
+    if [[ "$kind" == trust-old ]]; then
+        echo "[$log_prefix] Claude trust dialog detected; accepting with C-m (${attempt}/${max_attempts})" >&2
+        tmux send-keys -t "$session_name" C-m
+        return 0
+    fi
+    # New dialog: the default row is "No, exit", so a bare Enter ends the
+    # child (observed 2026-09-03: the session lived 4 seconds). Move to the
+    # Yes row and confirm, from a fresh capture, that it is selected.
+    if [[ "$kind" == trust-no ]]; then
+        tmux send-keys -t "$session_name" Down
+        sleep 1
+        pane_text="$(tmux capture-pane -t "$session_name" -p 2>/dev/null || true)"
+        kind="$(claude_choice_block_kind "$pane_text")"
+        claude_user_prompt_present "$pane_text" && kind=other
+    fi
+    if [[ "$kind" == trust-yes ]]; then
+        echo "[$log_prefix] Claude trust dialog detected; selecting 'Yes, I trust this folder' (${attempt}/${max_attempts})" >&2
+        tmux send-keys -t "$session_name" C-m
+    else
+        echo "[$log_prefix] Claude trust dialog detected but the Yes row is not selected; not pressing Enter (${attempt}/${max_attempts})" >&2
+    fi
+    return 0
+}
+
+# Claude Code asks some questions once, for the user rather than for the child.
+# "Claude in Chrome extension detected" (first start after the extension was
+# installed) decides the user's default browser setting, so answering it --
+# even with its default "No" or Esc -- may change every later Claude session,
+# the parent's included. The launcher never answers it: it stops at once, saves
+# the screen and tells the operator to answer it themselves. Two cues are
+# required so a wording change is not mistaken for another screen.
+claude_user_prompt_present() {
+    local text
+    text="$(printf '%s' "$1" | pane_normalize_nbsp)"
+    printf '%s' "$text" | grep -qiF "Claude in Chrome extension detected" && return 0
+    printf '%s' "$text" | grep -qiF "keep browser tools off" \
+        && printf '%s' "$text" | grep -qiF "use my browser"
+}
+
+# Claude Code's first-run setup appears in every new session until it has been
+# finished once. In 2.1.289 it runs: text style, login method, "Login
+# successful. Press Enter to continue", Security notes, then the folder trust
+# dialog and the normal prompt. It is gated on hasCompletedOnboarding
+# in ~/.claude.json, not on the theme already saved in settings.json (2.1.289,
+# 2026-10-04: a child stopped on it while the user's first `claude` was still
+# open on its setup screens). Picking a theme or a login method would decide
+# the user's settings, so the launcher never answers it. Two cues per screen.
+claude_onboarding_present() {
+    local text
+    text="$(printf '%s' "$1" | pane_normalize_nbsp)"
+    if printf '%s' "$text" | grep -qiF "Choose the text style" \
+        && printf '%s' "$text" | grep -qiF "/theme"; then
+        return 0
+    fi
+    if printf '%s' "$text" | grep -qiF "Select login method" \
+        && printf '%s' "$text" | grep -qiE "Claude account with subscription|Anthropic Console account"; then
+        return 0
+    fi
+    printf '%s' "$text" | grep -qiF "Press Enter to continue" \
+        && printf '%s' "$text" | grep -qiE "Security notes|Login successful"
+}
+
+# Another one-time question for the user, seen on a fresh Windows/WSL machine
+# with 2.1.289 (2026-10-04): "Try the new fullscreen renderer?" with "Yes" and
+# "Not now". Like the Chrome question its answer is the user's setting.
+claude_renderer_question_present() {
+    local text
+    text="$(printf '%s' "$1" | pane_normalize_nbsp)"
+    printf '%s' "$text" | grep -qiF "fullscreen renderer" \
+        && printf '%s' "$text" | grep -qiF "Not now"
+}
+
+# The child has already answered its launch prompt: the prompt's echo
+# ("❯ <first line up to the child's name>") with one of Claude's reply rows
+# ("⏺ ...", or "●" where the terminal draws that) below it. The prompt was delivered and acted on, so the launch has
+# succeeded; a question Claude shows after that (2026-10-04: the fullscreen
+# renderer offer, right after the child's first reply) is for the user to
+# answer in the child's pane, not a reason to remove a working child.
+claude_answered_launch_prompt() {
+    [[ -n "$CLAUDE_READY_PROMPT_ECHO" ]] || return 1
+    local line rest echoed=false
+    while IFS= read -r line || [[ -n "$line" ]]; do
+        rest="${line#"${line%%[![:space:]]*}"}"
+        if [[ "$echoed" == false && "$rest" == "❯"* ]]; then
+            rest="${rest#❯}"
+            rest="${rest#"${rest%%[![:space:]]*}"}"
+            [[ "$rest" == "$CLAUDE_READY_PROMPT_ECHO"* ]] && echoed=true
+            continue
+        fi
+        [[ "$echoed" == true ]] || continue
+        # Claude draws its reply rows from the first column. The echo's own
+        # continuation rows are indented, so a bullet in the prompt text
+        # ("  ● do this") is never a reply.
+        [[ "$line" == "⏺"* || "$line" == "●"* ]] && return 0
+    done <<< "$(printf '%s' "$1" | pane_normalize_nbsp)"
+    return 1
+}
+
+# Diagnostics only: the last 40 non-blank lines, blank lines anywhere removed.
+# capture-pane pads to the window height and a dialog can sit above a run of
+# blank rows, so a plain tail may hold only blank lines. Readiness checks keep
+# using pane_nonblank_tail, which preserves the screen's own layout.
+pane_diagnostic_lines() {
+    pane_normalize_nbsp | grep -v '^[[:space:]]*$' | tail -n 40 || true
+}
+
+# The screen with some scrollback, for the failure record.
+claude_failure_screen() {
+    local session_name="$1" fallback="$2" screen
+    screen="$(tmux capture-pane -t "$session_name" -p -S -60 2>/dev/null \
+        | pane_diagnostic_lines)"
+    if [[ -z "$screen" ]]; then
+        screen="$(printf '%s' "$fallback" | pane_diagnostic_lines)"
+    fi
+    printf '%s' "$screen"
+}
+
+# Writes the reason and the screen to stderr and to the incidents log, so the
+# screen survives the cleanup that removes the session.
+claude_record_failure() {
+    local session_name="$1" reason="$2" fallback="$3" screen
+    screen="$(claude_failure_screen "$session_name" "$fallback")"
+    spawn_note "$reason ($session_name). Last screen (up to 40 non-blank lines):
+$(printf '%s\n' "${screen:-<empty>}" | sed 's/^/    | /')"
+}
+
+CLAUDE_READY_WAIT_MAX=60
+CLAUDE_CHOICE_WAIT_MAX=10
+CLAUDE_PROGRESS_EVERY=10
+CLAUDE_READY_WAITED=0
+
+# Waits until the Claude REPL accepts input. Returns 0 when ready; otherwise
+# reports why, saves the screen and returns 1. Keys are sent only to accept
+# the trust dialog.
+# A child started with its first prompt as the `claude [prompt]` argument shows
+# that prompt at once after the cursor glyph ("❯ あなたは <name>…") and starts
+# working. That row is the user's message, not a selected choice; read as one it
+# stopped a child that was already working (2026-10-01). Drop it and its
+# indented continuation rows before the screen is classified. The echo is
+# recognised by the prompt's first line up to the child's name, which always
+# ends on a whole character and never begins a dialog.
+CLAUDE_READY_PROMPT_ECHO=""
+claude_strip_prompt_echo() {
+    local pane_text="$1" line rest skip=false
+    if [[ -z "$CLAUDE_READY_PROMPT_ECHO" ]]; then
+        printf '%s' "$pane_text"
+        return 0
+    fi
+    while IFS= read -r line || [[ -n "$line" ]]; do
+        if [[ "$skip" == true && "$line" == "  "* && "$line" != *"❯"* ]]; then
+            continue
+        fi
+        skip=false
+        rest="${line#"${line%%[![:space:]]*}"}"
+        if [[ "$rest" == "❯"* ]]; then
+            rest="${rest#❯}"
+            rest="${rest#"${rest%%[![:space:]]*}"}"
+            if [[ "$rest" == "$CLAUDE_READY_PROMPT_ECHO"* ]]; then
+                skip=true
+                continue
+            fi
+        fi
+        printf '%s\n' "$line"
+    done <<< "$pane_text"
+}
+
+# The part of a launch prompt that its echo starts with: its first line, up to
+# and including the child's name.
+claude_prompt_echo_head() {
+    local prompt_text="$1" child_name="$2" first_line
+    first_line="$(printf '%s' "$prompt_text" | head -n 1)"
+    [[ "$first_line" == *"$child_name"* ]] || return 0
+    printf '%s%s' "${first_line%%"$child_name"*}" "$child_name"
+}
+
+wait_for_claude_ready() {
+    local session_name="$1" log_prefix="$2"
+    local waited=0 pane_text="" last_seen="" trust_attempts=0 trust_max=5 choice_since=-1 state last choice_kind
+    # Each failure records the screen first and prints its short reason and
+    # what to do last: the dashboard shows only the tail of the launcher log.
+    while [[ $waited -lt $CLAUDE_READY_WAIT_MAX ]]; do
+        sleep 2
+        waited=$((waited + 2))
+        CLAUDE_READY_WAITED=$waited
+        pane_text=$(tmux capture-pane -t "$session_name" -p 2>/dev/null || true)
+        # Keep the last screen actually seen: once the session is gone, the
+        # capture fails and would leave an empty record.
+        [[ -n "$pane_text" ]] && last_seen="$pane_text"
+        if claude_answered_launch_prompt "$pane_text"; then
+            if claude_user_prompt_present "$pane_text" || claude_renderer_question_present "$pane_text" \
+                || [[ "$(claude_choice_block_kind "$(claude_strip_prompt_echo "$pane_text")")" != none ]]; then
+                echo "[$log_prefix] Claude has answered its first prompt and is now showing a question for you; it is left unanswered in the child's pane: $(printf '%s' "$pane_text" | pane_normalize_nbsp | pane_nonblank_tail 1 | cut -c1-120)" >&2
+            fi
+            return 0
+        fi
+        pane_text="$(claude_strip_prompt_echo "$pane_text")"
+        if claude_user_prompt_present "$pane_text"; then
+            claude_record_failure "$session_name" "Claude asked the user about Claude in Chrome; not answered by the launcher" "$last_seen"
+            echo "[$log_prefix] Aborting: Claude Code is asking the user a one-time question about Claude in Chrome (\"Claude in Chrome extension detected\"). No key was sent: the answer may become the default for all later Claude sessions, so ORRERY leaves it to you. Open 'claude' once in a normal terminal and answer it yourself (or choose with /chrome), then launch the child again." >&2
+            spawn_reason "Claude Code is asking a one-time question about Claude in Chrome. Run 'claude' once in a terminal and answer it, then launch the child again."
+            return 1
+        fi
+        if claude_renderer_question_present "$pane_text"; then
+            claude_record_failure "$session_name" "Claude asked the user about the fullscreen renderer; not answered by the launcher" "$last_seen"
+            echo "[$log_prefix] Aborting: Claude Code is asking a one-time question (\"Try the new fullscreen renderer?\"). No key was sent: the answer is your setting, so ORRERY leaves it to you." >&2
+            spawn_reason "Claude Code is asking a one-time question (Try the new fullscreen renderer?). Run 'claude' once in a terminal and answer it, then launch the child again."
+            return 1
+        fi
+        if claude_onboarding_present "$pane_text"; then
+            claude_record_failure "$session_name" "Claude Code's first-run setup is not finished; not answered by the launcher" "$last_seen"
+            echo "[$log_prefix] Aborting: Claude Code is showing its first-run setup (text style, login or Security notes). No key was sent: the choices are your settings, so ORRERY leaves them to you." >&2
+            spawn_reason "Claude Code's first-run setup is not finished on this machine. Run 'claude' once in a terminal and go through text style, login, Security notes and trusting the folder until the normal input prompt appears, then /exit (if a 'claude' window is still on those screens, finish it there). Then launch the child again."
+            return 1
+        fi
+        choice_kind="$(claude_choice_block_kind "$pane_text")"
+        if [[ "$choice_kind" == trust-* ]]; then
+            trust_attempts=$((trust_attempts + 1))
+            if ! claude_accept_trust_dialog \
+                "$session_name" "$trust_attempts" "$trust_max" "$log_prefix"; then
+                claude_record_failure "$session_name" "Claude trust dialog persisted" "$last_seen"
+                echo "[$log_prefix] Aborting: unable to accept the Claude trust dialog." >&2
+                return 1
+            fi
+            choice_since=-1
+            sleep 1
+            continue
+        fi
+        state=starting
+        if [[ "$choice_kind" == other ]]; then
+            state=choice
+            [[ $choice_since -lt 0 ]] && choice_since=$waited
+            if [[ $((waited - choice_since)) -ge $CLAUDE_CHOICE_WAIT_MAX ]]; then
+                claude_record_failure "$session_name" "Claude showed an unrecognised choice screen; not answered by the launcher" "$last_seen"
+                echo "[$log_prefix] Aborting: Claude has shown a choice screen ORRERY does not recognise for ${CLAUDE_CHOICE_WAIT_MAX}s. No key was sent. If it is expected, answer it once in a normal 'claude' session, then launch the child again." >&2
+                return 1
+            fi
+        else
+            choice_since=-1
+            # A choice screen wins over the weak ready cues (an empty input row
+            # or the shortcuts footer can stay visible under a dialog).
+            if claude_pane_ready "$pane_text"; then
+                return 0
+            fi
+        fi
+        if ! tmux has-session -t "=$session_name" 2>/dev/null; then
+            claude_record_failure "$session_name" "Claude terminated before readiness" "$last_seen"
+            echo "[$log_prefix] Claude session '$session_name' died after ${waited}s (last screen above and in $SPAWN_INCIDENT_LOG)." >&2
+            echo "[$log_prefix] Aborting: Claude terminated before readiness." >&2
+            return 1
+        fi
+        if [[ $((waited % CLAUDE_PROGRESS_EVERY)) -eq 0 ]]; then
+            last="$(printf '%s' "$pane_text" | pane_normalize_nbsp | pane_nonblank_tail 1 | cut -c1-120)"
+            echo "[$log_prefix] Waiting for Claude (${waited}s): ${state}; last line: ${last:-<empty>}" >&2
+        fi
+    done
+    claude_record_failure "$session_name" "Claude readiness timeout (${CLAUDE_READY_WAIT_MAX}s)" "$last_seen"
+    echo "[$log_prefix] Claude readiness timeout (${CLAUDE_READY_WAIT_MAX}s); refusing to inject the task into an unknown screen state." >&2
+    return 1
+}
+
+# Record prompt-delivery evidence outside the launcher's stderr. Dashboard and
+# hook callers commonly trim command output, so stderr alone is not durable
+# enough for a child that started successfully but never received its task.
+SPAWN_INCIDENT_LOG="${AGENTSTACK_SPAWN_INCIDENT_LOG:-$RUNTIME_DIR/spawn_incidents.log}"
+INJECTION_VERIFIED=false
+SPAWN_TRAP_SESSION=""
+
+spawn_note() {
+    local message="$1"
+    echo "[spawn_child] $message" >&2
+    mkdir -p "$(dirname "$SPAWN_INCIDENT_LOG")" 2>/dev/null || true
+    printf '%s %s\n' "$(date '+%Y-%m-%dT%H:%M:%S%z')" "$message" \
+        >> "$SPAWN_INCIDENT_LOG" 2>/dev/null || true
+}
+
+# One line, for a stop the user has to resolve themselves. The dashboard shows
+# the last such line as the launch error (the cockpit toast), instead of only
+# the launcher's exit status; everything else stays in the log tail.
+spawn_reason() {
+    spawn_note "reason: $1"
+}
+
+# Claude can accept a submit while startup is still settling but leave it as a
+# queued message. With no active turn, that queue never drains and the child
+# waits forever. An empty submit creates the turn that flushes the queued task.
+flush_queued_prompt() {
+    local session_name="$1"
+    local waited=0
+    local pane_text
+    while (( waited < 20 )); do
+        pane_text="$(tmux capture-pane -t "$session_name" -p 2>/dev/null || true)"
+        if ! printf '%s' "$pane_text" | grep -qF "edit queued messages"; then
+            return 0
+        fi
+        echo "[spawn_child] Prompt is still queued; submitting an empty turn to flush it ($session_name)" >&2
+        tmux send-keys -t "$session_name" C-m
+        sleep 3
+        waited=$((waited + 3))
+    done
+    spawn_note "WARNING: prompt did not leave the queued-message state ($session_name); press Enter once in the child session"
+    return 1
+}
+
+# Deliver a prompt into a REPL pane and submit it.
+#
+# The text goes in as a real bracketed paste (tmux load-buffer + paste-buffer
+# -p). Typing it with send-keys -l, or wrapping it in hand-written ESC[200~
+# markers, lets a busy REPL read the text and the following C-m in one batch
+# and treat the C-m as part of the paste, so the task sits in the input box
+# unsubmitted and verify_injection still reports ok because the text is on
+# screen. Reproduced 2026-09-27 on Codex 0.157.1 and Claude Code by stopping
+# the REPL (SIGSTOP) during delivery: send-keys -l stuck every time, the
+# hand-written markers stuck 1 in 5, paste-buffer -p submitted 8 of 8.
+send_prompt_to_pane() {
+    local session_name="$1" prompt_text="$2" submit_gap="${3:-0.5}"
+    local paste_buf="agentstack-spawn-$$-${RANDOM}" paste_file
+    paste_file="$(mktemp "${TMPDIR:-/tmp}/agentstack-spawn-prompt.XXXXXX")" || paste_file=""
+    if [[ -n "$paste_file" ]] && printf '%s' "$prompt_text" > "$paste_file" \
+        && tmux load-buffer -b "$paste_buf" "$paste_file" 2>/dev/null \
+        && tmux paste-buffer -p -d -b "$paste_buf" -t "$session_name" 2>/dev/null; then
+        :
+    else
+        tmux delete-buffer -b "$paste_buf" 2>/dev/null || true
+        tmux send-keys -t "$session_name" -l "$prompt_text"
+    fi
+    [[ -n "$paste_file" ]] && rm -f "$paste_file"
+    sleep "$submit_gap"
+    tmux send-keys -t "$session_name" C-m
+    resubmit_if_left_in_input "$session_name" "$prompt_text"
+}
+
+# If the prompt is still in the input box after the submit, press C-m once
+# more. The input box is the last line starting with › (Codex) or ❯ (Claude
+# Code); earlier lines with the same text are history. Long pastes are folded
+# to "[Pasted Content …]" (Codex) or "[Pasted text …]" (Claude Code).
+resubmit_if_left_in_input() {
+    local session_name="$1" prompt_text="$2"
+    local first_line head input_line utf8_locale
+    utf8_locale="$(injection_utf8_locale)"
+    if [[ -n "$utf8_locale" ]]; then
+        local LC_ALL="$utf8_locale"
+    fi
+    first_line="${prompt_text%%$'\n'*}"
+    head="${first_line:0:24}"
+    sleep 1
+    input_line="$(tmux capture-pane -t "$session_name" -p 2>/dev/null \
+        | grep -E '^[[:space:]]*(›|❯)' | tail -1)" || input_line=""
+    [[ -n "$input_line" ]] || return 0
+    if { [[ -n "$head" ]] && [[ "$input_line" == *"$head"* ]]; } \
+        || [[ "$input_line" == *"[Pasted "* ]]; then
+        echo "[spawn_child] Prompt still in the input box; submitting again ($session_name)" >&2
+        tmux send-keys -t "$session_name" C-m
+    fi
+    return 0
+}
+
+# Reduce prompt or pane text to the characters that survive the REPL's
+# rendering: drop whitespace (the TUI re-wraps long lines, CJK mid-word) and
+# the Markdown markers Claude Code strips from a submitted prompt (`## Role:`
+# is shown as `Role:`, so a needle that keeps the `##` can never match).
+injection_match_key() {
+    printf '%s' "$1" | tr -d '\n\r\t #*>`'
+}
+
+# A UTF-8 locale for ${var:0:N}: bash counts characters under UTF-8 and bytes
+# under C, and a byte cut lands mid-character in Japanese prompts, producing a
+# needle that is invalid UTF-8 and matches nothing (LC_CTYPE is unset in cron,
+# launchd and some ssh sessions).
+injection_utf8_locale() {
+    local candidate
+    for candidate in C.UTF-8 en_US.UTF-8 UTF-8; do
+        if locale -a 2>/dev/null | grep -qx "$candidate"; then
+            printf '%s' "$candidate"
+            return 0
+        fi
+    done
+    return 0
+}
+
+# Verify delivery against the pane, comparing short prefix AND suffix keys of
+# the prompt after the same normalization, polling every second for 30s.
+#
+# Why both ends: Claude Code 2.1.26x draws on the alternate screen, so tmux
+# keeps no scrollback for the pane (history_size 0) and `-S -1000` returns the
+# viewport only. A multi-kilobyte task is taller than the viewport the moment
+# it is rendered, so its first line is never visible; its last line is, until
+# the model's output pushes it up. Codex (normal screen, scrollback kept)
+# matches on the prefix as before. Polling every second catches the short
+# window in which the tail is on screen. The 30s budget covers a cold REPL on
+# a loaded host. A false FAILED is worse than a slow ok because operators act
+# on it (2026-09-08: healthy children reported FAILED while already working).
+verify_injection() {
+    local session_name="$1"
+    local prompt_text="$2"
+    local head_key tail_key
+    local waited=0
+    local pane_text pane_key
+    local utf8_locale
+    utf8_locale="$(injection_utf8_locale)"
+    if [[ -n "$utf8_locale" ]]; then
+        local LC_ALL="$utf8_locale"
+    fi
+    head_key="$(injection_match_key "${prompt_text:0:48}")"
+    [[ -n "$head_key" ]] || return 0
+    tail_key=""
+    if (( ${#prompt_text} > 48 )); then
+        tail_key="$(injection_match_key "${prompt_text: -48}")"
+    fi
+    while (( waited < 30 )); do
+        pane_text="$(tmux capture-pane -t "$session_name" -p -S -1000 2>/dev/null || true)"
+        pane_key="$(injection_match_key "$pane_text")"
+        if printf '%s' "$pane_key" | grep -qF -- "$head_key" \
+            || { [[ -n "$tail_key" ]] && printf '%s' "$pane_key" | grep -qF -- "$tail_key"; }; then
+            INJECTION_VERIFIED=true
+            spawn_note "injected ok ($session_name)"
+            return 0
+        fi
+        sleep 1
+        waited=$((waited + 1))
+    done
+    spawn_note "WARNING: injection not verified ($session_name): the REPL is ready but the task text was not seen in the pane within 30s. This is a failed check, not proof that the task is missing: inspect with 'tmux capture-pane -t $session_name -p -S -1000' before resending, and do not close the child on this message alone"
+    return 1
+}
+
+# --- Codex cold start: the first task travels as the positional [PROMPT] ---
+# On WSL (2026-09-28) 1 of 8 cold Codex 0.158 children never started a turn
+# after its task was pasted. Codex 0.158 draws a provisional composer ("Ask
+# Codex to do anything") during startup and can discard pending input before a
+# protected screen; a race between the paste and that screen change is the
+# leading hypothesis, not a confirmed cause. Either way the task no longer goes
+# through the terminal: it is given to `codex -- "<task>"` as one argv and is
+# never pasted, submitted or resent. It reaches the child through
+# a 0600 file that the child's shell reads and removes; it is never spliced
+# into a shell command string.
+# One argv is capped by the OS (Linux: 128 KiB per argument); a task past the
+# cap fails here, visibly, instead of as an exec error inside the pane.
+CODEX_PROMPT_MAX_BYTES=120000
+write_codex_prompt_file() {
+    local name="$1" text="$2" file bytes
+    bytes="$(printf '%s' "$text" | wc -c | tr -d ' ')"
+    if (( bytes > CODEX_PROMPT_MAX_BYTES )); then
+        echo "Error: the Codex task is ${bytes} bytes; it is passed as one command-line argument, whose limit here is ${CODEX_PROMPT_MAX_BYTES}. Shorten it or send the details by ORRERY Mail." >&2
+        return 1
+    fi
+    mkdir -p "$CHILD_STATE_DIR" && chmod 700 "$CHILD_STATE_DIR" || return 1
+    file="$(umask 077; mktemp "$CHILD_STATE_DIR/.$name.prompt.XXXXXX")" || return 1
+    if ! printf '%s' "$text" > "$file"; then
+        rm -f "$file"
+        return 1
+    fi
+    printf '%s\n' "$file"
+}
+
+# Whether this launch's first task has started, from its own rollout (see
+# hooks/codex-initial-task-status.py): started, bound or unknown.
+codex_initial_task_status() {
+    local session_name="$1" prompt_text="$2" launch_path="$3" launch_id="$4"
+    local helper="$HOOKS_DIR/codex-initial-task-status.py"
+    if [[ ! -f "$helper" || -z "$launch_path" || -z "$launch_id" ]]; then
+        echo unknown
+        return 0
+    fi
+    printf '%s' "$prompt_text" | "${AGENTSTACK_PYTHON:-python3}" "$helper" \
+        --launch-path "$launch_path" --launch-id "$launch_id" \
+        --agent-name "$session_name" 2>/dev/null || echo unknown
+}
+
+# Whether a Codex trust screen is up, identified by its whole layout at the
+# bottom of the pane, never by a phrase: the task and Codex's answers can quote
+# any dialog text, on a line of its own or not. The bottom region is the last
+# 12 non-blank lines and must hold no composer marker ("Ask Codex to do
+# anything", "? for shortcuts", "esc to interrupt"). The layouts accepted are
+# the ones seen on real screens:
+# - Codex 0.158: "Trust this folder?" (under "Folder access"), the option pair
+#   "1. Trust and continue" / "2. Quit" with the selection cursor on one of
+#   them, and "enter continue · esc quit" as the last line.
+# - Older Codex: "Do you trust the contents of this directory?", the pair
+#   "1. Yes, continue" / "2. No, quit" with the cursor, and "Press enter to
+#   continue" as the last line.
+# Model and sign-in screens get no keys: their current layouts have not been
+# seen on a real screen, and a guess could answer a quoted phrase instead.
+codex_trust_screen_up() {
+    local region last
+    region="$(printf '%s\n' "$1" | pane_normalize_nbsp | pane_nonblank_tail 12)"
+    printf '%s' "$region" | grep -qE 'Ask Codex to do anything|\? for shortcuts|esc to interrupt' && return 1
+    printf '%s' "$region" | grep -qE '^[[:space:]]*(›|❯|>)[[:space:]]*[12]\.' || return 1
+    last="$(printf '%s' "$region" | tail -n 1)"
+    if [[ "$last" =~ ^[[:space:]]*enter\ continue\ ·\ esc\ quit[[:space:]]*$ ]]; then
+        printf '%s' "$region" | grep -qE '^[[:space:]]*Trust this folder\?' \
+            && printf '%s' "$region" | grep -qE '^[[:space:]]*(›|❯|>)?[[:space:]]*1\.[[:space:]]*Trust and( continue)?[[:space:]]*$' \
+            && printf '%s' "$region" | grep -qE '^[[:space:]]*(›|❯|>)?[[:space:]]*2\.[[:space:]]*Quit[[:space:]]*$'
+        return
+    fi
+    if [[ "$last" =~ ^[[:space:]]*Press\ enter\ to\ continue[[:space:]]*$ ]]; then
+        printf '%s' "$region" | grep -qE 'Do you trust the contents of this directory\?' \
+            && printf '%s' "$region" | grep -qE '^[[:space:]]*(›|❯|>)?[[:space:]]*1\.[[:space:]]*Yes, continue[[:space:]]*$' \
+            && printf '%s' "$region" | grep -qE '^[[:space:]]*(›|❯|>)?[[:space:]]*2\.[[:space:]]*No, quit[[:space:]]*$'
+        return
+    fi
+    return 1
+}
+
+# Whether Codex shows a turn in progress: its status line "<verb> (<elapsed> •
+# esc to interrupt)" among the last lines of the pane, where the composer and
+# its status live. Used only to stop waiting, never as proof of the start: the
+# task or an answer could quote the line, but either one on screen already
+# means a turn has begun, and no key is ever sent because of it.
+codex_turn_running_on_screen() {
+    # The last 6 non-blank lines: on a real 0.158 screen the status line sits
+    # 7 lines above the bottom, blank lines included. Codex may append more
+    # after the parenthesis ("... esc to interrupt) · 2 background terminals").
+    printf '%s\n' "$1" | pane_normalize_nbsp | grep -v '^[[:space:]]*$' | tail -n 6 \
+        | grep -qE '\(([0-9]+h )?([0-9]+m )?[0-9]+s • esc to interrupt\)'
+}
+
+# Whether Codex shows a reply to this task, with an idle composer at the
+# bottom, no trust screen and no status line. A short task ("reply OK") is
+# over before the next poll, and while a reply streams Codex hides its status
+# line, so the running line alone is often never seen (WSL, 2026-09-29). Two
+# screens show a reply:
+# - the end of the task text (whitespace and line breaks inside it ignored)
+#   with a reply line ("• ...") somewhere after it;
+# - once a long reply has pushed the task off the screen, Codex 0.158 pins the
+#   task's first line, cut with "…", as the first line of the screen, and keeps
+#   it there. The screen is all there is: tmux holds no scrollback for Codex
+#   (an 80x24 capture with -S -300 had the same 24 lines). Without this, a
+#   poll that missed the few seconds of the task's end waited out the 90 s
+#   bound (#118).
+# Like the running line, this only stops the waiting: it sends no key and is
+# not taken as proof of the start.
+codex_turn_finished_on_screen() {
+    local pane="$1" prompt="$2" region tail_key flat after utf8_locale
+    region="$(printf '%s\n' "$pane" | pane_normalize_nbsp | grep -v '^[[:space:]]*$' | tail -n 6)"
+    printf '%s' "$region" | grep -qE 'esc to interrupt' && return 1
+    printf '%s' "$region" | grep -qE '^[[:space:]]*›[[:space:]]*Ask Codex to do anything[[:space:]]*$' || return 1
+    codex_trust_screen_up "$pane" && return 1
+    utf8_locale="$(injection_utf8_locale)"
+    if [[ -n "$utf8_locale" ]]; then
+        local LC_ALL="$utf8_locale"
+    fi
+    codex_task_pinned_on_screen "$pane" "$prompt" && return 0
+    tail_key="$(printf '%s' "${prompt: -24}" | tr -d '[:space:]')"
+    [[ -n "$tail_key" ]] || return 1
+    # Lines joined by \036 so a line start survives the whitespace removal
+    # (not \001: bash uses that byte internally and a regex cannot hold it).
+    flat="$(printf '%s' "$pane" | pane_normalize_nbsp | tr '\n' '\036' | tr -d '[:space:]')"
+    # The task's end may itself be wrapped across lines: let a line break
+    # (\036) stand between any two of its characters. Each character goes in
+    # a bracket so none is read as regex syntax. The leading greedy .* makes
+    # the match the last occurrence of the task's end.
+    local pattern="" char i
+    for (( i = 0; i < ${#tail_key}; i++ )); do
+        char="${tail_key:i:1}"
+        case "$char" in
+            ']') pattern+='[]]' ;;
+            '^') pattern+='\^' ;;
+            *) pattern+="[$char]" ;;
+        esac
+        pattern+=$'\036''?'
+    done
+    [[ "$flat" =~ ^.*${pattern}(.*)$ ]] || return 1
+    after="${BASH_REMATCH[1]}"
+    [[ "$after" == *$'\036•'* ]]
+}
+
+# The first line of the screen is the task's first line cut with "…" (at
+# least 16 characters of it, spaces collapsed). Call with a UTF-8 locale.
+codex_task_pinned_on_screen() {
+    local first head
+    first="$(printf '%s\n' "$1" | pane_normalize_nbsp | grep -v '^[[:space:]]*$' | head -n 1)"
+    [[ "$first" == *"…" ]] || return 1
+    first="$(printf '%s' "${first%…}" | tr -s '[:space:]' ' ')"
+    first="${first# }"
+    first="${first% }"
+    (( ${#first} >= 16 )) || return 1
+    head="$(printf '%s\n' "$2" | head -n 1 | tr -s '[:space:]' ' ')"
+    head="${head# }"
+    [[ "$head" == "$first"* ]]
+}
+
+# Watch a cold-started Codex child until its first task has started.
+# Success comes only from this launch's rollout (codex_initial_task_status),
+# never from the screen. Until this launch's session binding is verified, a
+# trust screen identified by its whole layout (codex_trust_screen_up) is
+# answered; once it is verified, no more keys are sent. The history binding is
+# optional: without it the watch answers a late trust screen and ends with
+# "start not confirmed", leaving the child running. Without a receipt it ends
+# as soon as a turn is visibly running (codex_turn_running_on_screen, seen and
+# still unbound one poll later) or visibly over (codex_turn_finished_on_screen):
+# past that point there is no trust screen left to answer, and waiting out the full bound only delayed every Codex spawn by
+# 90 s where the binding is not installed (WSL, 2026-09-29). Nothing is typed
+# into the composer and nothing is resent.
+# Returns 0 when the task has started, 1 when the trust screen could not be
+# accepted, 2 when the session died, 3 when the start could not be confirmed
+# in time (the child is left running; the caller only records a diagnostic).
+codex_watch_initial_task() {
+    local session_name="$1" prompt_text="$2" log_prefix="$3" launch_path="$4" launch_id="$5"
+    local waited=0 wait_max=90 trust_attempts=0 trust_max=10 pane_text
+    local status=unknown bound=false turn_seen=false
+    # Counted polls and wall-clock time both end the watch: the dialog handlers
+    # sleep too, and the dashboard signals a launcher after 120s, whose exit
+    # trap would then remove the child this watch means to leave running. So
+    # the watch also ends by CODEX_WATCH_END_BY seconds of this launcher's run,
+    # whatever came before it (registration, the codex probe budget, ...).
+    local deadline=$((SECONDS + wait_max))
+    local end_by="${CODEX_WATCH_END_BY:-105}"
+    (( deadline > end_by )) && deadline=$end_by
+    while (( waited < wait_max && SECONDS < deadline )); do
+        sleep 3
+        waited=$((waited + 3))
+        # A successful admitted capture already proves this exact session is
+        # present. Reuse that read within this poll; a second has-session
+        # would repeat the same socket/PID/root proof without adding an effect.
+        local captured_alive=false
+        if pane_text="$(tmux capture-pane -t "$session_name" -p 2>/dev/null)"; then
+            captured_alive=true
+        fi
+        if [[ "$captured_alive" != true ]] && ! codex_session_alive "$session_name"; then
+            echo "[$log_prefix] Codex session '$session_name' died after ${waited}s; last pane output:" >&2
+            printf '%s\n' "$pane_text" | tail -15 >&2
+            return 2
+        fi
+        status="$(codex_initial_task_status "$session_name" "$prompt_text" "$launch_path" "$launch_id")"
+        case "$status" in
+            started)
+                INJECTION_VERIFIED=true
+                spawn_note "task started ($session_name, ${waited}s; recorded in this launch's rollout)"
+                return 0
+                ;;
+            bound)
+                bound=true
+                ;;
+        esac
+        [[ "$bound" == true ]] && continue
+        if printf '%s' "$pane_text" | grep -qF "Update available"; then
+            tmux send-keys -t "$session_name" Escape
+            continue
+        fi
+        if codex_hooks_review_present "$pane_text"; then
+            trust_attempts=$((trust_attempts + 1))
+            codex_accept_hooks_review "$session_name" "$trust_attempts" "$trust_max" "$log_prefix" || return 1
+            continue
+        fi
+        # A trust screen on the current screen comes first, whatever was seen
+        # before: it is answered and the early end starts over.
+        if codex_trust_screen_up "$pane_text"; then
+            turn_seen=false
+            trust_attempts=$((trust_attempts + 1))
+            codex_accept_trust_dialog "$session_name" "$trust_attempts" "$trust_max" "$log_prefix" || return 1
+            sleep 3
+            continue
+        fi
+        if [[ "$turn_seen" == true ]]; then
+            local running_screen
+            running_screen="$(printf '%s' "$pane_text" | pane_nonblank_tail 6 | tr '\n' '|')"
+            spawn_note "Codex started ($session_name); a running first turn was seen on screen one poll before ${waited}s, and no trust screen is up now. First-task confirmation unknown: no verified session binding receipt for this launch (the Codex history binding is optional; see agentstack-doctor). The task was passed as its [PROMPT] argument and is not resent. Last screen: $running_screen"
+            return 3
+        fi
+        if codex_turn_running_on_screen "$pane_text"; then
+            turn_seen=true
+            continue
+        fi
+        if codex_turn_finished_on_screen "$pane_text" "$prompt_text"; then
+            local finished_screen
+            finished_screen="$(printf '%s' "$pane_text" | pane_nonblank_tail 6 | tr '\n' '|')"
+            spawn_note "Codex started ($session_name); a reply to its first task is on screen after ${waited}s. First-task confirmation unknown: no verified session binding receipt for this launch (the Codex history binding is optional; see agentstack-doctor). The task was passed as its [PROMPT] argument and is not resent. Last screen: $finished_screen"
+            return 3
+        fi
+    done
+    local last_screen
+    last_screen="$(printf '%s' "$pane_text" | pane_nonblank_tail 6 | tr '\n' '|')"
+    if [[ "$bound" == true ]]; then
+        spawn_note "WARNING: first task not yet recorded ($session_name) within ${wait_max}s: this launch's session is bound, but its rollout does not show the task in a turn. The task was passed to codex as its [PROMPT] argument and is not resent; the child is left running. Inspect with 'tmux capture-pane -t $session_name -p -S -1000'. Last screen: $last_screen"
+    else
+        # Not a failure: the Codex history binding is optional, and without its
+        # receipt the start of the task simply cannot be confirmed.
+        spawn_note "Codex started ($session_name); first-task confirmation unknown: no verified session binding receipt for this launch (the Codex history binding is optional; see agentstack-doctor). The task was passed as its [PROMPT] argument and is not resent. Last screen: $last_screen"
+    fi
+    return 3
+}
+
+# Whether the child's pane shows Codex replacing itself ("Updating Codex via
+# `npm install -g ...`"). A global npm install renames directories as it goes;
+# killing it midway left neither the old nor the new codex usable on the
+# machine (#60). Children start with the update check off, but a codex already
+# updating when the launcher gives up is left to finish. Codex children only:
+# nothing else updates itself this way, and the check costs a capture.
+codex_self_update_on_screen() {
+    tmux capture-pane -t "=$1" -p 2>/dev/null | grep -q 'Updating Codex via'
+}
+
+# An updating Codex keeps its working directory until this watch confirms
+# the session stopped. Direct-registration failures also hand their retained
+# Mail identity to the watch; it confirms cleanup before removing the worktree.
+# Preregistered startup rollback remains owned by its separate failure trap.
+# A still-running update or unconfirmed stop/cleanup keeps recovery material.
+# Args: session worktree worktree-source child limit-seconds poll-seconds
+#       cleanup-required (direct registration only; preregistered rollback is separate).
+codex_update_watch() {
+    local session="$1" worktree="$2" source="$3" child="$4" limit="${5:-600}" poll="${6:-5}" waited=0
+    local cleanup_required="${7:-false}" log="${SPAWN_INCIDENT_LOG:-/dev/null}" pane
+    local probe_status probe_output stopped=false
+    while (( waited < limit )); do
+        probe_status=0
+        probe_output="$(tmux has-session -t "=$session" 2>&1)" || probe_status=$?
+        if [[ "$probe_status" != 0 ]]; then
+            if [[ "$probe_status" == 1 && "$probe_output" == *"can't find session"* ]]; then
+                stopped=true
+            fi
+            break
+        fi
+        # A capture that fails says nothing about the update: wait.
+        if pane="$(tmux capture-pane -t "=$session" -p 2>/dev/null)" \
+            && ! printf '%s' "$pane" | grep -q 'Updating Codex via'; then
+            if tmux kill-session -t "=$session" >/dev/null 2>&1; then
+                probe_status=0
+                tmux has-session -t "=$session" >/dev/null 2>&1 || probe_status=$?
+                [[ "$probe_status" != 1 ]] || stopped=true
+            fi
+            break
+        fi
+        sleep "$poll"
+        waited=$((waited + poll))
+    done
+    if (( waited >= limit )); then
+        printf '%s %s\n' "$(date '+%Y-%m-%dT%H:%M:%S%z')" \
+            "WARNING: Codex in session $session is still updating after ${limit}s; left running with its worktree. Close it with 'tmux kill-session -t $session' once the update is done, then spawn again." >> "$log" 2>/dev/null || true
+        return 0
+    fi
+    if [[ "$stopped" != true ]]; then
+        printf '%s %s\n' "$(date '+%Y-%m-%dT%H:%M:%S%z')" \
+            "WARNING: Codex update session $session could not be closed or its absence confirmed; cleanup unknown, credentials, state and worktree retained." >> "$log" 2>/dev/null || true
+        return 1
+    fi
+    if [[ "$cleanup_required" == true ]]; then
+        if ! AGENTSTACK_CHILD_RESUME_RETENTION_DAYS=0 /bin/bash "$HOOKS_DIR/cleanup-child-agent.sh" "$child"; then
+            printf '%s %s\n' "$(date '+%Y-%m-%dT%H:%M:%S%z')" \
+                "WARNING: Codex update finished in session $session; Mail cleanup unknown, credentials, state and worktree retained." >> "$log" 2>/dev/null || true
+            return 1
+        fi
+        printf '%s %s\n' "$(date '+%Y-%m-%dT%H:%M:%S%z')" \
+            "Codex update finished in session $session; stopped and reservation release and retirement confirmed." >> "$log" 2>/dev/null || true
+    else
+        printf '%s %s\n' "$(date '+%Y-%m-%dT%H:%M:%S%z')" \
+            "Codex update finished in session $session; stopped after preregistered startup rollback." >> "$log" 2>/dev/null || true
+    fi
+    if [[ -n "$worktree" && -d "$worktree" && -n "$source" ]]; then
+        git -C "$source" worktree remove --force "$worktree" 2>/dev/null || true
+        git -C "$source" branch -D "exp/${child}" 2>/dev/null || true
+    fi
+}
+
+# Leave an updating Codex child running and hand its worktree to the watch.
+leave_updating_codex_child() {
+    local session="$1" cleanup_required="${2:-false}" limit="${AGENTSTACK_CODEX_UPDATE_WATCH_SECONDS:-600}"
+    CODEX_UPDATE_LEFT_RUNNING=true
+    spawn_note "WARNING: Codex is updating itself in session $session; left running so the install is not cut off. A background watch closes it when the update is over (up to ${limit}s) and removes its worktree after any required Mail cleanup is confirmed; see $SPAWN_INCIDENT_LOG. Spawn again afterwards."
+    ( codex_update_watch "$session" "${WORKTREE_DIR:-}" "${WORKTREE_SOURCE:-}" "${CHILD_NAME:-$session}" "$limit" 5 "$cleanup_required" ) \
+        </dev/null >/dev/null 2>&1 &
+    disown 2>/dev/null || true
+}
+
+# Existing failure cleanup terminates a half-started child. Preserve that
+# stronger repository contract, while leaving durable evidence that prompt
+# delivery was never verified before cleanup ran.
+warn_if_uninjected() {
+    [[ -n "$SPAWN_TRAP_SESSION" ]] || return 0
+    [[ "$INJECTION_VERIFIED" == true ]] && return 0
+    spawn_note "WARNING: session $SPAWN_TRAP_SESSION ended before prompt injection was verified; launcher cleanup will remove the incomplete child"
+}
+
+# --- Authenticated per-child MCP connection ------------------------------
+# Writes a child-scoped --mcp-config that points orrery-mail at the local
+# stdio proxy instead of the shared HTTP endpoint. The proxy holds the child's
+# owner token and authenticates every call on its behalf, so the child can read
+# its OWN inbox (and nobody else's) without the token ever entering its context.
+# The child is started in strict MCP mode, so this file is its whole MCP
+# configuration: the proxy under every name the user uses for ORRERY Mail, plus
+# the servers selected with --tools (hooks/child_tools.py builds the file; the
+# dashboard resume uses the same code).
+#
+# Prints the config path, or nothing when the proxy is unavailable — callers
+# fall back to the shared endpoint rather than failing the spawn, except when
+# tools were selected (CHILD_TOOLS_RESTRICTIVE), where the caller stops.
+write_child_mcp_config() {
+    local child_name="$1" token_file="$2" report_ownership="${3:-false}"
+    local runner="${AGENTSTACK_MCP_PROXY:-${AGENTSTACK_HOME_DIR:-$HOME/.agentstack}/integrations/codex_app/plugin/scripts/run-mcp.sh}"
+    [[ -n "$token_file" && -f "$token_file" && -x "$runner" ]] || return 0
+
+    local config_dir="$RUNTIME_DIR/child-agents"
+    local config_path="$config_dir/${child_name}.mcp.json"
+    mkdir -p "$config_dir" || return 0
+<<<<<<< /Users/huyuhutaru/.dev-storage-governor/examforge/20261022T063810Z-build-cache-e4007ade/source/hooks/spawn_child.sh
+    local spec_args=()
+    if [[ -n "${CHILD_TOOLS_SPEC:-}" && -z "$HARNESS" ]]; then
+        spec_args=(--spec "$CHILD_TOOLS_SPEC")
+    fi
+    python3 "$HOOKS_DIR/child_tools.py" claude-config \
+        ${spec_args[@]+"${spec_args[@]}"} --cwd "${WORK_DIR:-$PWD}" \
+        --chrome "$([[ "${CLAUDE_CHILD_CHROME:-false}" == true ]] && echo 1 || echo 0)" \
+        --out "$config_path" --runner "$runner" --child "$child_name" --program "${HARNESS:-claude-code}" \
+        --project-key "$PROJECT_KEY" --token-file "$token_file" \
+        --mcp-url "$MCP_URL" --mail-env "$MAIL_ENV" --runtime-dir "$RUNTIME_DIR" \
+        --claude-json "${AGENTSTACK_CLAUDE_JSON:-$HOME/.claude.json}" \
+        --bearer-mode "$HTTP_BEARER_MODE" --python-bin "${AGENTSTACK_PYTHON:-}" \
+        --parent-agent "${PARENT_NAME:-}" || return 0
+    printf '%s\n' "$config_path"
+=======
+    python3 - "$config_path" "$runner" "$child_name" "$PROJECT_KEY" "$token_file" \
+        "$MCP_URL" "$MAIL_ENV" "$RUNTIME_DIR" \
+        "${AGENTSTACK_CLAUDE_JSON:-$HOME/.claude.json}" "$HTTP_BEARER_MODE" \
+        "${AGENTSTACK_PYTHON:-}" "$report_ownership" <<'PY' || return 0
+# NOTE: no line here may start with "}" in column 0 — the shell function is
+# extracted by "up to the first line that is just a closing brace".
+import json
+import atexit
+import os
+import pathlib
+import sys
+sys.path.insert(0, os.environ.get("AGENTSTACK_LIFECYCLE_HOOKS_DIR") or os.environ.get("AGENTSTACK_HOOKS_DIR", ""))
+from seat_lifecycle import record_intent, refresh_generated_file
+
+path, runner, child, project_key, token_file, mcp_url, mail_env, runtime_dir, claude_json, bearer_mode, python_bin = sys.argv[1:12]
+server_env = dict(
+    AGENTSTACK_PROXY_AGENT_NAME=child,
+    AGENTSTACK_PROXY_TOKEN_FILE=token_file,
+    AGENTSTACK_PROXY_PROGRAM="claude-code",
+    AGENTSTACK_PROJECT_KEY=project_key,
+    AGENTSTACK_MCP_URL=mcp_url,
+    AGENTSTACK_MAIL_ENV=mail_env,
+    # The MCP client starts the proxy with this table only, not the child's
+    # shell environment. Without the bearer mode the proxy defaulted to
+    # "auto", found no HTTP_BEARER_TOKEN in a bearer-disabled service env
+    # and exited before answering initialize (2026-09-03).
+    AGENTSTACK_MAIL_HTTP_BEARER_MODE=bearer_mode,
+    AGENTSTACK_RUNTIME_DIR=runtime_dir,
+)
+if python_bin:
+    server_env["AGENTSTACK_PYTHON"] = python_bin
+server = dict(command=runner, args=[], env=server_env)
+
+
+def looks_like_agent_mail(name):
+    normalized = name.replace("-", "").replace("_", "").lower()
+    return normalized in {"agentmail", "mcpagentmail", "agentstackmail", "orrerymail"}
+
+
+# The child inherits the user's own MCP servers, including their DIRECT
+# ORRERY Mail connection. Publishing the proxy under a NEW name just adds a
+# second ORRERY Mail, and the model reaches for the name it knows — the direct,
+# unauthenticated one. --mcp-config overrides a same-named server (measured),
+# so claim the names the user already uses as compatibility aliases as well as
+# the canonical product key.
+names = set()
+try:
+    with open(claude_json, encoding="utf-8") as handle:
+        settings = json.load(handle)
+except Exception:
+    settings = dict()
+scopes = [settings.get("mcpServers")]
+projects = settings.get("projects")
+if isinstance(projects, dict):
+    for scope in projects.values():
+        if isinstance(scope, dict):
+            scopes.append(scope.get("mcpServers"))
+for scope in scopes:
+    if isinstance(scope, dict):
+        names.update(name for name in scope if looks_like_agent_mail(name))
+if not names:
+    names = {"orrery-mail"}
+else:
+    names.add("orrery-mail")
+
+config = dict(mcpServers=dict((name, server) for name in sorted(names)))
+owned = []
+ready = False
+report_ownership = sys.argv[12] == "true"
+if report_ownership:
+    atexit.register(lambda: print(json.dumps(dict(path=path if ready else "", owned=owned))))
+try:
+    handle = open(path, "x", encoding="utf-8")
+except FileExistsError:
+    if report_ownership:
+        if os.environ.get('AGENTSTACK_REFRESH_CHILD_CONFIG') == '1':
+            old = pathlib.Path(path)
+            if old.is_symlink():
+                raise ValueError('existing MCP config is a symlink')
+            prior = json.loads(old.read_text())
+            servers = prior.get('mcpServers', {}).values()
+            if not any(s.get('env', {}).get('AGENTSTACK_PROXY_AGENT_NAME') == child
+                       and s.get('env', {}).get('AGENTSTACK_PROJECT_KEY') == project_key for s in servers):
+                raise ValueError('existing MCP config belongs to another owner')
+            refresh_generated_file(old, json.dumps(config, indent=2))
+        ready = True
+        raise SystemExit(0)
+    handle = open(path, "w", encoding="utf-8")
+else:
+    identity = os.fstat(handle.fileno())
+    owned.append((path, identity.st_dev, identity.st_ino, "file"))
+    record_intent(artifacts={"owned": owned})
+with handle:
+    os.fchmod(handle.fileno(), 0o600)
+    json.dump(config, handle, indent=2)
+ready = True
+PY
+    [[ "$report_ownership" == true ]] || printf '%s\n' "$config_path"
+>>>>>>> /Users/huyuhutaru/.dev-storage-governor/examforge/20261022T063810Z-build-cache-e4007ade/source/docs/orrery-up-2/merge-inputs/hooks/spawn_child.sh.local
+}
+
+# Ready = the REPL is accepting input. Do not depend on a single footer string:
+# the footer varies with terminal width, model and configuration. The reported
+# 90s hang came from a pane showing "gpt-5.5 xhigh · ~/obsidian", which has no
+# "% left" segment at all.
+# Codex 0.153 shows a second startup dialog when hooks are new or changed
+# ("Hooks need review"). The child's hooks are the same ones the operator already
+# trusted in the real home, so select "Trust all and continue".
+codex_hooks_review_present() {
+    printf '%s' "$1" | grep -qF "Hooks need review"
+}
+
+codex_accept_hooks_review() {
+    local session_name="$1" attempt="$2" max_attempts="$3" log_prefix="${4:-spawn_child}"
+    if (( attempt > max_attempts )); then
+        echo "[$log_prefix] Codex hooks-review dialog persisted after ${max_attempts} attempts; aborting" >&2
+        return 1
+    fi
+    local pane_text
+    pane_text="$(tmux capture-pane -t "$session_name" -p 2>/dev/null || true)"
+    if ! printf '%s' "$pane_text" | grep -qE '[›❯>][[:space:]]*2\. Trust all'; then
+        tmux send-keys -t "$session_name" Down
+        sleep 1
+        pane_text="$(tmux capture-pane -t "$session_name" -p 2>/dev/null || true)"
+    fi
+    if printf '%s' "$pane_text" | grep -qE '[›❯>][[:space:]]*2\. Trust all'; then
+        echo "[$log_prefix] Codex hooks-review dialog detected; selecting 'Trust all and continue' (${attempt}/${max_attempts})" >&2
+        tmux send-keys -t "$session_name" C-m
+        return 0
+    fi
+    echo "[$log_prefix] Codex hooks-review dialog detected but 'Trust all' row is not selected; not pressing Enter (${attempt}/${max_attempts})" >&2
+    return 0
+}
+
+codex_pane_ready() {
+    local pane_text="$1" last_lines
+    printf '%s' "$pane_text" | grep -qF "Use existing model" && return 1
+    last_lines="$(printf '%s' "$pane_text" | pane_nonblank_tail 5)"
+    printf '%s' "$last_lines" | grep -qE '% (left|context)' && return 0
+    printf '%s' "$last_lines" | grep -qE 'for shortcuts' && return 0
+    # Footer form "<model> <effort> · <cwd>" (no context segment).
+    printf '%s' "$last_lines" | grep -qiE '(gpt|codex|o[0-9])[^ ]* .*·' && return 0
+    # Bare input prompt.
+    printf '%s' "$last_lines" | grep -qE '^[[:space:]]*[▌❯>][[:space:]]*$' && return 0
+    return 1
+}
+
+# Codex has no per-session --mcp-config equivalent: `-c mcp_servers...` replaces
+# the whole table (dropping the transport keys, which fails config load) and its
+# effect cannot be inspected, so a child gets its own CODEX_HOME instead. Only
+# config.toml is rewritten; everything else (auth.json, sessions, plugins) is
+# symlinked to the real home, and `CODEX_HOME=<dir> codex mcp get orrery-mail`
+# shows exactly what the child will use.
+#
+# Prints the directory, or nothing when the proxy or token is unavailable.
+write_child_codex_home() {
+<<<<<<< /Users/huyuhutaru/.dev-storage-governor/examforge/20261022T063810Z-build-cache-e4007ade/source/hooks/spawn_child.sh
+    local child_name="$1" token_file="$2"
+    local mcp_profile="${3:-inherit}"
+=======
+    local child_name="$1" token_file="$2" report_ownership="${3:-false}"
+>>>>>>> /Users/huyuhutaru/.dev-storage-governor/examforge/20261022T063810Z-build-cache-e4007ade/source/docs/orrery-up-2/merge-inputs/hooks/spawn_child.sh.local
+    local runner="${AGENTSTACK_MCP_PROXY:-${AGENTSTACK_HOME_DIR:-$HOME/.agentstack}/integrations/codex_app/plugin/scripts/run-mcp.sh}"
+    local source_home="${CODEX_HOME:-$HOME/.codex}"
+    local helper="${AGENTSTACK_CHILD_RESUME_HELPER:-$HOOKS_DIR/child_resume.py}"
+    [[ -n "$token_file" && -f "$token_file" && -x "$runner" && -d "$source_home" && -f "$helper" ]] || return 0
+
+    local home_dir="$RUNTIME_DIR/child-agents/${child_name}.codex-home"
+<<<<<<< /Users/huyuhutaru/.dev-storage-governor/examforge/20261022T063810Z-build-cache-e4007ade/source/hooks/spawn_child.sh
+    "${AGENTSTACK_PYTHON:-python3}" "$helper" build-home \
+        --runtime-dir "$RUNTIME_DIR" \
+        --home "$home_dir" \
+        --source "$source_home" \
+        --runner "$runner" \
+        --child "$child_name" \
+        --project-key "$PROJECT_KEY" \
+        --token-file "$token_file" \
+        --mcp-url "$MCP_URL" \
+        --mail-env "$MAIL_ENV" \
+        --bearer-mode "$HTTP_BEARER_MODE" \
+        --python-bin "${AGENTSTACK_PYTHON:-}" \
+        --mcp-profile "$mcp_profile" \
+        --parent-agent "${PARENT_NAME:-}" \
+        --work-dir "$WORK_DIR" \
+        --overlay "${AGENTSTACK_CODEX_CHILD_CONFIG_OVERLAY:-}" || return 0
+}
+
+# The Mail proxy a child is given reports its ORRERY parent as
+# lineage.parent_agent. A child told "your parent is X" that sees no parent
+# there stops as an identity mismatch (WSL2 report, 2026-10-01, problem 4), so
+# a launch whose proxy cannot carry the parent is refused before the CLI runs.
+#   before <provider>          the parent name must be one the proxy accepts
+#   after codex <home|"">      the generated home names the parent; without a
+#                              home, the user's config must not route bootstrap
+#                              to the Codex App Bridge, which never saw the child
+#   after claude <config|"">   the generated proxy config names the parent
+ensure_child_proxy_parent() {
+    local phase="$1" provider="$2" path="${3:-}"
+    local runner="${AGENTSTACK_MCP_PROXY:-${AGENTSTACK_HOME_DIR:-$HOME/.agentstack}/integrations/codex_app/plugin/scripts/run-mcp.sh}"
+    [[ -n "${PARENT_NAME:-}" ]] || return 0
+    if [[ "$phase" == before ]]; then
+        [[ -x "$runner" ]] || return 0
+        if [[ ! "$PARENT_NAME" =~ ^[A-Za-z][A-Za-z0-9-]{0,127}$ ]]; then
+            echo "Error: the parent name '$PARENT_NAME' cannot be given to the child's ORRERY Mail proxy (letters, digits and '-' only)." >&2
+            echo "  Set PARENT_AGENT to the parent's ORRERY Mail agent name, or use --standalone for a child with no parent." >&2
+            return 1
+        fi
+        return 0
+    fi
+    "${AGENTSTACK_PYTHON:-python3}" - "$provider" "$path" "$PARENT_NAME" "${CODEX_HOME:-$HOME/.codex}" <<'PY'
+import json
+=======
+    python3 - "$home_dir" "$source_home" "$runner" "$child_name" "$PROJECT_KEY" \
+        "$token_file" "$MCP_URL" "$MAIL_ENV" "$RUNTIME_DIR" "$HTTP_BEARER_MODE" \
+        "${AGENTSTACK_PYTHON:-}" "$report_ownership" <<'PY' || return 0
+import atexit
+import json
+import os
+>>>>>>> /Users/huyuhutaru/.dev-storage-governor/examforge/20261022T063810Z-build-cache-e4007ade/source/docs/orrery-up-2/merge-inputs/hooks/spawn_child.sh.local
+import pathlib
+import sys
+<<<<<<< /Users/huyuhutaru/.dev-storage-governor/examforge/20261022T063810Z-build-cache-e4007ade/source/hooks/spawn_child.sh
+import tomllib
+
+provider, path, parent, source_home = sys.argv[1:5]
+
+=======
+sys.path.insert(0, os.environ.get("AGENTSTACK_LIFECYCLE_HOOKS_DIR") or os.environ.get("AGENTSTACK_HOOKS_DIR", ""))
+from seat_lifecycle import record_intent, record_home_entry, refresh_generated_file
+
+home, source, runner, child, project_key, token_file, mcp_url, mail_env, runtime_dir, bearer_mode, python_bin = sys.argv[1:12]
+home_path = pathlib.Path(home)
+source_path = pathlib.Path(source)
+report_ownership = sys.argv[12] == "true"
+owned = []
+ready = False
+if report_ownership:
+    atexit.register(lambda: print(json.dumps(dict(path=home if ready else "", owned=owned))))
+try:
+    home_path.mkdir(mode=0o700, parents=True, exist_ok=False)
+except FileExistsError:
+    if home_path.is_symlink() or not home_path.is_dir():
+        raise ValueError("existing child home must be a real directory")
+    if report_ownership and os.environ.get('AGENTSTACK_REFRESH_CHILD_CONFIG') != '1':
+        ready = True
+        raise SystemExit(0)
+else:
+    fd = os.open(home_path, os.O_RDONLY | getattr(os, "O_DIRECTORY", 0) | getattr(os, "O_NOFOLLOW", 0))
+    try:
+        identity = os.fstat(fd)
+        owned.append((home, identity.st_dev, identity.st_ino, "directory"))
+        record_intent(artifacts={"owned": owned})
+    finally:
+        os.close(fd)
+
+# Everything except config.toml stays shared with the real home, so the child
+# keeps its login and writes its session history where the user expects it.
+for entry in source_path.iterdir():
+    if entry.name == "config.toml":
+        continue
+    link = home_path / entry.name
+    if link.is_symlink() or link.exists():
+        # Existing child content is outside this writer's creation set.
+        continue
+    os.symlink(entry, link)
+    record_home_entry(link)
+>>>>>>> /Users/huyuhutaru/.dev-storage-governor/examforge/20261022T063810Z-build-cache-e4007ade/source/docs/orrery-up-2/merge-inputs/hooks/spawn_child.sh.local
+
+def refuse(message):
+    print(f"Error: {message}", file=sys.stderr)
+    print(f"  The child would not see {parent} as its parent in bootstrap/runtime_status; not starting it.", file=sys.stderr)
+    raise SystemExit(1)
+
+
+<<<<<<< /Users/huyuhutaru/.dev-storage-governor/examforge/20261022T063810Z-build-cache-e4007ade/source/hooks/spawn_child.sh
+if provider == "codex" and not path:
+    try:
+        config = tomllib.loads((pathlib.Path(source_home) / "config.toml").read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        raise SystemExit(0)
+    plugins = config.get("plugins") if isinstance(config.get("plugins"), dict) else {}
+    for plugin_id, plugin in plugins.items():
+        if (plugin_id.startswith("agentstack-codex-app@") and isinstance(plugin, dict)
+                and plugin.get("enabled", True) is not False):
+            refuse("no ORRERY Mail proxy could be prepared for this Codex child, and the inherited "
+                   f"Codex config enables {plugin_id}, whose bootstrap answers from the Codex App Bridge")
+    raise SystemExit(0)
+if not path:
+    raise SystemExit(0)
+try:
+    if provider == "codex":
+        servers = tomllib.loads((pathlib.Path(path) / "config.toml").read_text(encoding="utf-8")).get("mcp_servers", {})
+    else:
+        servers = json.loads(pathlib.Path(path).read_text(encoding="utf-8")).get("mcpServers", {})
+except (OSError, ValueError) as exc:
+    refuse(f"the generated ORRERY Mail proxy config is unreadable: {exc}")
+proxies = [server.get("env") or {} for server in servers.values()
+           if isinstance(server, dict) and "AGENTSTACK_PROXY_AGENT_NAME" in (server.get("env") or {})]
+if not proxies or any(env.get("AGENTSTACK_PROXY_PARENT_AGENT") != parent for env in proxies):
+    refuse("the generated ORRERY Mail proxy config does not name the parent")
+PY
+=======
+def toml_string(value):
+    escaped = value.replace("\\", "\\\\").replace('"', '\\"')
+    return '"' + escaped + '"'
+
+
+def plugin_name(header):
+    match = re.match(r'^plugins\.(?:"([^"]+)"|([A-Za-z0-9_-]+))', header)
+    return (match.group(1) or match.group(2)) if match else ""
+
+
+# `--ask-for-approval never` governs model-generated shell commands, not MCP
+# calls. Codex otherwise prompts for these tools even though this proxy is
+# already child-bound and exposes only this fixed coordination surface.
+proxy_tools = (
+    "bootstrap",
+    "fetch_inbox",
+    "send_message",
+    "acknowledge_message",
+    "reserve_files",
+    "renew_reservations",
+    "release_reservations",
+    "runtime_status",
+    "whois",
+)
+
+
+# Strip EVERY ORRERY Mail server the user has, not just one spelling. A child
+# that still sees the direct connection will use it — the model reaches for the
+# name it knows — and that connection is not authenticated as the child.
+lines = []
+skipping = False
+claimed = []
+plugin_ids = []
+config_source = source_path / "config.toml"
+text = config_source.read_text(encoding="utf-8") if config_source.exists() else ""
+hooks_key_prefix = '[hooks.state."' + str(source_path) + '/hooks.json:'
+for line in text.splitlines():
+    # Hook trust is keyed by the hooks.json path. The child home symlinks
+    # hooks.json, so re-key the persisted trust to the child path; otherwise
+    # Codex 0.153 shows "Hooks need review" and the launcher never sees the REPL.
+    if line.startswith(hooks_key_prefix):
+        line = '[hooks.state."' + str(home_path) + '/hooks.json:' + line[len(hooks_key_prefix):]
+    stripped = line.strip()
+    if stripped.startswith("["):
+        header = stripped.strip("[]").strip()
+        server = ""
+        if header.startswith("mcp_servers."):
+            server = header[len("mcp_servers."):].split(".")[0]
+        name = server.strip('"')
+        plugin_id = plugin_name(header)
+        if plugin_id.startswith("agentstack-codex-app@"):
+            if plugin_id not in plugin_ids:
+                plugin_ids.append(plugin_id)
+            plugin_prefix = "plugins." + toml_string(plugin_id)
+            skipping = header.startswith(plugin_prefix + ".mcp_servers.agentstack")
+        else:
+            skipping = False
+        if name and (looks_like_agent_mail(name) or name == "agentstack"):
+            skipping = True
+        if skipping:
+            if name and name not in claimed:
+                claimed.append(name)
+    if not skipping:
+        lines.append(line)
+if not claimed:
+    claimed = ["orrery-mail"]
+elif "orrery-mail" not in claimed:
+    claimed.append("orrery-mail")
+# Codex's deferred tool registry identifies this proxy by serverInfo.name
+# (`agentstack`), while direct MCP calls use the configured server key. Claim
+# both so the same per-tool policy applies through either path.
+if "agentstack" not in claimed:
+    claimed.append("agentstack")
+
+lines.append("")
+lines.append("# Written by spawn_child.sh: this child talks to ORRERY Mail through the")
+lines.append("# local proxy, which authenticates every call with the child's own token.")
+lines.append("# The proxy claims the same server name(s) the user's own config used,")
+lines.append("# so the model's habitual call lands on the authenticated connection.")
+for plugin_id in plugin_ids:
+    lines.append("")
+    lines.append("[plugins." + toml_string(plugin_id) + ".mcp_servers.agentstack]")
+    lines.append("enabled = false")
+for name in claimed:
+    key = "mcp_servers." + toml_string(name)
+    lines.append("")
+    lines.append("[" + key + "]")
+    lines.append("command = " + toml_string(runner))
+    lines.append("args = []")
+    lines.append("")
+    lines.append("[" + key + ".env]")
+    lines.append("AGENTSTACK_PROXY_AGENT_NAME = " + toml_string(child))
+    lines.append("AGENTSTACK_PROXY_TOKEN_FILE = " + toml_string(token_file))
+    lines.append("AGENTSTACK_PROXY_PROGRAM = " + toml_string("codex"))
+    lines.append("AGENTSTACK_PROJECT_KEY = " + toml_string(project_key))
+    lines.append("AGENTSTACK_MCP_URL = " + toml_string(mcp_url))
+    lines.append("AGENTSTACK_MAIL_ENV = " + toml_string(mail_env))
+    # Codex starts the proxy with this env table only; see the Claude writer.
+    lines.append("AGENTSTACK_MAIL_HTTP_BEARER_MODE = " + toml_string(bearer_mode))
+    lines.append("AGENTSTACK_RUNTIME_DIR = " + toml_string(runtime_dir))
+    if python_bin:
+        lines.append("AGENTSTACK_PYTHON = " + toml_string(python_bin))
+    # run-mcp.sh also reads the machine-wide Codex App env for missing values.
+    # Pin its state inside this child-owned home so a bridge install cannot
+    # redirect the sandboxed child back into the live bridge runtime.
+    lines.append("AGENTSTACK_CODEX_APP_RUNTIME_DIR = " + toml_string(
+        os.fspath(home_path / "proxy-runtime")
+    ))
+    for tool_name in proxy_tools:
+        lines.append("")
+        lines.append("[" + key + ".tools." + toml_string(tool_name) + "]")
+        lines.append("approval_mode = \"approve\"")
+
+target = home_path / "config.toml"
+payload = "\n".join(lines) + "\n"
+if target.exists() or target.is_symlink():
+    if target.is_symlink() or '# Written by spawn_child.sh:' not in target.read_text():
+        raise ValueError('existing config is not a generated child config')
+    refresh_generated_file(target, payload)
+else:
+    with target.open("x", encoding="utf-8") as handle:
+        record_home_entry(target)
+        handle.write(payload)
+    record_home_entry(target)
+os.chmod(target, 0o600)
+ready = True
+PY
+    [[ "$report_ownership" == true ]] || printf '%s\n' "$home_dir"
+>>>>>>> /Users/huyuhutaru/.dev-storage-governor/examforge/20261022T063810Z-build-cache-e4007ade/source/docs/orrery-up-2/merge-inputs/hooks/spawn_child.sh.local
+}
+
+# Generate the direct-spawn registration token in a 0600 one-shot file.  The
+# token itself never crosses a shell argument boundary.
+generate_child_token_file() {
+    local token_file="$1"
+    mkdir -p "$(dirname "$token_file")"
+    chmod 700 "$(dirname "$token_file")" 2>/dev/null || true
+    python3 - "$token_file" <<'PY'
+import os
+import json
+import secrets
+import sys
+
+path = sys.argv[1]
+flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL
+if hasattr(os, "O_NOFOLLOW"):
+    flags |= os.O_NOFOLLOW
+fd = os.open(path, flags, 0o600)
+try:
+    os.write(fd, secrets.token_urlsafe(32).encode("utf-8"))
+    os.fsync(fd)
+    identity = os.fstat(fd)
+    print(json.dumps([path, identity.st_dev, identity.st_ino]))
+finally:
+    os.close(fd)
+PY
+}
+
+# Persist the token actually returned by register_agent (some servers replace
+# the caller-supplied value), falling back to the sent one-shot token.  The MCP
+# response is supplied on stdin and the secret remains file-only.
+owned_handoff_matches() {
+    python3 - "$1" <<'PY'
+import json, os, sys
+path, device, inode = json.loads(sys.argv[1])
+try:
+    current = os.lstat(path)
+except FileNotFoundError:
+    raise SystemExit(1)
+raise SystemExit(0 if (current.st_dev, current.st_ino) == (device, inode) else 1)
+PY
+}
+remove_owned_handoff() {
+    python3 - "$1" <<'PY'
+import json, os, sys
+path, device, inode = json.loads(sys.argv[1])
+try:
+    current = os.lstat(path)
+    if (current.st_dev, current.st_ino) == (device, inode):
+        os.unlink(path)
+except FileNotFoundError:
+    pass
+PY
+}
+
+adopt_registered_token_response() {
+<<<<<<< /Users/huyuhutaru/.dev-storage-governor/examforge/20261022T063810Z-build-cache-e4007ade/source/hooks/spawn_child.sh
+    local agent_name="$1" project_key="$2" sent_token_file="$3"
+    local program="${4:-}"
+=======
+    local agent_name="$1" project_key="$2" sent_token_file="$3" handoff_identity="$4"
+>>>>>>> /Users/huyuhutaru/.dev-storage-governor/examforge/20261022T063810Z-build-cache-e4007ade/source/docs/orrery-up-2/merge-inputs/hooks/spawn_child.sh.local
+    local token_file state_file
+    token_file="$(child_token_file_path "$agent_name")" || return 1
+    state_file="$CHILD_STATE_DIR/$agent_name.json"
+    python3 -c '
+import json
+import os
+import pathlib
+import sys
+
+<<<<<<< /Users/huyuhutaru/.dev-storage-governor/examforge/20261022T063810Z-build-cache-e4007ade/source/hooks/spawn_child.sh
+agent_name, project_key, sent_file, token_file, state_file, program = sys.argv[1:7]
+=======
+agent_name, project_key, sent_file, token_file, state_file, handoff_identity = sys.argv[1:7]
+>>>>>>> /Users/huyuhutaru/.dev-storage-governor/examforge/20261022T063810Z-build-cache-e4007ade/source/docs/orrery-up-2/merge-inputs/hooks/spawn_child.sh.local
+response = json.load(sys.stdin)
+
+def candidate_tokens(obj):
+    if isinstance(obj, dict):
+        value = obj.get("registration_token")
+        if isinstance(value, str) and value:
+            yield value
+
+token = ""
+objects = [response]
+result = response.get("result") if isinstance(response, dict) else None
+objects.append(result)
+if isinstance(result, dict):
+    objects.append(result.get("structuredContent"))
+    for part in result.get("content") or []:
+        if not isinstance(part, dict) or not isinstance(part.get("text"), str):
+            continue
+        try:
+            objects.append(json.loads(part["text"]))
+        except Exception:
+            pass
+for obj in objects:
+    token = next(candidate_tokens(obj), "")
+    if token:
+        break
+<<<<<<< /Users/huyuhutaru/.dev-storage-governor/examforge/20261022T063810Z-build-cache-e4007ade/source/hooks/spawn_child.sh
+if not token:
+    token = pathlib.Path(sent_file).read_text(encoding="utf-8").strip()
+if not token:
+    raise ValueError("register_agent returned no usable registration token")
+
+agent_id = None
+for obj in objects:
+    if not isinstance(obj, dict):
+        continue
+    value = obj.get("id")
+    if type(value) is int and value > 0:
+        agent_id = value
+        break
+    if isinstance(value, str) and value.isdigit() and int(value) > 0:
+        agent_id = int(value)
+        break
+
+token_path = pathlib.Path(token_file)
+state_path = pathlib.Path(state_file)
+token_path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
+state_path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
+os.chmod(token_path.parent, 0o700)
+os.chmod(state_path.parent, 0o700)
+token_tmp = token_path.with_name(token_path.name + f".tmp.{os.getpid()}")
+state_tmp = state_path.with_name(state_path.name + f".tmp.{os.getpid()}")
+with open(token_tmp, "x", encoding="utf-8") as handle:
+    handle.write(token)
+    handle.flush()
+    os.fsync(handle.fileno())
+os.chmod(token_tmp, 0o600)
+state = {
+    "agent_name": agent_name,
+    "project_key": project_key,
+    "registration_token": token,
+}
+if program in {"codex", "codex-cli", "claude", "claude-code"} and agent_id is not None:
+    state.update(agent_id=agent_id, program=program)
+with open(state_tmp, "x", encoding="utf-8") as handle:
+    json.dump(state, handle)
+    handle.flush()
+    os.fsync(handle.fileno())
+os.chmod(state_tmp, 0o600)
+os.replace(token_tmp, token_path)
+os.replace(state_tmp, state_path)
+os.chmod(token_path, 0o600)
+os.chmod(state_path, 0o600)
+pathlib.Path(sent_file).unlink(missing_ok=True)
+print(token_path)
+' "$agent_name" "$project_key" "$sent_token_file" "$token_file" "$state_file" "$program"
+}
+
+# --- First prompt and start check for Claude children ------------------------
+# Seconds to wait for a Claude child's first turn before telling the parent it
+# never started. Generous on purpose: a cold start and a heavy model's first
+# turn must not raise a false alarm, which misleads as much as silence does.
+CLAUDE_START_WAIT_SECONDS="${AGENTSTACK_CHILD_START_WAIT_SECONDS:-180}"
+CLAUDE_START_POLL_SECONDS="${AGENTSTACK_CHILD_START_POLL_SECONDS:-5}"
+CLAUDE_CHILD_ARGV_PROMPT=false
+CLAUDE_CHILD_PROMPT_FILE=""
+CLAUDE_START_CHECK=false
+# Taken just before the child is started (or its warm session gets the task):
+# the transcript of this launch begins after it.
+CLAUDE_LAUNCH_EPOCH=""
+
+# Write the first prompt where only this user can read it; the launch command
+# reads it once and removes it. Prints the path.
+write_claude_first_prompt() {
+    local child_name="$1" prompt_text="$2" path
+    mkdir -p "$CHILD_STATE_DIR" && chmod 700 "$CHILD_STATE_DIR" 2>/dev/null || return 1
+    path="$(mktemp "$CHILD_STATE_DIR/.$child_name.first-prompt.XXXXXX")" || return 1
+    chmod 600 "$path" || { rm -f "$path"; return 1; }
+    printf '%s' "$prompt_text" > "$path" || { rm -f "$path"; return 1; }
+    printf '%s\n' "$path"
+}
+
+# A single argument is limited to 128 KiB on Linux (and WSL), and the whole
+# argument list to about 1 MiB on macOS: beyond that `claude` cannot even be
+# started. A longer first prompt stays in a private file, and the argument only
+# says where to read it, starting with the same words (up to the child's name)
+# so the watcher and the readiness check still recognise it. Prints the prompt
+# to pass.
+CLAUDE_ARGV_PROMPT_MAX_BYTES="${AGENTSTACK_CLAUDE_ARGV_PROMPT_MAX_BYTES:-98304}"
+claude_argv_prompt() {
+    local child_name="$1" prompt_text="$2" task_file
+    if [[ "$(printf '%s' "$prompt_text" | wc -c | tr -d ' ')" -le "$CLAUDE_ARGV_PROMPT_MAX_BYTES" ]]; then
+        printf '%s' "$prompt_text"
+        return 0
+    fi
+    mkdir -p "$CHILD_STATE_DIR" && chmod 700 "$CHILD_STATE_DIR" 2>/dev/null || return 1
+    task_file="$(mktemp "$CHILD_STATE_DIR/$child_name.task.XXXXXX")" || return 1
+    chmod 600 "$task_file" || { rm -f "$task_file"; return 1; }
+    printf '%s' "$prompt_text" > "$task_file" || { rm -f "$task_file"; return 1; }
+    printf '%s: this launch prompt is too long to pass as an argument, so it is in the file %s. Read that whole file first; it is your canonical task, from the launcher.' \
+        "$(claude_prompt_echo_head "$prompt_text" "$child_name")" "$task_file"
+}
+
+# Operator configuration for a launched Claude child, passed with
+# --append-system-prompt: who started this session and what its first message
+# is. Said by the operator's own launch command, in the system prompt, rather
+# than claimed inside the conversation, where a careful model treats an identity
+# and a "no registration needed" as an injection (2026-10-01).
+claude_child_system_prompt() {
+    local child_name="$1" parent_name="$2" mcp_config="${3:-}" mail
+    # Say how this session really reaches ORRERY Mail: only a per-child proxy
+    # is "bound", and only it answers runtime_status.
+    if [[ -n "$mcp_config" ]]; then
+        mail="Your ORRERY Mail connection is already bound to the name ${child_name} (mcp__orrery-mail__runtime_status shows it), so no registration or inbox check is needed first."
+    else
+        mail="The ORRERY Mail identity ${child_name} is already registered. This session has no per-child Mail proxy and reaches ORRERY Mail directly, so use the coordination route for an already-registered identity on a raw/direct connection instead of registering again."
+    fi
+    if [[ -n "$parent_name" ]]; then
+        printf 'This Claude Code session is the ORRERY child agent %s. The ORRERY launcher (spawn_child.sh) started it on this machine because its parent agent %s delegated a task to it; ORRERY delegation is set up on this machine by the person who runs it. The first user message is the task %s delegated. Carry it out, using your usual judgment. %s Report to %s with mcp__orrery-mail__send_message, not with any other messaging tool.' \
+            "$child_name" "$parent_name" "$parent_name" "$mail" "$parent_name"
+    else
+        printf 'This Claude Code session is the standalone ORRERY agent %s. The ORRERY launcher (spawn_child.sh) started it on this machine; ORRERY is set up on this machine by the person who runs it. The first user message is its task. Carry it out, using your usual judgment. %s' \
+            "$child_name" "$mail"
+    fi
+}
+
+# The first line of a prompt: the watcher finds the child's transcript by its
+# first user message, which starts with it. (The helper shortens it by
+# characters; `cut -c` counts bytes in some locales and would split one.)
+claude_prompt_head() {
+    printf '%s' "$1" | head -n 1
+}
+
+# Watch, in the background, how a Claude child's first turn goes, from its
+# transcript (claude-initial-task-status.py watch). The parent gets a Mail, sent
+# with the child's token and saying the launcher wrote it, when the first turn
+# ends in text alone, ends without the report to the parent (checked and then
+# declined, or forgot), or has not started within CLAUDE_START_WAIT_SECONDS; a
+# child still thinking then is told apart, and a later start is reported once
+# to correct an early notice. One process per child reads only what the
+# transcript appends, until the first turn ends or the session does.
+claude_watch_initial_task() {
+    local child_name="$1" parent_name="$2" token_file="$3" prompt_text="$4"
+    # Off only where nothing real is launched (the test suite sets it).
+    [[ "${AGENTSTACK_CHILD_START_CHECK:-1}" == 0 ]] && return 0
+    # The watch tells the parent whether the child took up its task. A
+    # standalone child has no parent and is not asked to report, so a first
+    # turn that ends in text is its normal answer, not "declined" (2026-10-04:
+    # "declined; could not tell the parent by Mail: no parent to tell" for a
+    # standalone child that was working as asked).
+    [[ -n "$parent_name" ]] || return 0
+    CHILD_START_TOKEN_FILE="$token_file" \
+    CHILD_START_MCP_URL="$MCP_URL" \
+    CHILD_START_PROJECT_KEY="$PROJECT_KEY" \
+    CHILD_START_WAIT_SECONDS="$CLAUDE_START_WAIT_SECONDS" \
+    CHILD_START_POLL_SECONDS="$CLAUDE_START_POLL_SECONDS" \
+    AGENTSTACK_SPAWN_INCIDENT_LOG="$SPAWN_INCIDENT_LOG" \
+        nohup "${AGENTSTACK_PYTHON:-python3}" "$HOOKS_DIR/claude-initial-task-status.py" \
+        watch "$child_name" "$parent_name" "$(claude_prompt_head "$prompt_text")" "${CLAUDE_LAUNCH_EPOCH:-}" \
+        </dev/null >/dev/null 2>&1 &
+    disown 2>/dev/null || true
+=======
+# Verify the open handoff before reading a fallback or writing the response.
+path = pathlib.Path(sent_file)
+expected_path, device, inode = json.loads(handoff_identity)
+if str(path) != expected_path:
+    raise ValueError("handoff path changed")
+fd = os.open(path, os.O_RDWR | getattr(os, "O_NOFOLLOW", 0))
+with os.fdopen(fd, "r+") as handle:
+    identity = os.fstat(handle.fileno())
+    if (identity.st_dev, identity.st_ino) != (device, inode):
+        raise ValueError("handoff ownership changed")
+    token = token or handle.read(4097).strip()
+    if not token or len(token) > 4096:
+        raise ValueError("register_agent returned no usable registration token")
+    handle.seek(0)
+    handle.truncate()
+    handle.write(token)
+    handle.flush()
+    os.fsync(handle.fileno())
+print(path)
+' "$agent_name" "$project_key" "$sent_token_file" "$token_file" "$state_file" "$handoff_identity"
+>>>>>>> /Users/huyuhutaru/.dev-storage-governor/examforge/20261022T063810Z-build-cache-e4007ade/source/docs/orrery-up-2/merge-inputs/hooks/spawn_child.sh.local
+}
+
+build_embedded_task_prompt() {
+    local child_name="$1"
+    local parent_name="$2"
+    local spawned_at="$3"
+    local project_key="$4"
+    local task_text="$5"
+<<<<<<< /Users/huyuhutaru/.dev-storage-governor/examforge/20261022T063810Z-build-cache-e4007ade/source/hooks/spawn_child.sh
+    printf 'あなたは %s（親: %s）。この起動は --embed-task mode です。ORRERY Mail への登録は親が完了済み・儀式不要です。ensure_project・register_agent と起動時のタスク取得用 fetch_inbox は不要です。この省略は起動時だけです。起動後に便のpreview通知を受けたら fetch_inbox で全文を読み、指示とack_requiredを確認してください。現在時刻: %s。project_key は %s。便の規則（R-061）: 件名は [station]／[receipt]／[progress]／[blocked]／[plan]／[ack] のタグ 1 つで始める（無タグは [blocked] 扱い）・返信は元便のタグを継ぐ・ack_required の便は必ず ack する。以下のタスクが正本です。直ちに開始し、完了したら ORRERY Mail の send_message（Claude Code の SendMessage ではない）で %s に報告してください:\n\n%s' \
+=======
+    printf 'あなたは %s（親: %s）。この起動は --embed-task mode です。ORRERY Mail への登録は親が完了済み・儀式不要です。ensure_project・register_agent と起動時のタスク取得用 fetch_inbox は不要です。この省略は起動時だけです。起動後に便のpreview通知を受けたら fetch_inbox で全文を読み、指示とack_requiredを確認してください。現在時刻: %s。project_key は %s。便の規則（R-061）: 件名は [station]／[receipt]／[progress]／[blocked]／[plan]／[ack] のタグ 1 つで始める（無タグは [blocked] 扱い）・返信は元便のタグを継ぐ・ack_required の便は必ず ack する。待って turn を終える時は、何を待つかを書いた [blocked] を出してから終える（M-055・出さないと席の片づけで閉じられる）。以下のタスクが正本です。直ちに開始し、完了したら send_message で %s に報告してください:\n\n%s' \
+>>>>>>> /Users/huyuhutaru/.dev-storage-governor/examforge/20261022T063810Z-build-cache-e4007ade/source/docs/orrery-up-2/merge-inputs/hooks/spawn_child.sh.local
+        "$child_name" "$parent_name" "$spawned_at" "$project_key" \
+        "$parent_name" "$task_text"
+}
+
+# The Claude child's tmux command. With chrome off, no tools selected and no
+# first prompt this must stay byte-for-byte the command used before
+# --claude-chrome existed; the tool flags (checked to hold only
+# [A-Za-z0-9_,.:-] words), --chrome and the first prompt are the only
+# additions.
+#
+# The first prompt goes in as the `claude [prompt]` argument, so it is the
+# user's first message. Pasted into the input box it arrived wrapped in
+# <pasted_content>, and Claude Code follows instructions inside a paste only
+# when the user's own message asks it to: Sonnet 5 children outside the vault
+# declined the task 6 times in 6 on 2026-10-01, whatever the paste said. The
+# text travels in a private file (a tmux environment value has a size limit)
+# that the child's shell reads once and removes.
+claude_child_launch_command() {
+    local inner='export PATH="$HOME/.local/bin:$PATH"; MCP_ARGS=(); [[ -n "$CLAUDE_CHILD_MCP_CONFIG" ]] && MCP_ARGS=(--mcp-config "$CLAUDE_CHILD_MCP_CONFIG" --strict-mcp-config); "${CLAUDE_CHILD_BIN:-claude}" --model "$CLAUDE_CHILD_MODEL" --dangerously-skip-permissions --add-dir "$HOME/.agentstack" --add-dir "$HOME/tools" --add-dir /Volumes/DevSSD "${MCP_ARGS[@]}"'
+    if [[ -n "${CLAUDE_CHILD_TOOL_FLAGS:-}" ]]; then
+        inner+=" $CLAUDE_CHILD_TOOL_FLAGS"
+    fi
+    if [[ -n "${CLAUDE_CHILD_EFFORT:-}" ]]; then
+        inner+=' --effort "$CLAUDE_CHILD_EFFORT"'
+    fi
+    if [[ "$CLAUDE_CHILD_CHROME" == true ]]; then
+        inner+=' --chrome'
+    fi
+    if [[ "${CLAUDE_CHILD_ARGV_PROMPT:-false}" == true ]]; then
+        inner+=' --append-system-prompt "$CLAUDE_CHILD_SYSTEM_PROMPT"'
+        inner+=' "$(cat "$CLAUDE_CHILD_PROMPT_FILE"; rm -f "$CLAUDE_CHILD_PROMPT_FILE")"'
+    fi
+    inner+='; /bin/bash "$AGENTSTACK_HOOKS_DIR/cleanup-child-agent.sh"'
+    printf "%s -lc '%s'" "$CHILD_SHELL" "$inner"
+}
+
+# Appended to the child's first prompt when --claude-chrome is on. The same
+# text is repeated by session-start-reminder.sh at every session start. A
+# deviceId is a selection policy the child follows, not a technical binding.
+claude_chrome_prompt_block() {
+    [[ "$CLAUDE_CHILD_CHROME" == true ]] || return 0
+    local text
+    text="$(python3 "$HOOKS_DIR/claude_chrome_policy.py" prompt \
+        "$CLAUDE_CHILD_CHROME_DEVICE" "$([[ "$STANDALONE" == true ]] && echo 1 || echo 0)")" || return 1
+    printf '\n\n%s' "$text"
+}
+
+# Checks the tools selection against the child's final directory and the
+# user's Claude settings, and sets the extra claude flags (--no-chrome,
+# --allowed-tools for Chrome and screen, --disallowed-tools for screen). Fails when
+# the selection cannot be honoured; the caller then stops before tmux.
+claude_tools_plan() {
+    CLAUDE_CHILD_TOOL_FLAGS=""
+    [[ "$CHILD_TOOLS_RESTRICTIVE" == true || "$CLAUDE_CHILD_CHROME" == true ]] || return 0
+    local flags spec
+    spec="$CHILD_TOOLS_SPEC"
+    # Legacy --claude-chrome requests have no parsed base/tools selection.
+    [[ -n "$spec" ]] || spec='{"base":"default","tools":{}}'
+    flags="$(python3 "$HOOKS_DIR/child_tools.py" claude-plan --spec "$spec" \
+        --cwd "$WORK_DIR" \
+        --chrome "$([[ "$CLAUDE_CHILD_CHROME" == true ]] && echo 1 || echo 0)" \
+        --claude-json "${AGENTSTACK_CLAUDE_JSON:-$HOME/.claude.json}")" || return 1
+    if ! [[ "$flags" =~ ^[A-Za-z0-9_,.:\ -]*$ ]]; then
+        echo "Error: unexpected characters in the child's tool flags" >&2
+        return 1
+    fi
+    CLAUDE_CHILD_TOOL_FLAGS="$flags"
+}
+
+# Installer defaults are best effort. Explicit selections never enter this
+# resolver and keep their fail-closed checks. Keep the effective spec in the
+# existing launch/resume records, without reapplying defaults during resume.
+resolve_child_default_tools() {
+    [[ "$CHILD_TOOLS_FROM_DEFAULTS" == true ]] || return 0
+    local resolved tools_chrome tools_device
+    resolved="$(python3 "$HOOKS_DIR/child_tools.py" defaults \
+        --selection "$AGENTSTACK_CHILD_DEFAULT_TOOLS" \
+        --provider "$([[ "$USE_CODEX" == true ]] && echo codex || echo claude)" \
+        --cwd "$WORK_DIR" \
+        --chrome "$([[ "$CLAUDE_CHILD_CHROME" == true ]] && echo 1 || echo 0)" \
+        --chrome-device "$CLAUDE_CHILD_CHROME_DEVICE" \
+        --claude-json "${AGENTSTACK_CLAUDE_JSON:-$HOME/.claude.json}" \
+        --codex-config "${CODEX_HOME:-$HOME/.codex}/config.toml" \
+        --overlay "${AGENTSTACK_CODEX_CHILD_CONFIG_OVERLAY:-}")" || return 1
+    IFS='|' read -r CHILD_TOOLS_SPEC tools_chrome tools_device \
+        CHILD_TOOLS_RESTRICTIVE CHILD_DEFAULT_TOOLS_NOTICE <<< "$resolved"
+    if [[ "$USE_CODEX" != true ]]; then
+        CLAUDE_CHILD_CHROME="$([[ "$tools_chrome" == 1 ]] && echo true || echo false)"
+        CLAUDE_CHILD_CHROME_DEVICE="$tools_device"
+    fi
+    if [[ -n "$CHILD_DEFAULT_TOOLS_NOTICE" ]]; then
+        echo "[spawn_child] Warning: $CHILD_DEFAULT_TOOLS_NOTICE" >&2
+    fi
+}
+
+# On WSL, warn when a selected screen server would run in Windows session 0
+# (no desktop). Never stops the launch; see child_tools.windows_session_warning.
+warn_windows_screen_session() {
+    [[ "$CHILD_TOOLS_RESTRICTIVE" == true ]] || return 0
+    python3 "$HOOKS_DIR/child_tools.py" windows-session --spec "$CHILD_TOOLS_SPEC" || true
+}
+
+# Appended to the child's first prompt when tools were selected.
+child_tools_prompt_block() {
+    if [[ -n "$CHILD_DEFAULT_TOOLS_NOTICE" ]]; then
+        printf '\n\n%s' "$CHILD_DEFAULT_TOOLS_NOTICE"
+    fi
+    [[ "$CHILD_TOOLS_RESTRICTIVE" == true ]] || return 0
+    local text
+    text="$(python3 "$HOOKS_DIR/child_tools.py" prompt --spec "$CHILD_TOOLS_SPEC" \
+        --provider "$([[ "$USE_CODEX" == true ]] && echo codex || echo claude)" \
+        --standalone "$([[ "$STANDALONE" == true ]] && echo 1 || echo 0)")" || return 1
+    printf '\n\n%s' "$text"
+}
+
+# A Codex child's selection is kept per agent next to its retained state
+# (codex_mcp_profile is kept the same way), and child_resume.py build-home
+# applies it on every build, including a dashboard resume. A launch without a
+# selection removes a record left by an earlier child of the same name.
+write_child_codex_tools_record() {
+    local record="$RUNTIME_DIR/child-agents/$CHILD_NAME.tools.json"
+    if [[ "$CHILD_TOOLS_RESTRICTIVE" != true ]]; then
+        rm -f -- "$record"
+        return 0
+    fi
+    mkdir -p "$RUNTIME_DIR/child-agents" || return 1
+    python3 "$HOOKS_DIR/child_tools.py" codex-record --spec "$CHILD_TOOLS_SPEC" --out "$record"
+}
+
+# Prepares the launch record a resume needs (hooks/claude_chrome_policy.py has
+# the lifecycle). Only a pending record for this launch is written; records of
+# earlier conversations under the same name are never touched, so a failed
+# launch cannot change what they resume with. The child's first SessionStart
+# binds the pending record to its session id via AGENTSTACK_CLAUDE_LAUNCH_ID.
+# A launch that fails removes its own pending record (the failure traps call
+# discard_claude_launch_record); records of other launches are never touched.
+CLAUDE_CHROME_TMUX_ENV=()
+CLAUDE_CHROME_LAUNCH_ID=""
+CLAUDE_CHROME_PENDING_RECORD=""
+prepare_claude_launch_record() {
+    CLAUDE_CHROME_TMUX_ENV=()
+    [[ "$CLAUDE_CHILD_CHROME" == true || "$CHILD_TOOLS_RESTRICTIVE" == true ]] || return 0
+    local launch_id
+    launch_id="$(python3 -c 'import uuid; print(uuid.uuid4())')" || return 1
+    CLAUDE_CHROME_LAUNCH_ID="$launch_id"
+    CLAUDE_CHROME_PENDING_RECORD="$CHILD_STATE_DIR/$CHILD_NAME.claude-launch.pending-$launch_id.json"
+    mkdir -p "$CHILD_STATE_DIR" || return 1
+    chmod 700 "$CHILD_STATE_DIR" 2>/dev/null || true
+    local tools_args=()
+    if [[ "$CHILD_TOOLS_RESTRICTIVE" == true ]]; then
+        tools_args=("$([[ "$CLAUDE_CHILD_CHROME" == true ]] && echo 1 || echo 0)" "$CHILD_TOOLS_SPEC")
+    fi
+    python3 "$HOOKS_DIR/claude_chrome_policy.py" prepare "$CHILD_STATE_DIR" "$CHILD_NAME" \
+        "$launch_id" "$CLAUDE_CHILD_CHROME_DEVICE" \
+        "$([[ "$STANDALONE" == true ]] && echo 1 || echo 0)" \
+        ${tools_args[@]+"${tools_args[@]}"} || return 1
+    CLAUDE_CHROME_TMUX_ENV=(-e "AGENTSTACK_CLAUDE_LAUNCH_ID=$launch_id")
+}
+
+discard_claude_launch_record() {
+    if [[ -n "$CLAUDE_CHROME_PENDING_RECORD" ]]; then
+        rm -f -- "$CLAUDE_CHROME_PENDING_RECORD" 2>/dev/null || true
+    fi
+}
+
+build_codex_mail_task_prompt() {
+    local child_name="$1"
+    local parent_name="$2"
+    printf 'You are %s. The parent agent is %s. The child name %s is already reserved, so do not register under another name. The canonical task is in your ORRERY Mail inbox. Use only the first matching coordination route in the managed instructions. If the provided tool descriptions and argument schema show a bound ORRERY proxy, do not run a helper, register again, or read a token file; call fetch_inbox with only the arguments accepted by that schema to retrieve the canonical task. Only when the actual provided schema is confirmed raw/direct should you follow the managed raw/direct authentication or recovery route before fetching. A proxy failure is not evidence to switch to raw or a helper. Do not infer the task from this prompt; treat the inbox request as authoritative.' \
+        "$child_name" "$parent_name" "$child_name"
+}
+
+append_codex_mcp_profile_notice() {
+    local prompt="$1"
+    printf '%s' "$prompt"
+    child_tools_prompt_block || return 1
+    if [[ "$CHILD_TOOLS_RESTRICTIVE" == true ]]; then
+        return
+    fi
+    if [[ "$CODEX_MCP_PROFILE" == "orrery-only" ]]; then
+        printf '\n\nCapability notice: shell/files and authenticated ORRERY Mail remain available. Other inherited MCP servers and plugins are disabled. The existing AgentStack session-binding plugin configuration is preserved. If a required tool is unavailable, ask your parent agent for help (or the operator in standalone mode).'
+    fi
+}
+
+prepare_harness_child_state() {
+    local generation_args=()
+    if [[ -n "${CHILD_REGISTRATION_GENERATION:-}" ]]; then
+        generation_args=(--generation "$CHILD_REGISTRATION_GENERATION")
+    fi
+    "${AGENTSTACK_PYTHON:-python3}" "${AGENTSTACK_CHILD_RESUME_HELPER:-$HOOKS_DIR/child_resume.py}" prepare-active \
+        --runtime-dir "$RUNTIME_DIR" --agent-name "$CHILD_NAME" --project-key "$PROJECT_KEY" \
+        --program "$HARNESS" --parent-agent "$(recordable_parent_name)" \
+        ${generation_args[@]+"${generation_args[@]}"}
+}
+
+start_harness_child() {
+    local prompt="$TASK" prompt_file command tools_spec="$CHILD_TOOLS_SPEC"
+    local native_args=()
+    if [[ "$EMBED_TASK" == true ]]; then prompt="$EMBEDDED_TASK_PROMPT"; fi
+    if [[ "$STANDALONE" != true && "$EMBED_TASK" != true ]]; then
+        prompt="$(build_codex_mail_task_prompt "$CHILD_NAME" "$PARENT_NAME")"
+    fi
+    ensure_child_proxy_parent before claude || return 1
+    CHILD_MCP_CONFIG="$(write_child_mcp_config "$CHILD_NAME" "$CHILD_TOKEN_FILE")"
+    if [[ -z "$CHILD_MCP_CONFIG" ]]; then
+        echo "Error: harness requires the product-bound ORRERY Mail proxy" >&2
+        return 1
+    fi
+    ensure_child_proxy_parent after claude "$CHILD_MCP_CONFIG" || return 1
+    prompt_file="$CHILD_STATE_DIR/$CHILD_NAME.harness-prompt.$CHILD_REGISTRATION_GENERATION.txt"
+    printf '%s' "$prompt" | "${AGENTSTACK_PYTHON:-python3}" -c \
+        'import os,sys;fd=os.open(sys.argv[1],os.O_WRONLY|os.O_CREAT|os.O_EXCL,0o600);f=os.fdopen(fd,"w");f.write(sys.stdin.read());f.close()' \
+        "$prompt_file" || return 1
+    [[ -n "$tools_spec" ]] || tools_spec='{"base":"default","tools":{}}'
+    [[ -z "$CODEX_EFFORT" ]] || native_args=(--effort "$CODEX_EFFORT")
+    [[ -z "$HARNESS_HELPER_MODEL" ]] || native_args+=(--helper-model "$HARNESS_HELPER_MODEL")
+    HARNESS_STATE="$("${AGENTSTACK_PYTHON:-python3}" "$HARNESS_HELPER" prepare \
+        --runtime-dir "$RUNTIME_DIR" --agent-name "$CHILD_NAME" --project-key "$PROJECT_KEY" \
+        --harness "$HARNESS" --backend "$HARNESS_BACKEND" --model "$CHILD_MODEL" \
+        --generation "$CHILD_REGISTRATION_GENERATION" --cwd "$WORK_DIR" --parent-agent "${PARENT_NAME:-}" \
+        --mcp-config "$CHILD_MCP_CONFIG" --manifest "${AGENTSTACK_MANAGED_SPAWN_CONFIG:-}" \
+        --prompt-file "$prompt_file" --tools "$tools_spec" ${native_args[@]+"${native_args[@]}"})" || return 1
+    rm -f "$prompt_file"
+    command="$("${AGENTSTACK_PYTHON:-python3}" "$HARNESS_HELPER" command \
+        --state "$HARNESS_STATE" --agent-name "$CHILD_NAME")" || return 1
+    HARNESS_START_PENDING=true
+    tmux new-session -d -s "$CHILD_NAME" -c "$WORK_DIR" \
+        "${TMUX_ENV_ARGS[@]}" "$command" || return 1
+    SPAWN_TRAP_SESSION="$CHILD_NAME"
+    HARNESS_START_PENDING=false
+    [[ -z "$PRE_REGISTERED" ]] || PRE_REGISTERED_SESSION_STARTED=true
+    sleep 1
+    tmux has-session -t "=$CHILD_NAME" 2>/dev/null || return 1
+    if [[ -e "$HARNESS_STATE/native-exit.status" ]]; then
+        echo "Error: native exited during startup" >&2
+        return 1
+    fi
+    INJECTION_VERIFIED=true
+    return 0
+}
+
+# A normal close and failed startup share the standard cleanup entry.
+# A failed confirmation must preserve the credential and private recovery state.
+cleanup_harness_failure() {
+    if [[ "${HARNESS_START_PENDING:-false}" == true ]]; then
+        # Interrupted creation has not acknowledged ownership or absence.
+        echo "Harness start/stop unconfirmed; recovery state retained" >&2
+        return 1
+    fi
+    if [[ "${SPAWN_TRAP_SESSION:-}" == "$CHILD_NAME" ]]; then
+        # Never release reservations while this attempt's pane is still live.
+        # A failed stop is unknown; it cannot authorize remote/local cleanup.
+        local stop_status=0 stop_output="" stop_confirmed=false
+        stop_output="$(tmux has-session -t "=$CHILD_NAME" 2>&1)" || stop_status=$?
+        if [[ "$stop_status" == 0 ]]; then
+            if ! tmux kill-session -t "=$CHILD_NAME" >/dev/null 2>&1; then
+                echo "Harness stop unconfirmed; recovery state retained" >&2
+                return 1
+            fi
+            tmux has-session -t "=$CHILD_NAME" >/dev/null 2>&1 || stop_status=$?
+            [[ "$stop_status" != 1 ]] || stop_confirmed=true
+        elif [[ "$stop_status" == 1 && "$stop_output" == *"can't find session"* ]] \
+            || [[ -n "${HARNESS_STATE:-}" && -f "$HARNESS_STATE/native-exit.status" ]]; then
+            # Exit 1 alone also covers socket/permission failures. Only a
+            # server reply or this generation's native exit proves absence.
+            stop_confirmed=true
+        fi
+        if [[ "$stop_confirmed" != true ]]; then
+            echo "Harness stop unconfirmed; recovery state retained" >&2
+            return 1
+        fi
+        SPAWN_TRAP_SESSION=""
+    fi
+    if [[ "${PRE_REGISTERED_ADOPTION_PENDING:-false}" == true ]]; then
+        finish_child_registration "$CHILD_NAME" || return 1
+        PRE_REGISTERED_ADOPTION_PENDING=false
+    fi
+    /bin/bash "$HOOKS_DIR/cleanup-child-agent.sh" "$CHILD_NAME" || return 1
+    cleanup_worktree
+}
+
+TASK="${1:-}"
+WORK_DIR="${2:-$(pwd)}"
+if [[ -n "$TASK_FILE" ]]; then
+    if [[ ! -f "$TASK_FILE" || ! -r "$TASK_FILE" ]]; then
+        echo "Error: --task-file not readable: $TASK_FILE" >&2
+        exit 1
+    fi
+    TASK="$(cat "$TASK_FILE")"
+    # With no positional TASK, the first positional argument is the workdir.
+    # If both positionals are present, TASK_FILE overrides $1 and $2 remains
+    # the workdir, preserving the existing positional contract.
+    if [[ -d "${1:-}" && -z "${2:-}" ]]; then
+        WORK_DIR="$1"
+    fi
+fi
+CHILD_STATE_DIR="$RUNTIME_DIR/child-agents"
+
+# METHOD-COPY-1: new task arguments use one project spelling and exact input references.
+# Historical tasks/roots remain immutable. An explicit task takes precedence.
+if [[ "${AGENTSTACK_MATERIALS_APPENDED:-0}" != 1 && "$PROJECT_KEY" == "/Users/huyuhutaru/tools/examforge" && -n "$TASK" ]]; then
+    TASK="${TASK}
+
+材料の保存（METHOD-COPY-1 / R-080 / storage v5.9）: governor の新規 project は examforge。保管済み PDF は originals の path+SHA を参照し、駅ごとの写しを作らない。worktree は agentstack-station-materials worktree で source の sparse profile を1駅1個。comms・docs/receipts・docs/evidence・docs/reports の過去記録を materialize せず、必要な記録は元の path で読む。node_modules・build・生成画像を丸ごと写さない。会話記録は対象 rollout の path+SHA+byte prefix だけを残し、CODEX_HOME・sessions の symlink をたどって丸ごと copy しない。必要な独立 file だけ同一 volume の APFS clone を使う。既存原本・記録・root は消さない・動かさない。詳細: ~/.agentstack/runtime/tasks/STATION-MATERIALS.md。タスクにこれと異なる明示権限がある場合はタスクを優先する。"
+fi
+
+if [[ -z "$PROJECT_KEY" ]]; then
+    echo "Error: AGENTSTACK_PROJECT_KEY or PROJECT_KEY is required" >&2
+    echo "  Set it to the shared ORRERY Mail project key before spawning a child." >&2
+    echo "  For delegated children this may differ from the child workdir or git repo cwd." >&2
+    exit 1
+fi
+
+call_mcp() {
+    local method="$1"
+    local args_json="$2"
+    local transport_token="${TOKEN:-}"
+    if [[ -z "$transport_token" ]] && legacy_http_bearer_enabled; then
+        transport_token="$(get_agentstack_token 2>/dev/null || true)"
+    fi
+    # Both the owner token embedded in args_json and the HTTP bearer travel over
+    # stdin.  Neither secret is visible in ps(1) argv or a child environment.
+    printf '%s\0%s' "$args_json" "$transport_token" | python3 -c '
+import sys, json, http.client
+from urllib.parse import urlparse
+
+method = sys.argv[1]
+url = sys.argv[2]
+args_raw, token = sys.stdin.buffer.read().split(b"\0", 1)
+args = json.loads(args_raw)
+token = token.decode("utf-8")
+
+parsed = urlparse(url)
+payload = json.dumps({
+    "jsonrpc": "2.0",
+    "id": 1,
+    "method": "tools/call",
+    "params": {"name": method, "arguments": args}
+}).encode()
+
+conn = http.client.HTTPConnection(parsed.hostname, parsed.port, timeout=30)
+headers = {
+    "Content-Type": "application/json",
+    "Accept": "application/json",
+    "Connection": "close"
+}
+if token:
+    headers["Authorization"] = f"Bearer {token}"
+conn.request("POST", parsed.path, body=payload, headers=headers)
+resp = conn.getresponse()
+body = resp.read().decode()
+print(body)
+conn.close()
+try:
+    decoded = json.loads(body)
+except ValueError:
+    sys.exit(1)
+if resp.status >= 400 or decoded.get("error") or decoded.get("result", {}).get("isError"):
+    sys.exit(1)
+' "$method" "$MCP_URL"
+}
+
+# --- Pre-registered mode ---
+# 親エージェントが MCP 経由で事前に register_agent / file_reservation_paths を
+# 済ませてから呼ぶモード。通常は task mail を正本にし、--embed-task 使用時は
+# task mail を送らず起動 prompt を正本にする。
+# Usage: spawn_child.sh --pre-registered <CHILD_NAME> [--child-token-file <path>] "<タスク>" [<作業ディレクトリ>]
+if [[ -n "$PRE_REGISTERED" ]]; then
+    CHILD_NAME="$PRE_REGISTERED"
+<<<<<<< /Users/huyuhutaru/.dev-storage-governor/examforge/20261022T063810Z-build-cache-e4007ade/source/hooks/spawn_child.sh
+    # Existing providers keep their catalog normalization; a harness was admitted above.
+    if [[ -n "$HARNESS" ]]; then
+        CHILD_MODEL="$CLAUDE_MODEL"
+    elif [[ "$USE_CODEX" == true ]]; then
+        prime_codex_bin
+        CHILD_MODEL="$(AGENTSTACK_CODEX_BIN="$CODEX_BIN_RESOLVED" normalize_codex_model "$CLAUDE_MODEL")"
+=======
+    if ! python3 "$LIFECYCLE_HELPER" held --runtime "$RUNTIME_DIR" --name "$CHILD_NAME"; then
+        exec python3 "$LIFECYCLE_HELPER" lock-exec --runtime "$RUNTIME_DIR" --name "$CHILD_NAME" -- /bin/bash "$0" "${ORIGINAL_ARGV[@]}"
+    fi
+    export AGENTSTACK_LIFECYCLE_NAME="$CHILD_NAME"
+    LAUNCH_RECORD="$(python3 "$LIFECYCLE_HELPER" begin --runtime "$RUNTIME_DIR" --name "$CHILD_NAME" --project "$PROJECT_KEY" --managed "$MANAGED_FILE")"
+    AGENTSTACK_LAUNCH_JOURNAL="$(printf '%s' "$LAUNCH_RECORD" | python3 -c 'import json,sys; print(json.load(sys.stdin)["journal"])')"
+    export AGENTSTACK_LAUNCH_JOURNAL
+    lifecycle() { python3 "$LIFECYCLE_HELPER" "$1" --runtime "$RUNTIME_DIR" --name "$CHILD_NAME" --journal "$AGENTSTACK_LAUNCH_JOURNAL" "${@:2}"; }
+    # Both providers share the catalog/normalizers above in every launch path.
+    if [[ "$USE_CODEX" == true ]]; then
+        CHILD_MODEL="$(normalize_codex_model "$CLAUDE_MODEL")"
+>>>>>>> /Users/huyuhutaru/.dev-storage-governor/examforge/20261022T063810Z-build-cache-e4007ade/source/docs/orrery-up-2/merge-inputs/hooks/spawn_child.sh.local
+        CODEX_EFFORT="$(validate_codex_effort "$CHILD_MODEL" "$CODEX_EFFORT")"
+    else
+        load_claude_aliases || exit 1
+        CHILD_MODEL="$(normalize_claude_model "$CLAUDE_MODEL")"
+        report_claude_alias "$CLAUDE_MODEL" "$CHILD_MODEL"
+        CLAUDE_CHILD_EFFORT="$(validate_claude_effort "$CHILD_MODEL" "$CODEX_EFFORT")" || exit 1
+    fi
+    if [[ "$STANDALONE" == true ]]; then
+        PARENT_NAME=""
+    else
+        PARENT_NAME="${PARENT_AGENT:-$(tmux display-message -p '#S' 2>/dev/null || echo unknown)}"
+        if [[ "$PARENT_NAME" == "unknown" || -z "$PARENT_NAME" ]]; then
+            echo "Error: parent agent name required unless --standalone is set" >&2
+            exit 1
+        fi
+    fi
+
+    if [[ -z "$TASK" && -z "$HARNESS" ]]; then
+        echo "Usage: spawn_child.sh --pre-registered <CHILD_NAME> [--child-token-file <path>] \"<task>\" [workdir]" >&2
+        exit 1
+    fi
+    if [[ ! -d "$WORK_DIR" ]]; then
+        echo "Error: workdir does not exist: $WORK_DIR" >&2
+        exit 1
+    fi
+
+    EMBEDDED_TASK_PROMPT=""
+    if [[ "$EMBED_TASK" == true ]]; then
+        SPAWNED_AT="$(date '+%Y-%m-%dT%H:%M %Z')"
+        EMBEDDED_TASK_PROMPT="$(
+            build_embedded_task_prompt "$CHILD_NAME" "$PARENT_NAME" \
+                "$SPAWNED_AT" "$PROJECT_KEY" "$TASK"
+        )"
+        echo "[spawn_child/embed-task] WARNING: the launch prompt is canonical; do not send task mail to $CHILD_NAME (a second task source would split authority)." >&2
+    fi
+
+    # Pre-registered children must use their own token. Never inherit the
+    # caller's ambient CHILD_REGISTRATION_TOKEN here; that may be the parent's
+<<<<<<< /Users/huyuhutaru/.dev-storage-governor/examforge/20261022T063810Z-build-cache-e4007ade/source/hooks/spawn_child.sh
+    # owner token. Validate before adoption, retain the original canonical pair
+    # until startup succeeds, and only then consume the handoff.
+    CHILD_REGISTRATION_GENERATION="$("${AGENTSTACK_PYTHON:-python3}" -c 'import secrets; print(secrets.token_hex(16))')" || exit 1
+    PRE_REGISTERED_ADOPTION_PENDING=false
+    PRE_REGISTERED_HANDOFF_TO_CONSUME=""
+    PRE_REGISTERED_BINDING_TO_CONSUME=""
+    PRE_REGISTERED_SESSION_STARTED=false
+    PRE_REGISTERED_SUCCESS=false
+    PRE_REGISTERED_MANAGED_ADDED=false
+    PRE_REGISTERED_UNRETIRED=false
+=======
+    # owner token. Adopt the 0600 one-shot into durable child-owned files and
+    # unlink the handoff only after both writes succeed.
+    # Existing seat artifacts belong to the caller, not this launch attempt.
+    PREREG_CANONICAL_TOKEN="$(child_token_file_path "$CHILD_NAME")"
+    PREREG_STATE_FILE="$CHILD_STATE_DIR/$CHILD_NAME.json"
+    PREREG_MCP_FILE="$CHILD_STATE_DIR/$CHILD_NAME.mcp.json"
+    PREREG_CODEX_HOME="$CHILD_STATE_DIR/$CHILD_NAME.codex-home"
+    PREREG_TOKEN_PREEXISTED=false
+    PREREG_STATE_PREEXISTED=false
+    PREREG_MCP_PREEXISTED=false
+    PREREG_HOME_PREEXISTED=false
+    PREREG_MANAGED_PREEXISTED=false
+    [[ -e "$PREREG_CANONICAL_TOKEN" || -L "$PREREG_CANONICAL_TOKEN" ]] && PREREG_TOKEN_PREEXISTED=true
+    [[ -e "$PREREG_STATE_FILE" || -L "$PREREG_STATE_FILE" ]] && PREREG_STATE_PREEXISTED=true
+    [[ -e "$PREREG_MCP_FILE" || -L "$PREREG_MCP_FILE" ]] && PREREG_MCP_PREEXISTED=true
+    [[ -e "$PREREG_CODEX_HOME" || -L "$PREREG_CODEX_HOME" ]] && PREREG_HOME_PREEXISTED=true
+    grep -qxF "$CHILD_NAME" "$MANAGED_FILE" 2>/dev/null && PREREG_MANAGED_PREEXISTED=true
+    PREREG_PRESERVE_IDENTITY=0
+    if [[ "$PREREG_TOKEN_PREEXISTED" == true || "$PREREG_STATE_PREEXISTED" == true || "$PREREG_MCP_PREEXISTED" == true || "$PREREG_HOME_PREEXISTED" == true || "$PREREG_MANAGED_PREEXISTED" == true ]]; then
+        PREREG_PRESERVE_IDENTITY=1
+    fi
+    PRE_REGISTERED_TOKEN_CREATED=false
+    PRE_REGISTERED_SESSION_STARTED=false
+    PRE_REGISTERED_SUCCESS=false
+    PREREG_AUTH_OWNERSHIP='{"owned":[],"observed":[]}'
+    PREREG_ARTIFACT_OWNERSHIP='{"path":"","owned":[]}'
+>>>>>>> /Users/huyuhutaru/.dev-storage-governor/examforge/20261022T063810Z-build-cache-e4007ade/source/docs/orrery-up-2/merge-inputs/hooks/spawn_child.sh.local
+    cleanup_preregister_failure() {
+        if [[ "$PRE_REGISTERED_SUCCESS" == true ]]; then
+            return
+        fi
+        if [[ -n "${HARNESS:-}" && ( -n "${HARNESS_STATE:-}" || "${PRE_REGISTERED_ADOPTION_PENDING:-false}" == true ) ]]; then
+            cleanup_harness_failure || echo "Harness cleanup unconfirmed; recovery state retained" >&2
+            return
+        fi
+        warn_if_uninjected
+<<<<<<< /Users/huyuhutaru/.dev-storage-governor/examforge/20261022T063810Z-build-cache-e4007ade/source/hooks/spawn_child.sh
+        rm -f "${CODEX_PROMPT_FILE:-}" "${CLAUDE_CHILD_PROMPT_FILE:-}"
+        if [[ "$PRE_REGISTERED_ADOPTION_PENDING" == true ]]; then
+            local finish_status=0
+            finish_child_registration "$CHILD_NAME" true || finish_status=$?
+            if [[ "$finish_status" == 3 ]]; then
+                # Purged/replaced by another attempt. None of its shared
+                # credentials, session, registry or worktree belongs to us.
+                return
+            elif [[ "$finish_status" != 0 ]]; then
+                echo "Error: child registration rollback failed; private undo record retained" >&2
+                return
+            fi
+        fi
+        # This attempt still owns the child and it never started: leave its
+        # Mail row as its cleanup left it. (A purged or newer attempt returned
+        # above; its row is not ours to change.)
+        if [[ "${PRE_REGISTERED_UNRETIRED:-false}" == true ]]; then
+            preregistered_child_mail "$CHILD_NAME" "$CHILD_TOKEN_FILE" retire \
+                || echo "Warning: $CHILD_NAME was made active in ORRERY Mail and could not be retired again" >&2
+        fi
+        if [[ "$PRE_REGISTERED_SESSION_STARTED" == true ]]; then
+            if [[ "$USE_CODEX" == true ]] && codex_self_update_on_screen "$CHILD_NAME"; then
+                leave_updating_codex_child "$CHILD_NAME"
+            else
+                tmux kill-session -t "=$CHILD_NAME" >/dev/null 2>&1 || true
+            fi
+=======
+        # The generation gate precedes session and filesystem cleanup. An older
+        # launch cannot retire a successor that adopted the very same inodes.
+        if lifecycle check; then
+            if [[ "$PRE_REGISTERED_SESSION_STARTED" == true ]]; then
+                tmux kill-session -t "=$CHILD_NAME" >/dev/null 2>&1 || true
+            fi
+            # Restore the direct path's remote rollback before deleting its token.
+            if [[ "${AGENTSTACK_DIRECT_REGISTRATION_NAME:-}" == "$CHILD_NAME" ]]; then
+                local failure_args
+                if failure_args="$(lifecycle failure-retire-args)"; then
+                    lifecycle check || return
+                    local release_args
+                    release_args="$(printf '%s' "$failure_args" | python3 -c 'import json,sys; a=json.load(sys.stdin); print(json.dumps({k:a[k] for k in ("project_key","agent_name")}))')"
+                    call_mcp "release_file_reservations" "$release_args" >/dev/null || true
+                    lifecycle check || return
+                    call_mcp "retire_agent" "$failure_args" >/dev/null || return
+                else
+                    return
+                fi
+            fi
+            lifecycle delete || true
+        else
+            echo "[spawn_child] ownership changed or is unavailable; preserving seat artifacts" >&2
+>>>>>>> /Users/huyuhutaru/.dev-storage-governor/examforge/20261022T063810Z-build-cache-e4007ade/source/docs/orrery-up-2/merge-inputs/hooks/spawn_child.sh.local
+        fi
+        discard_claude_launch_record
+        cleanup_worktree
+<<<<<<< /Users/huyuhutaru/.dev-storage-governor/examforge/20261022T063810Z-build-cache-e4007ade/source/hooks/spawn_child.sh
+        if [[ "$PRE_REGISTERED_MANAGED_ADDED" == true && -f "$MANAGED_FILE" ]]; then
+            python3 - "$MANAGED_FILE" "$CHILD_NAME" <<'PY' 2>/dev/null || true
+import pathlib
+import sys
+
+path = pathlib.Path(sys.argv[1])
+name = sys.argv[2]
+try:
+    lines = path.read_text(encoding="utf-8").splitlines()
+except OSError:
+    raise SystemExit(0)
+path.write_text(
+    "\n".join(line for line in lines if line != name) + "\n",
+    encoding="utf-8",
+)
+PY
+        fi
+    }
+    trap cleanup_preregister_failure EXIT
+    if [[ -n "$HARNESS" ]]; then trap 'exit 143' TERM; trap 'exit 129' HUP; trap 'exit 130' INT; fi
+
+    ONE_SHOT_TOKEN_FILE="$CHILD_TOKEN_FILE"
+    PRE_REGISTERED_HISTORY="$(child_run_history "$CHILD_NAME")"
+    REGISTRATION_PROGRAM=claude-code
+    REGISTRATION_LABEL=Claude
+    if [[ -n "$HARNESS" ]]; then
+        REGISTRATION_PROGRAM="$HARNESS"
+        REGISTRATION_LABEL="$HARNESS"
+    elif [[ "$USE_CODEX" == true ]]; then
+        REGISTRATION_PROGRAM=codex
+        REGISTRATION_LABEL=Codex
+    fi
+    # A Claude child from an earlier version is adopted the way the dashboard's
+    # resume adopts it: only after ORRERY Mail confirms its saved credential.
+    # Preregistering again is not a recovery for it -- that registers another
+    # name, and the old child keeps its role (WSL2 report, 2026-10-01).
+    LEGACY_CLAUDE_AGENT_ID=""
+    if [[ "$USE_CODEX" != true && -z "$HARNESS" && -z "$ONE_SHOT_TOKEN_FILE" ]]; then
+        legacy_status=0
+        LEGACY_CLAUDE_OWNER="$(authenticate_legacy_claude_child "$CHILD_NAME")" || legacy_status=$?
+        if [[ "$legacy_status" != 0 ]]; then
+            echo "Error: $CHILD_NAME was started by an earlier version, and ORRERY Mail did not confirm its saved credential; nothing was changed." >&2
+            if [[ "$legacy_status" == 2 ]]; then
+                echo "  Update and restart ORRERY Mail first: docs/agentstack-mail-update.md" >&2
+            fi
+            echo "  Resuming $CHILD_NAME from the dashboard reaches the same check and keeps its name and conversation." >&2
+            echo "  Do not preregister it again: that registers a different name and leaves two agents in the same role." >&2
+            exit 1
+        fi
+        if [[ -n "$LEGACY_CLAUDE_OWNER" ]]; then
+            IFS=$'\t' read -r LEGACY_CLAUDE_AGENT_ID REGISTRATION_PROGRAM <<< "$LEGACY_CLAUDE_OWNER"
+            echo "[spawn_child/pre-reg] $CHILD_NAME was started by an earlier version; ORRERY Mail confirmed its owner (agent $LEGACY_CLAUDE_AGENT_ID), adopting its state" >&2
+        fi
+    fi
+    if ! CHILD_TOKEN_FILE="$(stage_child_registration "$CHILD_NAME" "$REGISTRATION_PROGRAM" "$ONE_SHOT_TOKEN_FILE" "$LEGACY_CLAUDE_AGENT_ID")"; then
+        echo "Error: canonical $REGISTRATION_LABEL registration metadata is missing, invalid, or does not match the child token for $CHILD_NAME" >&2
+        echo "  Preserve the credential and supply its matching formal .binding.json receipt before retrying." >&2
+        if [[ "$USE_CODEX" == true ]]; then
+            echo "  Re-run agentstack-preregister-child for this project and launch the exact returned name." >&2
+            echo "  A legacy token-only runtime entry cannot be promoted to a verified child registration." >&2
+        else
+            echo "  If $CHILD_NAME has never started, re-run agentstack-preregister-child for this project and launch the exact returned name." >&2
+            echo "  If it has run before, preregistering again registers a different name; resume it from the dashboard instead." >&2
+        fi
+        exit 1
+    fi
+    PRE_REGISTERED_ADOPTION_PENDING=true
+    if [[ -n "$ONE_SHOT_TOKEN_FILE" && "$ONE_SHOT_TOKEN_FILE" != "$CHILD_TOKEN_FILE" ]]; then
+        PRE_REGISTERED_HANDOFF_TO_CONSUME="$ONE_SHOT_TOKEN_FILE"
+        PRE_REGISTERED_BINDING_TO_CONSUME="${ONE_SHOT_TOKEN_FILE}.binding.json"
+    fi
+
+    if [[ -n "$HARNESS" ]]; then
+        prepare_harness_child_state || exit 1
+    elif [[ "$USE_CODEX" == true ]]; then
+        if ! validate_codex_child_registration_state \
+            "$CHILD_NAME" "$PROJECT_KEY" "$CHILD_TOKEN_FILE" \
+            "$CHILD_STATE_DIR/$CHILD_NAME.json"; then
+            echo "Error: canonical Codex registration metadata is missing, invalid, or does not match the child token for $CHILD_NAME" >&2
+            echo "  Re-run agentstack-preregister-child for this project and launch the exact returned name." >&2
+            echo "  For an existing one-shot handoff, pass --child-token-file <path> with its matching .binding.json sidecar." >&2
+            echo "  A legacy token-only runtime entry cannot be promoted to a verified history binding." >&2
+            exit 1
+        fi
+        if ! prepare_codex_child_resume_state "$CHILD_NAME" "$CODEX_MCP_PROFILE"; then
+            echo "Error: could not prepare retained Codex child state for $CHILD_NAME" >&2
+            exit 1
+        fi
+    else
+        if ! prepare_claude_child_resume_state "$CHILD_NAME"; then
+            echo "Error: verified Claude child registration metadata is unavailable for $CHILD_NAME" >&2
+            exit 1
+        fi
+    fi
+    # A child that ran before may be retired in ORRERY Mail, which refuses
+    # messages to a retired agent: started as it is, it could not hear from its
+    # parent. Mail decides; the local state only stands in when Mail cannot be
+    # asked. A fresh preregistration never ran and costs no Mail call.
+    PRE_REGISTERED_MAIL_RETIRED=false
+    if [[ -n "$PRE_REGISTERED_HISTORY" ]]; then
+        if PRE_REGISTERED_MAIL_STATUS="$(preregistered_child_mail "$CHILD_NAME" "$CHILD_TOKEN_FILE" status)"; then
+            [[ "$PRE_REGISTERED_MAIL_STATUS" != retired ]] || PRE_REGISTERED_MAIL_RETIRED=true
+        elif [[ "$PRE_REGISTERED_HISTORY" == retired ]]; then
+            PRE_REGISTERED_MAIL_RETIRED=true
+        else
+            echo "Warning: could not check whether $CHILD_NAME is retired in ORRERY Mail; starting it as it is." >&2
+=======
+    }
+    trap cleanup_preregister_failure EXIT
+    trap 'exit 129' HUP
+    trap 'exit 130' INT
+    trap 'exit 143' TERM
+
+    if [[ -n "$CHILD_TOKEN_FILE" ]]; then
+        ONE_SHOT_TOKEN_FILE="$CHILD_TOKEN_FILE"
+        if ! PREREG_AUTH_OWNERSHIP="$(
+            adopt_child_token_file "$CHILD_NAME" "$PROJECT_KEY" \
+                "$ONE_SHOT_TOKEN_FILE" true true
+        )"; then
+            echo "Error: --child-token-file is unreadable, insecure, empty, or conflicts with existing identity: $ONE_SHOT_TOKEN_FILE" >&2
+            exit 1
+        fi
+        CHILD_TOKEN_FILE="$PREREG_CANONICAL_TOKEN"
+        PRE_REGISTERED_TOKEN_CREATED=true
+    else
+        CHILD_TOKEN_FILE="$(child_token_file_path "$CHILD_NAME")"
+        if [[ ! -s "$CHILD_TOKEN_FILE" ]]; then
+            if ! PREREG_AUTH_OWNERSHIP="$(
+                restore_child_token_file_from_state "$CHILD_NAME" true
+            )"; then
+                echo "Error: pre-registered child token is required for $CHILD_NAME" >&2
+                echo "  Generate/register the child with a child-owned token, then pass --child-token-file <path>." >&2
+                echo "  Existing state fallback: $CHILD_STATE_DIR/$CHILD_NAME.json" >&2
+                exit 1
+            fi
+            CHILD_TOKEN_FILE="$PREREG_CANONICAL_TOKEN"
+        else
+            # A canonical-token fallback authenticates the same project/name
+            # contract as an explicit handoff; it is not a bypass for it.
+            if ! PREREG_AUTH_OWNERSHIP="$(
+                adopt_child_token_file "$CHILD_NAME" "$PROJECT_KEY" "$CHILD_TOKEN_FILE" false true
+            )"; then
+                echo "Error: canonical child identity does not match the requested project or token" >&2
+                exit 1
+            fi
+>>>>>>> /Users/huyuhutaru/.dev-storage-governor/examforge/20261022T063810Z-build-cache-e4007ade/source/docs/orrery-up-2/merge-inputs/hooks/spawn_child.sh.local
+        fi
+    fi
+    if [[ "$PRE_REGISTERED_MAIL_RETIRED" == true ]]; then
+        if ! preregistered_child_mail "$CHILD_NAME" "$CHILD_TOKEN_FILE" unretire; then
+            echo "Error: $CHILD_NAME is retired in ORRERY Mail and could not be made active again; not starting it." >&2
+            echo "  Its parent could not message it. Check that ORRERY Mail is running, or resume $CHILD_NAME from the dashboard." >&2
+            exit 1
+        fi
+        PRE_REGISTERED_UNRETIRED=true
+        echo "[spawn_child/pre-reg] $CHILD_NAME was retired in ORRERY Mail; made it active again" >&2
+    fi
+
+    # --worktree が指定されていれば worktree を作って WORK_DIR を上書き
+    if [[ "$USE_WORKTREE" == true ]]; then
+        if ! maybe_create_worktree "$CHILD_NAME" "$WORK_DIR"; then
+        echo "[spawn_child/pre-reg] Worktree creation failed; aborting spawn." >&2
+        exit 1
+    fi
+        WORK_DIR="$WORKTREE_DIR"
+        echo "[spawn_child/pre-reg] WORK_DIR overridden to worktree: $WORK_DIR" >&2
+    fi
+
+<<<<<<< /Users/huyuhutaru/.dev-storage-governor/examforge/20261022T063810Z-build-cache-e4007ade/source/hooks/spawn_child.sh
+    if [[ -z "$HARNESS" ]]; then resolve_child_default_tools || exit 1; fi
+
+    if ! grep -qxF "$CHILD_NAME" "$MANAGED_FILE" 2>/dev/null; then
+        mkdir -p "$(dirname "$MANAGED_FILE")"
+        echo "$CHILD_NAME" >> "$MANAGED_FILE"
+        PRE_REGISTERED_MANAGED_ADDED=true
+    fi
+=======
+    lifecycle record --auth "$PREREG_AUTH_OWNERSHIP"
+    lifecycle managed-add --managed "$MANAGED_FILE"
+>>>>>>> /Users/huyuhutaru/.dev-storage-governor/examforge/20261022T063810Z-build-cache-e4007ade/source/docs/orrery-up-2/merge-inputs/hooks/spawn_child.sh.local
+
+    # Warn (do not block) if the child's workdir is a macOS privacy-protected
+    # folder this process can't read — turns an undiagnosable EPERM into advice.
+    declare -F ags_warn_tcc_access >/dev/null 2>&1 && ags_warn_tcc_access "$WORK_DIR"
+
+    # Create tmux session and optionally open a terminal window.
+    # CLAUDECODE=1 guards the child session's interactive shell against destructive
+    # shell exit hooks (e.g. a ~/.zshrc zshexit / bash trap that runs `tmux
+    # kill-session`): without it, exiting this session can cascade-kill the whole
+    # tmux server. Requires tmux >= 3.0.
+<<<<<<< /Users/huyuhutaru/.dev-storage-governor/examforge/20261022T063810Z-build-cache-e4007ade/source/hooks/spawn_child.sh
+    if [[ -z "$HARNESS" ]]; then prime_codex_bin; fi
+    if [[ -n "$HARNESS" ]]; then
+        TMUX_ENV_ARGS=(-e "AGENT_NAME=$CHILD_NAME" -e "CLAUDECODE=1" -e "AGENTSTACK_RESERVED_IDENTITY=1" -e "PROJECT_KEY=$PROJECT_KEY" -e "AGENTSTACK_PROJECT_KEY=$PROJECT_KEY" -e "AGENTSTACK_HOOKS_DIR=$HOOKS_DIR" -e "AGENTSTACK_RUNTIME_DIR=$RUNTIME_DIR" -e "AGENTSTACK_MCP_URL=$MCP_URL" -e "AGENTSTACK_MAIL_ENV=$MAIL_ENV" -e "AGENTSTACK_MAIL_HTTP_BEARER_MODE=$HTTP_BEARER_MODE" -e "AGENTSTACK_CHILD_RESUME_RETENTION_DAYS=$CHILD_RESUME_RETENTION_DAYS")
+    else
+    TMUX_ENV_ARGS=(-e "CLAUDECODE=1" -e "AGENTSTACK_RESERVED_IDENTITY=1" -e "AGENT_NAME=$CHILD_NAME" -e "PROJECT_KEY=$PROJECT_KEY" -e "AGENTSTACK_PROJECT_KEY=$PROJECT_KEY" -e "AGENTSTACK_HOOKS_DIR=$HOOKS_DIR" -e "AGENTSTACK_RUNTIME_DIR=$RUNTIME_DIR" -e "AGENTSTACK_MCP_URL=$MCP_URL" -e "AGENTSTACK_MAIL_ENV=$MAIL_ENV" -e "AGENTSTACK_MAIL_HTTP_BEARER_MODE=$HTTP_BEARER_MODE" -e "AGENTSTACK_CHILD_RESUME_RETENTION_DAYS=$CHILD_RESUME_RETENTION_DAYS" -e "AGENTSTACK_TERMINAL=$TERMINAL_SETTING" -e "AGENTSTACK_AUTO_OPEN_CHILD=$AUTO_OPEN_CHILD" -e "AGENTSTACK_CODEX_SANDBOX=${AGENTSTACK_CODEX_SANDBOX:-workspace-write}" -e "AGENTSTACK_CODEX_APPROVAL=$(codex_approval_flags)" -e "AGENTSTACK_CODEX_NETWORK_FLAGS=$(codex_network_flags)")
+    fi
+=======
+    # tmux may start the shared server here. Give that server only OS/session
+    # transport settings; child authority is passed explicitly with -e below.
+    TMUX_CLIENT_ENV=(env -i)
+    for os_key in HOME PATH USER LOGNAME SHELL TERM LANG LC_ALL LC_CTYPE TMPDIR TMUX TMUX_TMPDIR SSH_AUTH_SOCK DISPLAY XAUTHORITY TERMINFO TERMINFO_DIRS __CF_USER_TEXT_ENCODING; do
+        if [[ -n "${!os_key+x}" ]]; then
+            TMUX_CLIENT_ENV+=("$os_key=${!os_key}")
+        fi
+    done
+    TMUX_ENV_ARGS=(-e "CLAUDECODE=1" -e "AGENTSTACK_RESERVED_IDENTITY=1" -e "AGENT_NAME=$CHILD_NAME" -e "PROJECT_KEY=$PROJECT_KEY" -e "AGENTSTACK_PROJECT_KEY=$PROJECT_KEY" -e "AGENTSTACK_HOOKS_DIR=$AGENTSTACK_HOOKS_DIR" -e "AGENTSTACK_RUNTIME_DIR=$RUNTIME_DIR" -e "AGENTSTACK_MCP_URL=$MCP_URL" -e "AGENTSTACK_MAIL_ENV=$MAIL_ENV" -e "AGENTSTACK_MAIL_HTTP_BEARER_MODE=$HTTP_BEARER_MODE" -e "AGENTSTACK_TERMINAL=$TERMINAL_SETTING" -e "AGENTSTACK_CODEX_SANDBOX=${AGENTSTACK_CODEX_SANDBOX:-workspace-write}" -e "AGENTSTACK_CODEX_APPROVAL=$(codex_approval_flags)" -e "AGENTSTACK_CODEX_NETWORK_FLAGS=$(codex_network_flags)")
+    TMUX_ENV_ARGS+=(-e "AGENTSTACK_LIFECYCLE_HOOKS_DIR=$HOOKS_DIR")
+    TMUX_ENV_ARGS+=(-e "AGENTSTACK_LAUNCH_JOURNAL=$AGENTSTACK_LAUNCH_JOURNAL" -e "AGENTSTACK_LIFECYCLE_NAME=$CHILD_NAME")
+    TMUX_ENV_ARGS+=(-e "AGENTSTACK_PRESERVE_SEAT_IDENTITY=$PREREG_PRESERVE_IDENTITY" -e "CHILD_RESOURCES=${CHILD_RESOURCES:-}")
+    TMUX_ENV_ARGS+=(-e "AGENTSTACK_LAUNCH_AUTH_OWNERSHIP=$PREREG_AUTH_OWNERSHIP")
+>>>>>>> /Users/huyuhutaru/.dev-storage-governor/examforge/20261022T063810Z-build-cache-e4007ade/source/docs/orrery-up-2/merge-inputs/hooks/spawn_child.sh.local
+    if [[ "$STANDALONE" != true ]]; then
+        TMUX_ENV_ARGS+=(-e "PARENT_AGENT=$PARENT_NAME")
+    fi
+    if [[ -n "$AGENTSTACK_HOME_DIR" ]]; then
+        TMUX_ENV_ARGS+=(-e "AGENTSTACK_HOME=$AGENTSTACK_HOME_DIR")
+    fi
+    if [[ -n "${AGENTSTACK_PYTHON:-}" ]]; then
+        TMUX_ENV_ARGS+=(-e "AGENTSTACK_PYTHON=$AGENTSTACK_PYTHON")
+    fi
+    if [[ -n "$HARNESS" ]]; then
+        start_harness_child || exit 1
+    elif [[ "$USE_CODEX" == true ]]; then
+        # Codex startup (--pre-registered mode).
+        CHILD_CODEX_BIN="$(resolve_codex_bin)"
+        TMUX_ENV_ARGS+=(-e "AGENTSTACK_CODEX_BIN=$CHILD_CODEX_BIN")
+        TMUX_ENV_ARGS+=(-e "AGENTSTACK_CODEX_MODEL=$CHILD_MODEL" -e "AGENTSTACK_CODEX_EFFORT=$CODEX_EFFORT")
+<<<<<<< /Users/huyuhutaru/.dev-storage-governor/examforge/20261022T063810Z-build-cache-e4007ade/source/hooks/spawn_child.sh
+        ensure_child_proxy_parent before codex || exit 1
+        warn_windows_screen_session
+        if ! write_child_codex_tools_record; then
+            echo "Error: could not record the tools selected for $CHILD_NAME" >&2
+            exit 1
+        fi
+        CHILD_CODEX_HOME="$(write_child_codex_home "$CHILD_NAME" "$CHILD_TOKEN_FILE" "$CODEX_MCP_PROFILE")"
+        if [[ "$CHILD_TOOLS_RESTRICTIVE" == true && -z "$CHILD_CODEX_HOME" ]]; then
+            echo "Error: the selected tools could not be applied (or the ORRERY Mail proxy is unavailable); a Codex child with base/tools is not started without them" >&2
+            exit 1
+        fi
+        if [[ "$CODEX_MCP_PROFILE" != "inherit" && -z "$CHILD_CODEX_HOME" ]]; then
+            echo "Error: could not create the requested Codex MCP profile: $CODEX_MCP_PROFILE" >&2
+            exit 1
+        fi
+        ensure_child_proxy_parent after codex "$CHILD_CODEX_HOME" || exit 1
+        if ! CHILD_LAUNCH_INFO="$(
+            prepare_codex_launch_binding "$CHILD_STATE_DIR/$CHILD_NAME.json" startup "$CODEX_MCP_PROFILE"
+        )"; then
+            echo "Error: could not create a fresh Codex history binding expectation" >&2
+            exit 1
+        fi
+        CHILD_LAUNCH_BINDING=""
+        CHILD_LAUNCH_ID=""
+        IFS=$'\t' read -r CHILD_LAUNCH_BINDING CHILD_LAUNCH_ID <<< "$CHILD_LAUNCH_INFO"
+        if [[ -z "$CHILD_LAUNCH_BINDING" || -z "$CHILD_LAUNCH_ID" ]]; then
+            echo "Error: Codex history binding expectation was incomplete" >&2
+            exit 1
+        fi
+=======
+        CHILD_CODEX_HOME="$(write_child_codex_home "$CHILD_NAME" "$CHILD_TOKEN_FILE" true)"
+        if [[ -n "$CHILD_CODEX_HOME" ]]; then
+            PREREG_ARTIFACT_OWNERSHIP="$CHILD_CODEX_HOME"
+            CHILD_CODEX_HOME="$(python3 -c 'import json,sys; print(json.loads(sys.argv[1])["path"])' "$PREREG_ARTIFACT_OWNERSHIP")"
+        fi
+        TMUX_ENV_ARGS+=(-e "AGENTSTACK_LAUNCH_ARTIFACT_OWNERSHIP=$PREREG_ARTIFACT_OWNERSHIP")
+>>>>>>> /Users/huyuhutaru/.dev-storage-governor/examforge/20261022T063810Z-build-cache-e4007ade/source/docs/orrery-up-2/merge-inputs/hooks/spawn_child.sh.local
+        TMUX_ENV_ARGS+=(-e "AGENTSTACK_CODEX_ADD_DIRS_RESOLVED=$(codex_child_add_dirs "$CHILD_CODEX_HOME")")
+        TMUX_ENV_ARGS+=(
+            -e "AGENTSTACK_CODEX_LAUNCH_BINDING=$CHILD_LAUNCH_BINDING"
+            -e "AGENTSTACK_CODEX_LAUNCH_ID=$CHILD_LAUNCH_ID"
+        )
+        if [[ -n "$CHILD_CODEX_HOME" ]]; then
+            echo "[spawn_child/pre-reg] Child CODEX_HOME with authenticated ORRERY Mail: $CHILD_CODEX_HOME" >&2
+            TMUX_ENV_ARGS+=(
+                -e "CODEX_HOME=$CHILD_CODEX_HOME"
+                -e "CODEX_SHARED_CODEX_DIR=$CHILD_CODEX_HOME"
+            )
+        else
+            echo "[spawn_child/pre-reg] No MCP proxy available; Codex child uses the shared ORRERY Mail endpoint" >&2
+        fi
+        if [[ "$STANDALONE" == true ]]; then
+            CODEX_PROMPT="You are ${CHILD_NAME}, a standalone agent with no parent. The name ${CHILD_NAME} is already reserved and registered; do not register another identity, do not re-register yourself (no agentstack-reregister), and do not fetch the inbox as a startup ritual. Starting child agents of your own later is allowed. This prompt is the canonical task. Start it immediately:
+
+${TASK}"
+        elif [[ "$EMBED_TASK" == true ]]; then
+            CODEX_PROMPT="$EMBEDDED_TASK_PROMPT"
+        else
+            CODEX_PROMPT="$(build_codex_mail_task_prompt "$CHILD_NAME" "$PARENT_NAME")"
+        fi
+<<<<<<< /Users/huyuhutaru/.dev-storage-governor/examforge/20261022T063810Z-build-cache-e4007ade/source/hooks/spawn_child.sh
+        CODEX_PROMPT="$(append_codex_mcp_profile_notice "$CODEX_PROMPT")"
+        if ! CODEX_PROMPT_FILE="$(write_codex_prompt_file "$CHILD_NAME" "$CODEX_PROMPT")"; then
+            echo "Error: could not prepare the Codex task for $CHILD_NAME" >&2
+            exit 1
+        fi
+        TMUX_ENV_ARGS+=(-e "AGENTSTACK_CODEX_PROMPT_FILE=$CODEX_PROMPT_FILE")
+        tmux new-session -d -s "$CHILD_NAME" \
+=======
+        "${TMUX_CLIENT_ENV[@]}" tmux new-session 9>&- -d -s "$CHILD_NAME" \
+>>>>>>> /Users/huyuhutaru/.dev-storage-governor/examforge/20261022T063810Z-build-cache-e4007ade/source/docs/orrery-up-2/merge-inputs/hooks/spawn_child.sh.local
+            -c "$WORK_DIR" \
+            "${TMUX_ENV_ARGS[@]}" \
+            "$CHILD_SHELL"' -lc '"'"'
+                '"$CODEX_CHILD_PATH_SETUP_QUOTED"';
+                # The child never sources a user-side bootstrap: identity comes
+                # from the reserved name and token file, and a failing script
+                # under set -e would take the whole session with it (2026-09-03).
+                # The product decides sandbox, approval, network and writable
+                # roots itself; a user-side launcher (~/.codex/bin/...) is never
+                # consulted. Handing off to one silently replaced `never` with
+                # its `on-request` default and dropped the network flag and the
+                # extra roots (2026-09-04).
+                # Claude in Chrome defaults are for Claude children; do not hand them on
+                # through a Codex child (the tmux server env may carry them).
+                unset AGENTSTACK_CLAUDE_CHILD_CHROME AGENTSTACK_CLAUDE_CHILD_CHROME_DEVICE
+                EXTRA_ARGS=()
+                # Portable across zsh and bash (Ubuntu ships no zsh): split the
+                # colon list with IFS, and word-split the flag strings through
+                # an unquoted command substitution, which both shells expand.
+                _ifs="$IFS"; IFS=":"
+                for d in $(printf "%s" "$AGENTSTACK_CODEX_ADD_DIRS_RESOLVED"); do
+                    [[ -d "$d" ]] && EXTRA_ARGS+=(--add-dir "$d")
+                done
+                IFS="$_ifs"
+<<<<<<< /Users/huyuhutaru/.dev-storage-governor/examforge/20261022T063810Z-build-cache-e4007ade/source/hooks/spawn_child.sh
+                [[ -n "$AGENTSTACK_CODEX_EFFORT" ]] && EXTRA_ARGS+=(-c "model_reasoning_effort=$AGENTSTACK_CODEX_EFFORT")
+                # The first task is one argv after `--` (never a subcommand or
+                # a flag), read from the 0600 file the launcher wrote.
+                # Codex never starts without its task: an unreadable or empty file ends
+                # the session here, which the launcher reports as a failed start.
+                # The trailing "x" keeps trailing newlines, which $(...) would strip.
+                if AGENTSTACK_CODEX_TASK="$(cat "$AGENTSTACK_CODEX_PROMPT_FILE" && printf x)"; then
+                    AGENTSTACK_CODEX_TASK="${AGENTSTACK_CODEX_TASK%x}"
+                else
+                    AGENTSTACK_CODEX_TASK=""
+                fi
+                if [[ -z "$AGENTSTACK_CODEX_TASK" ]]; then
+                    echo "[spawn_child] cannot read the task file $AGENTSTACK_CODEX_PROMPT_FILE; not starting Codex without its task" >&2
+                    sleep 5  # long enough for the launcher to capture this line
+                    exit 1
+                fi
+                rm -f "$AGENTSTACK_CODEX_PROMPT_FILE"
+                env -u OPENAI_API_KEY "$AGENTSTACK_CODEX_BIN" -C "$PWD" --sandbox "${AGENTSTACK_CODEX_SANDBOX:-workspace-write}" $(printf "%s" "$AGENTSTACK_CODEX_APPROVAL") $(printf "%s" "$AGENTSTACK_CODEX_NETWORK_FLAGS") -c check_for_update_on_startup=false \
+                    "${EXTRA_ARGS[@]}" --model "$AGENTSTACK_CODEX_MODEL" -- "$AGENTSTACK_CODEX_TASK"
+                /bin/bash "$AGENTSTACK_HOOKS_DIR/cleanup-child-agent.sh"
+=======
+                env -u OPENAI_API_KEY "$AGENTSTACK_CODEX_BIN" -C "$PWD" --sandbox "${AGENTSTACK_CODEX_SANDBOX:-workspace-write}" $(printf "%s" "$AGENTSTACK_CODEX_APPROVAL") $(printf "%s" "$AGENTSTACK_CODEX_NETWORK_FLAGS") \
+                    "${EXTRA_ARGS[@]}" --model "$AGENTSTACK_CODEX_MODEL" -c "model_reasoning_effort=$AGENTSTACK_CODEX_EFFORT"
+                /bin/bash "$AGENTSTACK_LIFECYCLE_HOOKS_DIR/cleanup-child-agent.sh"
+>>>>>>> /Users/huyuhutaru/.dev-storage-governor/examforge/20261022T063810Z-build-cache-e4007ade/source/docs/orrery-up-2/merge-inputs/hooks/spawn_child.sh.local
+            '"'"''
+        PRE_REGISTERED_SESSION_STARTED=true
+        lifecycle record --session-started
+        SPAWN_TRAP_SESSION="$CHILD_NAME"
+
+        echo "[spawn_child/pre-reg] Waiting for Codex to start the task..." >&2
+        WATCH_STATUS=0
+        codex_watch_initial_task "$CHILD_NAME" "$CODEX_PROMPT" "spawn_child/pre-reg" \
+            "$CHILD_LAUNCH_BINDING" "$CHILD_LAUNCH_ID" || WATCH_STATUS=$?
+        case "$WATCH_STATUS" in
+            1)
+                echo "[spawn_child/pre-reg] Aborting: unable to accept the Codex trust dialog." >&2
+                exit 1
+                ;;
+            2)
+                echo "[spawn_child/pre-reg] Aborting: the child exited before starting its task (check the codex flags above)." >&2
+                exit 1
+                ;;
+        esac
+    else
+        # Claude Code startup (--pre-registered mode).
+        WARM_POOL="$HOOKS_DIR/warm_pool.sh"
+        # warm の種類は opus / sonnet の別名の解決結果（load_claude_aliases）で選ぶ。
+        # 事前起動後に catalog が変わることがあるので、claim は pool の status が
+        # 要求モデル（正規化済み CHILD_MODEL）の正式 ID を示すときだけ（warm_pool_has_model）。それ以外（legacy [1m] / fable / haiku /
+        # sonnet[1m] 等）は __skip_warm__ で cold-start し、$CLAUDE_CHILD_MODEL を尊重する。
+        # 旧実装は部分一致（*opus* + *[1m]* skip）だったため、opus[1m] は skip できても
+        # fable 等の非デフォルトモデルが warm-sonnet に握り潰されていた（RainyKepler 事例）。
+        # exact-match に広げて [1m] 以外の降格も塞ぐ。
+        if [[ "$STANDALONE" == true ]]; then
+            # A claimed warm session may retain a parent environment. Cold
+            # start standalone children so PARENT_AGENT is guaranteed absent.
+            WARM_TYPE="__skip_warm__"
+        elif [[ "$CLAUDE_CHILD_CHROME" == true || "$CHILD_TOOLS_RESTRICTIVE" == true \
+                || -n "$CHILD_DEFAULT_TOOLS_NOTICE" || -n "$CLAUDE_CHILD_EFFORT" ]]; then
+            # A warm session was started without --chrome or the tool flags,
+            # and a claim cannot add a CLI flag to a running process. Cold
+            # start instead.
+            WARM_TYPE="__skip_warm__"
+        else
+            case "$CHILD_MODEL" in
+                "$CLAUDE_WARM_OPUS_MODEL")   WARM_TYPE="opus" ;;
+                "$CLAUDE_WARM_SONNET_MODEL") WARM_TYPE="sonnet" ;;
+                *)                              WARM_TYPE="__skip_warm__" ;;
+            esac
+        fi
+
+        if ! claude_tools_plan; then
+            echo "[spawn_child/pre-reg] Aborting: the selected tools cannot be given to this child (see above)." >&2
+            exit 1
+        fi
+        warn_windows_screen_session
+        if ! prepare_claude_launch_record; then
+            echo "[spawn_child/pre-reg] Aborting: could not write the Claude in Chrome launch record in $CHILD_STATE_DIR." >&2
+            exit 1
+        fi
+
+        if [[ "$STANDALONE" == true ]]; then
+            CHILD_PROMPT="You are ${CHILD_NAME}, a standalone agent with no parent. The name ${CHILD_NAME} is already reserved and registered; do not register another identity, do not re-register yourself (no agentstack-reregister), and do not fetch the inbox as a startup ritual. Starting child agents of your own later is allowed. This prompt is the canonical task. Start it immediately:
+
+${TASK}"
+        elif [[ "$EMBED_TASK" == true ]]; then
+            CHILD_PROMPT="$EMBEDDED_TASK_PROMPT"
+        else
+            CHILD_PROMPT="Child agent startup. AGENT_NAME=${CHILD_NAME}; parent=${PARENT_NAME}. Follow the child-agent startup procedure in CLAUDE.md and start the task immediately."
+        fi
+        if ! CHROME_PROMPT_BLOCK="$(claude_chrome_prompt_block)"; then
+            echo "[spawn_child/pre-reg] Aborting: could not build the Claude in Chrome browser policy." >&2
+            exit 1
+        fi
+        CHILD_PROMPT+="$CHROME_PROMPT_BLOCK"
+        if ! TOOLS_PROMPT_BLOCK="$(child_tools_prompt_block)"; then
+            echo "[spawn_child/pre-reg] Aborting: could not describe the selected tools." >&2
+            exit 1
+        fi
+        CHILD_PROMPT+="$TOOLS_PROMPT_BLOCK"
+
+        WARM_CLAIMED=false
+        WARM_STATUS=$(bash "$WARM_POOL" status 2>/dev/null || true)
+        if [[ "$CLAUDE_CHILD_CHROME" != true && "$CHILD_TOOLS_RESTRICTIVE" != true \
+                && -z "$CHILD_DEFAULT_TOOLS_NOTICE" && -f "$WARM_POOL" ]] \
+            && warm_pool_has_model "$WARM_TYPE" "$CHILD_MODEL" "$WARM_STATUS"; then
+            echo "[spawn_child/pre-reg] Claiming warm pool session ($WARM_TYPE, $CHILD_MODEL)..." >&2
+            WARM_CLAIM_STATUS=0
+            claim_warm_session "$WARM_TYPE" "$CHILD_NAME" "$CHILD_MODEL" || WARM_CLAIM_STATUS=$?
+            if [[ "$WARM_CLAIM_STATUS" == 0 ]]; then
+                WARM_CLAIMED=true
+                PRE_REGISTERED_SESSION_STARTED=true
+            lifecycle record --session-started
+                SPAWN_TRAP_SESSION="$CHILD_NAME"
+                echo "[spawn_child/pre-reg] Warm session claimed -> $CHILD_NAME" >&2
+            elif [[ "$WARM_CLAIM_STATUS" == 2 ]]; then
+                exit 1
+            fi
+        fi
+
+        if [[ "$WARM_CLAIMED" == false ]]; then
+            # Cold start（フォールバック）
+            echo "[spawn_child/pre-reg] Cold start..." >&2
+<<<<<<< /Users/huyuhutaru/.dev-storage-governor/examforge/20261022T063810Z-build-cache-e4007ade/source/hooks/spawn_child.sh
+            ensure_child_proxy_parent before claude || exit 1
+            CHILD_MCP_CONFIG="$(write_child_mcp_config "$CHILD_NAME" "$CHILD_TOKEN_FILE")"
+            if [[ "$CHILD_TOOLS_RESTRICTIVE" == true && -z "$CHILD_MCP_CONFIG" ]]; then
+                echo "[spawn_child/pre-reg] Aborting: the ORRERY Mail proxy is unavailable. A child with base/tools is never started without it: it would receive all of the user's MCP servers." >&2
+                exit 1
+            fi
+            ensure_child_proxy_parent after claude "$CHILD_MCP_CONFIG" || exit 1
+=======
+            CHILD_MCP_CONFIG="$(write_child_mcp_config "$CHILD_NAME" "$CHILD_TOKEN_FILE" true)"
+            if [[ -n "$CHILD_MCP_CONFIG" ]]; then
+                PREREG_ARTIFACT_OWNERSHIP="$CHILD_MCP_CONFIG"
+                CHILD_MCP_CONFIG="$(python3 -c 'import json,sys; print(json.loads(sys.argv[1])["path"])' "$PREREG_ARTIFACT_OWNERSHIP")"
+            fi
+            TMUX_ENV_ARGS+=(-e "AGENTSTACK_LAUNCH_ARTIFACT_OWNERSHIP=$PREREG_ARTIFACT_OWNERSHIP")
+>>>>>>> /Users/huyuhutaru/.dev-storage-governor/examforge/20261022T063810Z-build-cache-e4007ade/source/docs/orrery-up-2/merge-inputs/hooks/spawn_child.sh.local
+            if [[ -n "$CHILD_MCP_CONFIG" ]]; then
+                echo "[spawn_child/pre-reg] Child MCP proxy config: $CHILD_MCP_CONFIG" >&2
+            else
+                echo "[spawn_child/pre-reg] No MCP proxy available; child uses the shared ORRERY Mail endpoint" >&2
+            fi
+<<<<<<< /Users/huyuhutaru/.dev-storage-governor/examforge/20261022T063810Z-build-cache-e4007ade/source/hooks/spawn_child.sh
+            if ! CHILD_PROMPT="$(claude_argv_prompt "$CHILD_NAME" "$CHILD_PROMPT")" \
+                || ! CLAUDE_CHILD_PROMPT_FILE="$(write_claude_first_prompt "$CHILD_NAME" "$CHILD_PROMPT")"; then
+                echo "[spawn_child/pre-reg] Aborting: could not write the first prompt in $CHILD_STATE_DIR." >&2
+                exit 1
+            fi
+            CLAUDE_CHILD_ARGV_PROMPT=true
+            CLAUDE_READY_PROMPT_ECHO="$(claude_prompt_echo_head "$CHILD_PROMPT" "$CHILD_NAME")"
+            CLAUDE_CHILD_SYSTEM_PROMPT="$(claude_child_system_prompt "$CHILD_NAME" "$PARENT_NAME" "$CHILD_MCP_CONFIG")"
+            CLAUDE_LAUNCH_EPOCH="$(date +%s)"
+            tmux new-session -d -s "$CHILD_NAME" \
+=======
+            "${TMUX_CLIENT_ENV[@]}" tmux new-session 9>&- -d -s "$CHILD_NAME" \
+>>>>>>> /Users/huyuhutaru/.dev-storage-governor/examforge/20261022T063810Z-build-cache-e4007ade/source/docs/orrery-up-2/merge-inputs/hooks/spawn_child.sh.local
+                -c "$WORK_DIR" \
+                "${TMUX_ENV_ARGS[@]}" \
+                -e "CLAUDE_CHILD_MODEL=$CHILD_MODEL" \
+                ${CLAUDE_CHILD_EFFORT:+-e "CLAUDE_CHILD_EFFORT=$CLAUDE_CHILD_EFFORT"} \
+                -e "CLAUDE_CHILD_BIN=$CLAUDE_CHILD_BIN" \
+                -e "CLAUDE_CHILD_MCP_CONFIG=$CHILD_MCP_CONFIG" \
+<<<<<<< /Users/huyuhutaru/.dev-storage-governor/examforge/20261022T063810Z-build-cache-e4007ade/source/hooks/spawn_child.sh
+                -e "CLAUDE_CHILD_PROMPT_FILE=$CLAUDE_CHILD_PROMPT_FILE" \
+                -e "CLAUDE_CHILD_SYSTEM_PROMPT=$CLAUDE_CHILD_SYSTEM_PROMPT" \
+                ${CLAUDE_CHROME_TMUX_ENV[@]+"${CLAUDE_CHROME_TMUX_ENV[@]}"} \
+                "$(claude_child_launch_command)"
+=======
+                "$CHILD_SHELL"' -lc '"'"'export PATH="$HOME/.local/bin:$PATH"; MCP_ARGS=(); [[ -n "$CLAUDE_CHILD_MCP_CONFIG" ]] && MCP_ARGS=(--mcp-config "$CLAUDE_CHILD_MCP_CONFIG" --strict-mcp-config); claude --model "$CLAUDE_CHILD_MODEL" --dangerously-skip-permissions --add-dir "$HOME/.agentstack" --add-dir "$HOME/tools" --add-dir /Volumes/DevSSD "${MCP_ARGS[@]}"; /bin/bash "$AGENTSTACK_LIFECYCLE_HOOKS_DIR/cleanup-child-agent.sh"'"'"''
+>>>>>>> /Users/huyuhutaru/.dev-storage-governor/examforge/20261022T063810Z-build-cache-e4007ade/source/docs/orrery-up-2/merge-inputs/hooks/spawn_child.sh.local
+            PRE_REGISTERED_SESSION_STARTED=true
+            lifecycle record --session-started
+            SPAWN_TRAP_SESSION="$CHILD_NAME"
+
+            if ! wait_for_claude_ready "$CHILD_NAME" "spawn_child/pre-reg"; then
+                exit 1
+            fi
+            sleep 1
+        fi
+
+        if ! tmux has-session -t "=$CHILD_NAME" 2>/dev/null; then
+            echo "[spawn_child/pre-reg] Claude session '$CHILD_NAME' is not alive" >&2
+            exit 1
+        fi
+        if [[ "$WARM_CLAIMED" == true ]]; then
+            WARM_IDENTITY="$(AGENT_NAME= TMUX_PANE="$(tmux display-message -t "=$CHILD_NAME" -p '#{pane_id}')" bash -c '. "$1"; printf "%s" "$RESOLVED_AGENT"' _ "$HOOKS_DIR/resolve-agent-name.sh")"
+            [[ "$WARM_IDENTITY" == "$CHILD_NAME" ]] || { echo "LAUNCH_IDENTITY_UNAVAILABLE: warm session identity mismatch" >&2; exit 1; }
+            # A warm session is already running: the prompt can only be pasted.
+            CLAUDE_LAUNCH_EPOCH="$(date +%s)"
+            send_prompt_to_pane "$CHILD_NAME" "$CHILD_PROMPT" 0.3
+            sleep 2
+            flush_queued_prompt "$CHILD_NAME" || true
+            verify_injection "$CHILD_NAME" "$CHILD_PROMPT" || true
+        else
+            # The prompt was the launch argument; the start check below says
+            # whether the child acted on it.
+            INJECTION_VERIFIED=true
+        fi
+        CLAUDE_START_CHECK=true
+    fi
+
+    open_child_terminal "$CHILD_NAME"
+
+    if [[ "$USE_WORKTREE" == true ]]; then
+        if [[ -n "$WORKTREE_BASE_RESOLVED" ]]; then
+            echo "[spawn_child/pre-reg] worktree: $WORKTREE_DIR (branch: exp/${CHILD_NAME}, base: $WORKTREE_BASE_REV / ${WORKTREE_BASE_RESOLVED:0:12}, source: $WORKTREE_SOURCE)" >&2
+        else
+            echo "[spawn_child/pre-reg] worktree: $WORKTREE_DIR (branch: exp/${CHILD_NAME}, base: HEAD, source: $WORKTREE_SOURCE)" >&2
+        fi
+        echo "[spawn_child/pre-reg] cleanup: git -C $WORKTREE_SOURCE worktree remove $WORKTREE_DIR && git -C $WORKTREE_SOURCE branch -D exp/${CHILD_NAME}" >&2
+    fi
+
+    if ! finish_child_registration "$CHILD_NAME"; then
+        echo "Error: could not finalize child registration; handoff preserved" >&2
+        exit 1
+    fi
+    PRE_REGISTERED_ADOPTION_PENDING=false
+    if [[ -n "$PRE_REGISTERED_HANDOFF_TO_CONSUME" ]]; then
+        rm -f -- "$PRE_REGISTERED_HANDOFF_TO_CONSUME" "$PRE_REGISTERED_BINDING_TO_CONSUME" \
+            || echo "Warning: successful child handoff cleanup failed; private handoff remains" >&2
+    fi
+    PRE_REGISTERED_SUCCESS=true
+    if [[ "${CLAUDE_START_CHECK:-false}" == true ]]; then
+        claude_watch_initial_task "$CHILD_NAME" "$PARENT_NAME" "$CHILD_TOKEN_FILE" "$CHILD_PROMPT"
+    fi
+    echo "$CHILD_NAME"
+    exit 0
+fi
+# --- Argument validation ---
+if [[ -z "$TASK" ]]; then
+    echo "Usage: spawn_child.sh --resources \"path1,path2\" \"<task>\" [<workdir>]" >&2
+    exit 1
+fi
+
+if [[ ! -d "$WORK_DIR" ]]; then
+    echo "Error: workdir does not exist: $WORK_DIR" >&2
+    exit 1
+fi
+
+# --- Resource declaration validation ---
+if [[ -z "$RESOURCES" && "$UNSAFE_NO_RESOURCES" == false ]]; then
+    echo "Error: --resources or --unsafe-no-resources is required" >&2
+    echo "  --resources \"path1,path2\"  : declare target resource paths" >&2
+    echo "  --unsafe-no-resources       : force spawn without resource declaration" >&2
+    exit 2
+fi
+
+# --- 親エージェント名の取得 ---
+if [[ -n "${PARENT_AGENT:-}" ]]; then
+    PARENT_NAME="$PARENT_AGENT"
+elif [[ -n "${TMUX:-}" ]]; then
+    PARENT_NAME=$(tmux display-message -p '#S' 2>/dev/null || echo "unknown")
+else
+    PARENT_NAME="unknown"
+fi
+
+# 親名の妥当性チェック（send_message失敗を事前に防止）
+if [[ "$PARENT_NAME" == "unknown" || -z "$PARENT_NAME" ]]; then
+    echo "Error: parent agent name is unknown. Set PARENT_AGENT or run inside a tmux session" >&2
+    exit 1
+fi
+
+# --- Legacy transport bearer (native ORRERY Mail deliberately has none) ---
+if legacy_http_bearer_enabled; then
+    TOKEN=$(get_agentstack_token 2>/dev/null || true)
+    bearer_status=0
+else
+    bearer_status=$?
+    TOKEN=""
+fi
+if [[ "$bearer_status" == "2" ]]; then
+    exit 1
+fi
+if [[ "$bearer_status" == "0" && -z "$TOKEN" ]]; then
+    echo "Error: could not read HTTP_BEARER_TOKEN from env, Keychain, or .env" >&2
+    exit 1
+fi
+
+# JSON-RPC呼び出しヘルパー（http.clientベース — urllib はSSEストリームでハングするため）
+load_agent_name_helpers() {
+    if declare -F ags_pick_adjective_scientist_name >/dev/null 2>&1; then
+        return 0
+    fi
+
+    local lib_path="${AGENTSTACK_SCIENTISTS_LIB:-}"
+    if [[ -z "$lib_path" ]]; then
+        lib_path="$HOOKS_DIR/../bin/lib/agentstack-scientists.sh"
+    fi
+    if [[ ! -f "$lib_path" ]]; then
+        echo "Error: missing agent name helper: $lib_path" >&2
+        return 1
+    fi
+    # shellcheck disable=SC1090
+    source "$lib_path"
+}
+
+mcp_response_has_error() {
+    python3 -c '
+import json
+import sys
+
+try:
+    data = json.load(sys.stdin)
+except Exception:
+    sys.exit(1)
+sys.exit(0 if isinstance(data, dict) and data.get("error") else 1)
+'
+}
+
+mcp_extract_agent_name() {
+    python3 -c '
+import json
+import sys
+
+def candidate_names(obj):
+    if isinstance(obj, dict):
+        for key in ("name", "agent_name"):
+            value = obj.get(key)
+            if isinstance(value, str) and value:
+                yield value
+
+try:
+    data = json.load(sys.stdin)
+except Exception:
+    print("")
+    sys.exit(0)
+
+for name in candidate_names(data):
+    print(name)
+    sys.exit(0)
+
+result = data.get("result") if isinstance(data, dict) else None
+for name in candidate_names(result):
+    print(name)
+    sys.exit(0)
+if isinstance(result, dict):
+    structured = result.get("structuredContent")
+    for name in candidate_names(structured):
+        print(name)
+        sys.exit(0)
+    content = result.get("content")
+    if isinstance(content, list):
+        for part in content:
+            if not isinstance(part, dict):
+                continue
+            text = part.get("text")
+            if not isinstance(text, str):
+                continue
+            try:
+                obj = json.loads(text)
+            except Exception:
+                continue
+            for name in candidate_names(obj):
+                print(name)
+                sys.exit(0)
+print("")
+'
+}
+
+# Three-valued: available | occupied | unknown. See ags_agent_name_status in
+# bin/lib/agentstack-register.sh — whois reports "not found" through the error
+# channel, so the error text decides, and anything we cannot classify is
+# 'unknown' (never treated as a free name).
+child_agent_name_status() {
+    local agent_name="$1" args_json response
+    if ! python3 "$LIFECYCLE_HELPER" available --runtime "$RUNTIME_DIR" --name "$agent_name"; then
+        printf 'occupied\n'
+        return 0
+    fi
+    args_json=$(python3 -c "
+import json, sys
+print(json.dumps({'project_key': sys.argv[1], 'agent_name': sys.argv[2]}))
+" "$PROJECT_KEY" "$agent_name")
+    response="$(call_mcp "whois" "$args_json" 2>/dev/null || true)"
+    if [[ -z "$response" ]]; then
+        printf 'unknown\n'
+        return 0
+    fi
+    if printf '%s' "$response" | mcp_response_has_error; then
+        if printf '%s' "$response" | grep -qiE "requires[ _]registration_token|already authenticated"; then
+            printf 'occupied\n'
+        elif printf '%s' "$response" | grep -qiE "not found|does not exist|no such agent|unknown agent"; then
+            printf 'available\n'
+        else
+            printf 'unknown\n'
+        fi
+        return 0
+    fi
+    if [[ -n "$(printf '%s' "$response" | mcp_extract_agent_name)" ]]; then
+        printf 'occupied\n'
+    else
+        printf 'available\n'
+    fi
+}
+
+child_agent_exists() {
+    [[ "$(child_agent_name_status "$1")" == "occupied" ]]
+}
+
+pick_available_child_agent_name() {
+    local attempts="${AGENTSTACK_AGENT_NAME_ATTEMPTS:-75}"
+    local unknown_limit="${AGENTSTACK_NAME_UNKNOWN_LIMIT:-3}"
+    local candidate adjective scientist i name_status
+    local unknowns=0
+
+    load_agent_name_helpers || return 1
+
+    for ((i = 0; i < attempts; i++)); do
+        candidate="$(ags_pick_adjective_scientist_name)" || return 1
+        name_status="$(child_agent_name_status "$candidate")"
+        case "$name_status" in
+            available) printf '%s\n' "$candidate"; return 0 ;;
+            occupied)  unknowns=0 ;;
+            *)
+                unknowns=$((unknowns + 1))
+                if (( unknowns >= unknown_limit )); then
+                    echo "[spawn_child] name availability checks failed $unknowns times in a row; refusing to pick a child name that may already be in use." >&2
+                    return 1
+                fi
+                ;;
+        esac
+    done
+
+    for ((i = 2; i < attempts + 200; i++)); do
+        adjective="$(ags_pick_adjective)" || return 1
+        scientist="$(ags_pick_scientist)" || return 1
+        candidate="${adjective}-${i}-${scientist}"
+        name_status="$(child_agent_name_status "$candidate")"
+        case "$name_status" in
+            available) printf '%s\n' "$candidate"; return 0 ;;
+            occupied)  unknowns=0 ;;
+            *)
+                unknowns=$((unknowns + 1))
+                if (( unknowns >= unknown_limit )); then
+                    echo "[spawn_child] name availability checks failed $unknowns times in a row; refusing to pick a child name that may already be in use." >&2
+                    return 1
+                fi
+                ;;
+        esac
+    done
+
+    return 1
+}
+
+retire_agent_with_token_file() {
+    local agent_name="$1"
+    local token_file="$2"
+    local retire_args
+    [[ -s "$token_file" ]] || return 1
+    retire_args=$(python3 -c '
+import json
+import pathlib
+import sys
+print(json.dumps({
+    "project_key": sys.argv[1],
+    "agent_name": sys.argv[2],
+    "registration_token": pathlib.Path(sys.argv[3]).read_text(
+        encoding="utf-8").strip(),
+}))
+' "$PROJECT_KEY" "$agent_name" "$token_file")
+    local release_args
+    release_args="$(printf '%s' "$retire_args" | python3 -c 'import json,sys; a=json.load(sys.stdin); print(json.dumps({k:a[k] for k in ("project_key","agent_name")}))')"
+    call_mcp "release_file_reservations" "$release_args" >/dev/null || true
+    call_mcp "retire_agent" "$retire_args"
+}
+
+parse_resource_paths_json() {
+    python3 -c "
+import csv, json, sys
+reader = csv.reader([sys.argv[1]], skipinitialspace=True)
+paths = [p.strip() for p in next(reader, []) if p.strip()]
+print(json.dumps(paths))
+" "$1"
+}
+
+# --- 1. サーバー稼働確認 ---
+if ! call_mcp "health_check" "{}" > /dev/null 2>&1; then
+    echo "Error: cannot connect to ORRERY Mail server at $MCP_URL" >&2
+    exit 1
+fi
+
+# --- 2. 子エージェントを事前登録 ---
+TASK_SHORT="${TASK:0:80}"
+if [[ -n "$HARNESS" ]]; then
+    CHILD_PROGRAM="$HARNESS"
+    CHILD_MODEL="$CLAUDE_MODEL"
+elif [[ "$USE_CODEX" == true ]]; then
+    CHILD_PROGRAM="codex"
+    prime_codex_bin
+    CHILD_MODEL="$(AGENTSTACK_CODEX_BIN="$CODEX_BIN_RESOLVED" normalize_codex_model "$CLAUDE_MODEL")"
+    CODEX_EFFORT="$(validate_codex_effort "$CHILD_MODEL" "$CODEX_EFFORT")"
+else
+    CHILD_PROGRAM="claude-code"
+    # Claude 子は model catalog の current generation へ正規化する。
+    load_claude_aliases || exit 1
+    CHILD_MODEL="$(normalize_claude_model "$CLAUDE_MODEL")"
+    report_claude_alias "$CLAUDE_MODEL" "$CHILD_MODEL"
+    CLAUDE_CHILD_EFFORT="$(validate_claude_effort "$CHILD_MODEL" "$CODEX_EFFORT")" || exit 1
+fi
+
+if ! CHILD_NAME_CANDIDATE="${AGENTSTACK_DIRECT_CANDIDATE:-$(pick_available_child_agent_name)}"; then
+    echo "Error: failed to generate an available child agent name" >&2
+    exit 1
+fi
+
+# Register and launch while holding the same global local-name lock. Recheck
+# availability after acquiring it; whois(project) alone cannot protect paths.
+if ! python3 "$LIFECYCLE_HELPER" held --runtime "$RUNTIME_DIR" --name "$CHILD_NAME_CANDIDATE"; then
+    export AGENTSTACK_DIRECT_CANDIDATE="$CHILD_NAME_CANDIDATE"
+    exec python3 "$LIFECYCLE_HELPER" lock-exec --runtime "$RUNTIME_DIR" --name "$CHILD_NAME_CANDIDATE" -- /bin/bash "$0" "${ORIGINAL_ARGV[@]}"
+fi
+python3 "$LIFECYCLE_HELPER" available --runtime "$RUNTIME_DIR" --name "$CHILD_NAME_CANDIDATE" || { echo "Error: local name is occupied" >&2; exit 1; }
+
+TOKEN_HANDOFF_DIR="$RUNTIME_DIR/spawn-tokens"
+TOKEN_NONCE="$(python3 -c 'import secrets; print(secrets.token_hex(16))')"
+DIRECT_ONE_SHOT_TOKEN_FILE="$TOKEN_HANDOFF_DIR/direct.$$.${TOKEN_NONCE}.token"
+DIRECT_ONE_SHOT_IDENTITY="$(generate_child_token_file "$DIRECT_ONE_SHOT_TOKEN_FILE")"
+REGISTER_ARGS=$(python3 -c '
+import json
+import pathlib
+import sys
+args = {
+    "project_key": sys.argv[1],
+    "program": sys.argv[2],
+    "model": sys.argv[3],
+    "task_description": sys.argv[4],
+    "registration_token": pathlib.Path(sys.argv[5]).read_text(
+        encoding="utf-8").strip(),
+    "name": sys.argv[6],
+}
+print(json.dumps(args))
+' "$PROJECT_KEY" "$CHILD_PROGRAM" "$CHILD_MODEL" "$TASK_SHORT" \
+    "$DIRECT_ONE_SHOT_TOKEN_FILE" "$CHILD_NAME_CANDIDATE")
+
+if ! REGISTER_RESULT=$(call_mcp "register_agent" "$REGISTER_ARGS"); then
+    remove_owned_handoff "$DIRECT_ONE_SHOT_IDENTITY"
+    echo "Error: register_agent request failed" >&2
+    exit 1
+fi
+if printf '%s' "$REGISTER_RESULT" | mcp_response_has_error; then
+    remove_owned_handoff "$DIRECT_ONE_SHOT_IDENTITY"
+    echo "Error: register_agent returned an error" >&2
+    exit 1
+fi
+CHILD_NAME="$(printf '%s' "$REGISTER_RESULT" | mcp_extract_agent_name)"
+
+if [[ -z "$CHILD_NAME" || ! "$CHILD_NAME" =~ ^[A-Za-z0-9_.-]+$ ]]; then
+    echo "Error: register_agent returned no valid child agent name" >&2
+    remove_owned_handoff "$DIRECT_ONE_SHOT_IDENTITY"
+    exit 1
+fi
+if [[ "$CHILD_NAME" != "$CHILD_NAME_CANDIDATE" ]]; then
+    echo "[spawn_child] register_agent normalized '$CHILD_NAME_CANDIDATE' to actual identity '$CHILD_NAME'" >&2
+fi
+
+# Adopt the token the server persisted, not the one we sent. Legacy servers
+# may ignore the client-supplied registration_token and mint their
+# own, returning it in the response; keeping our sent token would leave the
+# child holding a token the server never stored, so its reregister/fetch_inbox
+# all fail with "Invalid registration_token". The response and sent fallback
+# are consumed inside Python and persisted only in 0600 files.
+if ! CHILD_TOKEN_FILE="$(
+    printf '%s' "$REGISTER_RESULT" |
+        adopt_registered_token_response "$CHILD_NAME" "$PROJECT_KEY" \
+<<<<<<< /Users/huyuhutaru/.dev-storage-governor/examforge/20261022T063810Z-build-cache-e4007ade/source/hooks/spawn_child.sh
+            "$DIRECT_ONE_SHOT_TOKEN_FILE" "$CHILD_PROGRAM"
+=======
+            "$DIRECT_ONE_SHOT_TOKEN_FILE" "$DIRECT_ONE_SHOT_IDENTITY"
+>>>>>>> /Users/huyuhutaru/.dev-storage-governor/examforge/20261022T063810Z-build-cache-e4007ade/source/docs/orrery-up-2/merge-inputs/hooks/spawn_child.sh.local
+)"; then
+    remove_owned_handoff "$DIRECT_ONE_SHOT_IDENTITY"
+    echo "Error: failed to persist the registered child token" >&2
+    exit 1
+fi
+
+# The server may normalize separators, but must not redirect publication to
+# another local namespace that this attempt did not lock or find available.
+if ! python3 "$LIFECYCLE_HELPER" held --runtime "$RUNTIME_DIR" --name "$CHILD_NAME" || ! python3 "$LIFECYCLE_HELPER" available --runtime "$RUNTIME_DIR" --name "$CHILD_NAME"; then
+    remove_owned_handoff "$DIRECT_ONE_SHOT_IDENTITY"
+    echo "Error: registered identity has no held available local namespace; retaining registration" >&2
+    exit 1
+fi
+
+# --- 失敗時cleanup trap ---
+# Launcher が完全に readiness/prompt injection を終える前に異常終了したら、
+# 一瞬 tmux session が作られていても child credentials と予約を回収する。
+SPAWN_COMPLETED=false
+CHILD_SESSION_STARTED=false
+<<<<<<< /Users/huyuhutaru/.dev-storage-governor/examforge/20261022T063810Z-build-cache-e4007ade/source/hooks/spawn_child.sh
+CHILD_SESSION_START_PENDING=false
+=======
+export AGENTSTACK_DIRECT_REGISTRATION_NAME="$CHILD_NAME"
+python3 - "$RUNTIME_DIR" "$CHILD_TOKEN_FILE" "$CHILD_NAME" "$PROJECT_KEY" <<'PYTICKET'
+import sys
+from pathlib import Path
+sys.path.insert(0, __import__('os').environ.get('AGENTSTACK_LIFECYCLE_HOOKS_DIR') or __import__('os').environ['AGENTSTACK_HOOKS_DIR'])
+from seat_lifecycle import bind_handoff
+bind_handoff(Path(sys.argv[1]), Path(sys.argv[2]), sys.argv[3], sys.argv[4])
+PYTICKET
+
+>>>>>>> /Users/huyuhutaru/.dev-storage-governor/examforge/20261022T063810Z-build-cache-e4007ade/source/docs/orrery-up-2/merge-inputs/hooks/spawn_child.sh.local
+cleanup_on_failure() {
+    if [[ "$SPAWN_COMPLETED" == true ]]; then
+        return
+    fi
+<<<<<<< /Users/huyuhutaru/.dev-storage-governor/examforge/20261022T063810Z-build-cache-e4007ade/source/hooks/spawn_child.sh
+    if [[ -n "${HARNESS:-}" ]]; then
+        cleanup_harness_failure || echo "Harness cleanup unconfirmed; recovery state retained" >&2
+        return
+    fi
+    if [[ "${CHILD_SESSION_START_PENDING:-false}" == true ]]; then
+        # A client failure does not prove whether the server created a pane.
+        # Do not kill a same-named session whose ownership was not confirmed.
+        echo "[spawn_child] creation unconfirmed; recovery state and worktree retained" >&2
+        return 1
+    fi
+    warn_if_uninjected
+    rm -f "${CODEX_PROMPT_FILE:-}" "${CLAUDE_CHILD_PROMPT_FILE:-}"
+    if [[ "$CHILD_SESSION_STARTED" == true && -n "${CHILD_NAME:-}" ]]; then
+        if [[ "$USE_CODEX" == true ]] && codex_self_update_on_screen "$CHILD_NAME"; then
+            leave_updating_codex_child "$CHILD_NAME" true
+            # The updater still owns its identity and working directory.
+            return 1
+        fi
+        local stop_status=0 stop_output="" stop_confirmed=false
+        stop_output="$(tmux has-session -t "=$CHILD_NAME" 2>&1)" || stop_status=$?
+        if [[ "$stop_status" == 0 ]]; then
+            if ! tmux kill-session -t "=$CHILD_NAME" >/dev/null 2>&1; then
+                echo "[spawn_child] stop unconfirmed; recovery state and worktree retained" >&2
+                return 1
+            fi
+            tmux has-session -t "=$CHILD_NAME" >/dev/null 2>&1 || stop_status=$?
+            [[ "$stop_status" != 1 ]] || stop_confirmed=true
+        elif [[ "$stop_status" == 1 && "$stop_output" == *"can't find session"* ]]; then
+            stop_confirmed=true
+        fi
+        if [[ "$stop_confirmed" != true ]]; then
+            echo "[spawn_child] stop unconfirmed; recovery state and worktree retained" >&2
+            return 1
+        fi
+    fi
+    if [[ -n "${CHILD_NAME:-}" ]]; then
+        echo "[spawn_child] cleanup: confirming reservation release and retirement for $CHILD_NAME" >&2
+        if ! AGENTSTACK_CHILD_RESUME_RETENTION_DAYS=0 /bin/bash "$HOOKS_DIR/cleanup-child-agent.sh" "$CHILD_NAME"; then
+            echo "[spawn_child] cleanup unconfirmed; recovery state and worktree retained" >&2
+            return 1
+        fi
+    fi
+    # Only confirmed cleanup may remove the isolated working directory or
+    # pending launch record. The helper owns credential/registry retention.
+    cleanup_worktree
+    discard_claude_launch_record
+=======
+    # Before adoption only our one-shot is owned. Once the common launcher
+    # consumes it, its generation journal owns cleanup; retain registration if
+    # that evidence is unavailable rather than guessing canonical credentials.
+    if [[ -s "${CHILD_TOKEN_FILE:-}" ]] && owned_handoff_matches "$DIRECT_ONE_SHOT_IDENTITY"; then
+        retire_agent_with_token_file "$CHILD_NAME" "$CHILD_TOKEN_FILE" > /dev/null 2>&1 || true
+        remove_owned_handoff "$DIRECT_ONE_SHOT_IDENTITY"
+    fi
+    cleanup_worktree
+>>>>>>> /Users/huyuhutaru/.dev-storage-governor/examforge/20261022T063810Z-build-cache-e4007ade/source/docs/orrery-up-2/merge-inputs/hooks/spawn_child.sh.local
+}
+# Keep the original startup error even if recovery itself is incomplete.
+trap 'cleanup_on_failure || :' EXIT
+if [[ -n "$HARNESS" ]]; then
+    trap 'exit 143' TERM; trap 'exit 129' HUP; trap 'exit 130' INT
+    CHILD_REGISTRATION_GENERATION="$("${AGENTSTACK_PYTHON:-python3}" -c 'import secrets;print(secrets.token_hex(16))')"
+    CHILD_TOKEN_FILE="$(stage_child_registration "$CHILD_NAME" "$HARNESS")" || exit 1
+    PRE_REGISTERED_ADOPTION_PENDING=true
+    prepare_harness_child_state || exit 1
+fi
+if [[ "$USE_CODEX" != true && -z "$HARNESS" ]] && ! prepare_claude_child_resume_state "$CHILD_NAME"; then
+    echo "Error: could not prepare retained Claude child state for $CHILD_NAME" >&2
+    exit 1
+fi
+
+
+# --- 2b. リソース予約 ---
+if [[ -n "$RESOURCES" ]]; then
+    echo "[spawn_child] Reserving resources: $RESOURCES (TTL: ${RESOURCE_TTL}s)" >&2
+
+    # CSVとしてパースし、カンマを含むパスはクォートで表現可能にする
+    PATHS_JSON=$(parse_resource_paths_json "$RESOURCES")
+
+    RESERVE_ARGS=$(python3 -c "
+import json, sys
+args = {
+    'project_key': sys.argv[1],
+    'agent_name': sys.argv[2],
+    'paths': json.loads(sys.argv[3]),
+    'ttl_seconds': int(sys.argv[4]),
+    'exclusive': True,
+    'reason': 'spawn_child: ' + sys.argv[5][:60]
+}
+print(json.dumps(args))
+" "$PROJECT_KEY" "$CHILD_NAME" "$PATHS_JSON" "$RESOURCE_TTL" "$TASK")
+
+    RESERVE_RESULT=$(call_mcp "file_reservation_paths" "$RESERVE_ARGS")
+
+    # 競合チェック
+    HAS_CONFLICT=$(python3 -c "
+import json, sys
+r = json.loads(sys.stdin.read())
+data = json.loads(r['result']['content'][0]['text'])
+conflicts = data.get('conflicts', [])
+if conflicts:
+    for c in conflicts:
+        holders = ', '.join(h.get('agent_name', '?') for h in c.get('holders', []))
+        sys.stderr.write(f'  CONFLICT: {c[\"path\"]} held by: {holders}\n')
+    print('yes')
+else:
+    granted = data.get('granted', [])
+    for g in granted:
+        sys.stderr.write(f'  GRANTED: {g[\"path_pattern\"]} (expires: {g.get(\"expires_ts\", \"?\")})\n')
+    print('no')
+" <<< "$RESERVE_RESULT")
+
+    if [[ "$HAS_CONFLICT" == "yes" ]]; then
+        echo "Error: resource conflict detected; aborting spawn." >&2
+        # クリーンアップ: 部分成功した予約を解放 + 子エージェントを retire
+        RELEASE_ARGS=$(python3 -c "
+import json, sys
+print(json.dumps({'project_key': sys.argv[1], 'agent_name': sys.argv[2]}))
+" "$PROJECT_KEY" "$CHILD_NAME")
+        call_mcp "release_file_reservations" "$RELEASE_ARGS" > /dev/null 2>&1 || true
+        if [[ -s "${CHILD_TOKEN_FILE:-}" ]]; then
+            retire_agent_with_token_file "$CHILD_NAME" "$CHILD_TOKEN_FILE" > /dev/null 2>&1 || true
+        fi
+        echo "[spawn_child] Released reservations and retired $CHILD_NAME" >&2
+        remove_owned_handoff "$DIRECT_ONE_SHOT_IDENTITY"
+        SPAWN_COMPLETED=true  # cleanup already completed explicitly above
+        exit 21
+    fi
+fi
+
+# --- 2c. --worktree 指定時: 先に worktree を作って WORK_DIR を上書き ---
+# タスクメッセージに worktree path / base commit を含めるため、message 送信より先に行う
+if [[ "$USE_WORKTREE" == true ]]; then
+    if ! maybe_create_worktree "$CHILD_NAME" "$WORK_DIR"; then
+        echo "[spawn_child] Worktree creation failed; aborting spawn." >&2
+        exit 1
+    fi
+    WORK_DIR="$WORKTREE_DIR"
+    echo "[spawn_child] WORK_DIR overridden to worktree: $WORK_DIR" >&2
+fi
+
+resolve_child_default_tools || exit 1
+
+# --- 3. タスクメッセージを子エージェントに送信 ---
+SUBJECT="Task request: ${TASK:0:50}"
+RESOURCE_NOTE=""
+if [[ -n "$RESOURCES" ]]; then
+    RESOURCE_NOTE="
+- Reserved resources: ${RESOURCES}
+- Do not modify paths outside the reserved resources above."
+fi
+
+WORKTREE_NOTE=""
+if [[ "$USE_WORKTREE" == true ]]; then
+    WORKTREE_NOTE="
+- Isolated worktree: ${WORKTREE_DIR}
+- worktree branch: exp/${CHILD_NAME}
+- source repo: ${WORKTREE_SOURCE}"
+    if [[ -n "$WORKTREE_BASE_RESOLVED" ]]; then
+        WORKTREE_NOTE="${WORKTREE_NOTE}
+- worktree base: ${WORKTREE_BASE_REV} (${WORKTREE_BASE_RESOLVED:0:12})"
+    else
+        WORKTREE_NOTE="${WORKTREE_NOTE}
+- worktree base: HEAD (parent HEAD at spawn time; --worktree-base was not set)"
+    fi
+fi
+
+BODY_MD="## Task
+
+${TASK}
+
+## Context
+
+- Parent agent: ${PARENT_NAME}
+- Working directory: ${WORK_DIR}${RESOURCE_NOTE}${WORKTREE_NOTE}
+- **\`${PROJECT_KEY}\` is the canonical ORRERY Mail project_key**, not the current working directory. This is especially important in worktree mode. The tmux \$PROJECT_KEY env var has the same value. On confirmed raw/direct MCP, use this value where the actual schema accepts a project key; do not call ensure_project(human_key=cwd). On a bound proxy, do not add caller identity or project fields that its schema does not accept.
+- File reservation TTL: ${RESOURCE_TTL} seconds
+- The parent pre-reserved the resources above under your agent name. Do not acquire the same paths again; use the existing reservations through the tools provided by your connection schema.
+- If you are worried about remaining TTL, renew through the provided schema: bound proxy uses \`renew_reservations\`; raw/direct MCP uses \`renew_file_reservations\`.
+- Split large changes into smaller Edit/Update operations instead of one huge Write.
+- Acquire new reservations only when you need additional unreserved paths.
+- Reply to the parent agent when the task is complete."
+
+SEND_ARGS=$(python3 -c "
+import json, sys
+args = {
+    'project_key': sys.argv[1],
+    'sender_name': sys.argv[2],
+    'to': [sys.argv[3]],
+    'subject': sys.argv[4],
+    'body_md': sys.argv[5],
+    'importance': 'high'
+}
+print(json.dumps(args))
+" "$PROJECT_KEY" "$PARENT_NAME" "$CHILD_NAME" "$SUBJECT" "$BODY_MD")
+
+call_mcp "send_message" "$SEND_ARGS" > /dev/null
+
+<<<<<<< /Users/huyuhutaru/.dev-storage-governor/examforge/20261022T063810Z-build-cache-e4007ade/source/hooks/spawn_child.sh
+# --- 4. managed_agents.txt に追加 ---
+if ! grep -qxF "$CHILD_NAME" "$MANAGED_FILE" 2>/dev/null; then
+    mkdir -p "$(dirname "$MANAGED_FILE")"
+    echo "$CHILD_NAME" >> "$MANAGED_FILE"
+fi
+
+# Warn (do not block) if the child's workdir is a macOS privacy-protected folder
+# this process can't read — turns an undiagnosable EPERM into actionable advice.
+declare -F ags_warn_tcc_access >/dev/null 2>&1 && ags_warn_tcc_access "$WORK_DIR"
+
+# --- 5. 新しいtmuxセッションで子エージェントを起動 ---
+# CLAUDECODE=1 guards the child session's interactive shell against destructive
+# shell exit hooks (e.g. a ~/.zshrc zshexit / bash trap that runs `tmux
+# kill-session`): without it, exiting this session can cascade-kill the tmux
+# server. Requires tmux >= 3.0.
+if [[ -z "$HARNESS" ]]; then prime_codex_bin; fi
+if [[ -n "$HARNESS" ]]; then
+    TMUX_ENV_ARGS=(-e "AGENT_NAME=$CHILD_NAME" -e "CLAUDECODE=1" -e "AGENTSTACK_RESERVED_IDENTITY=1" -e "PROJECT_KEY=$PROJECT_KEY" -e "AGENTSTACK_PROJECT_KEY=$PROJECT_KEY" -e "AGENTSTACK_HOOKS_DIR=$HOOKS_DIR" -e "AGENTSTACK_RUNTIME_DIR=$RUNTIME_DIR" -e "AGENTSTACK_MCP_URL=$MCP_URL" -e "AGENTSTACK_MAIL_ENV=$MAIL_ENV" -e "AGENTSTACK_MAIL_HTTP_BEARER_MODE=$HTTP_BEARER_MODE" -e "AGENTSTACK_CHILD_RESUME_RETENTION_DAYS=$CHILD_RESUME_RETENTION_DAYS")
+else
+TMUX_ENV_ARGS=(-e "CLAUDECODE=1" -e "AGENTSTACK_RESERVED_IDENTITY=1" -e "AGENT_NAME=$CHILD_NAME" -e "PARENT_AGENT=$PARENT_NAME" -e "PROJECT_KEY=$PROJECT_KEY" -e "AGENTSTACK_PROJECT_KEY=$PROJECT_KEY" -e "AGENTSTACK_HOOKS_DIR=$HOOKS_DIR" -e "AGENTSTACK_RUNTIME_DIR=$RUNTIME_DIR" -e "AGENTSTACK_MCP_URL=$MCP_URL" -e "AGENTSTACK_MAIL_ENV=$MAIL_ENV" -e "AGENTSTACK_MAIL_HTTP_BEARER_MODE=$HTTP_BEARER_MODE" -e "AGENTSTACK_CHILD_RESUME_RETENTION_DAYS=$CHILD_RESUME_RETENTION_DAYS" -e "AGENTSTACK_TERMINAL=$TERMINAL_SETTING" -e "AGENTSTACK_AUTO_OPEN_CHILD=$AUTO_OPEN_CHILD" -e "AGENTSTACK_CODEX_SANDBOX=${AGENTSTACK_CODEX_SANDBOX:-workspace-write}" -e "AGENTSTACK_CODEX_APPROVAL=$(codex_approval_flags)" -e "AGENTSTACK_CODEX_NETWORK_FLAGS=$(codex_network_flags)")
+fi
+if [[ -n "$AGENTSTACK_HOME_DIR" ]]; then
+    TMUX_ENV_ARGS+=(-e "AGENTSTACK_HOME=$AGENTSTACK_HOME_DIR")
+fi
+if [[ -n "${AGENTSTACK_PYTHON:-}" ]]; then
+    TMUX_ENV_ARGS+=(-e "AGENTSTACK_PYTHON=$AGENTSTACK_PYTHON")
+fi
+if [[ -n "$RESOURCES" ]]; then
+    TMUX_ENV_ARGS+=(-e "CHILD_RESOURCES=$RESOURCES")
+fi
+if [[ -n "$HARNESS" ]]; then
+    start_harness_child || exit 1
+    finish_child_registration "$CHILD_NAME" || exit 1
+    PRE_REGISTERED_ADOPTION_PENDING=false
+elif [[ "$USE_CODEX" == true ]]; then
+    CHILD_CODEX_BIN="$(resolve_codex_bin)"
+    TMUX_ENV_ARGS+=(-e "AGENTSTACK_CODEX_BIN=$CHILD_CODEX_BIN")
+    if ! prepare_codex_child_resume_state "$CHILD_NAME" "$CODEX_MCP_PROFILE"; then
+        echo "Error: could not prepare retained Codex child state for $CHILD_NAME" >&2
+        exit 1
+    fi
+    ensure_child_proxy_parent before codex || exit 1
+    warn_windows_screen_session
+    if ! write_child_codex_tools_record; then
+        echo "Error: could not record the tools selected for $CHILD_NAME" >&2
+        exit 1
+    fi
+    CHILD_CODEX_HOME="$(write_child_codex_home "$CHILD_NAME" "$CHILD_TOKEN_FILE" "$CODEX_MCP_PROFILE")"
+    if [[ "$CHILD_TOOLS_RESTRICTIVE" == true && -z "$CHILD_CODEX_HOME" ]]; then
+        echo "Error: the selected tools could not be applied (or the ORRERY Mail proxy is unavailable); a Codex child with base/tools is not started without them" >&2
+        exit 1
+    fi
+    if [[ "$CODEX_MCP_PROFILE" != "inherit" && -z "$CHILD_CODEX_HOME" ]]; then
+        echo "Error: could not create the requested Codex MCP profile: $CODEX_MCP_PROFILE" >&2
+        exit 1
+    fi
+    ensure_child_proxy_parent after codex "$CHILD_CODEX_HOME" || exit 1
+    if ! CHILD_LAUNCH_INFO="$(
+        prepare_codex_launch_binding "$CHILD_STATE_DIR/$CHILD_NAME.json" startup "$CODEX_MCP_PROFILE"
+    )"; then
+        echo "Error: could not create a fresh Codex history binding expectation" >&2
+        exit 1
+    fi
+    CHILD_LAUNCH_BINDING=""
+    CHILD_LAUNCH_ID=""
+    IFS=$'\t' read -r CHILD_LAUNCH_BINDING CHILD_LAUNCH_ID <<< "$CHILD_LAUNCH_INFO"
+    if [[ -z "$CHILD_LAUNCH_BINDING" || -z "$CHILD_LAUNCH_ID" ]]; then
+        echo "Error: Codex history binding expectation was incomplete" >&2
+        exit 1
+    fi
+    TMUX_ENV_ARGS+=(-e "AGENTSTACK_CODEX_MODEL=$CHILD_MODEL" -e "AGENTSTACK_CODEX_EFFORT=$CODEX_EFFORT")
+    TMUX_ENV_ARGS+=(-e "AGENTSTACK_CODEX_ADD_DIRS_RESOLVED=$(codex_child_add_dirs "$CHILD_CODEX_HOME")")
+    TMUX_ENV_ARGS+=(
+        -e "AGENTSTACK_CODEX_LAUNCH_BINDING=$CHILD_LAUNCH_BINDING"
+        -e "AGENTSTACK_CODEX_LAUNCH_ID=$CHILD_LAUNCH_ID"
+    )
+    if [[ -n "$CHILD_CODEX_HOME" ]]; then
+        echo "[spawn_child] Child CODEX_HOME with authenticated ORRERY Mail: $CHILD_CODEX_HOME" >&2
+        TMUX_ENV_ARGS+=(
+            -e "CODEX_HOME=$CHILD_CODEX_HOME"
+            -e "CODEX_SHARED_CODEX_DIR=$CHILD_CODEX_HOME"
+        )
+    else
+        echo "[spawn_child] No MCP proxy available; Codex child uses the shared ORRERY Mail endpoint" >&2
+    fi
+    # Codex startup: inject a bootstrap prompt that points the child to inbox.
+    CODEX_PROMPT="$(build_codex_mail_task_prompt "$CHILD_NAME" "$PARENT_NAME")"
+    CODEX_PROMPT="$(append_codex_mcp_profile_notice "$CODEX_PROMPT")"
+    if ! CODEX_PROMPT_FILE="$(write_codex_prompt_file "$CHILD_NAME" "$CODEX_PROMPT")"; then
+        echo "Error: could not prepare the Codex task for $CHILD_NAME" >&2
+        exit 1
+    fi
+    TMUX_ENV_ARGS+=(-e "AGENTSTACK_CODEX_PROMPT_FILE=$CODEX_PROMPT_FILE")
+    CHILD_SESSION_START_PENDING=true
+    tmux new-session -d -s "$CHILD_NAME" \
+        -c "$WORK_DIR" \
+        "${TMUX_ENV_ARGS[@]}" \
+        "$CHILD_SHELL"' -lc '"'"'
+                '"$CODEX_CHILD_PATH_SETUP_QUOTED"';
+            # See the pre-registered path: no user-side bootstrap is sourced.
+            # See the pre-registered path: the product owns the launch flags and
+            # never hands off to a user-side launcher.
+            # Claude in Chrome defaults are for Claude children; do not hand them on
+            # through a Codex child (the tmux server env may carry them).
+            unset AGENTSTACK_CLAUDE_CHILD_CHROME AGENTSTACK_CLAUDE_CHILD_CHROME_DEVICE
+            EXTRA_ARGS=()
+            # Portable across zsh and bash: see the pre-registered path.
+            _ifs="$IFS"; IFS=":"
+            for d in $(printf "%s" "$AGENTSTACK_CODEX_ADD_DIRS_RESOLVED"); do
+                [[ -d "$d" ]] && EXTRA_ARGS+=(--add-dir "$d")
+            done
+            IFS="$_ifs"
+            [[ -n "$AGENTSTACK_CODEX_EFFORT" ]] && EXTRA_ARGS+=(-c "model_reasoning_effort=$AGENTSTACK_CODEX_EFFORT")
+            # See the pre-registered path: the first task is one argv after `--`.
+            # Codex never starts without its task: an unreadable or empty file ends
+            # the session here, which the launcher reports as a failed start.
+            # The trailing "x" keeps trailing newlines, which $(...) would strip.
+            if AGENTSTACK_CODEX_TASK="$(cat "$AGENTSTACK_CODEX_PROMPT_FILE" && printf x)"; then
+                AGENTSTACK_CODEX_TASK="${AGENTSTACK_CODEX_TASK%x}"
+            else
+                AGENTSTACK_CODEX_TASK=""
+            fi
+            if [[ -z "$AGENTSTACK_CODEX_TASK" ]]; then
+                echo "[spawn_child] cannot read the task file $AGENTSTACK_CODEX_PROMPT_FILE; not starting Codex without its task" >&2
+                sleep 5  # long enough for the launcher to capture this line
+                exit 1
+            fi
+            rm -f "$AGENTSTACK_CODEX_PROMPT_FILE"
+            env -u OPENAI_API_KEY "$AGENTSTACK_CODEX_BIN" -C "$PWD" --sandbox "${AGENTSTACK_CODEX_SANDBOX:-workspace-write}" $(printf "%s" "$AGENTSTACK_CODEX_APPROVAL") $(printf "%s" "$AGENTSTACK_CODEX_NETWORK_FLAGS") -c check_for_update_on_startup=false \
+                "${EXTRA_ARGS[@]}" --model "$AGENTSTACK_CODEX_MODEL" -- "$AGENTSTACK_CODEX_TASK"
+            /bin/bash "$AGENTSTACK_HOOKS_DIR/cleanup-child-agent.sh"
+        '"'"''
+    CHILD_SESSION_STARTED=true
+    CHILD_SESSION_START_PENDING=false
+    SPAWN_TRAP_SESSION="$CHILD_NAME"
+    echo "[spawn_child] Waiting for Codex to start the task..." >&2
+    WATCH_STATUS=0
+    codex_watch_initial_task "$CHILD_NAME" "$CODEX_PROMPT" "spawn_child" \
+        "$CHILD_LAUNCH_BINDING" "$CHILD_LAUNCH_ID" || WATCH_STATUS=$?
+    case "$WATCH_STATUS" in
+        1)
+            echo "[spawn_child] Aborting: unable to accept the Codex trust dialog." >&2
+            exit 1
+            ;;
+        2)
+            echo "[spawn_child] Aborting: the child exited before starting its task (check the codex flags above)." >&2
+            exit 1
+            ;;
+    esac
+else
+    # Claude Code 起動（モデル指定付き）
+    if ! claude_tools_plan; then
+        echo "[spawn_child] Aborting: the selected tools cannot be given to this child (see above)." >&2
+        exit 1
+    fi
+    warn_windows_screen_session
+    if ! prepare_claude_launch_record; then
+        echo "[spawn_child] Aborting: could not write the Claude in Chrome launch record in $CHILD_STATE_DIR." >&2
+        exit 1
+    fi
+    CHILD_PROMPT="Child agent startup. AGENT_NAME=${CHILD_NAME}; parent=${PARENT_NAME}. Follow the child-agent startup procedure in CLAUDE.md and start the task immediately."
+    if ! CHROME_PROMPT_BLOCK="$(claude_chrome_prompt_block)"; then
+        echo "[spawn_child] Aborting: could not build the Claude in Chrome browser policy." >&2
+        exit 1
+    fi
+    CHILD_PROMPT+="$CHROME_PROMPT_BLOCK"
+    if ! TOOLS_PROMPT_BLOCK="$(child_tools_prompt_block)"; then
+        echo "[spawn_child] Aborting: could not describe the selected tools." >&2
+        exit 1
+    fi
+    CHILD_PROMPT+="$TOOLS_PROMPT_BLOCK"
+    ensure_child_proxy_parent before claude || exit 1
+    CHILD_MCP_CONFIG="$(write_child_mcp_config "$CHILD_NAME" "$CHILD_TOKEN_FILE")"
+    if [[ "$CHILD_TOOLS_RESTRICTIVE" == true && -z "$CHILD_MCP_CONFIG" ]]; then
+        echo "[spawn_child] Aborting: the ORRERY Mail proxy is unavailable. A child with base/tools is never started without it: it would receive all of the user's MCP servers." >&2
+        exit 1
+    fi
+    ensure_child_proxy_parent after claude "$CHILD_MCP_CONFIG" || exit 1
+    if ! CHILD_PROMPT="$(claude_argv_prompt "$CHILD_NAME" "$CHILD_PROMPT")" \
+        || ! CLAUDE_CHILD_PROMPT_FILE="$(write_claude_first_prompt "$CHILD_NAME" "$CHILD_PROMPT")"; then
+        echo "[spawn_child] Aborting: could not write the first prompt in $CHILD_STATE_DIR." >&2
+        exit 1
+    fi
+    CLAUDE_CHILD_ARGV_PROMPT=true
+    CLAUDE_READY_PROMPT_ECHO="$(claude_prompt_echo_head "$CHILD_PROMPT" "$CHILD_NAME")"
+    CLAUDE_CHILD_SYSTEM_PROMPT="$(claude_child_system_prompt "$CHILD_NAME" "$PARENT_NAME" "$CHILD_MCP_CONFIG")"
+    CHILD_SESSION_START_PENDING=true
+    CLAUDE_LAUNCH_EPOCH="$(date +%s)"
+    tmux new-session -d -s "$CHILD_NAME" \
+        -c "$WORK_DIR" \
+        "${TMUX_ENV_ARGS[@]}" \
+        -e "CLAUDE_CHILD_MODEL=$CHILD_MODEL" \
+                ${CLAUDE_CHILD_EFFORT:+-e "CLAUDE_CHILD_EFFORT=$CLAUDE_CHILD_EFFORT"} \
+        -e "CLAUDE_CHILD_BIN=$CLAUDE_CHILD_BIN" \
+        -e "CLAUDE_CHILD_MCP_CONFIG=$CHILD_MCP_CONFIG" \
+        -e "CLAUDE_CHILD_PROMPT_FILE=$CLAUDE_CHILD_PROMPT_FILE" \
+        -e "CLAUDE_CHILD_SYSTEM_PROMPT=$CLAUDE_CHILD_SYSTEM_PROMPT" \
+        ${CLAUDE_CHROME_TMUX_ENV[@]+"${CLAUDE_CHROME_TMUX_ENV[@]}"} \
+        "$(claude_child_launch_command)"
+    CHILD_SESSION_STARTED=true
+    CHILD_SESSION_START_PENDING=false
+    SPAWN_TRAP_SESSION="$CHILD_NAME"
+    # Claude REPL起動待機
+    echo "[spawn_child] Waiting for Claude REPL..." >&2
+    if ! wait_for_claude_ready "$CHILD_NAME" "spawn_child"; then
+        exit 1
+    fi
+    # The prompt was the launch argument; the start check says whether the
+    # child acted on it.
+    INJECTION_VERIFIED=true
+    echo "[spawn_child] Claude started after ${CLAUDE_READY_WAITED}s with its first prompt" >&2
+    CLAUDE_START_CHECK=true
+fi
+
+open_child_terminal "$CHILD_NAME"
+SPAWN_COMPLETED=true
+if [[ "${CLAUDE_START_CHECK:-false}" == true ]]; then
+    claude_watch_initial_task "$CHILD_NAME" "$PARENT_NAME" "$CHILD_TOKEN_FILE" "$CHILD_PROMPT"
+fi
+
+# --- Complete: stdout contains only child agent name ---
+echo "$CHILD_NAME"
+echo "[spawn_child] Started '$CHILD_NAME' in tmux session '$CHILD_NAME'" >&2
+echo "[spawn_child] Task: $TASK" >&2
+echo "[spawn_child] Parent: $PARENT_NAME / directory: $WORK_DIR" >&2
+echo "[spawn_child] Agent type: $CHILD_PROGRAM" >&2
+if [[ -n "$RESOURCES" ]]; then
+    echo "[spawn_child] Reserved resources: $RESOURCES (TTL: ${RESOURCE_TTL}s)" >&2
+fi
+if [[ "$USE_WORKTREE" == true ]]; then
+    if [[ -n "$WORKTREE_BASE_RESOLVED" ]]; then
+        echo "[spawn_child] worktree: $WORKTREE_DIR (branch: exp/${CHILD_NAME}, base: $WORKTREE_BASE_REV / ${WORKTREE_BASE_RESOLVED:0:12}, source: $WORKTREE_SOURCE)" >&2
+    else
+        echo "[spawn_child] worktree: $WORKTREE_DIR (branch: exp/${CHILD_NAME}, base: HEAD, source: $WORKTREE_SOURCE)" >&2
+    fi
+    echo "[spawn_child] cleanup: git -C $WORKTREE_SOURCE worktree remove $WORKTREE_DIR && git -C $WORKTREE_SOURCE branch -D exp/${CHILD_NAME}" >&2
+=======
+# Both providers and direct/dashboard entry points use the same locked
+# ownership writers, generation propagation, readiness and rollback path.
+export AGENTSTACK_MATERIALS_APPENDED=1
+COMMON_ARGS=(--pre-registered "$CHILD_NAME" --child-token-file "$CHILD_TOKEN_FILE" --model "$CHILD_MODEL")
+if [[ "$USE_CODEX" == true ]]; then COMMON_ARGS+=(--codex --effort "$CODEX_EFFORT"); fi
+if [[ -n "$RESOURCES" ]]; then export CHILD_RESOURCES="$RESOURCES"; fi
+# The parent owns worktree rollback until the common launch succeeds. Do not
+# create a second worktree or discard its dirty contents during child cleanup.
+TASK_RECORD="$RUNTIME_DIR/seat-launches/direct.${TOKEN_NONCE}.task.md"
+printf '%s' "$TASK" | python3 -c '
+import os, pathlib, sys
+path = pathlib.Path(sys.argv[1]); path.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+with os.fdopen(fd, "wb") as stream:
+    stream.write(sys.stdin.buffer.read()); stream.flush(); os.fsync(stream.fileno())
+' "$TASK_RECORD"
+if /bin/bash "$0" "${COMMON_ARGS[@]}" --task-file "$TASK_RECORD" "$WORK_DIR"; then
+    SPAWN_COMPLETED=true
+else
+    exit $?
+>>>>>>> /Users/huyuhutaru/.dev-storage-governor/examforge/20261022T063810Z-build-cache-e4007ade/source/docs/orrery-up-2/merge-inputs/hooks/spawn_child.sh.local
+fi
+exit 0

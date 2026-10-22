@@ -1,0 +1,182 @@
+#!/usr/bin/env python3
+"""OPS-1 (e): tell head when a seat has stood still.
+
+Every run (launchd, 5 min) hashes each registered seat's tmux screen. A seat
+whose screen has not changed for STALL_MIN minutes and that has no heavy work
+under its pane (xcodebuild, heavy_job_lock, simctl, or a sleep-based watcher)
+gets one [progress] mail to ProudTuring from the ops seat. The alert re-arms
+when the screen changes. Read-only towards the seats.
+"""
+import datetime
+import fcntl
+from pathlib import Path
+from agentstack_stallself import notify_self
+from agentstack_jobend import save_state
+import hashlib
+import json
+import os
+import sys
+import sqlite3
+import subprocess
+import time
+
+STALL_MIN = 30
+HEAD = "ProudTuring"
+OPS = "KindPasteur"
+DB = os.path.expanduser("~/.agentstack/mail/storage.sqlite3")
+STATE = os.path.expanduser("~/.agentstack/runtime/seat-stall-state.json")
+LOG = os.path.expanduser("~/.agentstack/runtime/seat-stall-watch.log")
+IGNORE = os.path.expanduser("~/.agentstack/runtime/seat-stall-ignore.txt")  # 1 行 1 席（待機を命じられた席）
+DRYRUN = os.environ.get("SEAT_STALL_DRYRUN") == "1"
+TMUX = "/opt/homebrew/bin/tmux"
+APPROVAL = ("Do you want to proceed?", "Do you want to allow", "Allow once", "requires approval", "Approve this", "Waiting for approval")
+BUSY = ("xcodebuild", "heavy_job_lock", "simctl", "sleep ")
+
+
+def run(*args):
+    return subprocess.run(args, capture_output=True, text=True).stdout
+
+
+def descendants(pid):
+    rows = [line.split(None, 2) for line in run("ps", "-axo", "pid=,ppid=,command=").splitlines()]
+    children = {}
+    for row in rows:
+        if len(row) == 3:
+            children.setdefault(row[1], []).append((row[0], row[2]))
+    found, stack = [], [str(pid)]
+    while stack:
+        for child, command in children.get(stack.pop(), []):
+            found.append(command)
+            stack.append(child)
+    return found
+
+
+def log(line):
+    with open(LOG, "a") as out:
+        out.write(f"[{datetime.datetime.now():%F %T}] {line}\n")
+
+
+def send(seat, minutes, tail):
+    con = sqlite3.connect(DB, timeout=30)
+    cur = con.cursor()
+    sender = cur.execute("select id from agents where name=?", (OPS,)).fetchone()[0]
+    head = cur.execute("select id from agents where name=?", (HEAD,)).fetchone()[0]
+    now = datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%d %H:%M:%S.%f")
+    body = (f"席 {seat} の tmux の画面が {minutes} 分変わらず、その席の下に重い作業"
+            f"（xcodebuild・heavy_job_lock・simctl・見張りの sleep）もありません（OPS-1 (e)・運用席の自動の見張り）。\n\n"
+            f"画面の最後の行: `{tail}`\n\n画面が変われば見張りは戻ります。")
+    cur.execute(
+        "insert into messages(project_id, sender_id, thread_id, topic, subject, body_md, importance, "
+        "ack_required, created_ts, attachments) values (1,?,NULL,NULL,?,?,'normal',0,?,'[]')",
+        (sender, f"[progress] 席の見張り: {seat} の画面が {minutes} 分変わらず、重い作業も無い", body, now))
+    cur.execute("insert into message_recipients(message_id, agent_id, kind) values (?,?,'to')",
+                (cur.lastrowid, head))
+    con.commit()
+
+
+def send_approval(seat, tail):
+    con = sqlite3.connect(DB, timeout=30)
+    cur = con.cursor()
+    sender = cur.execute("select id from agents where name=?", (OPS,)).fetchone()[0]
+    head = cur.execute("select id from agents where name=?", (HEAD,)).fetchone()[0]
+    now = datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%d %H:%M:%S.%f")
+    body = (f"席 {seat} の tmux の画面に承認の文言が出て止まっています（OPS-1 (e)・運用席の自動の見張り）。\n\n"
+            f"画面の最後の行: `{tail}`\n\nhead は中身を読み、安全ならコマンドの書き直しを指示する（「はい」を押して通さない）。")
+    cur.execute(
+        "insert into messages(project_id, sender_id, thread_id, topic, subject, body_md, importance, "
+        "ack_required, created_ts, attachments) values (1,?,NULL,NULL,?,?,'high',0,?,'[]')",
+        (sender, f"[blocked] 席の見張り: {seat} が承認の画面で止まっている", body, now))
+    cur.execute("insert into message_recipients(message_id, agent_id, kind) values (?,?,'to')",
+                (cur.lastrowid, head))
+    con.commit()
+
+
+def dry_skip(seat, reason):
+    if DRYRUN:
+        print(f"DRYRUN self skip seat={seat} reason={reason}")
+
+
+def main():
+    # OPS-JOBEND-1 runs independently of unchanged head stall/approval alerts.
+    try:
+        from agentstack_jobend import sweep
+        for job in sweep(dry_run=DRYRUN):
+            if not DRYRUN:
+                log("jobend " + job["status"] + " seat=" + job["seat"] + " id=" + job["id"])
+    except Exception as error:
+        log("jobend census failed: " + type(error).__name__)
+    if "--jobend-only" in sys.argv:
+        return
+    try:
+        state = json.load(open(STATE))
+    except Exception:
+        state = {}
+    con = sqlite3.connect(DB, timeout=30)
+    seats = {name for (name,) in con.execute("select name from agents")}
+    con.close()
+    try:
+        ignored = {l.split("#")[0].strip() for l in open(IGNORE)} - {""}
+    except OSError:
+        ignored = set()
+    now = time.time()
+    live = run(TMUX, "list-sessions", "-F", "#{session_name}").split()
+    for seat in live:
+        if seat not in seats or seat in (HEAD, OPS) or seat in ignored:
+            dry_skip(seat, "ignored" if seat in ignored else "not_monitored")
+            continue
+        screen = run(TMUX, "capture-pane", "-p", "-t", seat)
+        digest = hashlib.sha256(screen.encode()).hexdigest()
+        entry = state.get(seat)
+        waiting = [w for w in APPROVAL if w in screen]
+        if waiting and not (entry and entry.get("approval_alerted") == digest):
+            tail = next((l.strip() for l in reversed(screen.splitlines()) if waiting[0] in l), waiting[0])[:120].replace("`", "'")
+            if DRYRUN:
+                print(f"DRYRUN approval {seat}: {tail}")
+            else:
+                send_approval(seat, tail)
+            log(f"approval {seat}: {waiting[0]}")
+            state[seat] = {"hash": digest, "since": now, "alerted": True, "approval_alerted": digest}
+            dry_skip(seat, "approval_screen")
+            continue
+        if not entry or entry["hash"] != digest:
+            dry_skip(seat, "new_or_changed_screen")
+            state[seat] = {"hash": digest, "since": now, "alerted": False}
+            continue
+        minutes = int((now - entry["since"]) / 60)
+        if entry["alerted"] or minutes < STALL_MIN:
+            dry_skip(seat, "already_alerted" if entry["alerted"] else "not_stalled")
+            continue
+        pane_pid = run(TMUX, "list-panes", "-t", seat, "-F", "#{pane_pid}").split()
+        busy = any(word in command for pid in pane_pid for command in descendants(pid) for word in BUSY)
+        if busy:
+            dry_skip(seat, "heavy_or_watcher_busy")
+            continue
+        tail = next((l.strip() for l in reversed(screen.splitlines()) if l.strip()), "")[:120].replace("`", "'")
+        notify_self(state, STATE, seat, minutes, tail, dry_run=DRYRUN, logger=log)
+        if DRYRUN:
+            print(f"DRYRUN alert {seat} {minutes} min: {tail}")
+        else:
+            send(seat, minutes, tail)
+        entry["alerted"] = True
+        log(f"alert {seat} unchanged {minutes} min")
+    for seat in list(state):
+        if seat not in live:
+            del state[seat]
+    if not DRYRUN:
+        save_state(Path(STATE), state)
+
+
+def guarded_main():
+    # A manual invocation and launchd must not both claim the same stop.
+    with open(STATE + ".lock", "a") as lock:
+        try:
+            fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError:
+            if DRYRUN:
+                print("DRYRUN self skip scope=watcher reason=watcher_lock_busy")
+            return
+        main()
+
+
+if __name__ == "__main__":
+    guarded_main()

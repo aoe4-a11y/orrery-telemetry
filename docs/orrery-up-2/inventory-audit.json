@@ -1,0 +1,21 @@
+{
+  "scopes": [
+    "bin",
+    "hooks",
+    "config",
+    "skills",
+    "dashboard",
+    "integrations",
+    "claude",
+    "codex",
+    "launchd",
+    "releases/seat-lifecycle/ee5880e3e23606e0f3252cbeed211868102f4595"
+  ],
+  "scanned_code_paths": 351,
+  "recorded_rows": 375,
+  "new_unrecorded": [],
+  "missing": [],
+  "changed_after_capture": [],
+  "generated_excluded": 10,
+  "runtime_policy": "enumerate top-level names; read only .sh/.py code, never credentials/state/DB"
+}

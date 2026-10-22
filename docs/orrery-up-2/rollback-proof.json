@@ -1,0 +1,12 @@
+{
+  "restore_exit": 0,
+  "snapshot_records": 353,
+  "mutated_payload_sha256": "d41e94b10feb0aa755d922e6739ce70aab592403735b8ca169f7c3bd69242b31",
+  "expected_payload_sha256": "e4e3764422a4a8d9c03b2b2406e487f71c0d977e5693e7285a6603dc5052d001",
+  "restored_payload_sha256": "e4e3764422a4a8d9c03b2b2406e487f71c0d977e5693e7285a6603dc5052d001",
+  "payload_restored": true,
+  "isolated_database_unchanged": true,
+  "runtime_sentinel_preserved": true,
+  "new_core_alternate_retained": true,
+  "scope": "actual isolated snapshot and standalone restore tool; production paths not written"
+}

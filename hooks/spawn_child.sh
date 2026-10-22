@@ -2307,7 +2307,7 @@ codex_watch_initial_task() {
         esac
         [[ "$bound" == true ]] && continue
         if printf '%s' "$pane_text" | grep -qF "Update available"; then
-            tmux send-keys -t "$session_name" Escape
+            # Leave an updater untouched; it owns its current work.
             continue
         fi
         if codex_hooks_review_present "$pane_text"; then

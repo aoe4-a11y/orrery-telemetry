@@ -1,0 +1,447 @@
+"""Injectable ORRERY Mail client used by the Bridge and P2 MCP proxy.
+
+The client exposes only the operations explicitly allowlisted by the Codex App
+integration. Identity, project, and owner credentials are supplied by the
+server-side binding; callers never provide them through the proxy tool surface.
+"""
+
+from __future__ import annotations
+
+import json
+import re
+import urllib.error
+import urllib.request
+from dataclasses import dataclass
+from typing import Any, Mapping, Protocol
+
+
+class AgentMailError(RuntimeError):
+    """Raised when the ORRERY Mail transport or response is invalid."""
+
+
+class JsonRpcTransport(Protocol):
+    """Injectable JSON-RPC transport used by :class:`AgentMailClient`."""
+
+    def __call__(self, payload: Mapping[str, Any]) -> Mapping[str, Any]: ...
+
+
+@dataclass(frozen=True, slots=True)
+class Registration:
+    agent_name: str
+    registration_token: str
+
+
+class HttpJsonRpcTransport:
+    """POST JSON-RPC to a configured ORRERY Mail HTTP endpoint."""
+
+    def __init__(
+        self,
+        endpoint: str,
+        *,
+        bearer_token: str | None = None,
+        timeout: float = 10.0,
+    ) -> None:
+        if not endpoint:
+            raise ValueError("ORRERY Mail endpoint must be configured")
+        self.endpoint = endpoint
+        self.bearer_token = bearer_token
+        self.timeout = timeout
+
+    def __call__(self, payload: Mapping[str, Any]) -> Mapping[str, Any]:
+        headers = {
+            "Content-Type": "application/json",
+            "Accept": "application/json",
+            "Connection": "close",
+        }
+        if self.bearer_token:
+            headers["Authorization"] = f"Bearer {self.bearer_token}"
+        request = urllib.request.Request(
+            self.endpoint,
+            data=json.dumps(payload, separators=(",", ":")).encode("utf-8"),
+            headers=headers,
+            method="POST",
+        )
+        try:
+            with urllib.request.urlopen(request, timeout=self.timeout) as response:
+                body = json.loads(response.read())
+        except (OSError, urllib.error.URLError, json.JSONDecodeError) as exc:
+            raise AgentMailError("ORRERY Mail HTTP request failed") from exc
+        if not isinstance(body, dict):
+            raise AgentMailError("ORRERY Mail returned a non-object response")
+        return body
+
+
+class AgentMailClient:
+    """Perform the allowlisted Codex App operations through agent-mail."""
+
+    # Builds disagree about whether a name-scoped tool takes an owner token.
+    # The pinned upstream declares registration_token on fetch_inbox and the
+    # reservation tools; older and locally-patched builds reject that same
+    # argument outright. Sending it unconditionally breaks one, omitting it
+    # breaks the other, and an error string is the wrong thing to branch on —
+    # scripts/selftest.py already settled this by reading the schema the
+    # server advertises. This does the same, once, and caches it.
+    _TOKEN_PARAMS = ("registration_token", "sender_token", "agent_token")
+
+    def __init__(self, transport: JsonRpcTransport) -> None:
+        self.transport = transport
+        self._request_id = 0
+        self._tool_params: dict[str, frozenset[str]] | None = None
+
+    def _advertised_parameters(self, tool_name: str) -> frozenset[str]:
+        """Parameters the answering server says this tool accepts."""
+
+        if self._tool_params is None:
+            self._request_id += 1
+            response = self.transport(
+                {
+                    "jsonrpc": "2.0",
+                    "id": self._request_id,
+                    "method": "tools/list",
+                    "params": {},
+                }
+            )
+            if response.get("error"):
+                raise AgentMailError("ORRERY Mail tool schema discovery failed")
+            result = response.get("result")
+            tools = result.get("tools") if isinstance(result, dict) else None
+            if not isinstance(tools, list):
+                raise AgentMailError("ORRERY Mail tool schema discovery failed")
+            params: dict[str, frozenset[str]] = {}
+            for tool in tools:
+                if not isinstance(tool, dict):
+                    continue
+                name = tool.get("name")
+                schema = tool.get("inputSchema")
+                properties = schema.get("properties") if isinstance(schema, dict) else None
+                if isinstance(name, str) and isinstance(properties, dict):
+                    params[name] = frozenset(properties)
+            self._tool_params = params
+        return self._tool_params.get(tool_name, frozenset())
+
+    def _with_owner_token(
+        self, tool_name: str, arguments: dict[str, Any], token: str | None
+    ) -> dict[str, Any]:
+        """Attach the owner token under whichever name this tool advertises.
+
+        A server that does not advertise a token field on this tool is one that
+        rejects it, so the argument is left off rather than guessed at.
+        """
+
+        if not token:
+            return arguments
+        allowed = self._advertised_parameters(tool_name)
+        for field in self._TOKEN_PARAMS:
+            if field in allowed:
+                arguments[field] = token
+                break
+        return arguments
+
+    def register_agent(
+        self,
+        *,
+        project_key: str,
+        model: str,
+        registration_token: str,
+        agent_name: str | None = None,
+        task_description: str = "Codex App task",
+    ) -> Registration:
+        """Register a fresh or existing identity idempotently."""
+
+        if not project_key or not registration_token:
+            raise ValueError("project_key and registration_token are required")
+        arguments: dict[str, Any] = {
+            "project_key": project_key,
+            "program": "codex-app",
+            "model": model or "unknown",
+            "task_description": task_description,
+            "registration_token": registration_token,
+        }
+        if agent_name is not None:
+            arguments["name"] = agent_name
+        result = self._call_tool_object("register_agent", arguments)
+        returned_name = result.get("name") or result.get("agent_name")
+        if not isinstance(returned_name, str) or not returned_name:
+            raise AgentMailError("register_agent response did not include an agent name")
+        returned_token = result.get("registration_token")
+        if returned_token is not None and returned_token != registration_token:
+            raise AgentMailError("register_agent returned a conflicting owner token")
+        return Registration(returned_name, registration_token)
+
+    def fetch_inbox(
+        self,
+        *,
+        project_key: str,
+        agent_name: str,
+        registration_token: str | None = None,
+        limit: int = 20,
+        urgent_only: bool = False,
+        include_bodies: bool = False,
+        since_ts: str | None = None,
+        topic: str | None = None,
+    ) -> list[dict[str, Any]]:
+        arguments: dict[str, Any] = {
+            "project_key": project_key,
+            "agent_name": agent_name,
+            "limit": limit,
+            "urgent_only": urgent_only,
+            "include_bodies": include_bodies,
+        }
+        self._with_owner_token("fetch_inbox", arguments, registration_token)
+        _put_optional(arguments, "since_ts", since_ts)
+        _put_optional(arguments, "topic", topic)
+        value = self._call_tool("fetch_inbox", arguments)
+        if isinstance(value, dict) and set(value) == {"result"}:
+            value = value["result"]
+        if not isinstance(value, list) or not all(
+            isinstance(item, dict) for item in value
+        ):
+            raise AgentMailError("fetch_inbox returned an unexpected result")
+        return [dict(item) for item in value]
+
+    def send_message(
+        self,
+        *,
+        project_key: str,
+        agent_name: str,
+        registration_token: str,
+        to: list[str],
+        subject: str,
+        body_md: str,
+        cc: list[str] | None = None,
+        bcc: list[str] | None = None,
+        importance: str = "normal",
+        ack_required: bool = False,
+        thread_id: str | None = None,
+        topic: str | None = None,
+    ) -> dict[str, Any]:
+        arguments: dict[str, Any] = {
+            "project_key": project_key,
+            "sender_name": agent_name,
+            "sender_token": registration_token,
+            "to": to,
+            "subject": subject,
+            "body_md": body_md,
+            "importance": importance,
+            "ack_required": ack_required,
+        }
+        _put_optional(arguments, "cc", cc)
+        _put_optional(arguments, "bcc", bcc)
+        _put_optional(arguments, "thread_id", thread_id)
+        _put_optional(arguments, "topic", topic)
+        return self._call_tool_object("send_message", arguments)
+
+    def acknowledge_message(
+        self,
+        *,
+        project_key: str,
+        agent_name: str,
+        message_id: int,
+        registration_token: str | None = None,
+    ) -> dict[str, Any]:
+        arguments: dict[str, Any] = {
+            "project_key": project_key,
+            "agent_name": agent_name,
+            "message_id": message_id,
+        }
+        self._with_owner_token("acknowledge_message", arguments, registration_token)
+        return self._call_tool_object("acknowledge_message", arguments)
+
+    def reserve_files(
+        self,
+        *,
+        project_key: str,
+        agent_name: str,
+        paths: list[str],
+        ttl_seconds: int = 3600,
+        exclusive: bool = True,
+        reason: str = "",
+        registration_token: str | None = None,
+    ) -> dict[str, Any]:
+        arguments: dict[str, Any] = {
+            "project_key": project_key,
+            "agent_name": agent_name,
+            "paths": paths,
+            "ttl_seconds": ttl_seconds,
+            "exclusive": exclusive,
+            "reason": reason,
+        }
+        self._with_owner_token("file_reservation_paths", arguments, registration_token)
+        return self._call_tool_object("file_reservation_paths", arguments)
+
+    def renew_reservations(
+        self,
+        *,
+        project_key: str,
+        agent_name: str,
+        extend_seconds: int = 1800,
+        paths: list[str] | None = None,
+        file_reservation_ids: list[int] | None = None,
+        registration_token: str | None = None,
+    ) -> dict[str, Any]:
+        arguments: dict[str, Any] = {
+            "project_key": project_key,
+            "agent_name": agent_name,
+            "extend_seconds": extend_seconds,
+        }
+        self._with_owner_token("renew_file_reservations", arguments, registration_token)
+        _put_optional(arguments, "paths", paths)
+        _put_optional(arguments, "file_reservation_ids", file_reservation_ids)
+        return self._call_tool_object("renew_file_reservations", arguments)
+
+    def release_reservations(
+        self,
+        *,
+        project_key: str,
+        agent_name: str,
+        paths: list[str] | None = None,
+        file_reservation_ids: list[int] | None = None,
+        registration_token: str | None = None,
+    ) -> dict[str, Any]:
+        arguments: dict[str, Any] = {
+            "project_key": project_key,
+            "agent_name": agent_name,
+        }
+        self._with_owner_token("release_file_reservations", arguments, registration_token)
+        _put_optional(arguments, "paths", paths)
+        _put_optional(arguments, "file_reservation_ids", file_reservation_ids)
+        return self._call_tool_object("release_file_reservations", arguments)
+
+    def retire_agent(
+        self,
+        *,
+        project_key: str,
+        agent_name: str,
+        registration_token: str,
+    ) -> dict[str, Any]:
+        """Retire one Bridge-owned agent using its persisted owner token."""
+
+        if not project_key or not agent_name or not registration_token:
+            raise ValueError(
+                "project_key, agent_name, and registration_token are required"
+            )
+        return self._call_tool_object(
+            "retire_agent",
+            {
+                "project_key": project_key,
+                "agent_name": agent_name,
+                "registration_token": registration_token,
+            },
+        )
+
+    def whois(
+        self,
+        *,
+        project_key: str,
+        agent_name: str,
+        registration_token: str | None = None,
+    ) -> dict[str, Any]:
+        """Read one agent profile without archive commit history."""
+
+        if not project_key or not agent_name:
+            raise ValueError("project_key and agent_name are required")
+        arguments: dict[str, Any] = {
+            "project_key": project_key,
+            "agent_name": agent_name,
+            "include_recent_commits": False,
+        }
+        self._with_owner_token("whois", arguments, registration_token)
+        profile = self._call_tool_object("whois", arguments)
+        returned_name = profile.get("name")
+        if returned_name != agent_name:
+            raise AgentMailError("whois returned a mismatched agent identity")
+        return profile
+
+    def _call_tool_object(
+        self, tool_name: str, arguments: Mapping[str, Any]
+    ) -> dict[str, Any]:
+        value = self._call_tool(tool_name, arguments)
+        if not isinstance(value, dict):
+            raise AgentMailError(f"{tool_name} returned a non-object result")
+        return dict(value)
+
+    def _call_tool(
+        self, tool_name: str, arguments: Mapping[str, Any]
+    ) -> Any:
+        return _decode_tool_response(self._request_tool(tool_name, arguments))
+
+    def _request_tool(
+        self, tool_name: str, arguments: Mapping[str, Any]
+    ) -> Mapping[str, Any]:
+        self._request_id += 1
+        return self.transport(
+            {
+                "jsonrpc": "2.0",
+                "id": self._request_id,
+                "method": "tools/call",
+                "params": {"name": tool_name, "arguments": dict(arguments)},
+            }
+        )
+
+_ERROR_TEXT_LIMIT = 600
+# Anything that looks like a credential is redacted before an upstream error
+# reaches the model: bearer/registration tokens are long runs of URL-safe
+# characters, hex digests likewise.
+_SECRET_LIKE = re.compile(r"(?<![A-Za-z0-9_./-])[A-Za-z0-9_-]{32,}(?![A-Za-z0-9_./-])")
+
+
+def _safe_error_text(rpc_result: Mapping[str, Any]) -> str:
+    """The server's own error line, shortened and with secret-like runs redacted.
+
+    Hiding the reason entirely (the previous behaviour, a fixed "tool call
+    failed") left the model unable to act on plain validation errors — an
+    unknown recipient was reported as an opaque failure and the child gave up
+    instead of correcting the name (2026-09-07, WSL2 Codex child).
+    """
+
+    content = rpc_result.get("content")
+    text = ""
+    if isinstance(content, list):
+        for part in content:
+            if isinstance(part, dict) and part.get("type") == "text":
+                candidate = part.get("text")
+                if isinstance(candidate, str) and candidate.strip():
+                    text = candidate.strip()
+                    break
+    if not text:
+        return "ORRERY Mail tool call failed"
+    text = _SECRET_LIKE.sub("[redacted]", text.splitlines()[0])
+    if len(text) > _ERROR_TEXT_LIMIT:
+        text = text[: _ERROR_TEXT_LIMIT - 1] + "…"
+    return f"ORRERY Mail tool call failed: {text}"
+
+
+def _decode_tool_response(response: Mapping[str, Any]) -> Any:
+    """Decode safe result shapes; surface the server's error line, redacted."""
+
+    if response.get("error"):
+        raise AgentMailError("ORRERY Mail JSON-RPC call failed")
+    rpc_result = response.get("result")
+    if not isinstance(rpc_result, dict):
+        raise AgentMailError("ORRERY Mail response is missing result")
+    if rpc_result.get("isError") is True:
+        raise AgentMailError(_safe_error_text(rpc_result))
+
+    structured = rpc_result.get("structuredContent")
+    if isinstance(structured, (dict, list)):
+        return structured
+    content = rpc_result.get("content")
+    if isinstance(content, list):
+        for part in content:
+            if not isinstance(part, dict) or part.get("type") != "text":
+                continue
+            text = part.get("text")
+            if not isinstance(text, str):
+                continue
+            try:
+                decoded = json.loads(text)
+            except json.JSONDecodeError:
+                continue
+            if isinstance(decoded, (dict, list)):
+                return decoded
+    raise AgentMailError("ORRERY Mail tool result has an unexpected shape")
+
+
+def _put_optional(arguments: dict[str, Any], key: str, value: Any) -> None:
+    if value is not None:
+        arguments[key] = value

@@ -403,6 +403,7 @@ print(json.dumps(hooks('SessionEnd')),flush=True)
         raw=process.stdout.readline()
         assert raw,process.stderr.read()
         post=json.loads(raw)
+        assert 'hookSpecificOutput' in post[0], post
         assert post[0]['hookSpecificOutput']['hookEventName']=='PostToolUse'
         assert 'from Alpha [normal]: hello' in post[0]['hookSpecificOutput']['additionalContext']
         assert api['runtime_delivery'](client).pending_messages(mid)==[]

@@ -1194,13 +1194,15 @@ _WATCHER_FUNCTIONS = (
     "state_mark_result",
     "acquire_delivery_lease",
     "release_delivery_lease",
+    "notification_is_in_input",
+    "inject_notification",
     "deliver_worker",
 )
 
 
 def _extract_shell_function(source: str, name: str) -> str:
     match = re.search(
-        rf"^{re.escape(name)}\(\) \{{\n(?:.*\n)*?^\}}\n",
+        rf"^{re.escape(name)}\(\) [{{(]\n(?:.*\n)*?^[}})]\n",
         source,
         re.MULTILINE,
     )
@@ -1363,7 +1365,10 @@ def _state_should_attempt(
 def _assert_injection_commands(commands: list[str], *, expected_count: int) -> None:
     injection_sequence = []
     for command in commands:
-        if command.startswith("load-buffer-content "):
+        if command.startswith("tmux send-keys -t BlueLake -l "):
+            assert "D12 completion delivery" in command
+            injection_sequence.extend(["body", "prompt"])
+        elif command.startswith("load-buffer-content "):
             assert "D12 completion delivery" in command
             injection_sequence.append("body")
         elif command.startswith("tmux paste-buffer -p -d ") and command.endswith(" -t BlueLake"):

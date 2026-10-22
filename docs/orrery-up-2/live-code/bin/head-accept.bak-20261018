@@ -1,0 +1,142 @@
+#!/usr/bin/env python3
+"""head-accept: head が駅の受領書を受理し、その駅の作業くず（scratch の root）を governor に消させる（R-087・storage v5.9）。
+
+使い方:
+  head-accept STATION RECEIPT_ID [--note "一言"] [--dry-run]
+手順: (1) [accept] の便を ProudTuring 名義で 1 通（件名 "[accept] STATION receipt=RECEIPT_ID"）、
+      (2) tasks/STATE.json の STATION を closed に、(3) head-evidence-export.py で参照の export を作り、
+      (4) metadata の task が STATION で retention_category が scratch の root ごとに
+          dev-storage-governor retire-scratch の下見→適用（歯止めは governor の中・外せない）。
+--dry-run は便を出さず STATE も変えず、下見だけをする。
+"""
+import argparse
+import datetime as dt
+import json
+import os
+import sqlite3
+import subprocess
+import sys
+from pathlib import Path
+
+HOME = Path.home()
+DB = HOME / '.agentstack/mail/storage.sqlite3'
+STATE = HOME / '.agentstack/runtime/tasks/STATE.json'
+EXPORT = HOME / '.agentstack/runtime/head-evidence-export.py'
+GOV = HOME / '.local/bin/dev-storage-governor'
+BASES = [Path('/Volumes/DevSSD-Private/DevStorageGovernor/artifacts'),
+         Path('/Volumes/DevSSD/DevStorageGovernor/artifacts'), HOME / '.dev-storage-governor']
+WORK = HOME / '.agentstack/runtime/head-accept'
+
+ap = argparse.ArgumentParser()
+ap.add_argument('station')
+ap.add_argument('receipt_id', type=int)
+ap.add_argument('--note', default='')
+ap.add_argument('--dry-run', action='store_true')
+ap.add_argument('--reuse-accept', action='store_true', help='既に出した [accept] を使う（便を出さず STATE も変えない）')
+ap.add_argument('--partial', action='store_true',
+                help='途中の受領書の受理: [accept-partial] 便だけ出し、駅は開いたまま（STATE を変えず retire もしない）')
+ap.add_argument('--defer-retire', action='store_true',
+                help='[accept] と STATE だけ行い、retire-scratch は後回しの一覧（retire-pending.txt）に足す（GOV-3 が入るまで）')
+a = ap.parse_args()
+stamp = dt.datetime.now().strftime('%Y%m%dT%H%M%S')
+WORK.mkdir(parents=True, exist_ok=True)
+
+if not a.dry_run and not a.reuse_accept:
+    con = sqlite3.connect(DB, timeout=30)
+    cur = con.cursor()
+    sid = cur.execute("select id from agents where name='ProudTuring'").fetchone()[0]
+    owner = cur.execute('select a.name from messages m join agents a on a.id=m.sender_id where m.id=?', (a.receipt_id,)).fetchone()
+    if not owner:
+        sys.exit(f'receipt {a.receipt_id} not found')
+    now = dt.datetime.now(dt.timezone.utc).strftime('%Y-%m-%d %H:%M:%S.%f')
+    if a.partial:
+        subject = f'[accept-partial] {a.station} receipt={a.receipt_id}'
+        body = (f'台帳: M-006・M-058。head が {a.station} の途中の受領書 便{a.receipt_id}（{owner[0]}）を受理した。'
+                f'駅は開いたまま（STATE は変えず、作業くずの退役もしない）。続きの作業を進めてよい。{a.note}')
+    else:
+        subject = f'[accept] {a.station} receipt={a.receipt_id}'
+        body = (f'台帳: R-087・storage v5.9・M-006。head が {a.station} の受領書 便{a.receipt_id}（{owner[0]}）を受理した。'
+                f'この駅の作業くず（retention_category=scratch の root）は governor の retire-scratch が歯止めの下で消す。{a.note}')
+    cur.execute("insert into messages(project_id, sender_id, thread_id, topic, subject, body_md, importance, ack_required, created_ts, attachments) "
+                "values (1,?,?,NULL,?,?,'normal',0,?,'[]')", (sid, str(a.receipt_id), subject, body, now))
+    mid = cur.lastrowid
+    rid = cur.execute('select id from agents where name=?', (owner[0],)).fetchone()[0]
+    cur.execute("insert into message_recipients(message_id, agent_id, kind) values (?,?,'to')", (mid, rid))
+    con.commit()
+    print(f'accept mail id={mid}')
+    if a.partial:
+        print(f'partial: {a.station} は開いたまま（STATE・retire は触らない）')
+        sys.exit(0)
+    state = json.loads(STATE.read_text(encoding='utf-8')) if STATE.exists() else {}
+    state[a.station] = 'closed'
+    tmp = STATE.with_suffix('.tmp')
+    tmp.write_text(json.dumps(state, ensure_ascii=False, indent=1), encoding='utf-8')
+    os.replace(tmp, STATE)
+
+if a.defer_retire:
+    with (WORK / 'retire-pending.txt').open('a', encoding='utf-8') as f:
+        f.write(f'{a.station} {a.receipt_id} {stamp}\n')
+    print(f'retire deferred: {a.station} (後で head-accept {a.station} {a.receipt_id} --reuse-accept)')
+    sys.exit(0)
+
+HOLD = WORK / 'RETIRE-HOLD'
+if HOLD.exists() and not a.dry_run:
+    sys.exit(f'retire は止めてある（{HOLD}・2026-10-13 RETAIN-KEEP-1: 残すべき画像 51,703 件が SHA/理由の無い tombstone で消えていた）。[accept] と STATE は済んでいる。')
+
+roots = []
+for base in BASES:
+    if not base.exists():
+        continue
+    for proj in base.iterdir():
+        if not proj.is_dir():
+            continue
+        for r in proj.iterdir():
+            meta = r / '.dev-storage.json'
+            try:
+                d = json.loads(meta.read_text(encoding='utf-8'))
+            except Exception:
+                continue
+            if d.get('task') == a.station and d.get('retention_category') == 'scratch':
+                roots.append(r)
+print(f'scratch roots for {a.station}: {len(roots)}')
+summary = []
+for r in roots:
+    index = subprocess.run([sys.executable, '-I', str(EXPORT)], capture_output=True, text=True, check=True).stdout.strip()
+    plan = WORK / f'{stamp}-{r.name}-plan.json'
+    pv = subprocess.run([str(GOV), 'retire-scratch', '--station', a.station, '--path', str(r),
+                         '--evidence-index', index, '--plan-file', str(plan)], capture_output=True, text=True)
+    row = {'root': str(r), 'preview_exit': pv.returncode, 'preview': pv.stdout.strip() or pv.stderr.strip()}
+    if pv.returncode == 0 and not a.dry_run:
+        info = json.loads(pv.stdout)
+        if info.get('holds'):
+            row['applied'] = False
+            row['holds'] = info['holds']
+        else:
+            tomb = r / 'receipts' / f'R087-retire-{stamp}.jsonl'
+            # DELETE-CAUSE-4: the preview may consume the old epoch. Refresh
+            # before the final preview; apply validates that exact saved plan.
+            index = subprocess.run([sys.executable, '-I', str(EXPORT)], capture_output=True, text=True, check=True).stdout.strip()
+            ready_plan = WORK / f'{stamp}-{r.name}-apply-ready-plan.json'
+            ready = subprocess.run([str(GOV), 'retire-scratch', '--station', a.station, '--path', str(r),
+                                    '--evidence-index', index, '--plan-file', str(ready_plan)],
+                                   capture_output=True, text=True)
+            row['apply_preview_exit'] = ready.returncode
+            row['apply_preview'] = ready.stdout.strip() or ready.stderr.strip()
+            if ready.returncode:
+                # Drain's existing failure boundary also covers pre-apply rejection.
+                row['apply_exit'] = ready.returncode
+                row['apply'] = 'pre-apply preview rejected'
+            elif json.loads(ready.stdout).get('holds'):
+                row['applied'] = False
+                row['holds'] = json.loads(ready.stdout)['holds']
+            else:
+                ap2 = subprocess.run([str(GOV), 'retire-scratch', '--station', a.station, '--path', str(r),
+                                      '--evidence-index', index, '--plan-file', str(ready_plan), '--apply', '--tombstone', str(tomb)],
+                                     capture_output=True, text=True)
+                row['apply_exit'] = ap2.returncode
+                row['apply'] = ap2.stdout.strip() or ap2.stderr.strip()
+    summary.append(row)
+out = WORK / f'{stamp}-{a.station}-summary.json'
+out.write_text(json.dumps(summary, ensure_ascii=False, indent=1), encoding='utf-8')
+print(json.dumps(summary, ensure_ascii=False, indent=1))
+print(f'summary: {out}')

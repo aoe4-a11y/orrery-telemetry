@@ -1,0 +1,1872 @@
+{
+  "home": "/Users/huyuhutaru/.dev-storage-governor/examforge/20261022T063810Z-build-cache-e4007ade/rehearsal/rehearsal-home",
+  "mail_port": 61005,
+  "dashboard_port": 61006,
+  "seeded": 354,
+  "mode": "real isolated native Mail and dashboard; fake no-service Linux manager; scoped approvals skipped",
+  "wrapper_exit": 0,
+  "installer_exit": 0,
+  "doctor_exit": 1,
+  "doctor_warnings_expected": "isolated scoped install with stub service manager; original warnings retained in log",
+  "mail_health": "ready",
+  "mail_database_matches": true,
+  "comparisons": [
+    {
+      "path": "env.sh.bak-20261022-codex-native-tls",
+      "match": true,
+      "kind": "env-history-exact"
+    },
+    {
+      "path": "VERSION",
+      "expected_sha256": "2699ec8eec9c2c27d7d6940fb173d23870cb4cef71685356fbd72acb008c7374",
+      "installed_sha256": "2699ec8eec9c2c27d7d6940fb173d23870cb4cef71685356fbd72acb008c7374",
+      "match": true
+    },
+    {
+      "path": "bin/agent-start",
+      "expected_sha256": "5d8cd703f4df39628596702b66c9f3ae8d135b137d3b4c01a6ed733fe509dc69",
+      "installed_sha256": "5d8cd703f4df39628596702b66c9f3ae8d135b137d3b4c01a6ed733fe509dc69",
+      "match": true
+    },
+    {
+      "path": "bin/agent-start-codex",
+      "expected_sha256": "d50302a0f6b91ef8c4032f6e1763051e8c5c97179a8a800138dadd1887821ac3",
+      "installed_sha256": "d50302a0f6b91ef8c4032f6e1763051e8c5c97179a8a800138dadd1887821ac3",
+      "match": true
+    },
+    {
+      "path": "bin/agentstack-await-reply",
+      "expected_sha256": "af5cee931c1398a790905eace704d2d7b021ed3b81959e4ba643724d63e10ad0",
+      "installed_sha256": "af5cee931c1398a790905eace704d2d7b021ed3b81959e4ba643724d63e10ad0",
+      "match": true
+    },
+    {
+      "path": "bin/agentstack-check-seats",
+      "expected_sha256": "3db06eeaf4d34ff1e6783786ad9413605e882144ac67fdf63ca41de98691a1f8",
+      "installed_sha256": "3db06eeaf4d34ff1e6783786ad9413605e882144ac67fdf63ca41de98691a1f8",
+      "match": true
+    },
+    {
+      "path": "bin/agentstack-claude-setup",
+      "expected_sha256": "93b3c5184f561f085e4c26c896548c2688f25f48cd10260b797013c8212b63fa",
+      "installed_sha256": "93b3c5184f561f085e4c26c896548c2688f25f48cd10260b797013c8212b63fa",
+      "match": true
+    },
+    {
+      "path": "bin/agentstack-codex-bootstrap",
+      "expected_sha256": "c4deaecff4e0c92f1bc97ea4ffa9d2f3e6ba524bd38b210b39f46554a71e9f67",
+      "installed_sha256": "c4deaecff4e0c92f1bc97ea4ffa9d2f3e6ba524bd38b210b39f46554a71e9f67",
+      "match": true
+    },
+    {
+      "path": "bin/agentstack-codex-setup",
+      "expected_sha256": "4630067f2abb97282df39ac6d0b78d9a33d393fe06cf71335b28f4f6bea7884d",
+      "installed_sha256": "4630067f2abb97282df39ac6d0b78d9a33d393fe06cf71335b28f4f6bea7884d",
+      "match": true
+    },
+    {
+      "path": "bin/agentstack-doctor",
+      "expected_sha256": "f51a0fad36b59e57ff5a483d58dcc1cabcfd8b75d2e3f83e792e70bc2bcac81b",
+      "installed_sha256": "f51a0fad36b59e57ff5a483d58dcc1cabcfd8b75d2e3f83e792e70bc2bcac81b",
+      "match": true
+    },
+    {
+      "path": "bin/agentstack-mailctl",
+      "expected_sha256": "e0f881ff499d09e6a622a40f133dba3a9125399a4be2fc29d977aa3ad2264e38",
+      "installed_sha256": "e0f881ff499d09e6a622a40f133dba3a9125399a4be2fc29d977aa3ad2264e38",
+      "match": true
+    },
+    {
+      "path": "bin/agentstack-memory-guard",
+      "expected_sha256": "3842a57bbd9eb8a717c664cd4c71897975b2bdaee1a3a3397209c15370b64e9a",
+      "installed_sha256": "3842a57bbd9eb8a717c664cd4c71897975b2bdaee1a3a3397209c15370b64e9a",
+      "match": true
+    },
+    {
+      "path": "bin/agentstack-merge-claude-mcp",
+      "expected_sha256": "e3d8331aa9d2ab4b5eb93355cbc61770c0f72d5eaeecd14212a422b7767810ae",
+      "installed_sha256": "e3d8331aa9d2ab4b5eb93355cbc61770c0f72d5eaeecd14212a422b7767810ae",
+      "match": true
+    },
+    {
+      "path": "bin/agentstack-merge-settings",
+      "expected_sha256": "cc80624bfc6f7a1f73812e2468e99727bda06b6db1a0dfa831b8ef45dd6adb35",
+      "installed_sha256": "cc80624bfc6f7a1f73812e2468e99727bda06b6db1a0dfa831b8ef45dd6adb35",
+      "match": true
+    },
+    {
+      "path": "bin/agentstack-owner-checkin.py",
+      "expected_sha256": "e360c0730e323fde06fb5e06ed51e1e8009bb60ff8359d0e377840885fef5a52",
+      "installed_sha256": "e360c0730e323fde06fb5e06ed51e1e8009bb60ff8359d0e377840885fef5a52",
+      "match": true
+    },
+    {
+      "path": "bin/agentstack-preregister-child",
+      "match": true,
+      "kind": "dispatcher"
+    },
+    {
+      "path": "bin/agentstack-reap-idle-seats",
+      "expected_sha256": "838b963e295ca664ded49e87b5968d9bcfe6f68c345d75543f019d75eac2b7af",
+      "installed_sha256": "838b963e295ca664ded49e87b5968d9bcfe6f68c345d75543f019d75eac2b7af",
+      "match": true
+    },
+    {
+      "path": "bin/agentstack-reap-idle-seats.bak-20261004-ops3",
+      "expected_sha256": "a2e7aaca91775542fca5cc739b1b054b1afcf79da244e0b94a09b6070f8ed6b7",
+      "installed_sha256": "a2e7aaca91775542fca5cc739b1b054b1afcf79da244e0b94a09b6070f8ed6b7",
+      "match": true
+    },
+    {
+      "path": "bin/agentstack-reap-idle-seats.bak-20261005-ops3b",
+      "expected_sha256": "17330a99b106822bb3363968249f311c709783d120f3f3e76e1465ff2291a0f7",
+      "installed_sha256": "17330a99b106822bb3363968249f311c709783d120f3f3e76e1465ff2291a0f7",
+      "match": true
+    },
+    {
+      "path": "bin/agentstack-reap-idle-seats.bak-20261012-unfinished",
+      "expected_sha256": "0a04925ad97e59c576146c6148e0e2442f37b014c62c6df7575b1f9d5bd612cb",
+      "installed_sha256": "0a04925ad97e59c576146c6148e0e2442f37b014c62c6df7575b1f9d5bd612cb",
+      "match": true
+    },
+    {
+      "path": "bin/agentstack-reap-idle-seats.bak-20261020-90min",
+      "expected_sha256": "b950ec76c2982007adc4667f4cc27f243f33c5489f71d1ffcbde1306e3859d65",
+      "installed_sha256": "b950ec76c2982007adc4667f4cc27f243f33c5489f71d1ffcbde1306e3859d65",
+      "match": true
+    },
+    {
+      "path": "bin/agentstack-reregister",
+      "expected_sha256": "f13d6088abfb9049d81f91cec43dd6e0805a64039d9dbb58f2fb2025731c6998",
+      "installed_sha256": "f13d6088abfb9049d81f91cec43dd6e0805a64039d9dbb58f2fb2025731c6998",
+      "match": true
+    },
+    {
+      "path": "bin/agentstack-restart-seat",
+      "expected_sha256": "e4e3764422a4a8d9c03b2b2406e487f71c0d977e5693e7285a6603dc5052d001",
+      "installed_sha256": "e4e3764422a4a8d9c03b2b2406e487f71c0d977e5693e7285a6603dc5052d001",
+      "match": true
+    },
+    {
+      "path": "bin/agentstack-rule-mirror-check",
+      "expected_sha256": "e7ed5fc4d78c27387705186200135f3311f1c1af825a52439c0e1554c8754086",
+      "installed_sha256": "e7ed5fc4d78c27387705186200135f3311f1c1af825a52439c0e1554c8754086",
+      "match": true
+    },
+    {
+      "path": "bin/agentstack-rule-mirror-check.bak-20261007-r078",
+      "expected_sha256": "c3a432b102ef3479811e21ecc40b240f376693a80ac729337cb6549594854f84",
+      "installed_sha256": "c3a432b102ef3479811e21ecc40b240f376693a80ac729337cb6549594854f84",
+      "match": true
+    },
+    {
+      "path": "bin/agentstack-rule-mirror-check.bak-20261010-v59",
+      "expected_sha256": "cad96f255dd59adc2aea02a23634fa030d5a894e6d7047b1c2c51359f2e93cc1",
+      "installed_sha256": "cad96f255dd59adc2aea02a23634fa030d5a894e6d7047b1c2c51359f2e93cc1",
+      "match": true
+    },
+    {
+      "path": "bin/agentstack-seat-cost.py",
+      "expected_sha256": "21b1b08194b8b158434f6b9211d9bf9696daba37d93b15f0361280238e38edd1",
+      "installed_sha256": "21b1b08194b8b158434f6b9211d9bf9696daba37d93b15f0361280238e38edd1",
+      "match": true
+    },
+    {
+      "path": "bin/agentstack-seat-stall-watch.py",
+      "expected_sha256": "41e9c3b641057f882cd26486b4503888348a18da12972638d0da35ee7760f7f9",
+      "installed_sha256": "41e9c3b641057f882cd26486b4503888348a18da12972638d0da35ee7760f7f9",
+      "match": true
+    },
+    {
+      "path": "bin/agentstack-seat-stall-watch.py.bak-20261020-jobend",
+      "expected_sha256": "398b6f388a8123e6f308a44596e8eb20c7ba84777f0e8d6a752cfd29abf4f9fe",
+      "installed_sha256": "398b6f388a8123e6f308a44596e8eb20c7ba84777f0e8d6a752cfd29abf4f9fe",
+      "match": true
+    },
+    {
+      "path": "bin/agentstack-seat-stall-watch.py.bak-20261020-stallself",
+      "expected_sha256": "a4fe4dab7a607b8e9760d690379cfb179acc6f72a0810d0d7552a212a61f4a4c",
+      "installed_sha256": "a4fe4dab7a607b8e9760d690379cfb179acc6f72a0810d0d7552a212a61f4a4c",
+      "match": true
+    },
+    {
+      "path": "bin/agentstack-seat-stall-watch.py.bak-20261021-orphan",
+      "expected_sha256": "50871dd92e87cdf326230c20242845a8eba660c8776cb82a788fbd7cbd553352",
+      "installed_sha256": "50871dd92e87cdf326230c20242845a8eba660c8776cb82a788fbd7cbd553352",
+      "match": true
+    },
+    {
+      "path": "bin/agentstack-seat-stall-watch.py.bak-20261021-retainprune",
+      "expected_sha256": "a9a87282f3a10688d71a4ecccc566a2fef4fef0263d29472661148e206eb3235",
+      "installed_sha256": "a9a87282f3a10688d71a4ecccc566a2fef4fef0263d29472661148e206eb3235",
+      "match": true
+    },
+    {
+      "path": "bin/agentstack-selftest",
+      "expected_sha256": "4031aef42fabff8de96d8ec330227185c2ec2d62accc2634dfff1ec264ee880e",
+      "installed_sha256": "4031aef42fabff8de96d8ec330227185c2ec2d62accc2634dfff1ec264ee880e",
+      "match": true
+    },
+    {
+      "path": "bin/agentstack-spawn-claude",
+      "expected_sha256": "11c840aff4fe37cac4fdebeb3a1361478a481fa0db178f7fcf3e929877f94bdc",
+      "installed_sha256": "11c840aff4fe37cac4fdebeb3a1361478a481fa0db178f7fcf3e929877f94bdc",
+      "match": true
+    },
+    {
+      "path": "bin/agentstack-spawn-codex",
+      "expected_sha256": "ce3e2d37f6158d73b27d4cf5419298c608b9b93ffab7e65bbe6432d01bf9c488",
+      "installed_sha256": "ce3e2d37f6158d73b27d4cf5419298c608b9b93ffab7e65bbe6432d01bf9c488",
+      "match": true
+    },
+    {
+      "path": "bin/agentstack-spawn-codex.bak-20261001-utf8desc",
+      "expected_sha256": "1ab6d348bb9934a9f6c90a1d24a8290214e4d73bad8374368fd9edfaf1599bd4",
+      "installed_sha256": "1ab6d348bb9934a9f6c90a1d24a8290214e4d73bad8374368fd9edfaf1599bd4",
+      "match": true
+    },
+    {
+      "path": "bin/agentstack-stallself-replay.py",
+      "expected_sha256": "1aba01c1ac523016f88aa6b42ac59c598ec93f3c97615129e2a36c17f6701a47",
+      "installed_sha256": "1aba01c1ac523016f88aa6b42ac59c598ec93f3c97615129e2a36c17f6701a47",
+      "match": true
+    },
+    {
+      "path": "bin/agentstack-station-materials",
+      "expected_sha256": "a2d67c446c161431930a6ab94302407ff9575e30e2c3c44527ab14e22ac9ccb8",
+      "installed_sha256": "a2d67c446c161431930a6ab94302407ff9575e30e2c3c44527ab14e22ac9ccb8",
+      "match": true
+    },
+    {
+      "path": "bin/agentstack-station-materials.bak-20261021-sparse",
+      "expected_sha256": "9097c69edf6a3f556da1576563e1ba5210ea96034b5d3b70a1841bc9d609f70f",
+      "installed_sha256": "9097c69edf6a3f556da1576563e1ba5210ea96034b5d3b70a1841bc9d609f70f",
+      "match": true
+    },
+    {
+      "path": "bin/agentstack-station-materials.bak-20261021-sparse2",
+      "expected_sha256": "57b527927a449ce346c611397d961c117bd46508786a913faf606ae87235c039",
+      "installed_sha256": "57b527927a449ce346c611397d961c117bd46508786a913faf606ae87235c039",
+      "match": true
+    },
+    {
+      "path": "bin/agentstack-supervisor.py",
+      "expected_sha256": "a3a9cd6e8908499d0e6495b11ef8ccdffdfeb86519a3093d452d462b61198eb4",
+      "installed_sha256": "a3a9cd6e8908499d0e6495b11ef8ccdffdfeb86519a3093d452d462b61198eb4",
+      "match": true
+    },
+    {
+      "path": "bin/agentstack-tmux-server-migrate",
+      "expected_sha256": "5d6989ac78c454f5a80561f86d8cb7933668784ceaf32bb03c7c978ecd18de1f",
+      "installed_sha256": "5d6989ac78c454f5a80561f86d8cb7933668784ceaf32bb03c7c978ecd18de1f",
+      "match": true
+    },
+    {
+      "path": "bin/agentstack-uninstall",
+      "expected_sha256": "7986dd4823399b9c917326f1e5d2333278d63cd52e707b1b827505701a5149ca",
+      "installed_sha256": "7986dd4823399b9c917326f1e5d2333278d63cd52e707b1b827505701a5149ca",
+      "match": true
+    },
+    {
+      "path": "bin/agentstack-unstick-seats.sh",
+      "expected_sha256": "03483043e653ba16eb6fd0160426b719e15662058db19e85dc7fc01f43f88b8e",
+      "installed_sha256": "03483043e653ba16eb6fd0160426b719e15662058db19e85dc7fc01f43f88b8e",
+      "match": true
+    },
+    {
+      "path": "bin/agentstack-unstick-seats.sh.bak-20261008-composer",
+      "expected_sha256": "497c04e0acaf098bb02000c08907c9a9223e85e3fafaa30496d5bb958ade62e0",
+      "installed_sha256": "497c04e0acaf098bb02000c08907c9a9223e85e3fafaa30496d5bb958ade62e0",
+      "match": true
+    },
+    {
+      "path": "bin/agentstack-unstick-seats.sh.bak-20261008-workingre",
+      "expected_sha256": "9441755c5583ea2484fea395f150e7db2d9352e409863a77b0e7aad96aab13b5",
+      "installed_sha256": "9441755c5583ea2484fea395f150e7db2d9352e409863a77b0e7aad96aab13b5",
+      "match": true
+    },
+    {
+      "path": "bin/agentstack-unstick-seats.sh.bak-20261018",
+      "expected_sha256": "db1a97ab81727009b9bb4a9f4f14ce00fc125194a6de9e23477d3b69a7819d55",
+      "installed_sha256": "db1a97ab81727009b9bb4a9f4f14ce00fc125194a6de9e23477d3b69a7819d55",
+      "match": true
+    },
+    {
+      "path": "bin/agentstack_jobend.py",
+      "expected_sha256": "4c11d85419582fde976b1cfdc85ea44a42f32f47526cea90ade0dea248bb46f0",
+      "installed_sha256": "4c11d85419582fde976b1cfdc85ea44a42f32f47526cea90ade0dea248bb46f0",
+      "match": true
+    },
+    {
+      "path": "bin/agentstack_orphan.py",
+      "expected_sha256": "0d8160c8eaf3a76285bb0be1324f3e0422560e4d5be9905a7983152fd18dab4f",
+      "installed_sha256": "0d8160c8eaf3a76285bb0be1324f3e0422560e4d5be9905a7983152fd18dab4f",
+      "match": true
+    },
+    {
+      "path": "bin/agentstack_retainprune.py",
+      "expected_sha256": "4ef5ddac2b6321aaa22f586191c55a6adb7f9be78ab5f346e2163cdfc4d0a652",
+      "installed_sha256": "4ef5ddac2b6321aaa22f586191c55a6adb7f9be78ab5f346e2163cdfc4d0a652",
+      "match": true
+    },
+    {
+      "path": "bin/agentstack_retainprune.py.bak-20261021-timeout",
+      "expected_sha256": "0f9fffc79b3aebde4773ef8f2c4e2674ba8171603ce1b295347a4d90f838e77e",
+      "installed_sha256": "0f9fffc79b3aebde4773ef8f2c4e2674ba8171603ce1b295347a4d90f838e77e",
+      "match": true
+    },
+    {
+      "path": "bin/agentstack_stallself.py",
+      "expected_sha256": "dd7cf73af8c40260fc6dcc7d259bbabc5f748ba83f19f594f336bfec22eb9e7e",
+      "installed_sha256": "dd7cf73af8c40260fc6dcc7d259bbabc5f748ba83f19f594f336bfec22eb9e7e",
+      "match": true
+    },
+    {
+      "path": "bin/agentstack_unstick_seats.py",
+      "expected_sha256": "1bc6b0b48ba507fde1ffd9c1a2af0f75277055ede26c3d8838a3edf8282c12fc",
+      "installed_sha256": "1bc6b0b48ba507fde1ffd9c1a2af0f75277055ede26c3d8838a3edf8282c12fc",
+      "match": true
+    },
+    {
+      "path": "bin/codex-session-restore",
+      "expected_sha256": "83f24698b1bb154a99d1be9a7d0c6164d93eabc39d56316c82d4ce5d1313fb92",
+      "installed_sha256": "83f24698b1bb154a99d1be9a7d0c6164d93eabc39d56316c82d4ce5d1313fb92",
+      "match": true
+    },
+    {
+      "path": "bin/codex-stats",
+      "expected_sha256": "79e330ec8a0e4f7ef883bb7b84ed8993eb6a717c779f806a3429c340c745e3e5",
+      "installed_sha256": "79e330ec8a0e4f7ef883bb7b84ed8993eb6a717c779f806a3429c340c745e3e5",
+      "match": true
+    },
+    {
+      "path": "bin/codex-usage",
+      "expected_sha256": "164c7e51b7f02d9b9032c7467d5a3daa8721a05a928b0ec835b54a08965ec339",
+      "installed_sha256": "164c7e51b7f02d9b9032c7467d5a3daa8721a05a928b0ec835b54a08965ec339",
+      "match": true
+    },
+    {
+      "path": "bin/head-accept",
+      "expected_sha256": "0137cd71e32566f91e8d8082faa9159963d0f9aeebe37b9e84a22b028102525a",
+      "installed_sha256": "0137cd71e32566f91e8d8082faa9159963d0f9aeebe37b9e84a22b028102525a",
+      "match": true
+    },
+    {
+      "path": "bin/head-accept.bak-20261013-partial",
+      "expected_sha256": "47f43753387a573c07ae419fea5a078bfa7174287000ed28d4e065b80eda70f0",
+      "installed_sha256": "47f43753387a573c07ae419fea5a078bfa7174287000ed28d4e065b80eda70f0",
+      "match": true
+    },
+    {
+      "path": "bin/head-accept.bak-20261013-retirehold",
+      "expected_sha256": "93fbfc8b6bfaa9310451cab345b67f1d37c62aae4f2231bb7dadb70bb7f6f917",
+      "installed_sha256": "93fbfc8b6bfaa9310451cab345b67f1d37c62aae4f2231bb7dadb70bb7f6f917",
+      "match": true
+    },
+    {
+      "path": "bin/head-accept.bak-20261014-dc4",
+      "expected_sha256": "b63c94302815ca1a0aaaf93e39bbde08bed608e86afa6c17f937c97f90b9c858",
+      "installed_sha256": "b63c94302815ca1a0aaaf93e39bbde08bed608e86afa6c17f937c97f90b9c858",
+      "match": true
+    },
+    {
+      "path": "bin/head-accept.bak-20261018",
+      "expected_sha256": "385d40596cd50f8fdc8ca548441c0fbfdab74b76e071c78484d9e5a096ecbb9c",
+      "installed_sha256": "385d40596cd50f8fdc8ca548441c0fbfdab74b76e071c78484d9e5a096ecbb9c",
+      "match": true
+    },
+    {
+      "path": "bin/head-send",
+      "expected_sha256": "1bbceba4e5c118ad884ea5a3535bdcb1021107d70c16b338eec9af096a7c93bf",
+      "installed_sha256": "1bbceba4e5c118ad884ea5a3535bdcb1021107d70c16b338eec9af096a7c93bf",
+      "match": true
+    },
+    {
+      "path": "bin/head-send.bak-20261008-nudge",
+      "expected_sha256": "72fa772b13ca951e7a5a6007966c2129e91807995f8af3893c66e42e8ddc5277",
+      "installed_sha256": "72fa772b13ca951e7a5a6007966c2129e91807995f8af3893c66e42e8ddc5277",
+      "match": true
+    },
+    {
+      "path": "bin/lib/agentstack-launch.sh",
+      "expected_sha256": "b967496e75fe1bf905ff79e9cf979f50e2c994b47f52fb559861eebb49d03ad2",
+      "installed_sha256": "b967496e75fe1bf905ff79e9cf979f50e2c994b47f52fb559861eebb49d03ad2",
+      "match": true
+    },
+    {
+      "path": "bin/lib/agentstack-register.sh",
+      "expected_sha256": "d765d09e623438cf1cf2d5a13e5e7408789d084e17efb731a762081d7d0320e7",
+      "installed_sha256": "d765d09e623438cf1cf2d5a13e5e7408789d084e17efb731a762081d7d0320e7",
+      "match": true
+    },
+    {
+      "path": "bin/lib/agentstack-scientists.sh",
+      "expected_sha256": "a9a3785e31c8e8e20a2ef2055dd9d08fb920bd85f0058e1cf31784d88e1aa22e",
+      "installed_sha256": "a9a3785e31c8e8e20a2ef2055dd9d08fb920bd85f0058e1cf31784d88e1aa22e",
+      "match": true
+    },
+    {
+      "path": "bin/lib/mcp_endpoint.py",
+      "expected_sha256": "ceda5e108e94fca1c2e1d7f3d4dd08c681893ec7813ba9a13e5d47d931141c4a",
+      "installed_sha256": "ceda5e108e94fca1c2e1d7f3d4dd08c681893ec7813ba9a13e5d47d931141c4a",
+      "match": true
+    },
+    {
+      "path": "bin/orrery-audit-evidence",
+      "expected_sha256": "00787c6dc3745b65915c89795c8d56782d551fee89e5999e7f70eb203abe92db",
+      "installed_sha256": "00787c6dc3745b65915c89795c8d56782d551fee89e5999e7f70eb203abe92db",
+      "match": true
+    },
+    {
+      "path": "bin/orrery-audit-login",
+      "expected_sha256": "a2fe50efb42e728436fb338779c00ce8853af67b80f583a8b6f831fcdc03c23c",
+      "installed_sha256": "a2fe50efb42e728436fb338779c00ce8853af67b80f583a8b6f831fcdc03c23c",
+      "match": true
+    },
+    {
+      "path": "bin/orrery-audit-run",
+      "expected_sha256": "dad3071b0c1fd809bb54c5e37c0121d6600d66edf70cd66296c79f620c0cb6a9",
+      "installed_sha256": "dad3071b0c1fd809bb54c5e37c0121d6600d66edf70cd66296c79f620c0cb6a9",
+      "match": true
+    },
+    {
+      "path": "bin/orrery-ci",
+      "expected_sha256": "39a6d608bf8bbc0abc7ac3c98e08586b253f259e7b40c0a198c62d2b2085d06e",
+      "installed_sha256": "39a6d608bf8bbc0abc7ac3c98e08586b253f259e7b40c0a198c62d2b2085d06e",
+      "match": true
+    },
+    {
+      "path": "bin/orrery-head-tripwire",
+      "expected_sha256": "dfea95e521b07c4a95b6aa3942eb937d0c79defc4071060410218733ea3c530b",
+      "installed_sha256": "dfea95e521b07c4a95b6aa3942eb937d0c79defc4071060410218733ea3c530b",
+      "match": true
+    },
+    {
+      "path": "bin/owner-quote-index",
+      "expected_sha256": "12cb0015e0ebc7b0bc9461d3e18e8667fd4e1a39340f01a5660abaffe0d66d6e",
+      "installed_sha256": "12cb0015e0ebc7b0bc9461d3e18e8667fd4e1a39340f01a5660abaffe0d66d6e",
+      "match": true
+    },
+    {
+      "path": "bin/owner-sheet-health",
+      "expected_sha256": "3d5c7d7c974a36902052cc7171d9192c69efe47a7a66090c08246872851b6dc4",
+      "installed_sha256": "3d5c7d7c974a36902052cc7171d9192c69efe47a7a66090c08246872851b6dc4",
+      "match": true
+    },
+    {
+      "path": "bin/owner-sheet-server.py",
+      "expected_sha256": "4370418963fac34f020881dfcb820dcade3e18fc87f027c12a8d0ac59ee55cc4",
+      "installed_sha256": "4370418963fac34f020881dfcb820dcade3e18fc87f027c12a8d0ac59ee55cc4",
+      "match": true
+    },
+    {
+      "path": "bin/receipt-citation-warning.py",
+      "expected_sha256": "9a9808ae1b4c7893d972f3c0055256a1aa97a5fb6725bc888733fb155859d356",
+      "installed_sha256": "9a9808ae1b4c7893d972f3c0055256a1aa97a5fb6725bc888733fb155859d356",
+      "match": true
+    },
+    {
+      "path": "bin/simulator-window-guard",
+      "expected_sha256": "06585f5176d047e7e177377c9183fa56833280657c205751969d42b31b3cb8fc",
+      "installed_sha256": "06585f5176d047e7e177377c9183fa56833280657c205751969d42b31b3cb8fc",
+      "match": true
+    },
+    {
+      "path": "bin/test_agentstack_jobend.py",
+      "expected_sha256": "48dde7e44a9134b5858730c772d675046e8c8bc17b649e6f1077b1ac7e714906",
+      "installed_sha256": "48dde7e44a9134b5858730c772d675046e8c8bc17b649e6f1077b1ac7e714906",
+      "match": true
+    },
+    {
+      "path": "bin/test_agentstack_jobend.py.bak-20261020-stallself",
+      "expected_sha256": "ce9a9163bb46ff10077b2c73de0250e5addeb2df39589ca247d2f6c14d746abc",
+      "installed_sha256": "ce9a9163bb46ff10077b2c73de0250e5addeb2df39589ca247d2f6c14d746abc",
+      "match": true
+    },
+    {
+      "path": "bin/test_agentstack_orphan.py",
+      "expected_sha256": "e30d9526178d9a9730306560fd9c50a147664a30937ddd7e92c1095d3f346485",
+      "installed_sha256": "e30d9526178d9a9730306560fd9c50a147664a30937ddd7e92c1095d3f346485",
+      "match": true
+    },
+    {
+      "path": "bin/test_agentstack_retainprune.py",
+      "expected_sha256": "529894aecf2ff6570d41bc5d206a60afb45ce93d9df9453d15dff051864c1000",
+      "installed_sha256": "529894aecf2ff6570d41bc5d206a60afb45ce93d9df9453d15dff051864c1000",
+      "match": true
+    },
+    {
+      "path": "bin/test_agentstack_retainprune.py.bak-20261021-timeout",
+      "expected_sha256": "c0e58375d2eee0ceafb7c2df67928899744f5e6181f508bcb2b5950051ca6cf9",
+      "installed_sha256": "c0e58375d2eee0ceafb7c2df67928899744f5e6181f508bcb2b5950051ca6cf9",
+      "match": true
+    },
+    {
+      "path": "bin/test_agentstack_stallself.py",
+      "expected_sha256": "bb4c0b240488aabd5672624346c290407e67ff1d45936bc3bc260a536f8b80da",
+      "installed_sha256": "bb4c0b240488aabd5672624346c290407e67ff1d45936bc3bc260a536f8b80da",
+      "match": true
+    },
+    {
+      "path": "bin/test_agentstack_station_materials_sparse.py",
+      "expected_sha256": "ba95e0ff8ba588661a232d63439c1b8179f23a92c5475c49b2f8da108f247a8a",
+      "installed_sha256": "ba95e0ff8ba588661a232d63439c1b8179f23a92c5475c49b2f8da108f247a8a",
+      "match": true
+    },
+    {
+      "path": "bin/test_agentstack_unstick_seats.py",
+      "expected_sha256": "cc54506fd6c48cd58e742f0d2837c3bac33db4a01cc1bd3e2fda33373e56602e",
+      "installed_sha256": "cc54506fd6c48cd58e742f0d2837c3bac33db4a01cc1bd3e2fda33373e56602e",
+      "match": true
+    },
+    {
+      "path": "claude/CLAUDE.md",
+      "expected_sha256": "d1fb2d0eed199423a3ae3bbfe8c4dc587e1f9d72972990a448ef718b267d3148",
+      "installed_sha256": "d1fb2d0eed199423a3ae3bbfe8c4dc587e1f9d72972990a448ef718b267d3148",
+      "match": true
+    },
+    {
+      "path": "codex/AGENTS.md",
+      "expected_sha256": "b1b9c8d091e9b7eb9c321b0e4a4e7db00a5acf80711d5f48b6e9ffa3fe16cb4e",
+      "installed_sha256": "b1b9c8d091e9b7eb9c321b0e4a4e7db00a5acf80711d5f48b6e9ffa3fe16cb4e",
+      "match": true
+    },
+    {
+      "path": "config/head-send-lint.json",
+      "expected_sha256": "bc6a1f2de96bd75ac7e7f4bfc2aaac989f07b6bd0bfcfee636f9ad54c9d5283f",
+      "installed_sha256": "bc6a1f2de96bd75ac7e7f4bfc2aaac989f07b6bd0bfcfee636f9ad54c9d5283f",
+      "match": true
+    },
+    {
+      "path": "dashboard/agentctl.sh",
+      "expected_sha256": "22a7860bf8a1303f793c5fa97513af1ead2c0f219bb440ff026d15c12014a838",
+      "installed_sha256": "22a7860bf8a1303f793c5fa97513af1ead2c0f219bb440ff026d15c12014a838",
+      "match": true
+    },
+    {
+      "path": "dashboard/agentdashboard.plist.template",
+      "expected_sha256": "4345fe4aff7c98805e050b06f296064438f90fcf02d70f3a8433035b143a4a0b",
+      "installed_sha256": "4345fe4aff7c98805e050b06f296064438f90fcf02d70f3a8433035b143a4a0b",
+      "match": true
+    },
+    {
+      "path": "dashboard/assets/anthropic.svg",
+      "expected_sha256": "e6ce2f7fd33ebc903182ab46b967608571021cd9d9f8472232f45d62c3df40d2",
+      "installed_sha256": "e6ce2f7fd33ebc903182ab46b967608571021cd9d9f8472232f45d62c3df40d2",
+      "match": true
+    },
+    {
+      "path": "dashboard/assets/openai.svg",
+      "expected_sha256": "955168c5b8c0de266b32d2ba7e76b44303898e934d29a56199643d302a926aac",
+      "installed_sha256": "955168c5b8c0de266b32d2ba7e76b44303898e934d29a56199643d302a926aac",
+      "match": true
+    },
+    {
+      "path": "dashboard/demo/PORTRAITS.txt",
+      "expected_sha256": "526bfa5da877fc1e6085d2c213262b2c14a4cf39e1a7379b71932420e243d978",
+      "installed_sha256": "526bfa5da877fc1e6085d2c213262b2c14a4cf39e1a7379b71932420e243d978",
+      "match": true
+    },
+    {
+      "path": "dashboard/demo/PORTRAITS_CLEARED.txt",
+      "expected_sha256": "e1ab778f5ec0801cb32d01c2cc28a75197db6ea36449f27c644b78897e6ac693",
+      "installed_sha256": "e1ab778f5ec0801cb32d01c2cc28a75197db6ea36449f27c644b78897e6ac693",
+      "match": true
+    },
+    {
+      "path": "dashboard/demo/STORY_CONTRACT.md",
+      "expected_sha256": "4ae1711e2c873f0c0ceab54213c152589efdf255be11ad40fa481941c38a39b7",
+      "installed_sha256": "4ae1711e2c873f0c0ceab54213c152589efdf255be11ad40fa481941c38a39b7",
+      "match": true
+    },
+    {
+      "path": "dashboard/demo/build.sh",
+      "expected_sha256": "55d6b980b22da91de0c105b31725dc3098c2e1b66b3fc8de1b3e8795e7854ee5",
+      "installed_sha256": "55d6b980b22da91de0c105b31725dc3098c2e1b66b3fc8de1b3e8795e7854ee5",
+      "match": true
+    },
+    {
+      "path": "dashboard/demo/demo_api.js",
+      "expected_sha256": "32a632e8d610e3ec2e1a985ff7941be88be877ac191385814d22d50ae5aa6a4c",
+      "installed_sha256": "32a632e8d610e3ec2e1a985ff7941be88be877ac191385814d22d50ae5aa6a4c",
+      "match": true
+    },
+    {
+      "path": "dashboard/demo/demo_tour.js",
+      "expected_sha256": "ae86bcf3cca30399d35e15a3549b27f3a735facfed630c978c7c60cc0318601c",
+      "installed_sha256": "ae86bcf3cca30399d35e15a3549b27f3a735facfed630c978c7c60cc0318601c",
+      "match": true
+    },
+    {
+      "path": "dashboard/demo/story_bugreport.js",
+      "expected_sha256": "f07e2f4289e9fd44ad7d86786bb69f6686f28d521ceada9eaf9c652f378d33f3",
+      "installed_sha256": "f07e2f4289e9fd44ad7d86786bb69f6686f28d521ceada9eaf9c652f378d33f3",
+      "match": true
+    },
+    {
+      "path": "dashboard/demo/story_research.js",
+      "expected_sha256": "50991feaa0aed61bc2710d1a927d66910b07082173b8f806590a2a2f8bafe669",
+      "installed_sha256": "50991feaa0aed61bc2710d1a927d66910b07082173b8f806590a2a2f8bafe669",
+      "match": true
+    },
+    {
+      "path": "dashboard/demo/test_demo_shapes.js",
+      "expected_sha256": "164a8cb7466fc9e64a15b576411d96df41ed658c4683b5a9b6b19b772b71c21e",
+      "installed_sha256": "164a8cb7466fc9e64a15b576411d96df41ed658c4683b5a9b6b19b772b71c21e",
+      "match": true
+    },
+    {
+      "path": "dashboard/graph_data.py",
+      "expected_sha256": "d28f54f3b9b4a53da4a7f065c616fe6bebf22debafd7032f6f5a492261ecb2e2",
+      "installed_sha256": "d28f54f3b9b4a53da4a7f065c616fe6bebf22debafd7032f6f5a492261ecb2e2",
+      "match": true
+    },
+    {
+      "path": "dashboard/index.html",
+      "expected_sha256": "dfb66fbaa7a963fd5683fe3aaa726df41e048dd029019127bdbdc1543564197c",
+      "installed_sha256": "dfb66fbaa7a963fd5683fe3aaa726df41e048dd029019127bdbdc1543564197c",
+      "match": true
+    },
+    {
+      "path": "dashboard/portraits_64/Archimedes.png",
+      "expected_sha256": "dccb2d870bba9f51d80a819c0d8d47f394d5e5ed4c64afe61eff9daed8146b54",
+      "installed_sha256": "dccb2d870bba9f51d80a819c0d8d47f394d5e5ed4c64afe61eff9daed8146b54",
+      "match": true
+    },
+    {
+      "path": "dashboard/portraits_64/Arrhenius.png",
+      "expected_sha256": "8dea11e631ad7057f1541f482aa3735b1be3dfa42d32d9ed50cf9f22a3286c9d",
+      "installed_sha256": "8dea11e631ad7057f1541f482aa3735b1be3dfa42d32d9ed50cf9f22a3286c9d",
+      "match": true
+    },
+    {
+      "path": "dashboard/portraits_64/Bell.png",
+      "expected_sha256": "b533129b82c36b9ae2559ff62dc1aed044f70c8547f2771379df34bbdcd8d895",
+      "installed_sha256": "b533129b82c36b9ae2559ff62dc1aed044f70c8547f2771379df34bbdcd8d895",
+      "match": true
+    },
+    {
+      "path": "dashboard/portraits_64/Bohr.png",
+      "expected_sha256": "5e85ace97334fb1447243820b412827db119bd4afc726c79f3e8ead9a025773f",
+      "installed_sha256": "5e85ace97334fb1447243820b412827db119bd4afc726c79f3e8ead9a025773f",
+      "match": true
+    },
+    {
+      "path": "dashboard/portraits_64/Boltzmann.png",
+      "expected_sha256": "9fa71726825a4f28a2075ca2f00748f978cef51794445855bd14ce2a4c63ae42",
+      "installed_sha256": "9fa71726825a4f28a2075ca2f00748f978cef51794445855bd14ce2a4c63ae42",
+      "match": true
+    },
+    {
+      "path": "dashboard/portraits_64/Bose.png",
+      "expected_sha256": "f02a5a714e70f7d98dc50f40b1451416b332c9298184a43106286d6d913ff11c",
+      "installed_sha256": "f02a5a714e70f7d98dc50f40b1451416b332c9298184a43106286d6d913ff11c",
+      "match": true
+    },
+    {
+      "path": "dashboard/portraits_64/Copernicus.png",
+      "expected_sha256": "880408dd2d6c69d21e5bdf74fee28593eb6cb66d0103ebc3f2242073f77a6fd3",
+      "installed_sha256": "880408dd2d6c69d21e5bdf74fee28593eb6cb66d0103ebc3f2242073f77a6fd3",
+      "match": true
+    },
+    {
+      "path": "dashboard/portraits_64/Curie.png",
+      "expected_sha256": "b94f3fbedb489ef94374a9be0ce98d0ec5d91516efdd3b7164a46d83ee53d8f2",
+      "installed_sha256": "b94f3fbedb489ef94374a9be0ce98d0ec5d91516efdd3b7164a46d83ee53d8f2",
+      "match": true
+    },
+    {
+      "path": "dashboard/portraits_64/Darwin.png",
+      "expected_sha256": "b4d3bd2c6bdea0d5394a20fd7f284e1eae3a6dbbb8d2ac5f1459c4917c884bad",
+      "installed_sha256": "b4d3bd2c6bdea0d5394a20fd7f284e1eae3a6dbbb8d2ac5f1459c4917c884bad",
+      "match": true
+    },
+    {
+      "path": "dashboard/portraits_64/Dirac.png",
+      "expected_sha256": "baad272d4ace8fe31b84a1e4bf219674bf62853bed8b28666e19632b4da16259",
+      "installed_sha256": "baad272d4ace8fe31b84a1e4bf219674bf62853bed8b28666e19632b4da16259",
+      "match": true
+    },
+    {
+      "path": "dashboard/portraits_64/Edison.png",
+      "expected_sha256": "554451fbcc3300591459e9573e331aa9663d0a2da8d589961125c311dd4de138",
+      "installed_sha256": "554451fbcc3300591459e9573e331aa9663d0a2da8d589961125c311dd4de138",
+      "match": true
+    },
+    {
+      "path": "dashboard/portraits_64/Einstein.png",
+      "expected_sha256": "434ce7a34d4a3866a7c25729924f17d2939275824a21e560042865b6e9534642",
+      "installed_sha256": "434ce7a34d4a3866a7c25729924f17d2939275824a21e560042865b6e9534642",
+      "match": true
+    },
+    {
+      "path": "dashboard/portraits_64/Euler.png",
+      "expected_sha256": "8c6b4b1ba2ff1c1ff1b53222dd1278724ed15a626b71be5fb71ee001e7e0650f",
+      "installed_sha256": "8c6b4b1ba2ff1c1ff1b53222dd1278724ed15a626b71be5fb71ee001e7e0650f",
+      "match": true
+    },
+    {
+      "path": "dashboard/portraits_64/Fabre.png",
+      "expected_sha256": "e6bd5b75827ee41b8aa4d345ce3abf301c6f81d05956687bc149671973b1364b",
+      "installed_sha256": "e6bd5b75827ee41b8aa4d345ce3abf301c6f81d05956687bc149671973b1364b",
+      "match": true
+    },
+    {
+      "path": "dashboard/portraits_64/Faraday.png",
+      "expected_sha256": "86e2441184db63cb8ba3b87f177c17bcb0f3f80bf75ff5d06e59ca231ded4ce0",
+      "installed_sha256": "86e2441184db63cb8ba3b87f177c17bcb0f3f80bf75ff5d06e59ca231ded4ce0",
+      "match": true
+    },
+    {
+      "path": "dashboard/portraits_64/Fermi.png",
+      "expected_sha256": "3801333bbea369985bf034fbb33b5f1bb47b8aca559afdd6e5d55c75d9ed6973",
+      "installed_sha256": "3801333bbea369985bf034fbb33b5f1bb47b8aca559afdd6e5d55c75d9ed6973",
+      "match": true
+    },
+    {
+      "path": "dashboard/portraits_64/Feynman.png",
+      "expected_sha256": "e8cdfa52d97ad278884556dabb518f4f68f415f6c038736c323c1a26ca4346cf",
+      "installed_sha256": "e8cdfa52d97ad278884556dabb518f4f68f415f6c038736c323c1a26ca4346cf",
+      "match": true
+    },
+    {
+      "path": "dashboard/portraits_64/Franklin.png",
+      "expected_sha256": "95dd66e740166d6dbb3f076a8974a4fc2521703fc02b9051c227b72273b72816",
+      "installed_sha256": "95dd66e740166d6dbb3f076a8974a4fc2521703fc02b9051c227b72273b72816",
+      "match": true
+    },
+    {
+      "path": "dashboard/portraits_64/Galileo.png",
+      "expected_sha256": "92e88e075633670eb432a3785105b2390ea56b0baaebdfc17e2a7ca936929a4a",
+      "installed_sha256": "92e88e075633670eb432a3785105b2390ea56b0baaebdfc17e2a7ca936929a4a",
+      "match": true
+    },
+    {
+      "path": "dashboard/portraits_64/Gauss.png",
+      "expected_sha256": "72714000c277b9766efbc3a1f4d84d79442472f9e2b5c888c02e49662cabc7a1",
+      "installed_sha256": "72714000c277b9766efbc3a1f4d84d79442472f9e2b5c888c02e49662cabc7a1",
+      "match": true
+    },
+    {
+      "path": "dashboard/portraits_64/Goodall.png",
+      "expected_sha256": "3fdb3122744e3013058164f0eece7c1454a0fea15497d545b97d5240640be3fe",
+      "installed_sha256": "3fdb3122744e3013058164f0eece7c1454a0fea15497d545b97d5240640be3fe",
+      "match": true
+    },
+    {
+      "path": "dashboard/portraits_64/Guericke.png",
+      "expected_sha256": "c827bcff89735841220b9411ea33f012d3f7dfce7e35a6a9aaac089cc3cf55f5",
+      "installed_sha256": "c827bcff89735841220b9411ea33f012d3f7dfce7e35a6a9aaac089cc3cf55f5",
+      "match": true
+    },
+    {
+      "path": "dashboard/portraits_64/Hooke.png",
+      "expected_sha256": "66dd844a3bb3c3250d2cc48171c41f0915c46aacc919faef6f3d5d0df50139a3",
+      "installed_sha256": "66dd844a3bb3c3250d2cc48171c41f0915c46aacc919faef6f3d5d0df50139a3",
+      "match": true
+    },
+    {
+      "path": "dashboard/portraits_64/Hopper.png",
+      "expected_sha256": "08d58bbe144033f0efc1ba8c13746ae8a4f79ff7969185d2cdad1f653cde88e3",
+      "installed_sha256": "08d58bbe144033f0efc1ba8c13746ae8a4f79ff7969185d2cdad1f653cde88e3",
+      "match": true
+    },
+    {
+      "path": "dashboard/portraits_64/Hubble.png",
+      "expected_sha256": "41686b53d559f6a5543a1216407b351ace8134e2754f8878090e21e7f0fa9a5a",
+      "installed_sha256": "41686b53d559f6a5543a1216407b351ace8134e2754f8878090e21e7f0fa9a5a",
+      "match": true
+    },
+    {
+      "path": "dashboard/portraits_64/Kepler.png",
+      "expected_sha256": "cd03c472e0da498f23d8aacaff81e1b58723a2c85c23fbfd900c90e81bfe96cf",
+      "installed_sha256": "cd03c472e0da498f23d8aacaff81e1b58723a2c85c23fbfd900c90e81bfe96cf",
+      "match": true
+    },
+    {
+      "path": "dashboard/portraits_64/Koch.png",
+      "expected_sha256": "5d61a987d2e0fe20fa6cb2aaf095c3ed8317088eb5f3c8a7f0b3454e2c79f535",
+      "installed_sha256": "5d61a987d2e0fe20fa6cb2aaf095c3ed8317088eb5f3c8a7f0b3454e2c79f535",
+      "match": true
+    },
+    {
+      "path": "dashboard/portraits_64/Lamarr.png",
+      "expected_sha256": "8e652d1a417fb36dba6c0e708dc131b4ccd33c296e42c6e00f06f5795583ff27",
+      "installed_sha256": "8e652d1a417fb36dba6c0e708dc131b4ccd33c296e42c6e00f06f5795583ff27",
+      "match": true
+    },
+    {
+      "path": "dashboard/portraits_64/Langmuir.png",
+      "expected_sha256": "00ec466f4250c98b1186ea1cdd0947201f63937fe7a79623fcee14ffca231033",
+      "installed_sha256": "00ec466f4250c98b1186ea1cdd0947201f63937fe7a79623fcee14ffca231033",
+      "match": true
+    },
+    {
+      "path": "dashboard/portraits_64/Lavoisier.png",
+      "expected_sha256": "3f900de80a418f2bef3978257bf0384c33d04a855748c630283624228f6a374e",
+      "installed_sha256": "3f900de80a418f2bef3978257bf0384c33d04a855748c630283624228f6a374e",
+      "match": true
+    },
+    {
+      "path": "dashboard/portraits_64/Leeuwenhoek.png",
+      "expected_sha256": "e1c13e835f113270b1d0a16286eabe4f80d79209fc1b957cd4b764545ceff5e0",
+      "installed_sha256": "e1c13e835f113270b1d0a16286eabe4f80d79209fc1b957cd4b764545ceff5e0",
+      "match": true
+    },
+    {
+      "path": "dashboard/portraits_64/Linnaeus.png",
+      "expected_sha256": "385f77eeed38d9a64c2fca52eb9d6443c64f17ab0efd56a603c62c40953043a2",
+      "installed_sha256": "385f77eeed38d9a64c2fca52eb9d6443c64f17ab0efd56a603c62c40953043a2",
+      "match": true
+    },
+    {
+      "path": "dashboard/portraits_64/Lovelace.png",
+      "expected_sha256": "95db46b70e22c04c81ae96478c9d6913c1d28a0230017bdc26729e1bd1e308df",
+      "installed_sha256": "95db46b70e22c04c81ae96478c9d6913c1d28a0230017bdc26729e1bd1e308df",
+      "match": true
+    },
+    {
+      "path": "dashboard/portraits_64/Maxwell.png",
+      "expected_sha256": "da7293bd8fee4fa3d6bdd44ecc8050640de28c7b10ebe415727db4ec0b8d9d5d",
+      "installed_sha256": "da7293bd8fee4fa3d6bdd44ecc8050640de28c7b10ebe415727db4ec0b8d9d5d",
+      "match": true
+    },
+    {
+      "path": "dashboard/portraits_64/Mendel.png",
+      "expected_sha256": "9191395e8de0e0e3a1c772d88d85820e5332048024657189a4e98c75c985015f",
+      "installed_sha256": "9191395e8de0e0e3a1c772d88d85820e5332048024657189a4e98c75c985015f",
+      "match": true
+    },
+    {
+      "path": "dashboard/portraits_64/Mendeleev.png",
+      "expected_sha256": "849bc8109c932f9d480a8b1c2ea292cb1fba23c0e9c5ae5dde8ad87afd9929d7",
+      "installed_sha256": "849bc8109c932f9d480a8b1c2ea292cb1fba23c0e9c5ae5dde8ad87afd9929d7",
+      "match": true
+    },
+    {
+      "path": "dashboard/portraits_64/Newton.png",
+      "expected_sha256": "46d6142e49a74f8ff3ecbeac0822127480f53c8252714d4be11e53cc78683dad",
+      "installed_sha256": "46d6142e49a74f8ff3ecbeac0822127480f53c8252714d4be11e53cc78683dad",
+      "match": true
+    },
+    {
+      "path": "dashboard/portraits_64/Noether.png",
+      "expected_sha256": "fd0b9473918a57213bbd5353423c0424c8201f668448f73774becbc3619f9dee",
+      "installed_sha256": "fd0b9473918a57213bbd5353423c0424c8201f668448f73774becbc3619f9dee",
+      "match": true
+    },
+    {
+      "path": "dashboard/portraits_64/Ostwald.png",
+      "expected_sha256": "77b080dc0cb9a16c623d2a467294368e81105c69287b84b8ca5e75cbb225f555",
+      "installed_sha256": "77b080dc0cb9a16c623d2a467294368e81105c69287b84b8ca5e75cbb225f555",
+      "match": true
+    },
+    {
+      "path": "dashboard/portraits_64/Pascal.png",
+      "expected_sha256": "0090e51414ab0bb876e8b3bfba76544185a4719f8268b661da40682b331dd018",
+      "installed_sha256": "0090e51414ab0bb876e8b3bfba76544185a4719f8268b661da40682b331dd018",
+      "match": true
+    },
+    {
+      "path": "dashboard/portraits_64/Pasteur.png",
+      "expected_sha256": "7d734fd25a064e0e227e48b5e27cd622de5c4d58e340d0ea4ab157e488bd45d2",
+      "installed_sha256": "7d734fd25a064e0e227e48b5e27cd622de5c4d58e340d0ea4ab157e488bd45d2",
+      "match": true
+    },
+    {
+      "path": "dashboard/portraits_64/Pauling.png",
+      "expected_sha256": "355bb6ea072fe31c9d4d5aa3723c2f59ac5298b62ed25d2b8e50f4d00d4f746c",
+      "installed_sha256": "355bb6ea072fe31c9d4d5aa3723c2f59ac5298b62ed25d2b8e50f4d00d4f746c",
+      "match": true
+    },
+    {
+      "path": "dashboard/portraits_64/Planck.png",
+      "expected_sha256": "9617bbdf7534acba7e3115cb0bd604f5b423e0f479d8896ab5e8b2ace113c2c1",
+      "installed_sha256": "9617bbdf7534acba7e3115cb0bd604f5b423e0f479d8896ab5e8b2ace113c2c1",
+      "match": true
+    },
+    {
+      "path": "dashboard/portraits_64/Ramanujan.png",
+      "expected_sha256": "93b75fbf89d6d195b28040394ac4c6619eba49b576d7cdfb007fde97ad940675",
+      "installed_sha256": "93b75fbf89d6d195b28040394ac4c6619eba49b576d7cdfb007fde97ad940675",
+      "match": true
+    },
+    {
+      "path": "dashboard/portraits_64/Somerville.png",
+      "expected_sha256": "011192c708cda3ca6095298fe82710c36e67ff9a0a0106f613f3ba439cf0a93e",
+      "installed_sha256": "011192c708cda3ca6095298fe82710c36e67ff9a0a0106f613f3ba439cf0a93e",
+      "match": true
+    },
+    {
+      "path": "dashboard/portraits_64/Tesla.png",
+      "expected_sha256": "bee7221cb8518ea66abde5d960f836d3cb3c0a48d2018420b4869867533f834a",
+      "installed_sha256": "bee7221cb8518ea66abde5d960f836d3cb3c0a48d2018420b4869867533f834a",
+      "match": true
+    },
+    {
+      "path": "dashboard/portraits_64/Turing.png",
+      "expected_sha256": "5b5e3829565180576e5069be7a5efe507155d26fec3cd902cc0896eeeb721ae6",
+      "installed_sha256": "5b5e3829565180576e5069be7a5efe507155d26fec3cd902cc0896eeeb721ae6",
+      "match": true
+    },
+    {
+      "path": "dashboard/portraits_64/Vesalius.png",
+      "expected_sha256": "673f14866f7751d27b8e0c6db350c86aa10d4948c4eade6f11259e28ce5d2288",
+      "installed_sha256": "673f14866f7751d27b8e0c6db350c86aa10d4948c4eade6f11259e28ce5d2288",
+      "match": true
+    },
+    {
+      "path": "dashboard/portraits_64/Watt.png",
+      "expected_sha256": "94ff3f1508f23bb713bb6d69cb23ba4d7a5508d4ded8aafb64d98f45653e752c",
+      "installed_sha256": "94ff3f1508f23bb713bb6d69cb23ba4d7a5508d4ded8aafb64d98f45653e752c",
+      "match": true
+    },
+    {
+      "path": "dashboard/portraits_64/Yukawa.png",
+      "expected_sha256": "cdf024b361c8a25828ace1a669abf8b9c8a7e607f1207316afbebf27a0bcf8b1",
+      "installed_sha256": "cdf024b361c8a25828ace1a669abf8b9c8a7e607f1207316afbebf27a0bcf8b1",
+      "match": true
+    },
+    {
+      "path": "dashboard/portraits_pixel/Archimedes.png",
+      "expected_sha256": "fe8b04f32821e2786d78f11b13dc2592aec8fdcc9d5e5927a9c0a6d1055c783d",
+      "installed_sha256": "fe8b04f32821e2786d78f11b13dc2592aec8fdcc9d5e5927a9c0a6d1055c783d",
+      "match": true
+    },
+    {
+      "path": "dashboard/portraits_pixel/Arrhenius.png",
+      "expected_sha256": "d15cf9ae71efada69ece0bd4bc6e41c129b7f390707eae55e1405fa78c5b3f01",
+      "installed_sha256": "d15cf9ae71efada69ece0bd4bc6e41c129b7f390707eae55e1405fa78c5b3f01",
+      "match": true
+    },
+    {
+      "path": "dashboard/portraits_pixel/Bell.png",
+      "expected_sha256": "89e597bd85e43fa3ce4ec8952cbc18d9f4b0483212e70d52c6ed594388cac2b8",
+      "installed_sha256": "89e597bd85e43fa3ce4ec8952cbc18d9f4b0483212e70d52c6ed594388cac2b8",
+      "match": true
+    },
+    {
+      "path": "dashboard/portraits_pixel/Bohr.png",
+      "expected_sha256": "b92c059e0f7bb4ccf88c5a2f0ef0586fc4d05080cdf06ff23cd356fb130b4096",
+      "installed_sha256": "b92c059e0f7bb4ccf88c5a2f0ef0586fc4d05080cdf06ff23cd356fb130b4096",
+      "match": true
+    },
+    {
+      "path": "dashboard/portraits_pixel/Boltzmann.png",
+      "expected_sha256": "c5493765db455742c6e07c80e846efa0b6b82f5c57a26891eda99d44007fb19f",
+      "installed_sha256": "c5493765db455742c6e07c80e846efa0b6b82f5c57a26891eda99d44007fb19f",
+      "match": true
+    },
+    {
+      "path": "dashboard/portraits_pixel/Bose.png",
+      "expected_sha256": "62e0965ba64d4cf136c35d4ff7d64641520fa0a4cbd0a040076def984babd933",
+      "installed_sha256": "62e0965ba64d4cf136c35d4ff7d64641520fa0a4cbd0a040076def984babd933",
+      "match": true
+    },
+    {
+      "path": "dashboard/portraits_pixel/Copernicus.png",
+      "expected_sha256": "1f95a91f1171d3bafa75755a3c8043ccb4daaed2f2821e66bf90e6819dcc9191",
+      "installed_sha256": "1f95a91f1171d3bafa75755a3c8043ccb4daaed2f2821e66bf90e6819dcc9191",
+      "match": true
+    },
+    {
+      "path": "dashboard/portraits_pixel/Curie.png",
+      "expected_sha256": "5a37a8c5e803d40f79031477e75d7dce56e42114481b8980fecf6a4c6a0b535e",
+      "installed_sha256": "5a37a8c5e803d40f79031477e75d7dce56e42114481b8980fecf6a4c6a0b535e",
+      "match": true
+    },
+    {
+      "path": "dashboard/portraits_pixel/Darwin.png",
+      "expected_sha256": "b715deb5d01df41a720f95773cca3c3f5292a917234d4f7dd43ff77d5d343cb6",
+      "installed_sha256": "b715deb5d01df41a720f95773cca3c3f5292a917234d4f7dd43ff77d5d343cb6",
+      "match": true
+    },
+    {
+      "path": "dashboard/portraits_pixel/Dirac.png",
+      "expected_sha256": "ce9f1435bd44f4d173a452cec089f498f694db9dedca9f937879ce6b10597061",
+      "installed_sha256": "ce9f1435bd44f4d173a452cec089f498f694db9dedca9f937879ce6b10597061",
+      "match": true
+    },
+    {
+      "path": "dashboard/portraits_pixel/Edison.png",
+      "expected_sha256": "4c657dc601a9d234bc81f99e508ab0d571f2e6a210880d581d0bb17a24c0fdfe",
+      "installed_sha256": "4c657dc601a9d234bc81f99e508ab0d571f2e6a210880d581d0bb17a24c0fdfe",
+      "match": true
+    },
+    {
+      "path": "dashboard/portraits_pixel/Einstein.png",
+      "expected_sha256": "62d2b8c0ef59cc56f5f436af29d8e789c15a02e0a2111949435d472a08a22bf5",
+      "installed_sha256": "62d2b8c0ef59cc56f5f436af29d8e789c15a02e0a2111949435d472a08a22bf5",
+      "match": true
+    },
+    {
+      "path": "dashboard/portraits_pixel/Euler.png",
+      "expected_sha256": "276b0c01b3d94070c4bea773b467adfb676f39159825c0a9da710c89fcc3bcc3",
+      "installed_sha256": "276b0c01b3d94070c4bea773b467adfb676f39159825c0a9da710c89fcc3bcc3",
+      "match": true
+    },
+    {
+      "path": "dashboard/portraits_pixel/Fabre.png",
+      "expected_sha256": "e7fa1bee8ad5302c7a4930531528229641e0d0026ee2d44d93bb9f1278454d63",
+      "installed_sha256": "e7fa1bee8ad5302c7a4930531528229641e0d0026ee2d44d93bb9f1278454d63",
+      "match": true
+    },
+    {
+      "path": "dashboard/portraits_pixel/Faraday.png",
+      "expected_sha256": "dc920c2e3915b2e2ad52207861784a6dfdd05a4474cb1d843f2feb4413806f46",
+      "installed_sha256": "dc920c2e3915b2e2ad52207861784a6dfdd05a4474cb1d843f2feb4413806f46",
+      "match": true
+    },
+    {
+      "path": "dashboard/portraits_pixel/Fermi.png",
+      "expected_sha256": "587a05657b10dafe547fad97e14191a8b717bb47ba710600cdbffe7fc7df76df",
+      "installed_sha256": "587a05657b10dafe547fad97e14191a8b717bb47ba710600cdbffe7fc7df76df",
+      "match": true
+    },
+    {
+      "path": "dashboard/portraits_pixel/Feynman.png",
+      "expected_sha256": "1ee77c10e61549fa0cd78f747674a6added9094cdd3e7e0a30c29e6e3953510a",
+      "installed_sha256": "1ee77c10e61549fa0cd78f747674a6added9094cdd3e7e0a30c29e6e3953510a",
+      "match": true
+    },
+    {
+      "path": "dashboard/portraits_pixel/Franklin.png",
+      "expected_sha256": "0f0aa7a1fa41483ca98754e0cb615f807de7f3d3b13f91f47a31e745f5abdb86",
+      "installed_sha256": "0f0aa7a1fa41483ca98754e0cb615f807de7f3d3b13f91f47a31e745f5abdb86",
+      "match": true
+    },
+    {
+      "path": "dashboard/portraits_pixel/Galileo.png",
+      "expected_sha256": "e6615493e304e41ce10d2221199db129b0681b655c72a799bc58b9a93f1c286d",
+      "installed_sha256": "e6615493e304e41ce10d2221199db129b0681b655c72a799bc58b9a93f1c286d",
+      "match": true
+    },
+    {
+      "path": "dashboard/portraits_pixel/Gauss.png",
+      "expected_sha256": "0845372d53ae34a7518726c86a679594f0c88be1d24801873d333dad0f5cfca2",
+      "installed_sha256": "0845372d53ae34a7518726c86a679594f0c88be1d24801873d333dad0f5cfca2",
+      "match": true
+    },
+    {
+      "path": "dashboard/portraits_pixel/Goodall.png",
+      "expected_sha256": "c2e4a656ee69619ea1c3d931cc4840e640d30f8f2ef6abca1d6b08fb5148bf3d",
+      "installed_sha256": "c2e4a656ee69619ea1c3d931cc4840e640d30f8f2ef6abca1d6b08fb5148bf3d",
+      "match": true
+    },
+    {
+      "path": "dashboard/portraits_pixel/Guericke.png",
+      "expected_sha256": "602c7ac7449fdcb4f485c1cd570547eeb15ab7ceed3fcbae3fd860b8ae52d2bf",
+      "installed_sha256": "602c7ac7449fdcb4f485c1cd570547eeb15ab7ceed3fcbae3fd860b8ae52d2bf",
+      "match": true
+    },
+    {
+      "path": "dashboard/portraits_pixel/Hooke.png",
+      "expected_sha256": "d11b7c344d3ba93a7c7d4191f0946704feb30ac08ee9fe97110304a52279064a",
+      "installed_sha256": "d11b7c344d3ba93a7c7d4191f0946704feb30ac08ee9fe97110304a52279064a",
+      "match": true
+    },
+    {
+      "path": "dashboard/portraits_pixel/Hopper.png",
+      "expected_sha256": "1298449f5d7dd9be55f113cef8e7fc2478ad7ce074ec8022fc3335778954de37",
+      "installed_sha256": "1298449f5d7dd9be55f113cef8e7fc2478ad7ce074ec8022fc3335778954de37",
+      "match": true
+    },
+    {
+      "path": "dashboard/portraits_pixel/Hubble.png",
+      "expected_sha256": "6f6c3f962e776c4b3a3b8be0ceb68377309d45fa8c0af65d863bced505637d38",
+      "installed_sha256": "6f6c3f962e776c4b3a3b8be0ceb68377309d45fa8c0af65d863bced505637d38",
+      "match": true
+    },
+    {
+      "path": "dashboard/portraits_pixel/Kepler.png",
+      "expected_sha256": "d02c9137b1d45ab30b582c84eab4ff907827cc085d3eb1a915f54ce2d8bda223",
+      "installed_sha256": "d02c9137b1d45ab30b582c84eab4ff907827cc085d3eb1a915f54ce2d8bda223",
+      "match": true
+    },
+    {
+      "path": "dashboard/portraits_pixel/Koch.png",
+      "expected_sha256": "68a626912ab6975416eb2d7edef1b39f7baa0ae8f78678eb195c65c24d18f765",
+      "installed_sha256": "68a626912ab6975416eb2d7edef1b39f7baa0ae8f78678eb195c65c24d18f765",
+      "match": true
+    },
+    {
+      "path": "dashboard/portraits_pixel/Lamarr.png",
+      "expected_sha256": "085307fc73211cd479672d7b6978a56daadf276379f4ab723920e23fe8ce8c10",
+      "installed_sha256": "085307fc73211cd479672d7b6978a56daadf276379f4ab723920e23fe8ce8c10",
+      "match": true
+    },
+    {
+      "path": "dashboard/portraits_pixel/Langmuir.png",
+      "expected_sha256": "7ca896b95d32280c55dfa3683fa21c6b3bccc6759cf7d190b8d07a15f03e245f",
+      "installed_sha256": "7ca896b95d32280c55dfa3683fa21c6b3bccc6759cf7d190b8d07a15f03e245f",
+      "match": true
+    },
+    {
+      "path": "dashboard/portraits_pixel/Lavoisier.png",
+      "expected_sha256": "9ea68a8f3c58c568c8b69c637365ec361d369cd33885e4204eebfdcd6200fc82",
+      "installed_sha256": "9ea68a8f3c58c568c8b69c637365ec361d369cd33885e4204eebfdcd6200fc82",
+      "match": true
+    },
+    {
+      "path": "dashboard/portraits_pixel/Leeuwenhoek.png",
+      "expected_sha256": "240f2ce18ed15a686881fca81bfdfdee74399da5998dfb123e2a1e7610206399",
+      "installed_sha256": "240f2ce18ed15a686881fca81bfdfdee74399da5998dfb123e2a1e7610206399",
+      "match": true
+    },
+    {
+      "path": "dashboard/portraits_pixel/Linnaeus.png",
+      "expected_sha256": "389591afb3c0740b95cdc35896e67ef1b5a5d820e4523bccc43cd89b5b84847c",
+      "installed_sha256": "389591afb3c0740b95cdc35896e67ef1b5a5d820e4523bccc43cd89b5b84847c",
+      "match": true
+    },
+    {
+      "path": "dashboard/portraits_pixel/Lovelace.png",
+      "expected_sha256": "448db162e0cc642be37380debd3c405b729cc203ac28b9654492d5f796333d54",
+      "installed_sha256": "448db162e0cc642be37380debd3c405b729cc203ac28b9654492d5f796333d54",
+      "match": true
+    },
+    {
+      "path": "dashboard/portraits_pixel/Maxwell.png",
+      "expected_sha256": "7aed01b97db5787f54b197d1bec8c05ea563450bfa186c0b7f00771e6a09d9a4",
+      "installed_sha256": "7aed01b97db5787f54b197d1bec8c05ea563450bfa186c0b7f00771e6a09d9a4",
+      "match": true
+    },
+    {
+      "path": "dashboard/portraits_pixel/Mendel.png",
+      "expected_sha256": "827cdb048d512c53889ef6fbd890cd0970ce1c8c368e73078145f2281851ac1b",
+      "installed_sha256": "827cdb048d512c53889ef6fbd890cd0970ce1c8c368e73078145f2281851ac1b",
+      "match": true
+    },
+    {
+      "path": "dashboard/portraits_pixel/Mendeleev.png",
+      "expected_sha256": "b08fa69a0c2cba8050b96de321bcb91d234621fea61e990b89a5f5cbc275bcf6",
+      "installed_sha256": "b08fa69a0c2cba8050b96de321bcb91d234621fea61e990b89a5f5cbc275bcf6",
+      "match": true
+    },
+    {
+      "path": "dashboard/portraits_pixel/Newton.png",
+      "expected_sha256": "43712a0c0016f747f438b77d2b6ef8a4300e57ef593aebbb5c026c38b6cf82e5",
+      "installed_sha256": "43712a0c0016f747f438b77d2b6ef8a4300e57ef593aebbb5c026c38b6cf82e5",
+      "match": true
+    },
+    {
+      "path": "dashboard/portraits_pixel/Noether.png",
+      "expected_sha256": "d721aa8d3d57f47d5655e0043d8807136c2d57410b03ef2903dd488d1298b4b6",
+      "installed_sha256": "d721aa8d3d57f47d5655e0043d8807136c2d57410b03ef2903dd488d1298b4b6",
+      "match": true
+    },
+    {
+      "path": "dashboard/portraits_pixel/Ostwald.png",
+      "expected_sha256": "84b3382afb0701d0ab2cc78d4983cbad906ae8f20ceeb4e0b56df44d33930902",
+      "installed_sha256": "84b3382afb0701d0ab2cc78d4983cbad906ae8f20ceeb4e0b56df44d33930902",
+      "match": true
+    },
+    {
+      "path": "dashboard/portraits_pixel/Pascal.png",
+      "expected_sha256": "3acc71ab771cfc796ec6fc91b405a23320994615ae58e98fbb43bb53224d874b",
+      "installed_sha256": "3acc71ab771cfc796ec6fc91b405a23320994615ae58e98fbb43bb53224d874b",
+      "match": true
+    },
+    {
+      "path": "dashboard/portraits_pixel/Pasteur.png",
+      "expected_sha256": "dc407cd23985529923621ea21ef6408aa1a1689e1d16303e7594e3c5af6d8f57",
+      "installed_sha256": "dc407cd23985529923621ea21ef6408aa1a1689e1d16303e7594e3c5af6d8f57",
+      "match": true
+    },
+    {
+      "path": "dashboard/portraits_pixel/Pauling.png",
+      "expected_sha256": "be593406a9d381fbc899c287bab8570140e6eb835264d76729bd82fac4c2f281",
+      "installed_sha256": "be593406a9d381fbc899c287bab8570140e6eb835264d76729bd82fac4c2f281",
+      "match": true
+    },
+    {
+      "path": "dashboard/portraits_pixel/Planck.png",
+      "expected_sha256": "49929cb97015f00d05ec0ad9ae80aaf6cb72963456ffac3b83a43ae77facf554",
+      "installed_sha256": "49929cb97015f00d05ec0ad9ae80aaf6cb72963456ffac3b83a43ae77facf554",
+      "match": true
+    },
+    {
+      "path": "dashboard/portraits_pixel/Ramanujan.png",
+      "expected_sha256": "3cc66365383b3ac9fb135316d592b1ced3e11360d5669081abf871308af2cd20",
+      "installed_sha256": "3cc66365383b3ac9fb135316d592b1ced3e11360d5669081abf871308af2cd20",
+      "match": true
+    },
+    {
+      "path": "dashboard/portraits_pixel/Somerville.png",
+      "expected_sha256": "5fabec6744d8870cff8d718fbc859f9e15bbfbc31e1c645e499d22689e6e4761",
+      "installed_sha256": "5fabec6744d8870cff8d718fbc859f9e15bbfbc31e1c645e499d22689e6e4761",
+      "match": true
+    },
+    {
+      "path": "dashboard/portraits_pixel/Tesla.png",
+      "expected_sha256": "62d3a21eef619cd2ef98fff569702482fd3646f1f0ed5528566466e417f9ee0f",
+      "installed_sha256": "62d3a21eef619cd2ef98fff569702482fd3646f1f0ed5528566466e417f9ee0f",
+      "match": true
+    },
+    {
+      "path": "dashboard/portraits_pixel/Turing.png",
+      "expected_sha256": "22b80e9ec893adca495de2345e918742672d589579ad5b7473a96e5bb0c703eb",
+      "installed_sha256": "22b80e9ec893adca495de2345e918742672d589579ad5b7473a96e5bb0c703eb",
+      "match": true
+    },
+    {
+      "path": "dashboard/portraits_pixel/Vesalius.png",
+      "expected_sha256": "e269e8bb9718c2153246a63035801e41a48c6bfea1d6cdb5d46f231ea1c97676",
+      "installed_sha256": "e269e8bb9718c2153246a63035801e41a48c6bfea1d6cdb5d46f231ea1c97676",
+      "match": true
+    },
+    {
+      "path": "dashboard/portraits_pixel/Watt.png",
+      "expected_sha256": "56a887237480671fe83b9e63086773351acdb60d45b4f6e25d448d7f29c03bff",
+      "installed_sha256": "56a887237480671fe83b9e63086773351acdb60d45b4f6e25d448d7f29c03bff",
+      "match": true
+    },
+    {
+      "path": "dashboard/portraits_pixel/Yukawa.png",
+      "expected_sha256": "8b8a8e3a2b4eef8657ff006695482a5565ef266b604340138686b5d4007b392b",
+      "installed_sha256": "8b8a8e3a2b4eef8657ff006695482a5565ef266b604340138686b5d4007b392b",
+      "match": true
+    },
+    {
+      "path": "dashboard/providers/__init__.py",
+      "expected_sha256": "16482a46947620d22e1d7a164f2d12eafa47652b5a77ad69ef094ac2575b4053",
+      "installed_sha256": "16482a46947620d22e1d7a164f2d12eafa47652b5a77ad69ef094ac2575b4053",
+      "match": true
+    },
+    {
+      "path": "dashboard/providers/base.py",
+      "expected_sha256": "cdf5b4c29236db038b1183d2c19ce4fd1ad9ff4b60bb2786949b255a9dc2762e",
+      "installed_sha256": "cdf5b4c29236db038b1183d2c19ce4fd1ad9ff4b60bb2786949b255a9dc2762e",
+      "match": true
+    },
+    {
+      "path": "dashboard/providers/codex_app.py",
+      "expected_sha256": "66effe7da040352466702aed13ad9350b4467fc40c7b402858f6b072cac032a5",
+      "installed_sha256": "66effe7da040352466702aed13ad9350b4467fc40c7b402858f6b072cac032a5",
+      "match": true
+    },
+    {
+      "path": "dashboard/providers/tmux.py",
+      "expected_sha256": "5be7622686436498ed126eabdaf9622c6b6a4e1f1910d8282981b67c1fde04e1",
+      "installed_sha256": "5be7622686436498ed126eabdaf9622c6b6a4e1f1910d8282981b67c1fde04e1",
+      "match": true
+    },
+    {
+      "path": "dashboard/scientist_portraits.json",
+      "expected_sha256": "4b2aba1825e16f57089e08ee92fca59f687c833b38b7d2aec528d9d7a42973ca",
+      "installed_sha256": "4b2aba1825e16f57089e08ee92fca59f687c833b38b7d2aec528d9d7a42973ca",
+      "match": true
+    },
+    {
+      "path": "dashboard/server.py",
+      "expected_sha256": "5a48b38a72de9a5c501a1ae28baaa630cff321f2ad913d39887e780ce4078177",
+      "installed_sha256": "5a48b38a72de9a5c501a1ae28baaa630cff321f2ad913d39887e780ce4078177",
+      "match": true
+    },
+    {
+      "path": "dashboard/service_runner.py",
+      "expected_sha256": "cd802f02cd9482bb6cf9e07a8326ba98a324d4c5b09c126a522ff9d7a11f8e5f",
+      "installed_sha256": "cd802f02cd9482bb6cf9e07a8326ba98a324d4c5b09c126a522ff9d7a11f8e5f",
+      "match": true
+    },
+    {
+      "path": "dashboard/theme_controller.js",
+      "expected_sha256": "3f37e91cf7af8751961c727f088854945d30652250b5077a616b5e3a4c7d1214",
+      "installed_sha256": "3f37e91cf7af8751961c727f088854945d30652250b5077a616b5e3a4c7d1214",
+      "match": true
+    },
+    {
+      "path": "dashboard/theme_core.js",
+      "expected_sha256": "12f9a7de7b198e9e3eb01f3345bb5ca0552df0f844648ad77a95daceed502389",
+      "installed_sha256": "12f9a7de7b198e9e3eb01f3345bb5ca0552df0f844648ad77a95daceed502389",
+      "match": true
+    },
+    {
+      "path": "dashboard/theme_effect_manifest.json",
+      "expected_sha256": "ce9f36ccefb92ae863593e00d870f3d3cd2008e991dbfd6bce57061d30826329",
+      "installed_sha256": "ce9f36ccefb92ae863593e00d870f3d3cd2008e991dbfd6bce57061d30826329",
+      "match": true
+    },
+    {
+      "path": "dashboard/theme_light.css",
+      "expected_sha256": "ba95d46a7c13185bd187ccb9d13d94e28b42120079f9915be8953f7d99b29d72",
+      "installed_sha256": "ba95d46a7c13185bd187ccb9d13d94e28b42120079f9915be8953f7d99b29d72",
+      "match": true
+    },
+    {
+      "path": "hooks/README.md",
+      "expected_sha256": "e2e2c531d8f726233bcff1c4445f3ebe25c65ec61d106fdcec23fefa5ee02c64",
+      "installed_sha256": "e2e2c531d8f726233bcff1c4445f3ebe25c65ec61d106fdcec23fefa5ee02c64",
+      "match": true
+    },
+    {
+      "path": "hooks/check-agent-registered.sh",
+      "expected_sha256": "ef377bb552ed4fc617efa46825336dad3f67c047ef175ab741712c1fed5f1dc5",
+      "installed_sha256": "ef377bb552ed4fc617efa46825336dad3f67c047ef175ab741712c1fed5f1dc5",
+      "match": true
+    },
+    {
+      "path": "hooks/check-file-reservation.sh",
+      "expected_sha256": "4e3167a3bd5611b663226a63e52f066cdcbb10aeb50692603c33c91883615323",
+      "installed_sha256": "4e3167a3bd5611b663226a63e52f066cdcbb10aeb50692603c33c91883615323",
+      "match": true
+    },
+    {
+      "path": "hooks/cleanup-child-agent.sh",
+      "match": true,
+      "kind": "dispatcher"
+    },
+    {
+      "path": "hooks/head-send-lint.py",
+      "expected_sha256": "4a24831cbbc2906b40e045630a49da485b1a7588a40b2e77519ebf94da0b261d",
+      "installed_sha256": "4a24831cbbc2906b40e045630a49da485b1a7588a40b2e77519ebf94da0b261d",
+      "match": true
+    },
+    {
+      "path": "hooks/head-send-lint.py.bak-20261020-taskfile",
+      "expected_sha256": "40864dd2bfc6d70accdd11a9ff71938c78bd48982a16e0d7a0a2c5551348411b",
+      "installed_sha256": "40864dd2bfc6d70accdd11a9ff71938c78bd48982a16e0d7a0a2c5551348411b",
+      "match": true
+    },
+    {
+      "path": "hooks/invalidate-release-debounce.sh",
+      "expected_sha256": "b58b191a0ae96ef09d53f8a7c7f32bb8985dc6ac1dabf43951bf18e5f459b551",
+      "installed_sha256": "b58b191a0ae96ef09d53f8a7c7f32bb8985dc6ac1dabf43951bf18e5f459b551",
+      "match": true
+    },
+    {
+      "path": "hooks/mark-agent-registered.sh",
+      "expected_sha256": "49ede07ebcca99e9fa810ea4c9973c61a375e02ea536a7994b34b06c78d5d977",
+      "installed_sha256": "49ede07ebcca99e9fa810ea4c9973c61a375e02ea536a7994b34b06c78d5d977",
+      "match": true
+    },
+    {
+      "path": "hooks/monitor_child_agent.sh",
+      "expected_sha256": "b10b17e8c47d027c76b53256813153b20ca71394fd75cfc09a352f130032627c",
+      "installed_sha256": "b10b17e8c47d027c76b53256813153b20ca71394fd75cfc09a352f130032627c",
+      "match": true
+    },
+    {
+      "path": "hooks/project-context.sh",
+      "expected_sha256": "e24403e8186c5040ac8d579705bb2fde81e84e2f06a69b158bde403fe3b796e4",
+      "installed_sha256": "e24403e8186c5040ac8d579705bb2fde81e84e2f06a69b158bde403fe3b796e4",
+      "match": true
+    },
+    {
+      "path": "hooks/record-session-index.py",
+      "expected_sha256": "b91d1a70dc1bb3776ae9ece7acc0ce8c5f0c31448c598c78ac06f7381806d545",
+      "installed_sha256": "b91d1a70dc1bb3776ae9ece7acc0ce8c5f0c31448c598c78ac06f7381806d545",
+      "match": true
+    },
+    {
+      "path": "hooks/release-all-reservations.sh",
+      "expected_sha256": "7a9ddb17e8cc93ff569f8423be5c59d703a2658b657c7567a73207415b12af54",
+      "installed_sha256": "7a9ddb17e8cc93ff569f8423be5c59d703a2658b657c7567a73207415b12af54",
+      "match": true
+    },
+    {
+      "path": "hooks/release-file-reservation-worker.py",
+      "expected_sha256": "fdb7871a31e4d69a73f6ef386c639485dd141b520000a0b2d877e79e43fa07a9",
+      "installed_sha256": "fdb7871a31e4d69a73f6ef386c639485dd141b520000a0b2d877e79e43fa07a9",
+      "match": true
+    },
+    {
+      "path": "hooks/release-file-reservation.sh",
+      "expected_sha256": "8c6d4e79426faccd8692bb38b9832863aeda1591e75161a9e85a16760cf5a86e",
+      "installed_sha256": "8c6d4e79426faccd8692bb38b9832863aeda1591e75161a9e85a16760cf5a86e",
+      "match": true
+    },
+    {
+      "path": "hooks/reservation-common.sh",
+      "expected_sha256": "6b562024e902f91f6a01780e8ab2fe53ffea96c22dd48efd82ff95dfd1acf387",
+      "installed_sha256": "6b562024e902f91f6a01780e8ab2fe53ffea96c22dd48efd82ff95dfd1acf387",
+      "match": true
+    },
+    {
+      "path": "hooks/resolve-agent-name.sh",
+      "expected_sha256": "4e23d3cfb057ca11765a15f8cc5fc7c387f3366903f5f53e849a0632107fdb74",
+      "installed_sha256": "4e23d3cfb057ca11765a15f8cc5fc7c387f3366903f5f53e849a0632107fdb74",
+      "match": true
+    },
+    {
+      "path": "hooks/rotate_runtime_logs.sh",
+      "expected_sha256": "2d19656d874fa92aff1a5ca1bfbe5992aa91d74bd7528a61164e0fa2c0fff3fd",
+      "installed_sha256": "2d19656d874fa92aff1a5ca1bfbe5992aa91d74bd7528a61164e0fa2c0fff3fd",
+      "match": true
+    },
+    {
+      "path": "hooks/seat_lifecycle.py",
+      "expected_sha256": "f5f00224b05dea08e71a559ed0375c10275cd33a839f36238047c5d735e8dd3f",
+      "installed_sha256": "f5f00224b05dea08e71a559ed0375c10275cd33a839f36238047c5d735e8dd3f",
+      "match": true
+    },
+    {
+      "path": "hooks/session-identity-policy.sh",
+      "expected_sha256": "0e36a9dffc88c5f2fa5573a4f9cd792cbb78140883391647ffaa331e65d0ae53",
+      "installed_sha256": "0e36a9dffc88c5f2fa5573a4f9cd792cbb78140883391647ffaa331e65d0ae53",
+      "match": true
+    },
+    {
+      "path": "hooks/session-start-reminder.sh",
+      "expected_sha256": "89e681730b94dad52e94276306c091f21919f0a6c413170c3f2106017da24d35",
+      "installed_sha256": "89e681730b94dad52e94276306c091f21919f0a6c413170c3f2106017da24d35",
+      "match": true
+    },
+    {
+      "path": "hooks/set-ghostty-title.sh",
+      "expected_sha256": "066d1cad5dfe34fe5ca71ef5a719528ece70da4f2071241b4087f05babf4e406",
+      "installed_sha256": "066d1cad5dfe34fe5ca71ef5a719528ece70da4f2071241b4087f05babf4e406",
+      "match": true
+    },
+    {
+      "path": "hooks/settings.template.json",
+      "expected_sha256": "f6f590c4355e0b191b457ddb832dbc7a9fd11b780b06daa44cca958bf2ed5d9c",
+      "installed_sha256": "f6f590c4355e0b191b457ddb832dbc7a9fd11b780b06daa44cca958bf2ed5d9c",
+      "match": true
+    },
+    {
+      "path": "hooks/spawn_child.sh",
+      "match": true,
+      "kind": "dispatcher"
+    },
+    {
+      "path": "hooks/spawn_child.sh.bak-20261002-cc2286-placeholder",
+      "expected_sha256": "f4f7bfb056157d8b14faac713a6eecf43711f33a0dd1a11f966f10b3c037038d",
+      "installed_sha256": "f4f7bfb056157d8b14faac713a6eecf43711f33a0dd1a11f966f10b3c037038d",
+      "match": true
+    },
+    {
+      "path": "hooks/spawn_child.sh.bak-20261012-M055",
+      "expected_sha256": "7c3ab30d7d7d4384462324bc99bbc754df19f3fed68a42c5feaba4527ee48e72",
+      "installed_sha256": "7c3ab30d7d7d4384462324bc99bbc754df19f3fed68a42c5feaba4527ee48e72",
+      "match": true
+    },
+    {
+      "path": "hooks/spawn_child.sh.bak-20261013-methodcopy-applied",
+      "expected_sha256": "2ffa5d1ea034849ced874133c047be7fc66bba5b69c95a3dc8f604606aae575f",
+      "installed_sha256": "2ffa5d1ea034849ced874133c047be7fc66bba5b69c95a3dc8f604606aae575f",
+      "match": true
+    },
+    {
+      "path": "hooks/task-file-lint.py",
+      "expected_sha256": "b269417574cc8976805c708168ba34204455b29b44066c662dbc479175f4c70f",
+      "installed_sha256": "b269417574cc8976805c708168ba34204455b29b44066c662dbc479175f4c70f",
+      "match": true
+    },
+    {
+      "path": "hooks/usage-throttle-warn.py",
+      "expected_sha256": "1bed2c2e42707f6ed0ba275f9d5ef6b2932e6c36178d403f4c081cce24ae5813",
+      "installed_sha256": "1bed2c2e42707f6ed0ba275f9d5ef6b2932e6c36178d403f4c081cce24ae5813",
+      "match": true
+    },
+    {
+      "path": "hooks/watch_agent_mail_signals.sh",
+      "expected_sha256": "830f5c869b1d4e71aae94b612e92913b89f000478d05668c15e1f8d4100f84c4",
+      "installed_sha256": "830f5c869b1d4e71aae94b612e92913b89f000478d05668c15e1f8d4100f84c4",
+      "match": true
+    },
+    {
+      "path": "integrations/codex_app/README.md",
+      "expected_sha256": "9a1e0bb1c73f39e8eb24baadaac033ad7cecfcaa6daeb64331a9da9e3e33e1d2",
+      "installed_sha256": "7d7323304be3550ba9bd6a2e20cf1d5811fd44a49e5bed684664c2a1e26724f3",
+      "match": false
+    },
+    {
+      "path": "integrations/codex_app/bin/doctor-codex-app-integration",
+      "expected_sha256": "4d780b207de03b71e0d7e7959de2b35a23a9554389c48456e5824718667e008a",
+      "installed_sha256": "1977708a525fd4bd6e8dec40ab321b08daac2a4cedc81905d9f04424fa2a54bb",
+      "match": false
+    },
+    {
+      "path": "integrations/codex_app/bin/run-bridge",
+      "expected_sha256": "98ab2956799f46457a3d6051cb3490d8ee44f5f549297ad55e16be08c7b6292e",
+      "installed_sha256": "98ab2956799f46457a3d6051cb3490d8ee44f5f549297ad55e16be08c7b6292e",
+      "match": true
+    },
+    {
+      "path": "integrations/codex_app/bin/uninstall-codex-app-integration",
+      "expected_sha256": "d785c1adef9f45e0c095aa6fbc8303f994d1eb6c412fbbdf0994ae85ab04b705",
+      "installed_sha256": "7496f4ca2ef780e4bdd0cffdd58cfec8845dcd1c061eafc58b13145783bd6255",
+      "match": false
+    },
+    {
+      "path": "integrations/codex_app/env.sh.sample",
+      "expected_sha256": "a8bb326d14351ce4a592da304d55f4b148bf63cee0e4f9a83189ec8c706ea002",
+      "installed_sha256": "a8bb326d14351ce4a592da304d55f4b148bf63cee0e4f9a83189ec8c706ea002",
+      "match": true
+    },
+    {
+      "path": "integrations/codex_app/export-manifest.txt",
+      "expected_sha256": "52f456ad34e8e104eaa5fb5b6144c114d6c5eee7014bd7062a23abfca785e01c",
+      "installed_sha256": "97e730ef99d3e345be2ceceec4b907aeaeb31d9114fffe0418153f357580f15a",
+      "match": false
+    },
+    {
+      "path": "integrations/codex_app/launchd/org.agentstack.codex-app-bridge.plist.template",
+      "expected_sha256": "195e737ea734a38c233c70c60d8b3aa349b36b776ac9dd65209c8f8b3a83f36e",
+      "installed_sha256": "195e737ea734a38c233c70c60d8b3aa349b36b776ac9dd65209c8f8b3a83f36e",
+      "match": true
+    },
+    {
+      "path": "integrations/codex_app/marketplace/plugins/agentstack-codex-app/.codex-plugin/plugin.json",
+      "expected_sha256": "385eef4050e0035977b26c674a7908d0d66b13f7253303f1f5bb5507036d8b74",
+      "installed_sha256": "385eef4050e0035977b26c674a7908d0d66b13f7253303f1f5bb5507036d8b74",
+      "match": true
+    },
+    {
+      "path": "integrations/codex_app/marketplace/plugins/agentstack-codex-app/.mcp.json",
+      "expected_sha256": "edeb56d607efa7e9647702bfc118f299de1667332a97d7fdba55ab3309737a5f",
+      "installed_sha256": "edeb56d607efa7e9647702bfc118f299de1667332a97d7fdba55ab3309737a5f",
+      "match": true
+    },
+    {
+      "path": "integrations/codex_app/marketplace/plugins/agentstack-codex-app/hooks/hooks.json",
+      "expected_sha256": "ff7e398ccbf310c2c64ca66c7ce8093c088360eac9b81c738093e7e21cba6b35",
+      "installed_sha256": "124a624f9d208284355ca64618874cc8863c5eacfec4a4028920bcd3ae8c07d8",
+      "match": false
+    },
+    {
+      "path": "integrations/codex_app/marketplace/plugins/agentstack-codex-app/schemas/README.md",
+      "expected_sha256": "0ff829077a040c5d0462f5c6c62ca882aac8b63fccb3837c5444b06ca15f0c02",
+      "installed_sha256": "0d8b5aeddf04943ee887b11e912d996789816f08be3aa27aec143fdc0f8e447e",
+      "match": false
+    },
+    {
+      "path": "integrations/codex_app/marketplace/plugins/agentstack-codex-app/schemas/binding-record-v1.json",
+      "expected_sha256": "6c310f6ccbff19b3003a02d114272b2a0b9b35face4364b12e1448e499f5f4b6",
+      "installed_sha256": "3895fed4e17dd2fc0159575a77fef613e3b3266ff972b4c01259e95cab20130e",
+      "match": false
+    },
+    {
+      "path": "integrations/codex_app/marketplace/plugins/agentstack-codex-app/schemas/migrations/001_delivery_state.sql",
+      "expected_sha256": "fd636110385352cb566c1b9ab9fc5dc7dd798e54cb561a004e6f5c1a1c570454",
+      "installed_sha256": "fd636110385352cb566c1b9ab9fc5dc7dd798e54cb561a004e6f5c1a1c570454",
+      "match": true
+    },
+    {
+      "path": "integrations/codex_app/marketplace/plugins/agentstack-codex-app/schemas/runtime-event-v1.json",
+      "expected_sha256": "996ef8b2ab8399b3b48f3e4cf8102ffbb44151a312ad28666cf09e680a220567",
+      "installed_sha256": "996ef8b2ab8399b3b48f3e4cf8102ffbb44151a312ad28666cf09e680a220567",
+      "match": true
+    },
+    {
+      "path": "integrations/codex_app/marketplace/plugins/agentstack-codex-app/scripts/run-hook.sh",
+      "expected_sha256": "be74479f4068a392409ca5d96f62d72307d0489f48e2249933a1b3d0eafb83fb",
+      "installed_sha256": "1790afd561d2ab15b16b39f86ead8fba9af4434899a04adfa118c57e9caeb0c8",
+      "match": false
+    },
+    {
+      "path": "integrations/codex_app/marketplace/plugins/agentstack-codex-app/scripts/run-mcp.sh",
+      "expected_sha256": "49e9e2653989583c7385401eb21b5a8d69765da3f65364d372690a6246dc052e",
+      "installed_sha256": "d15305d52bdadc618c37284da368f949be66e08ae708c61b754665755b819f21",
+      "match": false
+    },
+    {
+      "path": "integrations/codex_app/marketplace/plugins/agentstack-codex-app/skills/coordinate/SKILL.md",
+      "expected_sha256": "e44e8ba75ac63bf54160b12ab0c8589934a06f837f7d3d340676003f476028ca",
+      "installed_sha256": "e660004e0be87cdaaa6bf13867ce09ab174b6db914be134f6d6a762aee868a0d",
+      "match": false
+    },
+    {
+      "path": "integrations/codex_app/marketplace/plugins/agentstack-codex-app/src/agentstack_codex_app/__init__.py",
+      "expected_sha256": "eb462df8b29bdba105524e721c673c7c0b44f6dfbbd31191f0c5df24250cc2cf",
+      "installed_sha256": "eb462df8b29bdba105524e721c673c7c0b44f6dfbbd31191f0c5df24250cc2cf",
+      "match": true
+    },
+    {
+      "path": "integrations/codex_app/marketplace/plugins/agentstack-codex-app/src/agentstack_codex_app/agent_mail_client.py",
+      "expected_sha256": "c610fc15a495f593b0ab51aaad54dc32474aaa74e14bf4120fba52ad61409a60",
+      "installed_sha256": "fb7cadd6030374cad56309d4e531f698a2c37295f706934f78bdbfc2d1b084af",
+      "match": false
+    },
+    {
+      "path": "integrations/codex_app/marketplace/plugins/agentstack-codex-app/src/agentstack_codex_app/daemon.py",
+      "expected_sha256": "954d318463d4973e1b284b19082233a2f039061e9abb8dd1a6908d8cc4aa6ecc",
+      "installed_sha256": "0431947308a91de15c906fc8066193ab67ca484cf06c131c7ee74654d523b299",
+      "match": false
+    },
+    {
+      "path": "integrations/codex_app/marketplace/plugins/agentstack-codex-app/src/agentstack_codex_app/delivery.py",
+      "expected_sha256": "4c6a15c3cb9c60898694e00700918f70cea918cf15417ce7683193a6ba97dba9",
+      "installed_sha256": "4c6a15c3cb9c60898694e00700918f70cea918cf15417ce7683193a6ba97dba9",
+      "match": true
+    },
+    {
+      "path": "integrations/codex_app/marketplace/plugins/agentstack-codex-app/src/agentstack_codex_app/hook_entry.py",
+      "expected_sha256": "f62c63453933034c1e40b95a4512294e68ea09944731264a0dabb12cf8f5626b",
+      "installed_sha256": "83ecbca98c63f33ff2f89604f0757c0dfe87eca9c63aaa046809ccdfcb8a26cf",
+      "match": false
+    },
+    {
+      "path": "integrations/codex_app/marketplace/plugins/agentstack-codex-app/src/agentstack_codex_app/identity_store.py",
+      "expected_sha256": "64871a119b2fb0487ffead92bf091007ba8e3da77060cdaeed8d5ee80073a992",
+      "installed_sha256": "64871a119b2fb0487ffead92bf091007ba8e3da77060cdaeed8d5ee80073a992",
+      "match": true
+    },
+    {
+      "path": "integrations/codex_app/marketplace/plugins/agentstack-codex-app/src/agentstack_codex_app/mcp_server.py",
+      "expected_sha256": "6c1a98f96764122dce837222338176a23bc59ee60a0ef92e113c0cab2e8637c4",
+      "installed_sha256": "7291d7d206d9903cf5da8e4592fb287d586e5fcc29462d4a79910dee2e46980e",
+      "match": false
+    },
+    {
+      "path": "integrations/codex_app/marketplace/plugins/agentstack-codex-app/src/agentstack_codex_app/protocol.py",
+      "expected_sha256": "7fbae82ee44be8c53fe7726386ed533e2aa4494094a4f412f1e759baf218ef27",
+      "installed_sha256": "7fbae82ee44be8c53fe7726386ed533e2aa4494094a4f412f1e759baf218ef27",
+      "match": true
+    },
+    {
+      "path": "integrations/codex_app/marketplace/plugins/agentstack-codex-app/src/agentstack_codex_app/snapshot.py",
+      "expected_sha256": "7989d448b48fbc4f4a222eb10e856a0eb02049edf9af8904792e4812c06fae19",
+      "installed_sha256": "7989d448b48fbc4f4a222eb10e856a0eb02049edf9af8904792e4812c06fae19",
+      "match": true
+    },
+    {
+      "path": "integrations/codex_app/marketplace/plugins/agentstack-codex-app/src/agentstack_codex_app/wake.py",
+      "expected_sha256": "a7bb56b9bb5aa54cf04c87f17c59229ad22027ad13fcdb1e4ef187dce3435b2b",
+      "installed_sha256": "3e556049626c565e76838e25bd61d5179612eaeefa005f338fe71a79c2e3bad7",
+      "match": false
+    },
+    {
+      "path": "integrations/codex_app/plugin/.codex-plugin/plugin.json",
+      "expected_sha256": "385eef4050e0035977b26c674a7908d0d66b13f7253303f1f5bb5507036d8b74",
+      "installed_sha256": "385eef4050e0035977b26c674a7908d0d66b13f7253303f1f5bb5507036d8b74",
+      "match": true
+    },
+    {
+      "path": "integrations/codex_app/plugin/.mcp.json",
+      "expected_sha256": "edeb56d607efa7e9647702bfc118f299de1667332a97d7fdba55ab3309737a5f",
+      "installed_sha256": "edeb56d607efa7e9647702bfc118f299de1667332a97d7fdba55ab3309737a5f",
+      "match": true
+    },
+    {
+      "path": "integrations/codex_app/plugin/hooks/hooks.json",
+      "expected_sha256": "ff7e398ccbf310c2c64ca66c7ce8093c088360eac9b81c738093e7e21cba6b35",
+      "installed_sha256": "ff7e398ccbf310c2c64ca66c7ce8093c088360eac9b81c738093e7e21cba6b35",
+      "match": true
+    },
+    {
+      "path": "integrations/codex_app/plugin/scripts/run-hook.sh",
+      "expected_sha256": "be74479f4068a392409ca5d96f62d72307d0489f48e2249933a1b3d0eafb83fb",
+      "installed_sha256": "be74479f4068a392409ca5d96f62d72307d0489f48e2249933a1b3d0eafb83fb",
+      "match": true
+    },
+    {
+      "path": "integrations/codex_app/plugin/scripts/run-mcp.sh",
+      "expected_sha256": "49e9e2653989583c7385401eb21b5a8d69765da3f65364d372690a6246dc052e",
+      "installed_sha256": "49e9e2653989583c7385401eb21b5a8d69765da3f65364d372690a6246dc052e",
+      "match": true
+    },
+    {
+      "path": "integrations/codex_app/plugin/skills/coordinate/SKILL.md",
+      "expected_sha256": "e44e8ba75ac63bf54160b12ab0c8589934a06f837f7d3d340676003f476028ca",
+      "installed_sha256": "e44e8ba75ac63bf54160b12ab0c8589934a06f837f7d3d340676003f476028ca",
+      "match": true
+    },
+    {
+      "path": "integrations/codex_app/pyproject.toml",
+      "expected_sha256": "98232fe3fd96cfe1fa5384233af63d026c87b06d1e885312406d735d536d968f",
+      "installed_sha256": "294e049f74c43135e8f3249abd22a4f1b8500b01c438ebd6183d9bce147ceb02",
+      "match": false
+    },
+    {
+      "path": "integrations/codex_app/schemas/README.md",
+      "expected_sha256": "0ff829077a040c5d0462f5c6c62ca882aac8b63fccb3837c5444b06ca15f0c02",
+      "installed_sha256": "0d8b5aeddf04943ee887b11e912d996789816f08be3aa27aec143fdc0f8e447e",
+      "match": false
+    },
+    {
+      "path": "integrations/codex_app/schemas/binding-record-v1.json",
+      "expected_sha256": "6c310f6ccbff19b3003a02d114272b2a0b9b35face4364b12e1448e499f5f4b6",
+      "installed_sha256": "3895fed4e17dd2fc0159575a77fef613e3b3266ff972b4c01259e95cab20130e",
+      "match": false
+    },
+    {
+      "path": "integrations/codex_app/schemas/migrations/001_delivery_state.sql",
+      "expected_sha256": "fd636110385352cb566c1b9ab9fc5dc7dd798e54cb561a004e6f5c1a1c570454",
+      "installed_sha256": "fd636110385352cb566c1b9ab9fc5dc7dd798e54cb561a004e6f5c1a1c570454",
+      "match": true
+    },
+    {
+      "path": "integrations/codex_app/schemas/runtime-event-v1.json",
+      "expected_sha256": "996ef8b2ab8399b3b48f3e4cf8102ffbb44151a312ad28666cf09e680a220567",
+      "installed_sha256": "996ef8b2ab8399b3b48f3e4cf8102ffbb44151a312ad28666cf09e680a220567",
+      "match": true
+    },
+    {
+      "path": "integrations/codex_app/src/agentstack_codex_app/__init__.py",
+      "expected_sha256": "eb462df8b29bdba105524e721c673c7c0b44f6dfbbd31191f0c5df24250cc2cf",
+      "installed_sha256": "eb462df8b29bdba105524e721c673c7c0b44f6dfbbd31191f0c5df24250cc2cf",
+      "match": true
+    },
+    {
+      "path": "integrations/codex_app/src/agentstack_codex_app/agent_mail_client.py",
+      "expected_sha256": "c610fc15a495f593b0ab51aaad54dc32474aaa74e14bf4120fba52ad61409a60",
+      "installed_sha256": "c610fc15a495f593b0ab51aaad54dc32474aaa74e14bf4120fba52ad61409a60",
+      "match": true
+    },
+    {
+      "path": "integrations/codex_app/src/agentstack_codex_app/daemon.py",
+      "expected_sha256": "954d318463d4973e1b284b19082233a2f039061e9abb8dd1a6908d8cc4aa6ecc",
+      "installed_sha256": "954d318463d4973e1b284b19082233a2f039061e9abb8dd1a6908d8cc4aa6ecc",
+      "match": true
+    },
+    {
+      "path": "integrations/codex_app/src/agentstack_codex_app/delivery.py",
+      "expected_sha256": "4c6a15c3cb9c60898694e00700918f70cea918cf15417ce7683193a6ba97dba9",
+      "installed_sha256": "4c6a15c3cb9c60898694e00700918f70cea918cf15417ce7683193a6ba97dba9",
+      "match": true
+    },
+    {
+      "path": "integrations/codex_app/src/agentstack_codex_app/hook_entry.py",
+      "expected_sha256": "f62c63453933034c1e40b95a4512294e68ea09944731264a0dabb12cf8f5626b",
+      "installed_sha256": "f62c63453933034c1e40b95a4512294e68ea09944731264a0dabb12cf8f5626b",
+      "match": true
+    },
+    {
+      "path": "integrations/codex_app/src/agentstack_codex_app/identity_store.py",
+      "expected_sha256": "64871a119b2fb0487ffead92bf091007ba8e3da77060cdaeed8d5ee80073a992",
+      "installed_sha256": "64871a119b2fb0487ffead92bf091007ba8e3da77060cdaeed8d5ee80073a992",
+      "match": true
+    },
+    {
+      "path": "integrations/codex_app/src/agentstack_codex_app/mcp_server.py",
+      "expected_sha256": "6c1a98f96764122dce837222338176a23bc59ee60a0ef92e113c0cab2e8637c4",
+      "installed_sha256": "6c1a98f96764122dce837222338176a23bc59ee60a0ef92e113c0cab2e8637c4",
+      "match": true
+    },
+    {
+      "path": "integrations/codex_app/src/agentstack_codex_app/protocol.py",
+      "expected_sha256": "7fbae82ee44be8c53fe7726386ed533e2aa4494094a4f412f1e759baf218ef27",
+      "installed_sha256": "7fbae82ee44be8c53fe7726386ed533e2aa4494094a4f412f1e759baf218ef27",
+      "match": true
+    },
+    {
+      "path": "integrations/codex_app/src/agentstack_codex_app/snapshot.py",
+      "expected_sha256": "7989d448b48fbc4f4a222eb10e856a0eb02049edf9af8904792e4812c06fae19",
+      "installed_sha256": "7989d448b48fbc4f4a222eb10e856a0eb02049edf9af8904792e4812c06fae19",
+      "match": true
+    },
+    {
+      "path": "integrations/codex_app/src/agentstack_codex_app/wake.py",
+      "expected_sha256": "a7bb56b9bb5aa54cf04c87f17c59229ad22027ad13fcdb1e4ef187dce3435b2b",
+      "installed_sha256": "a7bb56b9bb5aa54cf04c87f17c59229ad22027ad13fcdb1e4ef187dce3435b2b",
+      "match": true
+    },
+    {
+      "path": "launchd/org.agentstack.tmux-server.plist.unloaded",
+      "expected_sha256": "13edb0eda2d3483cdbf8367e60e69cf61f269d98532717f67e20d7751e998cc2",
+      "installed_sha256": "13edb0eda2d3483cdbf8367e60e69cf61f269d98532717f67e20d7751e998cc2",
+      "match": true
+    },
+    {
+      "path": "releases/seat-lifecycle/ee5880e3e23606e0f3252cbeed211868102f4595/hooks/cleanup-child-agent.sh",
+      "expected_sha256": "175a6f2e196739af79d990aba730f62dc23e82961b0568e53110084938b2d7a3",
+      "installed_sha256": "175a6f2e196739af79d990aba730f62dc23e82961b0568e53110084938b2d7a3",
+      "match": true
+    },
+    {
+      "path": "releases/seat-lifecycle/ee5880e3e23606e0f3252cbeed211868102f4595/hooks/project-context.sh",
+      "match": true,
+      "kind": "symlink"
+    },
+    {
+      "path": "releases/seat-lifecycle/ee5880e3e23606e0f3252cbeed211868102f4595/hooks/resolve-agent-name.sh",
+      "match": true,
+      "kind": "symlink"
+    },
+    {
+      "path": "releases/seat-lifecycle/ee5880e3e23606e0f3252cbeed211868102f4595/hooks/seat_lifecycle.py",
+      "expected_sha256": "f5f00224b05dea08e71a559ed0375c10275cd33a839f36238047c5d735e8dd3f",
+      "installed_sha256": "f5f00224b05dea08e71a559ed0375c10275cd33a839f36238047c5d735e8dd3f",
+      "match": true
+    },
+    {
+      "path": "releases/seat-lifecycle/ee5880e3e23606e0f3252cbeed211868102f4595/hooks/set-ghostty-title.sh",
+      "expected_sha256": "148e5f6f2df196e9529f6f8a723a461eef8e4791f13e466883fe603497bf0493",
+      "installed_sha256": "148e5f6f2df196e9529f6f8a723a461eef8e4791f13e466883fe603497bf0493",
+      "match": true
+    },
+    {
+      "path": "releases/seat-lifecycle/ee5880e3e23606e0f3252cbeed211868102f4595/hooks/spawn_child.sh",
+      "expected_sha256": "ca51ca936aff3e288546bce037265a9f487205f91a63106ef16660f6fcbdf2a9",
+      "installed_sha256": "ca51ca936aff3e288546bce037265a9f487205f91a63106ef16660f6fcbdf2a9",
+      "match": true
+    },
+    {
+      "path": "releases/seat-lifecycle/ee5880e3e23606e0f3252cbeed211868102f4595/legacy/cleanup-child-agent.sh",
+      "expected_sha256": "d3d9a7426c12dc0131cb72964f21417a2d8fdd2b4033e042a1285ff4cc8f7f6d",
+      "installed_sha256": "d3d9a7426c12dc0131cb72964f21417a2d8fdd2b4033e042a1285ff4cc8f7f6d",
+      "match": true
+    },
+    {
+      "path": "releases/seat-lifecycle/ee5880e3e23606e0f3252cbeed211868102f4595/legacy/project-context.sh",
+      "match": true,
+      "kind": "symlink"
+    },
+    {
+      "path": "runtime/auto-restart-on-handoff.sh",
+      "expected_sha256": "931d434ce77676c98fa5a820abe510f88a1d267c77181ea5bace4494d3cc38b0",
+      "installed_sha256": "931d434ce77676c98fa5a820abe510f88a1d267c77181ea5bace4494d3cc38b0",
+      "match": true
+    },
+    {
+      "path": "runtime/head-evidence-export.py",
+      "expected_sha256": "3ce4927410f93f2bd0eb9ce1e3943d5e7eccfc9d27b004807efde799bcc72b0c",
+      "installed_sha256": "3ce4927410f93f2bd0eb9ce1e3943d5e7eccfc9d27b004807efde799bcc72b0c",
+      "match": true
+    },
+    {
+      "path": "runtime/head-stop-guard.sh",
+      "expected_sha256": "3ab272e2680b0e64b58b6f31dd102fcf4dcefebdb1a35d4ad6bb88b58eb55314",
+      "installed_sha256": "3ab272e2680b0e64b58b6f31dd102fcf4dcefebdb1a35d4ad6bb88b58eb55314",
+      "match": true
+    },
+    {
+      "path": "runtime/head-wait-event.sh",
+      "expected_sha256": "aaa0c27f4c89bf77d92c8ce372f7d3b47ea39c8e6d785cd18a4f5b1dc0ec577c",
+      "installed_sha256": "aaa0c27f4c89bf77d92c8ce372f7d3b47ea39c8e6d785cd18a4f5b1dc0ec577c",
+      "match": true
+    },
+    {
+      "path": "runtime/retire-drain.sh",
+      "expected_sha256": "9b9a9674fe025436de764ccaed0202019776b49d1fae200902a67d25b7e7b003",
+      "installed_sha256": "9b9a9674fe025436de764ccaed0202019776b49d1fae200902a67d25b7e7b003",
+      "match": true
+    },
+    {
+      "path": "runtime/storage-v6-propagate.py",
+      "expected_sha256": "d06f64f74c295ade9920993fea8f89dade191035f8b4f9ef2d6422b62cdf6c58",
+      "installed_sha256": "d06f64f74c295ade9920993fea8f89dade191035f8b4f9ef2d6422b62cdf6c58",
+      "match": true
+    },
+    {
+      "path": "skills/delegate/SKILL.md",
+      "expected_sha256": "c732a87f8eaa867873853fc20a5e112ee6fe02045ed40f5a10251cf5bbf9132f",
+      "installed_sha256": "c732a87f8eaa867873853fc20a5e112ee6fe02045ed40f5a10251cf5bbf9132f",
+      "match": true
+    },
+    {
+      "path": "skills/log/SKILL.md",
+      "expected_sha256": "6fa9c6169be5ba8d7b122d2f22cab68f593464320e470d85c97cc414e6df1168",
+      "installed_sha256": "6fa9c6169be5ba8d7b122d2f22cab68f593464320e470d85c97cc414e6df1168",
+      "match": true
+    }
+  ],
+  "comparison_failed": 18,
+  "native_tls_bin_retained": true,
+  "native_tls_comments_retained": true,
+  "native_tls_manifest_retained": true,
+  "custom_exports_retained": true,
+  "optional_env_preserved": true,
+  "version": "2026.10.22",
+  "dashboard_version": {
+    "name": "orrery-telemetry",
+    "version": "2026.10.22",
+    "api": 26
+  },
+  "rollback_snapshot": "/Users/huyuhutaru/.dev-storage-governor/examforge/20261022T063810Z-build-cache-e4007ade/rehearsal/rollback/payload-before-upgrade",
+  "helper_processes_stopped": true,
+  "mail_port_closed": true,
+  "dashboard_port_closed": true
+}

@@ -71,7 +71,7 @@ def main():
         dst=stack/rel;dst.parent.mkdir(parents=True,exist_ok=True);dst.write_text(text);dst.chmod(0o600)
     (stack/'install-state.json').write_text(json.dumps({'install_dir':str(stack),'owned_files':[str(stack/p) for p in seeded],'schema_version':1}))
     fake=a.root/'rehearsal-fake-bin';fake.mkdir(exist_ok=True)
-    for name,body in {'uname':'#!/bin/sh\necho Linux\n','systemctl':'#!/bin/sh\nexit 1\n','tmux':'#!/bin/sh\nexit 1\n'}.items():
+    for name,body in {'uname':'#!/bin/sh\necho Linux\n','systemctl':'#!/bin/sh\nexit 1\n','tmux':'#!/bin/sh\nexit 1\n','pkill':'#!/bin/sh\necho isolated-pkill-refused >&2\nexit 1\n','killall':'#!/bin/sh\necho isolated-killall-refused >&2\nexit 1\n'}.items():
         p=fake/name;p.write_text(body);p.chmod(0o755)
     mail_port=_free_port();dashboard_port=_free_port();mail_url=f'http://127.0.0.1:{mail_port}/mcp'
     env={k:v for k,v in os.environ.items() if not k.startswith(('AGENTSTACK_','AGS_','CHILD_','PARENT_')) and k not in ('AGENT_NAME','CODEX_HOME','PROJECT_KEY','MCP_AGENT_MAIL_TOKEN')}
@@ -108,7 +108,12 @@ def main():
             if not installed.exists() and not installed.is_symlink():
                 comparisons.append({'path':rel,'match':False,'reason':'missing'});continue
             if rel.startswith('integrations/codex_app/') and not rel.startswith(('integrations/codex_app/src/','integrations/codex_app/plugin/')):
-                comparisons.append({'path':rel,'match':sha(installed)==row['sha256'],'kind':'existing-optional-install-retained','expected_sha256':row['sha256'],'installed_sha256':sha(installed)})
+                original=pathlib.Path('/Users/huyuhutaru/.agentstack')/rel
+                expected_bytes=original.read_bytes()
+                if rel.endswith('/env.sh'):
+                    expected_bytes=original.read_text().replace('/Users/huyuhutaru',str(home)).replace(str(home)+'/tools/examforge',str(project)).replace('/Volumes/',str(home)+'/Volumes/').encode()
+                expected_sha=hashlib.sha256(expected_bytes).hexdigest()
+                comparisons.append({'path':rel,'match':sha(installed)==expected_sha,'kind':'existing-optional-install-retained','original_sha256':row['sha256'],'expected_sha256':expected_sha,'installed_sha256':sha(installed)})
                 continue
             expected=ROOT/row['source'] if row.get('source') else None
             if row.get('disposition')=='versioned-compatibility-default':
@@ -116,7 +121,7 @@ def main():
             if row.get('archive') and ('.bak' in pathlib.Path(rel).name or rel.startswith('launchd/')):
                 expected=ROOT/row['archive']
             if row.get('kind')=='symlink':
-                comparisons.append({'path':rel,'match':installed.is_symlink(),'kind':'symlink'});continue
+                comparisons.append({'path':rel,'match':installed.is_symlink() and (not rel.startswith('releases/') or os.readlink(installed)=='../../../../hooks/'+pathlib.Path(rel).name),'kind':'relocated-symlink','installed_target':os.readlink(installed) if installed.is_symlink() else None});continue
             if expected is None or not expected.is_file():
                 if row.get('state')=='unchanged':
                     # Latest upstream is expected for unmodified core files.
@@ -134,6 +139,9 @@ def main():
                 if live.is_file() and not live.is_symlink() and live.read_bytes()!=right:
                     differences.extend(difflib.unified_diff(live.read_text().splitlines(True),installed.read_text().splitlines(True),fromfile='live/'+rel,tofile='installed/'+rel))
         (ROOT/'docs/orrery-up-2/live-to-install.diff').write_text(''.join(differences))
+        for src,dst in [('hooks/spawn_child.sh','hooks/spawn_child.upstream.sh'),('hooks/cleanup-child-agent.sh','hooks/cleanup-child-agent.upstream.sh'),('bin/agentstack-preregister-child','bin/agentstack-preregister-child.upstream')]:
+            expected_sha=sha(ROOT/src);actual_sha=sha(stack/dst)
+            comparisons.append({'path':dst,'kind':'upstream-core-preserved','expected_sha256':expected_sha,'installed_sha256':actual_sha,'match':expected_sha==actual_sha})
         result['comparisons']=comparisons;result['comparison_failed']=sum(not x['match'] for x in comparisons)
         generated=(stack/'env.sh').read_text()
         old_env=pathlib.Path('/Users/huyuhutaru/.agentstack/env.sh').read_text().replace('/Users/huyuhutaru',str(home)).replace(str(home)+'/tools/examforge',str(project)).replace('/Volumes/',str(home)+'/Volumes/')

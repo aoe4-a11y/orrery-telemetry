@@ -67,7 +67,7 @@ def main():
         if rel.startswith('@home/') or rel.startswith('env.sh') or rel.endswith('env.sh') or rel.endswith('.plist') or p.is_symlink():
             row['disposition']='owner-setting-retained-hash-only';continue
         data=LIB['safe_code'](p)
-        archive='docs/orrery-up-2/live-code/'+rel;write(archive,data,p.stat().st_mode&0o777);row['archive']=archive
+        archive='docs/orrery-up-2/live-code/'+rel+('.txt' if Path(rel).name.startswith('test_') else '');write(archive,data,p.stat().st_mode&0o777);row['archive']=archive
         if '.bak' in p.name or rel.startswith(('backups/','launchd/',RELEASE+'/legacy/')):
             row['disposition']='historical-code-preserved';continue
         if rel.startswith(RELEASE+'/hooks/'):

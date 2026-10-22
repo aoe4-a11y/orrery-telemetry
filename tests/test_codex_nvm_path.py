@@ -51,6 +51,7 @@ def run(env, body):
     setup = (
         'set -euo pipefail\n'
         f'. {shlex.quote(str(ROOT / "hooks/codex-bin.sh"))}\n'
+        'codex_launch_search_path() { printf "%s" "$PATH:$HOME/.local/bin:$HOME/.npm-global/bin:$HOME/.nodebrew/current/bin"; for d in "$HOME"/.nvm/versions/node/*/bin; do [[ -d "$d" ]] && printf ":%s" "$d"; done; return 0; }\n'
         'CHILD_SHELL="$(codex_launch_shell)"\n'
         'CODEX_CHILD_PATH_SETUP="$(codex_launch_path_setup)"\n'
         'CODEX_PROBE_RUNNER=codex_launch_runner\nCODEX_LAUNCHER_CONTEXT_READY=1\n'

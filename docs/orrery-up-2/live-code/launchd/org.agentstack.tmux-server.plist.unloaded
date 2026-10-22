@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <!-- P-016: host the fleet tmux server under launchd so its TCC identity is the
+       tmux binary itself (grant Full Disk Access to that binary once) instead of
+       whichever Claude session happened to start it. Do NOT load until the owner
+       has granted FDA to /opt/homebrew/Cellar/tmux/3.6b/bin/tmux, and only while no default-socket server is
+       running (tmux -D refuses to start over a live socket). -->
+  <key>Label</key><string>org.agentstack.tmux-server</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/opt/homebrew/Cellar/tmux/3.6b/bin/tmux</string>
+    <string>-D</string>
+  </array>
+  <key>RunAtLoad</key><true/>
+  <key>KeepAlive</key><true/>
+  <key>ThrottleInterval</key><integer>10</integer>
+  <key>StandardOutPath</key><string>/Users/huyuhutaru/.agentstack/runtime/tmux-server.log</string>
+  <key>StandardErrorPath</key><string>/Users/huyuhutaru/.agentstack/runtime/tmux-server.log</string>
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>PATH</key><string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
+    <key>LANG</key><string>en_US.UTF-8</string>
+  </dict>
+</dict>
+</plist>

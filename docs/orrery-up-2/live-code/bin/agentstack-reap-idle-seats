@@ -1,0 +1,247 @@
+#!/bin/bash
+# Close finished Codex child seats (owner ruling 2026-08-12: no idle RAM occupation).
+# Installed copy: ~/.agentstack/bin/agentstack-reap-idle-seats (launchd every 600 s).
+# Repository copy: tools/agentstack/agentstack-reap-idle-seats (tests: scripts/test_reap_idle_seats.sh).
+# FAIL-CLOSED (rewritten 2026-09-08 after ops review of the fail-open v1):
+#   - only sessions that have a managed child CODEX_HOME are candidates
+#   - any failure to read the mail DB, protection list, or a pane => abort/skip, never kill
+#   - a candidate must have a rollout file on disk (evidence lives on disk, not in the pane)
+#   - every closure is logged individually with a reason
+# OPS-3 (2026-10-04) / OPS-3b (2026-10-05): seats that were only waiting on the heavy guard were closed, and a closed
+# seat's wait ticket stayed at the queue head with no owner (HardyMendeleev stalled 4.5 h).
+#   - keep a seat whose process tree holds a heavy_job_lock slot or wait ticket
+#   - keep a seat with any live work process under its pane (launches, watchers, sleeps);
+#     only the agent itself and its resident helpers (MCP servers, REPL) may remain
+#   - keep a seat whose latest mail is [blocked] or untagged (R-061) with no receipt after it
+#   - closing (also `--close SEAT REASON`) stops the seat's work processes and removes its
+#     tickets and slots, then reports every closure to the head by mail
+#
+# usage: agentstack-reap-idle-seats [--dry-run]
+#        agentstack-reap-idle-seats --close SEAT "REASON"     (forced close with full cleanup)
+#        agentstack-reap-idle-seats --attribute SEAT           (read-only: the seat's work and heavy entries)
+set -u
+DB="${REAP_DB:-$HOME/.agentstack/mail/storage.sqlite3}"
+PROTECT_FILE="${REAP_PROTECT_FILE:-$HOME/.agentstack/runtime/protected-seats.txt}"
+CHILD_ROOT="${REAP_CHILD_ROOT:-$HOME/.agentstack/runtime/child-agents}"
+LOG="${REAP_LOG:-$HOME/.agentstack/runtime/reap-seats.log}"
+STRIKE_DIR="${REAP_STRIKE_DIR:-$HOME/.agentstack/runtime/reap-strikes}"; mkdir -p "$STRIKE_DIR"
+TMUX_BIN="${REAP_TMUX:-tmux}"
+NOTIFY_TO="${REAP_NOTIFY_TO:-ProudTuring}"
+user_tmp="${TMPDIR:-$(getconf DARWIN_USER_TEMP_DIR 2>/dev/null || echo /tmp)}"
+LOCK_ROOT="${REAP_HEAVY_LOCK_ROOT:-${user_tmp%/}/examforge-heavy-slots}"
+# Resident helpers an idle agent keeps under its pane. Anything else is the seat's own work.
+RESIDENT_RE="${REAP_RESIDENT_RE:-(^|/)(codex|claude)( |$)|@openai/codex|/bin/codex-[a-z-]+|mcp_server\.py|/mcp/server\.mjs|node_repl|(^| )caffeinate( |$)}"
+DRY=""; FORCE_SEAT=""; FORCE_REASON=""; ATTRIBUTE_SEAT=""
+case "${1:-}" in
+  --dry-run) DRY="--dry-run" ;;
+  --attribute) ATTRIBUTE_SEAT="${2:-}" ;;
+  --close) FORCE_SEAT="${2:-}"; FORCE_REASON="${3:-forced close}"
+           [ -n "$FORCE_SEAT" ] || { echo "usage: $0 --close SEAT REASON" >&2; exit 2; } ;;
+esac
+ts() { date '+%F %T'; }
+# launchd sends stdout to the same log; write once.
+say() { if [ "$DRY" = "--dry-run" ] || [ -t 1 ]; then echo "$(ts) $*"; fi
+        [ "$DRY" = "--dry-run" ] || echo "$(ts) $*" >> "$LOG"; }
+CLOSED_REPORT=""
+
+# ---- seat attribution -------------------------------------------------------------------
+# OPS-3b (2026-10-05): MellowFeynman was closed while its resume helpers (nohup'd python,
+# reparented away from the pane) and two old-format heavy tickets (no owner file) were alive.
+# A process belongs to the seat when it is under the seat's pane, carries AGENT_NAME=<seat>,
+# or names one of the seat's storage-governor roots in its argv/env; their descendants too.
+# A heavy slot/ticket belongs to the seat by its owner file, or when its pid or an ancestor
+# of that pid belongs to the seat.
+REGISTRY_GLOBS="${REAP_REGISTRY_GLOBS:-$HOME/.dev-storage-governor/*/*/.dev-storage.json:/Volumes/DevSSD/DevStorageGovernor/artifacts/*/*/.dev-storage.json:/Volumes/DevSSD-Private/DevStorageGovernor/artifacts/*/*/.dev-storage.json}"
+pane_roots() { "$TMUX_BIN" list-panes -t "$1" -F '#{pane_pid}' 2>/dev/null; }
+# attribute SEAT -> lines "work<TAB>pid<TAB>command" and "heavy<TAB>dir"
+attribute() {
+  python3 - "$1" "$LOCK_ROOT" "$RESIDENT_RE" "$REGISTRY_GLOBS" "$$" $(pane_roots "$1") <<'PY'
+import glob, json, os, re, subprocess, sys
+seat, lock_root, resident_re, globs, me = sys.argv[1:6]
+panes = {int(x) for x in sys.argv[6:] if x.isdigit()}
+def ps(*fmt):
+    out = subprocess.run(["ps", "-axww", *fmt], capture_output=True, text=True, check=True).stdout
+    return out.splitlines()
+parent, argv = {}, {}
+for line in ps("-o", "pid=,ppid=,command="):
+    fields = line.split(None, 2)
+    if len(fields) >= 2 and fields[0].isdigit():
+        parent[int(fields[0])] = int(fields[1])
+        argv[int(fields[0])] = fields[2] if len(fields) == 3 else ""
+environ = {}
+for line in ps("-E", "-o", "pid=,command="):
+    fields = line.split(None, 1)
+    if fields and fields[0].isdigit():
+        pid = int(fields[0]); full = fields[1] if len(fields) > 1 else ""
+        command = argv.get(pid, "")
+        environ[pid] = full[len(command):] if full.startswith(command) else full
+roots = set()
+for pattern in globs.split(":"):
+    for path in glob.glob(pattern):
+        try:
+            if json.load(open(path)).get("owner") == seat:
+                roots.add(os.path.basename(os.path.dirname(path)))
+        except (OSError, ValueError):
+            continue
+def ancestors(pid):
+    seen = []
+    while pid in parent and pid > 1 and len(seen) < 128:
+        pid = parent[pid]; seen.append(pid)
+    return seen
+skip = {int(me)} | set(ancestors(int(me))) | {os.getpid()} | set(ancestors(os.getpid()))
+seeds = set()
+token = re.compile(r"(^|\s)AGENT_NAME=%s(\s|$)" % re.escape(seat))
+self_pid = os.getpid()
+skip |= {pid for pid in argv if self_pid in ancestors(pid)}  # this check's own ps children
+for pid, command in argv.items():
+    if pid in skip:
+        continue
+    if panes & set(ancestors(pid)):
+        seeds.add(pid)
+    elif token.search(environ.get(pid, "")):
+        seeds.add(pid)
+    elif roots and any(root in command or root in environ.get(pid, "") for root in roots):
+        seeds.add(pid)
+mine = set(seeds)
+for pid in argv:
+    if pid not in skip and mine & set(ancestors(pid)):
+        mine.add(pid)
+mine -= panes
+for pid in sorted(mine):
+    if re.search(resident_re, argv.get(pid, "")):
+        continue
+    print("work\t%d\t%s" % (pid, argv.get(pid, "")[:200]))
+for entry in sorted(glob.glob(os.path.join(lock_root, "slot-*")) + glob.glob(os.path.join(lock_root, "waiting", "ticket-*"))):
+    try:
+        owner = open(os.path.join(entry, "owner")).read().strip()
+    except OSError:
+        owner = ""
+    try:
+        pid = int(open(os.path.join(entry, "pid")).read().strip())
+    except (OSError, ValueError):
+        pid = None
+    if owner == seat or (pid is not None and (pid in mine or mine & set(ancestors(pid)))):
+        print("heavy\t%s" % entry)
+PY
+}
+
+# ---- mail ----------------------------------------------------------------------------------
+last_mail_blocked() {  # 0 if the seat's latest sent mail is [blocked] or untagged
+  local subj stripped
+  subj="$(sqlite3 "file:$DB?mode=ro" "select m.subject from messages m join agents a on a.id=m.sender_id
+    where a.name='$1' order by m.created_ts desc, m.id desc limit 1" 2>/dev/null)" || return 0
+  [ -n "$subj" ] || return 1
+  stripped="$(printf '%s' "$subj" | sed -E 's/^(Re:[[:space:]]*)+//')"
+  case "$stripped" in
+    "[blocked]"*) return 0 ;;
+    "["[a-zA-Z-]*"]"*) return 1 ;;
+    *) return 0 ;;
+  esac
+}
+
+station_unfinished() {  # 0 if the seat has no [receipt] yet, or got a new assignment after its last [receipt]
+  # 2026-10-12 (head ProudTuring): seats waiting for a Simulator slot outside the heavy lock (head mail 19192)
+  # had no ticket, no work process and a [progress] last mail, and were closed mid-station
+  # (OliveHooke NONMC-1, SwiftDarwin OS-DIFF-1, GrayTuring PACK-UPDATE-1, RubyFabre EXPL-UP-115).
+  local rec asg
+  rec="$(sqlite3 "file:$DB?mode=ro" "select coalesce(max(m.id),0) from messages m join agents a on a.id=m.sender_id
+    where a.name='$1' and (m.subject like '[receipt]%' or m.subject like 'Re: [receipt]%')" 2>/dev/null)" || return 0
+  [ "${rec:-0}" -gt 0 ] || return 0
+  asg="$(sqlite3 "file:$DB?mode=ro" "select coalesce(max(m.id),0) from messages m join message_recipients r on r.message_id=m.id
+    join agents a on a.id=r.agent_id where a.name='$1' and r.kind='to'
+    and (m.subject like '[order]%' or m.subject like '[station]%' or m.subject like '[差し戻し]%')" 2>/dev/null)" || return 0
+  [ "${asg:-0}" -gt "$rec" ]
+}
+
+notify_head() {  # one mail per run listing every closure (sender: head, as the supervisor heartbeat)
+  [ -n "$CLOSED_REPORT" ] || return 0
+  [ "$DRY" = "--dry-run" ] && return 0
+  printf '%s' "$CLOSED_REPORT" | REAP_DB="$DB" REAP_NOTIFY_TO="$NOTIFY_TO" python3 -c '
+import datetime, os, sqlite3, sys
+body = "席の自動の片づけ（agentstack-reap-idle-seats）が次の席を閉じた。\n\n" + sys.stdin.read() + \
+       "\n閉じた席の作業 process・heavy の札と slot は一緒に止めて片づけた（OPS-3）。"
+con = sqlite3.connect(os.environ["REAP_DB"], timeout=30); cur = con.cursor()
+to = os.environ["REAP_NOTIFY_TO"]
+row = cur.execute("select id from agents where name=?", (to,)).fetchone()
+if not row: sys.exit("unknown agent " + to)
+now = datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%d %H:%M:%S.%f")
+n = body.count("\n- ")
+cur.execute("insert into messages(project_id, sender_id, thread_id, topic, subject, body_md, importance, ack_required, created_ts, attachments) values (1,?,NULL,NULL,?,?,\x27normal\x27,0,?,\x27[]\x27)",
+            (row[0], "[progress] 席の自動の片づけ: %d 席を閉じた" % n, body, now))
+cur.execute("insert into message_recipients(message_id, agent_id, kind) values (?,?,\x27to\x27)", (cur.lastrowid, row[0]))
+con.commit()
+' || say "WARN notify to $NOTIFY_TO failed"
+}
+
+# ---- close ---------------------------------------------------------------------------------
+close_seat() {  # seat reason
+  local s="$1" why="$2" found work heavy stopped pid d label
+  found="$(attribute "$s")" || { say "close $s refused: attribution failed"; return 1; }
+  work="$(printf '%s\n' "$found" | awk -F'\t' '$1=="work"{print $2"\t"$3}')"
+  heavy="$(printf '%s\n' "$found" | awk -F'\t' '$1=="heavy"{print $2}')"
+  if [ "$DRY" = "--dry-run" ]; then say "would close $s: $why"; return 0; fi
+  "$TMUX_BIN" kill-session -t "$s" 2>/dev/null || { say "close $s failed: kill-session"; return 1; }
+  # The pane's own processes got SIGHUP; detached work (nohup, background terminals) did not.
+  stopped=""
+  for pid in $(printf '%s\n' "$work" | cut -f1) $(for d in $heavy; do cat "$d/pid" 2>/dev/null; done); do
+    kill -TERM "$pid" 2>/dev/null && stopped="$stopped $pid"
+  done
+  [ -z "$stopped" ] || sleep 2
+  for pid in $stopped; do kill -KILL "$pid" 2>/dev/null || true; done
+  for d in $heavy; do
+    label="$(cat "$d/name" 2>/dev/null || echo '?')"
+    rm -rf "${d:?}" && say "removed heavy entry $(basename "$d") ($label) of $s"
+  done
+  rm -f "$STRIKE_DIR/$s"
+  say "closed $s: $why; stopped pids:${stopped:- none}; heavy entries: $(printf '%s\n' "$heavy" | grep -c . | tr -d ' ')"
+  CLOSED_REPORT="$CLOSED_REPORT- ${s} — ${why}（止めた process:${stopped:- なし}・heavy の札/slot: $(printf '%s\n' "$heavy" | grep -c . | tr -d ' ')）
+"
+}
+
+if [ -n "$ATTRIBUTE_SEAT" ]; then  # read-only: what would keep this seat open
+  attribute "$ATTRIBUTE_SEAT"
+  exit $?
+fi
+
+if [ -n "$FORCE_SEAT" ]; then
+  "$TMUX_BIN" has-session -t "$FORCE_SEAT" 2>/dev/null || { echo "no such seat: $FORCE_SEAT" >&2; exit 1; }
+  close_seat "$FORCE_SEAT" "$FORCE_REASON (forced)"
+  notify_head
+  exit 0
+fi
+
+[ -r "$PROTECT_FILE" ] || { say "ABORT protection list unreadable: $PROTECT_FILE"; exit 0; }
+[ -r "$DB" ] || { say "ABORT mail DB unreadable"; exit 0; }
+pending=$(sqlite3 "file:$DB?mode=ro" "select distinct a.name from messages m
+  join message_recipients r on r.message_id=m.id join agents a on a.id=r.agent_id
+  where r.kind='to' and m.ack_required=1 and r.ack_ts is null" 2>/dev/null) || { say "ABORT mail DB query failed"; exit 0; }
+n=0
+for s in $("$TMUX_BIN" list-sessions -F '#{session_name}' 2>/dev/null); do
+  grep -qx "$s" "$PROTECT_FILE" && continue
+  printf '%s\n' "$pending" | grep -qx "$s" && { say "keep $s: unacked mail"; continue; }
+  [ -d "$CHILD_ROOT/$s.codex-home" ] || { say "keep $s: not a managed child"; continue; }
+  ls "$CHILD_ROOT/$s.codex-home"/sessions/*/*/*/rollout-*.jsonl >/dev/null 2>&1 || { say "keep $s: no rollout on disk"; continue; }
+  pane=$("$TMUX_BIN" capture-pane -p -t "$s" 2>/dev/null) || { say "keep $s: pane capture failed"; continue; }
+  tail8=$(printf '%s\n' "$pane" | grep -v '^\s*$' | tail -8)
+  printf '%s' "$tail8" | grep -qE 'Working \(|esc to interrupt' && { say "keep $s: working"; rm -f "$STRIKE_DIR/$s"; continue; }
+  printf '%s' "$tail8" | grep -q 'Ask Codex to do anything' || { say "keep $s: composer not visible (unknown state)"; continue; }
+  # OPS-3: an idle composer is not a finished station.
+  found="$(attribute "$s")" || { say "keep $s: attribution failed"; continue; }
+  heavy="$(printf '%s\n' "$found" | awk -F'\t' '$1=="heavy"{print $2}')"
+  [ -z "$heavy" ] || { say "keep $s: holds heavy_job_lock $(printf '%s\n' "$heavy" | xargs -n1 basename | tr '\n' ' ')"; rm -f "$STRIKE_DIR/$s"; continue; }
+  work="$(printf '%s\n' "$found" | awk -F'\t' '$1=="work"{print $2"\t"$3}')"
+  [ -z "$work" ] || { say "keep $s: live work process $(printf '%s\n' "$work" | head -3 | cut -c1-80 | tr '\t\n' ' |')"; rm -f "$STRIKE_DIR/$s"; continue; }
+  if last_mail_blocked "$s"; then say "keep $s: latest mail is [blocked]/untagged (station not finished)"; rm -f "$STRIKE_DIR/$s"; continue; fi
+  if station_unfinished "$s"; then say "keep $s: no [receipt] since its last assignment (station not finished)"; rm -f "$STRIKE_DIR/$s"; continue; fi
+  # 2026-09-20 (PinkTesla, R-058 ops): two strikes + recent-mail guard. A worker that just finished a turn
+  # is often about to receive its parent's next instruction (S30-1 RosyHopper was closed twice mid-station).
+  recent=$(sqlite3 "file:$DB?mode=ro" "select count(*) from messages m join message_recipients r on r.message_id=m.id
+    join agents a on a.id=r.agent_id where a.name='$s' and r.kind='to' and m.created_ts >= datetime('now','-90 minutes')" 2>/dev/null) || recent=1
+  [ "${recent:-1}" -eq 0 ] || { say "keep $s: mail addressed to it in the last 90 min"; rm -f "$STRIKE_DIR/$s"; continue; }
+  if [ ! -f "$STRIKE_DIR/$s" ]; then touch "$STRIKE_DIR/$s"; say "strike 1 $s: idle now, re-check next run"; continue; fi
+  close_seat "$s" "idle managed child (2 strikes, no mail 90 min, no heavy ticket, no work process, last mail not [blocked]), rollout saved" && n=$((n+1))
+done
+# clear strikes for sessions that no longer exist or were seen working
+for f in "$STRIKE_DIR"/*; do [ -e "$f" ] || continue; b=$(basename "$f"); "$TMUX_BIN" has-session -t "$b" 2>/dev/null || rm -f "$f"; done
+notify_head
+say "done closed=$n remaining=$("$TMUX_BIN" list-sessions 2>/dev/null | wc -l | tr -d ' ')"

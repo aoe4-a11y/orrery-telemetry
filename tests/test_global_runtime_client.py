@@ -801,7 +801,7 @@ def test_actual_dedicated_tmux_server_stale_environment_does_not_route(prepared)
     if tmux is None:
         pytest.skip('tmux unavailable; external runner must cover dedicated socket')
     socket_name = 'rh4a-' + str(os.getpid())
-    tmux_root = tempfile.mkdtemp(prefix='rh4a-tm-')
+    tmux_root = tempfile.mkdtemp(prefix='rh4a-tm-', dir='/private/tmp')
     output = prepared['root'] / 'tmux-observation.json'
     env = {**os.environ, 'TMUX_TMPDIR': tmux_root}
     env.pop('TMUX', None)

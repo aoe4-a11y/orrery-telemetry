@@ -1,0 +1,71 @@
+#!/bin/bash
+# Wake Codex tmux seats that ended a turn with notifications still queued
+# ("Messages to be submitted after next tool call") and are idle at the prompt.
+# Sends a single Enter to that pane so the queued mail notifications submit. Read-only otherwise.
+# 2026-10-08 (P-007 case 3): also submit a Codex composer that has held the same
+# unsent text ("› <text>") for two consecutive runs (>= 90 s) while idle. Seen
+# 2026-10-07 23:1x: head's send-keys text + C-m left the text in WindyPlanck's
+# composer and the seat sat idle ~50 min. M-025: never press Enter on modal surfaces.
+# Return only the last Codex composer, ending at its model or warnings footer.
+# Keep continuation lines in the fingerprint: a changing multi-line draft is not stuck.
+codex_unsent_composer() {
+  awk '
+    /^› / { text = $0; sub(/^› /, "", text); found = 1; footer = 0; next }
+    found && /^[[:space:]]*(⚠ [0-9]+ warnings? · f2 to view|(GPT-|gpt-))/ {
+      footer = 1; found = 0; next
+    }
+    found { text = text "\n" $0 }
+    END {
+      if (footer && text !~ /^Ask Codex to do anything/ && text ~ /[^[:space:]]/)
+        print text
+    }
+  '
+}
+
+LOG="$HOME/.agentstack/runtime/unstick-seats.log"
+STATE="$HOME/.agentstack/runtime/unstick-state"
+mkdir -p "$STATE"
+MODAL='can.t be shown|Trusted Access|Learn more|help\.openai\.com|Hooks need review|\[y/n\]|\(y/N\)|Allow|approve|Do you want|❯ [0-9]+\.|Esc to cancel'
+for s in $(tmux list-sessions -F '#{session_name}' 2>/dev/null); do
+  pane="$(tmux capture-pane -p -t "$s" 2>/dev/null | grep -v '^[[:space:]]*$')"
+  # Working markers only: Codex "Working (…", Claude footer "· esc to interrupt". The queued
+  # notice "(press esc to interrupt and send immediately)" is NOT a working marker (2026-10-08).
+  if echo "$pane" | grep -v -F '(press esc to interrupt and send immediately)' | grep -q -E 'Working \(|esc to interrupt'; then rm -f "$STATE/$s"; continue; fi
+  echo "$pane" | tail -12 | grep -q -E "$MODAL" && { rm -f "$STATE/$s"; continue; }
+  # case 3: single- or multi-line unsent Codex composer, including warnings footer
+  composer="$(printf '%s\n' "$pane" | codex_unsent_composer)"
+  if [ -n "$composer" ]; then
+    h="$(printf '%s' "$composer" | shasum -a 256 | cut -c1-16)"
+    if [ -f "$STATE/$s" ] && [ "$(cat "$STATE/$s")" = "$h" ]; then
+      tmux send-keys -t "$s" C-m
+      echo "[$(date '+%F %T')] unstick-composer: $s" >> "$LOG"
+      rm -f "$STATE/$s"
+    else
+      printf '%s' "$h" > "$STATE/$s"
+    fi
+    continue
+  fi
+  # case 3b: unsent composer text in a Claude seat ("❯ <text>" above the permissions footer)
+  ccomposer="$(echo "$pane" | tail -8 | grep -E '^❯ .+' | tail -1 | sed 's/^❯ //')"
+  # Claude Code shows prompt suggestions as dim ghost text (ESC[2m) in the composer.
+  # They are not unsent input: never submit them (2026-10-08 CreamLovelace).
+  cdim="$(tmux capture-pane -p -e -t "$s" 2>/dev/null | grep -v '^[[:space:]]*$' | tail -8 | grep -F '❯' | tail -1 | grep -c $'\e\[2m')"
+  if [ -n "$ccomposer" ] && [ "${cdim:-0}" -eq 0 ] && echo "$pane" | tail -2 | grep -q -E 'bypass permissions|auto mode on|accept edits'; then
+    h="$(printf '%s' "$ccomposer" | shasum -a 256 | cut -c1-16)"
+    if [ -f "$STATE/$s" ] && [ "$(cat "$STATE/$s")" = "$h" ]; then
+      tmux send-keys -t "$s" Enter
+      echo "[$(date '+%F %T')] unstick-composer-claude: $s" >> "$LOG"
+      rm -f "$STATE/$s"
+    else
+      printf '%s' "$h" > "$STATE/$s"
+    fi
+    continue
+  fi
+  rm -f "$STATE/$s"
+  echo "$pane" | grep -q 'submitted after next tool call' || continue
+  # 2026-09-11: Claude 席も対象にする（Codex 限定だったためチェーンが止まった）
+  echo "$pane" | tail -4 | grep -qE 'Ask Codex to do anything|auto mode on|bypass permissions|accept edits' || continue
+  tmux send-keys -t "$s" Enter
+  echo "[$(date '+%F %T')] unstick: $s" >> "$LOG"
+done
+exit 0

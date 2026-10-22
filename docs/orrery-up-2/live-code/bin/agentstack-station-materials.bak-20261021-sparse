@@ -1,0 +1,204 @@
+#!/usr/bin/env python3
+"""METHOD-COPY-1: refer to exact inputs; clone only explicitly selected files.
+
+No directory traversal, hard links, byte-copy fallback, overwrites or deletion.
+A reference binds a resolved file and a frozen byte prefix, so an active rollout
+may append without invalidating the previously recorded prefix. Private manifests
+must be written in the station's encrypted record root, never committed to Git.
+"""
+from __future__ import annotations
+
+import argparse
+import ctypes
+import errno
+import hashlib
+import json
+import os
+from pathlib import Path
+import stat
+import subprocess
+import sys
+
+
+PROJECT_ALIASES = {
+    "/Users/huyuhutaru/tools/examforge": "examforge",
+    "Usershuyuhutarutoolsexamforge": "examforge",
+    "Usershuyutarutoolsexamforge": "examforge",
+}
+RECORD_DIRECTORIES = ("comms", "docs/receipts", "docs/evidence", "docs/reports")
+
+
+def canonical_project(project: str) -> str:
+    """Normalize NEW allocation arguments, never rewrite existing metadata."""
+    return PROJECT_ALIASES.get(project, project)
+
+
+def fingerprint(path: Path) -> dict:
+    resolved = path.resolve(strict=True)
+    if not stat.S_ISREG(resolved.stat().st_mode):
+        raise ValueError("input must be one regular file")
+    with resolved.open("rb") as stream:
+        before = os.fstat(stream.fileno())
+        if not stat.S_ISREG(before.st_mode):
+            raise ValueError("input must be one regular file")
+        remaining = before.st_size
+        digest = hashlib.sha256()
+        while remaining:
+            block = stream.read(min(1024 * 1024, remaining))
+            if not block:
+                raise ValueError("input shrank while hashing")
+            digest.update(block)
+            remaining -= len(block)
+        after = os.fstat(stream.fileno())
+    # A rollout may only grow. Same-sized mutable inputs must remain unchanged.
+    if (before.st_dev, before.st_ino) != (after.st_dev, after.st_ino):
+        raise ValueError("input identity changed")
+    if after.st_size < before.st_size or (after.st_size == before.st_size and
+                                        after.st_mtime_ns != before.st_mtime_ns):
+        raise ValueError("input changed while hashing")
+    return {"path": str(resolved), "bytes": before.st_size,
+            "sha256": digest.hexdigest(), "hash_scope": "prefix",
+            "device": before.st_dev, "inode": before.st_ino}
+
+
+def verify_reference(row: dict) -> bool:
+    """Verify the exact recorded bytes, allowing subsequent appends."""
+    if row.get("hash_scope") != "prefix" or type(row.get("bytes")) is not int or row["bytes"] < 0:
+        raise ValueError("invalid reference")
+    path = Path(row["path"])
+    if not stat.S_ISREG(path.stat().st_mode):
+        raise ValueError("reference must resolve to a regular file")
+    digest = hashlib.sha256()
+    remaining = row["bytes"]
+    with path.open("rb") as stream:
+        if not stat.S_ISREG(os.fstat(stream.fileno()).st_mode):
+            raise ValueError("reference must resolve to a regular file")
+        while remaining:
+            block = stream.read(min(1024 * 1024, remaining))
+            if not block:
+                return False
+            digest.update(block)
+            remaining -= len(block)
+    return digest.hexdigest() == row["sha256"]
+
+
+def clone_file(source: Path, destination: Path) -> dict:
+    """Independent COW file, fail closed across volumes or on existing paths."""
+    source = source.resolve(strict=True)
+    if not source.is_file():
+        raise ValueError("clone selects one regular file, not a directory")
+    if os.path.lexists(destination):
+        raise FileExistsError(destination)
+    if sys.platform != "darwin":
+        raise OSError(errno.ENOTSUP, "APFS clone is required")
+    if source.stat().st_dev != destination.parent.stat().st_dev:
+        raise OSError(errno.EXDEV, "cross-volume clone refused; use a reference")
+    reference = fingerprint(source)
+    libc = ctypes.CDLL(None, use_errno=True)
+    clone = libc.clonefile
+    clone.argtypes = [ctypes.c_char_p, ctypes.c_char_p, ctypes.c_uint32]
+    clone.restype = ctypes.c_int
+    if clone(os.fsencode(source), os.fsencode(destination), 1):
+        error = ctypes.get_errno()
+        raise OSError(error, os.strerror(error), str(destination))
+    result = fingerprint(destination)
+    if result["bytes"] != reference["bytes"] or result["sha256"] != reference["sha256"]:
+        # Keep partial evidence; this tool never deletes files.
+        raise ValueError("source changed or clone verification failed; preserve both")
+    return {"method": "apfs-clone", "source": reference, "destination": result,
+            "copied_payload_bytes": 0}
+
+
+def write_new_json(path: Path, value: dict) -> None:
+    # Exclusive creation prevents a mistaken output path from replacing source.
+    with path.open("x", encoding="utf-8") as stream:
+        json.dump(value, stream, ensure_ascii=False, indent=2)
+        stream.write("\n")
+
+
+def source_worktree(source: Path, destination: Path, branch: str, revision: str) -> dict:
+    """Materialize committed source without historical record directories.
+
+    The Git objects and canonical checkout remain intact. A lane that needs an
+    excluded record reads the existing original, or explicitly expands its own
+    sparse checkout. Dependencies/build products are never copied here.
+    """
+    if os.path.lexists(destination):
+        raise FileExistsError(destination)
+    if not destination.parent.is_dir():
+        raise ValueError("allocate the destination parent first")
+
+    def git(cwd, *args):
+        return subprocess.check_output(["git", "-C", str(cwd), *args], text=True).strip()
+
+    identity = git(source, "rev-parse", "--verify", revision + "^{commit}")
+    # --no-checkout avoids writing the archive even briefly before sparsifying.
+    git(source, "worktree", "add", "--no-checkout", "-b", branch, str(destination), identity)
+    git(destination, "sparse-checkout", "set", "--no-cone", "/*",
+        *("!/" + directory + "/" for directory in RECORD_DIRECTORIES))
+    git(destination, "read-tree", "-mu", "HEAD")
+    if git(destination, "rev-parse", "HEAD") != identity:
+        raise ValueError("worktree identity mismatch; preserve incomplete worktree")
+    if any((destination / directory).exists() for directory in RECORD_DIRECTORIES):
+        raise ValueError("record exclusion failed; preserve incomplete worktree")
+    return {"method": "source-worktree", "source": str(source.resolve()),
+            "destination": str(destination.resolve()), "branch": branch,
+            "commit": identity, "excluded_records": list(RECORD_DIRECTORIES),
+            "dependency_copy_bytes": 0, "historical_record_copy_bytes": 0}
+
+
+def main(argv=None) -> int:
+    parser = argparse.ArgumentParser(description=__doc__)
+    sub = parser.add_subparsers(dest="command", required=True)
+    reference = sub.add_parser("reference")
+    reference.add_argument("--station", required=True)
+    reference.add_argument("--project", default="examforge")
+    reference.add_argument("--output", type=Path, required=True)
+    reference.add_argument("--input", type=Path, action="append", required=True)
+    verify = sub.add_parser("verify")
+    verify.add_argument("manifest", type=Path)
+    clone = sub.add_parser("clone")
+    clone.add_argument("source", type=Path)
+    clone.add_argument("destination", type=Path)
+    clone.add_argument("--receipt", type=Path, required=True)
+    project = sub.add_parser("project")
+    project.add_argument("name")
+    worktree = sub.add_parser("worktree")
+    worktree.add_argument("--source", type=Path, required=True)
+    worktree.add_argument("--destination", type=Path, required=True)
+    worktree.add_argument("--branch", required=True)
+    worktree.add_argument("--revision", required=True)
+    worktree.add_argument("--receipt", type=Path, required=True)
+    args = parser.parse_args(argv)
+    try:
+        if args.command == "reference":
+            rows = [fingerprint(p) for p in args.input]
+            write_new_json(args.output, {"version": 1, "station": args.station,
+                "project": canonical_project(args.project), "method": "reference",
+                "copied_payload_bytes": 0, "inputs": rows})
+        elif args.command == "verify":
+            value = json.loads(args.manifest.read_text())
+            if value.get("version") != 1 or value.get("method") != "reference" or not value.get("inputs"):
+                raise ValueError("unsupported or empty manifest")
+            if not all(verify_reference(r) for r in value["inputs"]):
+                raise ValueError("reference verification failed")
+        elif args.command == "clone":
+            if os.path.lexists(args.receipt):
+                raise FileExistsError(args.receipt)
+            result = clone_file(args.source, args.destination)
+            write_new_json(args.receipt, result)
+        elif args.command == "worktree":
+            if os.path.lexists(args.receipt):
+                raise FileExistsError(args.receipt)
+            result = source_worktree(args.source, args.destination, args.branch, args.revision)
+            write_new_json(args.receipt, result)
+        else:
+            print(canonical_project(args.name))
+    except (OSError, ValueError, KeyError, TypeError, subprocess.CalledProcessError) as error:
+        print(f"station-materials: {error}", file=sys.stderr)
+        return 1
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

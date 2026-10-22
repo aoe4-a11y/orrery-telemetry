@@ -1,0 +1,392 @@
+#!/usr/bin/env python3
+"""METHOD-COPY-1: refer to exact inputs; clone only explicitly selected files.
+
+No directory traversal, hard links, byte-copy fallback, overwrites or deletion.
+A reference binds a resolved file and a frozen byte prefix, so an active rollout
+may append without invalidating the previously recorded prefix. Private manifests
+must be written in the station's encrypted record root, never committed to Git.
+"""
+from __future__ import annotations
+
+import argparse
+import ast
+import ctypes
+import errno
+import hashlib
+import json
+import os
+from pathlib import Path
+import re
+import stat
+import subprocess
+import sys
+
+
+PROJECT_ALIASES = {
+    "/Users/huyuhutaru/tools/examforge": "examforge",
+    "Usershuyuhutarutoolsexamforge": "examforge",
+    "Usershuyutarutoolsexamforge": "examforge",
+}
+RECORD_DIRECTORIES = ("comms", "docs/receipts", "docs/evidence", "docs/reports")
+
+
+def canonical_project(project: str) -> str:
+    """Normalize NEW allocation arguments, never rewrite existing metadata."""
+    return PROJECT_ALIASES.get(project, project)
+
+
+def fingerprint(path: Path) -> dict:
+    resolved = path.resolve(strict=True)
+    if not stat.S_ISREG(resolved.stat().st_mode):
+        raise ValueError("input must be one regular file")
+    with resolved.open("rb") as stream:
+        before = os.fstat(stream.fileno())
+        if not stat.S_ISREG(before.st_mode):
+            raise ValueError("input must be one regular file")
+        remaining = before.st_size
+        digest = hashlib.sha256()
+        while remaining:
+            block = stream.read(min(1024 * 1024, remaining))
+            if not block:
+                raise ValueError("input shrank while hashing")
+            digest.update(block)
+            remaining -= len(block)
+        after = os.fstat(stream.fileno())
+    # A rollout may only grow. Same-sized mutable inputs must remain unchanged.
+    if (before.st_dev, before.st_ino) != (after.st_dev, after.st_ino):
+        raise ValueError("input identity changed")
+    if after.st_size < before.st_size or (after.st_size == before.st_size and
+                                        after.st_mtime_ns != before.st_mtime_ns):
+        raise ValueError("input changed while hashing")
+    return {"path": str(resolved), "bytes": before.st_size,
+            "sha256": digest.hexdigest(), "hash_scope": "prefix",
+            "device": before.st_dev, "inode": before.st_ino}
+
+
+def verify_reference(row: dict) -> bool:
+    """Verify the exact recorded bytes, allowing subsequent appends."""
+    if row.get("hash_scope") != "prefix" or type(row.get("bytes")) is not int or row["bytes"] < 0:
+        raise ValueError("invalid reference")
+    path = Path(row["path"])
+    if not stat.S_ISREG(path.stat().st_mode):
+        raise ValueError("reference must resolve to a regular file")
+    digest = hashlib.sha256()
+    remaining = row["bytes"]
+    with path.open("rb") as stream:
+        if not stat.S_ISREG(os.fstat(stream.fileno()).st_mode):
+            raise ValueError("reference must resolve to a regular file")
+        while remaining:
+            block = stream.read(min(1024 * 1024, remaining))
+            if not block:
+                return False
+            digest.update(block)
+            remaining -= len(block)
+    return digest.hexdigest() == row["sha256"]
+
+
+def clone_file(source: Path, destination: Path) -> dict:
+    """Independent COW file, fail closed across volumes or on existing paths."""
+    source = source.resolve(strict=True)
+    if not source.is_file():
+        raise ValueError("clone selects one regular file, not a directory")
+    if os.path.lexists(destination):
+        raise FileExistsError(destination)
+    if sys.platform != "darwin":
+        raise OSError(errno.ENOTSUP, "APFS clone is required")
+    if source.stat().st_dev != destination.parent.stat().st_dev:
+        raise OSError(errno.EXDEV, "cross-volume clone refused; use a reference")
+    reference = fingerprint(source)
+    libc = ctypes.CDLL(None, use_errno=True)
+    clone = libc.clonefile
+    clone.argtypes = [ctypes.c_char_p, ctypes.c_char_p, ctypes.c_uint32]
+    clone.restype = ctypes.c_int
+    if clone(os.fsencode(source), os.fsencode(destination), 1):
+        error = ctypes.get_errno()
+        raise OSError(error, os.strerror(error), str(destination))
+    result = fingerprint(destination)
+    if result["bytes"] != reference["bytes"] or result["sha256"] != reference["sha256"]:
+        # Keep partial evidence; this tool never deletes files.
+        raise ValueError("source changed or clone verification failed; preserve both")
+    return {"method": "apfs-clone", "source": reference, "destination": result,
+            "copied_payload_bytes": 0}
+
+
+def write_new_json(path: Path, value: dict) -> None:
+    # Exclusive creation prevents a mistaken output path from replacing source.
+    with path.open("x", encoding="utf-8") as stream:
+        json.dump(value, stream, ensure_ascii=False, indent=2)
+        stream.write("\n")
+
+
+def test_string_literals(text: str, suffix: str) -> set[str]:
+    """Read constants without executing tests or consuming comments as paths."""
+    if suffix == ".py":
+        values = set()
+
+        def visit(node):
+            if isinstance(node, ast.Constant) and isinstance(node.value, str):
+                values.add(node.value)
+            elif isinstance(node, ast.JoinedStr):
+                parts = []
+                for part in node.values:
+                    if isinstance(part, ast.Constant) and isinstance(part.value, str):
+                        parts.append(part.value)
+                    elif isinstance(part, ast.FormattedValue):
+                        # Keep the static prefix even when data, attributes or
+                        # formatting determine the runtime value. "?" cannot
+                        # match the finite-identifier selector below.
+                        variable = (part.value.id if isinstance(part.value, ast.Name)
+                                    and part.format_spec is None else "?")
+                        parts.append("\\(" + variable + ")")
+                    else:
+                        return
+                values.add("".join(parts))
+            else:
+                for child in ast.iter_child_nodes(node):
+                    visit(child)
+
+        visit(ast.parse(text))
+        return values
+
+    # Swift (including raw/multiline strings) and quoted shell test constants.
+    values, i = set(), 0
+    while i < len(text):
+        if text.startswith("//", i) or (suffix == ".sh" and text[i] == "#"):
+            end = text.find("\n", i)
+            i = len(text) if end < 0 else end + 1
+            continue
+        if text.startswith("/*", i):
+            depth, i = 1, i + 2
+            while i < len(text) and depth:
+                if text.startswith("/*", i):
+                    depth, i = depth + 1, i + 2
+                elif text.startswith("*/", i):
+                    depth, i = depth - 1, i + 2
+                else:
+                    i += 1
+            continue
+        start = i
+        while i < len(text) and text[i] == "#":
+            i += 1
+        hashes = text[start:i]
+        if i >= len(text) or text[i] not in ('"', "'"):
+            i = max(i, start + 1)
+            continue
+        quote = text[i]
+        delimiter = quote * (3 if text.startswith(quote * 3, i) else 1)
+        i += len(delimiter)
+        begin, closing = i, delimiter + hashes
+        while i < len(text) and not text.startswith(closing, i):
+            if text[i] == "\\" and not hashes:
+                i += 2
+            else:
+                i += 1
+        if i < len(text):
+            value = text[begin:i]
+            if not hashes:
+                value = value.replace('\\"', '"').replace("\\\\", "\\")
+            values.add(value)
+            i += len(closing)
+    return values
+
+
+def named_record_paths(paths: set[str], literals: set[str]) -> set[str]:
+    """Match exact paths, or finite literal substitutions; never include a tree."""
+    prefixes = tuple(directory + "/" for directory in RECORD_DIRECTORIES)
+    templates = {value for value in literals if value.startswith(prefixes)}
+    # appendingPathComponent("id.json") / Python path literals may name the
+    # directory and leaf separately. Both components must occur as constants.
+    directories = {value.rstrip("/") for value in templates
+                   if any(path.startswith(value.rstrip("/") + "/") for path in paths)}
+    leaves = {value for value in literals if "/" not in value and
+              re.search(r"\.[A-Za-z0-9]+$", value)}
+    templates.update(directory + "/" + leaf for directory in directories for leaf in leaves)
+    selected = paths.intersection(templates)
+    for template in templates:
+        # Swift interpolation and supported Python f-strings use the same
+        # internal spelling. Only substitutions that are themselves constants
+        # in this test source can match a tracked filename.
+        pieces = re.split(r"\\#*\(([A-Za-z_][A-Za-z0-9_]*)\)", template)
+        if len(pieces) == 1:
+            continue
+        pattern = "".join(re.escape(part) if index % 2 == 0 else "([^/]+)"
+                          for index, part in enumerate(pieces))
+        for path in paths:
+            match = re.fullmatch(pattern, path)
+            if match and all(value in literals for value in match.groups()):
+                selected.add(path)
+    return selected
+
+
+def named_record_folders(paths: set[str], literals: set[str]) -> set[str]:
+    """Retain tracked folders named by static directory/prefix literals.
+
+    The record roots themselves remain excluded. A dynamic expression may use
+    question.id (or any runtime value); its containing, statically named folder
+    is the boundary. Unmatched record folders are never expanded.
+    """
+    prefixes = tuple(directory + "/" for directory in RECORD_DIRECTORIES)
+    folders = {str(parent) for path in paths for parent in Path(path).parents
+               if str(parent).startswith(prefixes)}
+    selected = set()
+    for value in literals:
+        if not value.startswith(prefixes):
+            continue
+        candidates = {value.rstrip("/")}
+        dynamic = re.search(r"\\#*\(|\$\{|\$[A-Za-z_]", value)
+        if dynamic:
+            prefix = value[:dynamic.start()]
+            candidates.add(prefix.rstrip("/") if prefix.endswith("/") else prefix.rpartition("/")[0])
+        selected.update(candidates.intersection(folders))
+    return selected
+
+
+def committed_test_inputs(source: Path, revision: str, *, folder_details=None) -> tuple[dict, dict]:
+    """Use the requested Git tree, never another lane's working files."""
+    listing = subprocess.check_output(["git", "-C", str(source), "ls-tree", "-r", "-z",
+                                      revision, "--", "apps/ios/Tests", "scripts",
+                                      *RECORD_DIRECTORIES])
+    entries = {}
+    for row in listing.split(b"\0"):
+        if row:
+            header, name = row.split(b"\t", 1)
+            mode, kind, oid = header.decode("ascii").split()
+            entries[os.fsdecode(name)] = (mode, kind, oid)
+    records = {name: entry for name, entry in entries.items()
+               if name.startswith(tuple(directory + "/" for directory in RECORD_DIRECTORIES))}
+    references = {}
+    for name, (mode, kind, oid) in entries.items():
+        path = Path(name)
+        eligible = (name.startswith("apps/ios/Tests/") and path.suffix == ".swift") or (
+            name.startswith("scripts/") and path.suffix in (".py", ".sh") and
+            (path.name.startswith("test_") or path.stem.endswith("_test")))
+        if not eligible or kind != "blob" or mode not in ("100644", "100755"):
+            continue
+        text = subprocess.check_output(["git", "-C", str(source), "cat-file", "blob", oid]).decode("utf-8")
+        literals = test_string_literals(text, path.suffix)
+        targets = named_record_paths(set(records), literals)
+        for folder in named_record_folders(set(records), literals):
+            targets.update(target for target in records if target.startswith(folder + "/"))
+            if folder_details is not None:
+                folder_details.setdefault(folder, []).append(name)
+        for target in targets:
+            if records[target][0] not in ("100644", "100755"):
+                raise ValueError("a named test input is not a regular tracked file")
+            references.setdefault(target, []).append(name)
+    return records, references
+
+
+def exact_sparse_pattern(path: str) -> str:
+    if any(ord(character) < 32 for character in path):
+        raise ValueError("control characters are not supported in sparse input paths")
+    return "/" + re.sub(r"([\\*?\[\]])", r"\\\1", path)
+
+
+def source_worktree(source: Path, destination: Path, branch: str, revision: str) -> dict:
+    """Materialize source and its statically named tracked test inputs.
+
+    The Git objects and canonical checkout remain intact. A lane that needs an
+    excluded record reads the existing original. Named files and tracked files
+    inside test-named folders are reincluded as exact patterns; dependencies and
+    build products are never copied here.
+    """
+    if os.path.lexists(destination):
+        raise FileExistsError(destination)
+    if not destination.parent.is_dir():
+        raise ValueError("allocate the destination parent first")
+
+    def git(cwd, *args):
+        return subprocess.check_output(["git", "-C", str(cwd), *args], text=True).strip()
+
+    identity = git(source, "rev-parse", "--verify", revision + "^{commit}")
+    folder_details = {}
+    record_entries, references = committed_test_inputs(source, identity, folder_details=folder_details)
+    # --no-checkout avoids writing the archive even briefly before sparsifying.
+    git(source, "worktree", "add", "--no-checkout", "-b", branch, str(destination), identity)
+    git(destination, "sparse-checkout", "set", "--no-cone", "/*",
+        *("!/" + directory + "/" for directory in RECORD_DIRECTORIES),
+        *(exact_sparse_pattern(path) for path in sorted(references)))
+    git(destination, "read-tree", "-mu", "HEAD")
+    if git(destination, "rev-parse", "HEAD") != identity:
+        raise ValueError("worktree identity mismatch; preserve incomplete worktree")
+    if any(os.path.lexists(destination / path) for path in record_entries if path not in references):
+        raise ValueError("record exclusion failed; preserve incomplete worktree")
+    inputs = []
+    for path in sorted(references):
+        expected = subprocess.check_output(["git", "-C", str(source), "cat-file", "blob",
+                                            record_entries[path][2]])
+        actual = fingerprint(destination / path)
+        if actual["sha256"] != hashlib.sha256(expected).hexdigest() or actual["bytes"] != len(expected):
+            raise ValueError("test input identity mismatch; preserve incomplete worktree")
+        inputs.append({"path": path, "sha256": actual["sha256"], "bytes": actual["bytes"],
+                       "test_sources": references[path]})
+    return {"method": "source-worktree", "source": str(source.resolve()),
+            "destination": str(destination.resolve()), "branch": branch,
+            "commit": identity, "excluded_records": list(RECORD_DIRECTORIES),
+            "required_test_inputs": inputs,
+            "required_test_input_bytes": sum(row["bytes"] for row in inputs),
+            "included_test_folders": [
+                {"path": folder,
+                 "file_count": sum(row["path"].startswith(folder + "/") for row in inputs),
+                 "bytes": sum(row["bytes"] for row in inputs if row["path"].startswith(folder + "/")),
+                 "test_sources": sorted(set(folder_details[folder]))}
+                for folder in sorted(folder_details)],
+            "excluded_tracked_record_count": len(record_entries) - len(inputs),
+            "dependency_copy_bytes": 0, "historical_record_copy_bytes": 0}
+
+
+def main(argv=None) -> int:
+    parser = argparse.ArgumentParser(description=__doc__)
+    sub = parser.add_subparsers(dest="command", required=True)
+    reference = sub.add_parser("reference")
+    reference.add_argument("--station", required=True)
+    reference.add_argument("--project", default="examforge")
+    reference.add_argument("--output", type=Path, required=True)
+    reference.add_argument("--input", type=Path, action="append", required=True)
+    verify = sub.add_parser("verify")
+    verify.add_argument("manifest", type=Path)
+    clone = sub.add_parser("clone")
+    clone.add_argument("source", type=Path)
+    clone.add_argument("destination", type=Path)
+    clone.add_argument("--receipt", type=Path, required=True)
+    project = sub.add_parser("project")
+    project.add_argument("name")
+    worktree = sub.add_parser("worktree")
+    worktree.add_argument("--source", type=Path, required=True)
+    worktree.add_argument("--destination", type=Path, required=True)
+    worktree.add_argument("--branch", required=True)
+    worktree.add_argument("--revision", required=True)
+    worktree.add_argument("--receipt", type=Path, required=True)
+    args = parser.parse_args(argv)
+    try:
+        if args.command == "reference":
+            rows = [fingerprint(p) for p in args.input]
+            write_new_json(args.output, {"version": 1, "station": args.station,
+                "project": canonical_project(args.project), "method": "reference",
+                "copied_payload_bytes": 0, "inputs": rows})
+        elif args.command == "verify":
+            value = json.loads(args.manifest.read_text())
+            if value.get("version") != 1 or value.get("method") != "reference" or not value.get("inputs"):
+                raise ValueError("unsupported or empty manifest")
+            if not all(verify_reference(r) for r in value["inputs"]):
+                raise ValueError("reference verification failed")
+        elif args.command == "clone":
+            if os.path.lexists(args.receipt):
+                raise FileExistsError(args.receipt)
+            result = clone_file(args.source, args.destination)
+            write_new_json(args.receipt, result)
+        elif args.command == "worktree":
+            if os.path.lexists(args.receipt):
+                raise FileExistsError(args.receipt)
+            result = source_worktree(args.source, args.destination, args.branch, args.revision)
+            write_new_json(args.receipt, result)
+        else:
+            print(canonical_project(args.name))
+    except (OSError, ValueError, KeyError, TypeError, subprocess.CalledProcessError) as error:
+        print(f"station-materials: {error}", file=sys.stderr)
+        return 1
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

@@ -623,7 +623,8 @@ def test_first_install_still_uses_product_defaults(tmp_path):
     project = tmp_path / "project"
     home.mkdir()
     project.mkdir()
-    result = _dry_run(home, "--project-key", str(project), AGENTSTACK_PYTHON=sys.executable)
+    result = _dry_run(home, "--project-key", str(project), AGENTSTACK_PYTHON=sys.executable,
+                      AGENTSTACK_MCP_URL="http://127.0.0.1:1/mcp")
     out = result.stdout
     assert result.returncode == 0, out + result.stderr
     assert "dashboard port: 8770" in out

@@ -203,7 +203,7 @@ def _resolve(tmp_path, *, path_dirs, wsl=False, explicit="", installed="", timeo
         + f"CODEX_PROBE_BUDGET_SECONDS={budget}\n"
     )
     marker = "# --- end codex launcher resolution ---\n"
-    block = block.replace(marker, marker + overrides, 1)
+    block = block.replace(marker, marker + overrides + 'codex_launch_search_path() { printf "%s" "$PATH:$HOME/.local/bin:$HOME/.npm-global/bin:$HOME/.nodebrew/current/bin"; for d in "$HOME"/.nvm/versions/node/*/bin; do [[ -d "$d" ]] && printf ":%s" "$d"; done; return 0; }\n', 1)
     script = (stubs + block + '\nprintf "RESOLVED=%s\\n" "$CODEX_BIN_SETTING"\n'
               'printf "CONTEXT_NOTE=%s\\n" "${CODEX_CONTEXT_NOTE:-}" >&2\n')
     env = {

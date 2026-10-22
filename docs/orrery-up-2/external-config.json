@@ -1,0 +1,6 @@
+{
+  "authority": "head mail 35273",
+  "git_http_sslCAInfo": "/opt/homebrew/etc/ca-certificates/cert.pem",
+  "codex_wrapper_sha256": "6464d644843e302f598177991beda6515c75f792fd9033806a4cb02cce7b0d62",
+  "external_settings_changed_by_station": false
+}

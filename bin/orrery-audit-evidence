@@ -98,7 +98,7 @@ access_state() {
 PRIV_STATE="$(access_state "$PRIV")"; PUB_STATE="$(access_state "$PUB")"
 if [ "$PRIV_STATE" = tcc ] || [ "$PUB_STATE" = tcc ]; then
   echo "TCC 拒否（launchd）: この生成器を launchd（org.huyuhutaru.orrery-audit）配下で走らせた bash は"
-  echo "  $PRIV → $PRIV_STATE / $PUB → $PUB_STATE（EPERM: Operation not permitted）。"
+  echo "  $PRIV → $PRIV_STATE / $PUB → ${PUB_STATE}（EPERM: Operation not permitted）。"
   echo "  同じコマンドを対話 shell で実行すると読める（K-4 便9376 実測）。launchd の bash に Removable Volumes／"
   echo "  Full Disk Access が与えられるまで、§5 の件数は launchd 経由では出ない。手動: orrery-audit-evidence <out.md>"
 elif [ "$PRIV_STATE" != ok ]; then

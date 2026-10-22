@@ -82,7 +82,11 @@ def retired_signals(tmp_path, monkeypatch):
         assert completed.returncode == 0, completed.stderr
         state = json.loads((runtime / 'notify-state.json').read_text())
         assert all(state[f'RetiredRecipient:{n}']['last_result'] == 'session_not_found' for n in range(2, 53))
-        assert len(list(retired.glob('*.signal'))) == 51
+        # Fleet policy removes session-less signals older than 24 hours.
+        assert len(list(retired.glob('*.signal'))) == 0
+        # Dashboard still has to classify a newly discovered orphan backlog.
+        for number in range(2, 53):
+            write_signal(number, old=True)
         monkeypatch.setattr(server, '_signal_agent_dirs', lambda: [str(agents)])
         monkeypatch.setattr(server, 'NOTIFY_STATE_FILE', str(runtime / 'notify-state.json'))
         monkeypatch.setattr(server, 'RUNTIME_DIR', str(runtime))

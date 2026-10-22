@@ -1,0 +1,10118 @@
+#!/usr/bin/env python3
+"""Agent Dashboard — tmux 上で動く Claude エージェント一覧 + ワンクリック飛び先。
+
+データソース (すべて read-only):
+  - tmux           : セッション / アクティブペインのタイトル(Claude のライブ作業表示) / アタッチ状況
+  - ORRERY Mail    : storage.sqlite3 から task_description(受けた指示の要約) / model /
+                     最終アクティブ時刻 / 最後に受信した指示メッセージ
+
+エンドポイント:
+  GET  /              -> index.html
+  GET  /api/agents    -> JSON (エージェント一覧、UI が数秒ごとにポーリング)
+  POST /api/jump      -> {session: NAME} 受信。対応端末で tmux attach/resume
+"""
+
+from __future__ import annotations
+
+import atexit
+import contextlib
+import functools
+import importlib.util
+import json
+import logging
+import math
+import os
+from pathlib import Path
+import pathlib
+import re
+import secrets
+import signal
+import shlex
+import shutil
+import socket
+import sqlite3
+import stat
+import subprocess
+import sys
+import threading
+import time
+from dataclasses import dataclass, replace as _dataclass_replace
+from datetime import datetime, timezone
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+import urllib.parse
+import urllib.request
+from urllib.parse import urlparse, parse_qs
+
+# Public dashboard compatibility generation (docs/tests read this source).
+API_GENERATION = 26
+# Mode admission is shared with hooks and operator/service entry points.
+import runpy as _runtime_runpy
+_MODE_API = _runtime_runpy.run_path(str(Path(__file__).resolve().parents[1] / 'bin/lib/runtime_client.py'))
+_MODE_SELECTION = _MODE_API['selected'](bootstrap=__name__ == '__main__')
+GLOBAL_MODE = _MODE_SELECTION['mode'] == 'global'
+GLOBAL_SERVER_CONFIG = str(_MODE_SELECTION['server_config'] or '')
+if __name__ == '__main__':
+    os.environ['AGENTSTACK_RUNTIME_MODE'] = _MODE_SELECTION['mode']
+    if GLOBAL_SERVER_CONFIG:
+        os.environ['AGENTSTACK_GLOBAL_SERVER_CONFIG'] = GLOBAL_SERVER_CONFIG
+
+# `server.py` is both an executable script and an importable dashboard module
+# in the tests.  Support both import roots without coupling callers to cwd.
+try:
+    from dashboard import codex_models, mail_signals, provider_stalls, harness_runtime, harness_helpers, harness_context, harness_activity
+except ModuleNotFoundError:  # direct `python dashboard/server.py`
+    import codex_models
+    import mail_signals
+    import provider_stalls
+    import harness_runtime
+    import harness_helpers
+    import harness_context
+    import harness_activity
+
+try:
+    from dashboard.providers.codex_app import CodexAppRuntimeProvider
+except ModuleNotFoundError:  # direct `python dashboard/server.py`
+    from providers.codex_app import CodexAppRuntimeProvider
+
+try:
+    from dashboard.quotas import build_default_service as _build_quota_service
+except ModuleNotFoundError:  # direct `python dashboard/server.py`
+    from quotas import build_default_service as _build_quota_service
+
+# Account quota telemetry is core: it reads what the local Claude and Codex
+# installs already report, so it belongs to the canonical server rather than
+# to an optional provider payload.  Acquisition lives in dashboard/quotas/.
+QUOTA_SERVICE = _build_quota_service(dsh_enabled=lambda: _dsh_enabled())
+
+try:
+    from dashboard import claude_models as claude_models_mod
+    from dashboard.claude_models import (
+        BUNDLED_ALIASES as _CLAUDE_BUNDLED_ALIASES, alias_models as _claude_alias_models,
+        bind_child_cli_path as _bind_claude_child_cli_path, default_model as _claude_alias_default,
+        is_model_id as _is_claude_model_id, resolve_catalog as _resolve_claude_catalog,
+    )
+except ModuleNotFoundError:  # direct script execution
+    import claude_models as claude_models_mod
+    from claude_models import (
+        BUNDLED_ALIASES as _CLAUDE_BUNDLED_ALIASES, alias_models as _claude_alias_models,
+        bind_child_cli_path as _bind_claude_child_cli_path, default_model as _claude_alias_default,
+        is_model_id as _is_claude_model_id, resolve_catalog as _resolve_claude_catalog,
+    )
+
+
+def _same_origin_request(handler) -> bool:
+    origin = (handler.headers.get("Origin") or "").strip()
+    fetch_site = (handler.headers.get("Sec-Fetch-Site") or "").strip().lower()
+    expected_origin = f"http://{handler.headers.get('Host', '')}"
+    return (not origin or origin == expected_origin) and fetch_site in {
+        "",
+        "none",
+        "same-origin",
+    }
+
+
+def _env_path(name: str, default: str = "") -> str:
+    value = os.environ.get(name, default).strip()
+    return os.path.expanduser(value) if value else ""
+
+
+def _env_int(name: str, default: int) -> int:
+    try:
+        return int(os.environ.get(name, str(default)))
+    except (TypeError, ValueError):
+        return default
+
+
+def _env_text(name: str, default: str = "") -> str:
+    return (os.environ.get(name, default) or default).strip()
+
+
+def _listener_mail_db() -> str:
+    """Return the SQLite file opened by the configured live mail listener.
+
+    Both native and legacy databases can remain on disk, so existence alone is
+    not evidence of which one is current.  Installed services receive an
+    explicit ``AGENTSTACK_MAIL_DB``; this probe protects direct dashboard runs.
+    """
+    endpoint = _env_text(
+        "AGENTSTACK_MCP_URL", "http://127.0.0.1:18765/mcp"
+    )
+    try:
+        port = urlparse(endpoint).port or 8765
+    except ValueError:
+        return ""
+    lsof = shutil.which("lsof")
+    if not lsof and os.path.isfile("/usr/sbin/lsof"):
+        lsof = "/usr/sbin/lsof"
+    if not lsof:
+        return ""
+    try:
+        listeners = subprocess.run(
+            [lsof, "-nP", "-t", f"-iTCP:{port}", "-sTCP:LISTEN"],
+            capture_output=True,
+            text=True,
+            timeout=5,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return ""
+    if listeners.returncode != 0:
+        return ""
+    databases: set[str] = set()
+    for pid in listeners.stdout.split():
+        if not pid.isdigit():
+            continue
+        try:
+            opened = subprocess.run(
+                [lsof, "-a", "-p", pid, "-Fn"],
+                capture_output=True,
+                text=True,
+                timeout=5,
+            )
+        except (OSError, subprocess.SubprocessError):
+            continue
+        if opened.returncode != 0:
+            continue
+        for line in opened.stdout.splitlines():
+            path = line[1:] if line.startswith("n") else ""
+            if path.endswith(".sqlite3") and os.path.isfile(path):
+                databases.add(os.path.realpath(path))
+    return next(iter(databases)) if len(databases) == 1 else ""
+
+
+def _resolve_mail_db() -> str:
+    configured = _env_path("AGENTSTACK_MAIL_DB")
+    return configured or _listener_mail_db() or _env_path(
+        "AGENTSTACK_MAIL_DB", "~/.agentstack/mail/storage.sqlite3"
+    )
+
+
+PORT = _env_int("AGENTSTACK_PORT", 8770)
+BIND_HOST = _env_text("AGENTSTACK_BIND_HOST", "127.0.0.1")
+HERE = os.path.dirname(os.path.abspath(__file__))
+INDEX_HTML = os.path.join(HERE, "index.html")
+THEME_ASSETS = {
+    **{"/"+name:(os.path.join(HERE,name),"text/javascript; charset=utf-8" if name.endswith(".js") else "text/css; charset=utf-8") for name in ("global_ui.js","global_ui.css","mail_flow.js","mail_flow.css","network_node.js","runtime_node.js","operator_session.js","mail_controller.js","operation_controller.js")},
+    **{"/assets/"+name+".svg": (os.path.join(HERE,"assets",name+".svg"), "image/svg+xml") for name in ("anthropic","openai","google","deepseek","qwen")},
+    "/theme_core.js": (os.path.join(HERE, "theme_core.js"), "text/javascript; charset=utf-8"),
+    "/theme_controller.js": (
+        os.path.join(HERE, "theme_controller.js"),
+        "text/javascript; charset=utf-8",
+    ),
+    "/theme_light.css": (os.path.join(HERE, "theme_light.css"), "text/css; charset=utf-8"),
+    # The help map is served the same way: a fixed file next to the page.
+    "/help_map.js": (os.path.join(HERE, "help_map.js"), "text/javascript; charset=utf-8"),
+    "/help_map.css": (os.path.join(HERE, "help_map.css"), "text/css; charset=utf-8"),
+    # The cockpit tour's cue inside this page (tour_cue.js).
+    "/tour_cue.js": (os.path.join(HERE, "tour_cue.js"), "text/javascript; charset=utf-8"),
+    "/tour_cue.css": (os.path.join(HERE, "tour_cue.css"), "text/css; charset=utf-8"),
+}
+DB_PATH = "" if GLOBAL_MODE else _resolve_mail_db()
+MAIL_ENV_PATH = _env_path("AGENTSTACK_MAIL_ENV", "~/.agentstack/mail/.env")
+MAIL_HTTP_BEARER_MODE = _env_text(
+    "AGENTSTACK_MAIL_HTTP_BEARER_MODE", "auto"
+).lower()
+VAULT = _env_path("AGENTSTACK_VAULT", "")
+PROJECT_KEY = _env_text("AGENTSTACK_PROJECT_KEY", "")
+LABEL_PREFIX = _env_text("AGENTSTACK_LABEL_PREFIX", "org.agentstack")
+TERMINAL_SETTING = _env_text("AGENTSTACK_TERMINAL", "auto").lower()
+HOOKS_DIR = _env_path("AGENTSTACK_LIFECYCLE_HOOKS_DIR", _env_path("AGENTSTACK_HOOKS_DIR", "~/.agentstack/hooks"))
+RUNTIME_DIR = _env_path("AGENTSTACK_RUNTIME_DIR", "~/.agentstack/runtime")
+PERSISTENT_PROFILES_DIR = _env_path(
+    "AGENTSTACK_PERSISTENT_PROFILES_DIR", "~/.agentstack/profiles"
+)
+MAIL_HOME = _env_path("AGENTSTACK_MAIL_HOME", "~/.agentstack/mail")
+SIGNALS_DIR = _env_path("AGENTSTACK_SIGNALS_DIR", os.path.join(MAIL_HOME, "signals"))
+MAIL_WATCHER_LABEL = f"{LABEL_PREFIX}.mail-watcher"
+NOTIFY_DAEMON_LABEL = f"{LABEL_PREFIX}.notify-daemon"
+# Per-user default (matches watch_agent_mail_signals.sh): a shared /tmp path
+# let a second account on the same Mac collide with the first one's lock.
+MAIL_WATCHER_LOCK_DIR = _env_path(
+    "AGENTSTACK_MAIL_WATCHER_LOCK_DIR",
+    os.path.join(RUNTIME_DIR, "mail-watcher.lock"),
+)
+MAIL_WATCHER_PIDFILE = _env_path(
+    "AGENTSTACK_MAIL_WATCHER_PIDFILE",
+    os.path.join(MAIL_WATCHER_LOCK_DIR, "watcher.pid"),
+)
+MAIL_WATCHER_HEARTBEAT = _env_path(
+    "AGENTSTACK_MAIL_WATCHER_HEARTBEAT",
+    os.path.join(os.path.dirname(MAIL_WATCHER_PIDFILE), "heartbeat"),
+)
+PORT_64 = os.path.join(HERE, "portraits_64")
+# High-resolution portraits are optional distribution assets.  Keep the legacy
+# 64px set as a graceful fallback when a downstream install does not ship them.
+PORT_HI = os.path.join(HERE, "portraits_hi")
+PORTRAIT_OVERLAY_DIR = _env_path("AGENTSTACK_PORTRAITS_DIR", "")
+CUSTOM_PORTRAITS_PATH = _env_path("AGENTSTACK_CUSTOM_PORTRAITS", "")
+DASHBOARD_LANG = _env_text("AGENTSTACK_LANG", "").lower()
+DASHBOARD_MURMUR = _env_text("AGENTSTACK_MURMUR", "").lower()
+
+_DASHBOARD_CONFIG_MARKER = b"const AGENTSTACK_SERVER_DEFAULTS={language:null,murmur:null};"
+
+
+def _render_dashboard_index(
+    source: bytes,
+    language: str = DASHBOARD_LANG,
+    murmur: str = DASHBOARD_MURMUR,
+) -> bytes:
+    """Inject allow-listed display defaults without exposing the server env."""
+    config = {
+        "language": language if language in {"ja", "en"} else None,
+        "murmur": "off" if murmur == "off" else None,
+    }
+    if _dsh_enabled():
+        config["dshEnabled"] = True
+    replacement = (
+        "const AGENTSTACK_SERVER_DEFAULTS="
+        + json.dumps(config, ensure_ascii=True, separators=(",", ":"))
+        + ";"
+    ).encode()
+    return source.replace(_DASHBOARD_CONFIG_MARKER, replacement, 1)
+
+
+def _global_dashboard_index(source):
+    try:from dashboard.global_page import render
+    except ModuleNotFoundError:from global_page import render
+    return render(_render_dashboard_index(source))
+
+
+def _resolve_version() -> str:
+    """Resolve a shipped version artifact before falling back to git metadata."""
+    for version_file in (os.path.join(os.path.dirname(HERE), "VERSION"), os.path.join(HERE, "VERSION")):
+        try:
+            with open(version_file, encoding="utf-8") as f:
+                version = f.read().strip()
+            if version:
+                return version
+        except OSError:
+            pass
+    try:
+        return subprocess.run(
+            ["git", "-C", os.path.dirname(HERE), "describe", "--tags", "--always", "--dirty"],
+            capture_output=True, text=True, timeout=3,
+        ).stdout.strip() or "unknown"
+    except (OSError, subprocess.SubprocessError):
+        return "unknown"
+
+
+def _project_key() -> str:
+    return PROJECT_KEY or VAULT
+
+# --- Model-string normalization (read-time, non-destructive) ---------------
+# Each session registers a free-form `model` string, so the same model shows
+# up under many spellings (claude-opus-4-7 / opus-4.7 / claude-opus-4-7[1m]).
+# Fold them to one display label. Structural parser (<family>-<version>) so
+# future versions (opus-4.8 ...) work with no code change. Source of truth:
+# ORRERY Mail and the dashboard share these accepted provider spellings.
+_MN_FAMILIES = ("fable", "mythos", "opus", "sonnet", "haiku", "gpt", "gemini", "grok",
+                "llama", "qwen", "mistral", "deepseek")
+_MN_FAMILY_RE = re.compile(
+    r"(?P<family>" + "|".join(_MN_FAMILIES) + r")[-_. ]*"
+    r"(?P<version>\d+(?:[.\-]\d+)?)"
+    r"(?P<variant>[-_]?(?:codex|thinking|mini|nano|turbo|flash|pro|preview|exp))?"
+)
+_MN_VENDOR_RE = re.compile(r"^(?:claude|anthropic|openai|google)[-_. ]*")
+_MN_CTX_RE = re.compile(r"[\[\(\-_ ]*\d+\s*m(?:[-_ ]?context)?[\]\)]*\s*$")
+_MN_DISPLAY = {"fable": "Fable", "mythos": "Mythos", "opus": "Opus", "sonnet": "Sonnet", "haiku": "Haiku",
+               "gpt": "GPT", "gemini": "Gemini", "grok": "Grok",
+               "llama": "Llama", "qwen": "Qwen", "mistral": "Mistral",
+               "deepseek": "DeepSeek"}
+_MN_ALIASES: dict[str, str] = {}  # add codename->canonical when one appears
+
+
+def _normalize_model(raw: str | None) -> str:
+    if not raw or not raw.strip():
+        return ""
+    original = raw.strip()
+    s = _MN_ALIASES.get(original.lower(), original.lower())
+    s = _MN_VENDOR_RE.sub("", s)
+    s = _MN_CTX_RE.sub("", s).strip()
+    m = _MN_FAMILY_RE.search(s)
+    if not m:
+        return original
+    variant = (m.group("variant") or "").lstrip("-_")
+    canon = f"{m.group('family')}-{m.group('version').replace('-', '.')}"
+    return f"{canon}-{variant}" if variant else canon
+
+
+def _display_model(raw: str | None) -> str:
+    canon = _normalize_model(raw)
+    if not canon:
+        return ""
+    m = _MN_FAMILY_RE.search(canon)
+    if not m:
+        return canon
+    fam = _MN_DISPLAY.get(m.group("family"), m.group("family").title())
+    variant = (m.group("variant") or "").lstrip("-_")
+    label = f"{fam} {m.group('version')}"
+    return f"{label} {variant}" if variant else label
+
+
+# family → 提供元 (network view の provider logo 判定に使用)。
+# 不明 family は空文字を返し、フロントで logo 非描画。
+_MN_PROVIDER = {
+    "fable": "anthropic", "mythos": "anthropic",
+    "opus": "anthropic", "sonnet": "anthropic", "haiku": "anthropic",
+    "gpt": "openai",
+    "gemini": "google", "grok": "xai",
+    "llama": "meta", "qwen": "alibaba",
+    "mistral": "mistral", "deepseek": "deepseek",
+}
+
+
+def _dsh_enabled() -> bool:
+    """通常の更新では変えない、installerの明示opt-inだけを参照する。"""
+    try:
+        with open(os.path.join(HERE, "dsh-provider.json"), encoding="utf-8") as file:
+            state = json.load(file)
+        return isinstance(state, dict) and state.get("enabled") is True
+    except (OSError, ValueError):
+        return False
+
+
+
+def _provider_of(raw: str | None) -> str:
+    """モデル文字列から提供元キーを返す（"anthropic" / "openai" / ...）。
+    判定不能なら空文字。display 用ではなく分類用なので canon に揃えて family を抽出。"""
+    canon = _normalize_model(raw)
+    if not canon:
+        return ""
+    if canon.lower() in {"deepseek-flash", "deepseek-official/deepseek-flash"}:
+        return "deepseek" if _dsh_enabled() else ""
+    m = _MN_FAMILY_RE.search(canon)
+    if not m:
+        # A program name stored where a model should be ("claude-code",
+        # "codex") still names the vendor; better a logo than a blank LED.
+        low = canon.lower()
+        if "claude" in low or "anthropic" in low:
+            return "anthropic"
+        if "codex" in low or "openai" in low:
+            return "openai"
+        return ""
+    return _MN_PROVIDER.get(m.group("family"), "")
+
+
+# 1M ベータ枠の表記ゆれ: claude-opus-4-7[1m] / opus-4.7 1m / "(1M context)"
+_MN_1M_RE = re.compile(r"(?:^|[\[\(\-_ ])1\s*m(?:[-_ ]?context)?(?:[\]\) ]|$)",
+                        re.IGNORECASE)
+
+
+def _ctx_window(raw: str | None) -> str:
+    """モデル文字列に *明示された* コンテキスト窓だけ返す（権威はペイン側
+    の statusline。ここは登録名に [1m] 等が付く場合のみの補完）。
+    family からの推測 200K はしない＝1M セッションを誤表示しないため。"""
+    if not raw or not raw.strip():
+        return ""
+    if _MN_1M_RE.search(raw):
+        return "1M"
+    m = re.search(r"([\d.]+\s*[mk])\s*[-_ ]?context", raw, re.IGNORECASE)
+    return re.sub(r"\s+", "", m.group(1)).upper() if m else ""
+
+
+def _safe_portrait_name(name: str) -> bool:
+    return bool(name) and "/" not in name and "\\" not in name and ".." not in name
+
+
+def _png_index(directory: str) -> dict[str, str]:
+    """Map lower-cased stem -> file path for every safe PNG in a directory.
+
+    Registered names are matched case-insensitively: agents are registered as
+    `ProOpus` or `SeminarBot` while operators drop `proopus.png` into the
+    overlay, and an exact-case miss used to fall through to the initials SVG
+    without any signal that a portrait existed.
+    """
+    if not directory:
+        return {}
+    try:
+        entries = sorted(os.listdir(directory))
+    except OSError:
+        return {}
+    index: dict[str, str] = {}
+    for f in entries:
+        if not f.endswith(".png"):
+            continue
+        stem = f[:-4]
+        if not _safe_portrait_name(stem):
+            continue
+        index.setdefault(stem.lower(), os.path.join(directory, f))
+    return index
+
+
+def _png_names(directory: str) -> set[str]:
+    return {os.path.basename(path)[:-4] for path in _png_index(directory).values()}
+
+
+def _portrait_set() -> set[str]:
+    return _png_names(PORT_64) | _png_names(PORT_HI) | _png_names(PORTRAIT_OVERLAY_DIR)
+
+
+def _portrait_file(name: str, hi: bool) -> str:
+    if not _safe_portrait_name(name):
+        return ""
+    key = name.lower()
+    # The operator's custom map (registered name -> portrait stem) is applied
+    # server-side too, so a client that only knows the agent's name — the
+    # cockpit proxying this endpoint — resolves the same face as the dashboard.
+    mapped = _custom_portrait_map().get(key)
+    if isinstance(mapped, str) and _safe_portrait_name(mapped):
+        key = mapped.lower()
+    if PORTRAIT_OVERLAY_DIR:
+        fp = _png_index(PORTRAIT_OVERLAY_DIR).get(key)
+        if fp:
+            return fp
+    if hi:
+        fp = _png_index(PORT_HI).get(key)
+        if fp:
+            return fp
+    return _png_index(PORT_64).get(key, "")
+
+
+def _portrait_fallback(name: str, hi: bool) -> bytes:
+    """Return a dependency-free initials portrait for valid unknown names."""
+    size = 256 if hi else 64
+    initials = (name[:2] or "??").upper()
+    return (
+        f'<svg xmlns="http://www.w3.org/2000/svg" width="{size}" '
+        f'height="{size}" viewBox="0 0 64 64">'
+        '<rect width="64" height="64" fill="#0e1012"/>'
+        '<text x="32" y="32" fill="#c4c0b2" font-family="Menlo,monospace" '
+        f'font-size="26" text-anchor="middle" dominant-baseline="central">{initials}</text></svg>'
+    ).encode()
+
+
+def _custom_portrait_map() -> dict:
+    """registered name (lower-cased) -> portrait stem.
+
+    Every PNG in the private overlay is a mapping by itself: dropping
+    `SeminarBot.png` there is the whole configuration for an agent registered
+    as SeminarBot. The browser decides from this map whether to request a
+    portrait at all, so without these entries an overlay face was served on
+    request but never requested. The explicit JSON map wins on conflicts.
+    """
+    merged: dict = {
+        key: os.path.basename(path)[:-4]
+        for key, path in _png_index(PORTRAIT_OVERLAY_DIR).items()
+    }
+    if CUSTOM_PORTRAITS_PATH:
+        try:
+            with open(CUSTOM_PORTRAITS_PATH, "r", encoding="utf-8") as f:
+                data = json.load(f)
+        except (OSError, ValueError, TypeError):
+            data = {}
+        if isinstance(data, dict):
+            merged.update({str(k).lower(): v for k, v in data.items() if isinstance(v, str)})
+    return merged
+
+
+PORTRAITS = _portrait_set()
+
+# tmux フォーマットのフィールド区切り。制御文字 US(0x1f) はペインタイトルに出ない。
+SEP = "\x1f"
+# tmux 3.4 (Ubuntu 24.04) は `-F` 出力の制御文字を可視化して 4 文字の "\037"
+# にする。macOS の 3.6a や WSL2 の tmux は素の 0x1f を返す。どちらも同じ
+# 区切りとして受けないと、Linux では list-sessions の全行が 1 フィールドに
+# なり、生きている agent が全部 gone に見える (#26)。
+_SEP_ESCAPED = "\\037"
+
+
+def _split_tmux_fields(line: str, maxsplit: int = -1) -> list[str]:
+    """Split one `-F` output row on SEP, whether tmux emitted it raw or escaped."""
+    return line.replace(_SEP_ESCAPED, SEP).split(SEP, maxsplit)
+
+def _is_activity_glyph(ch: str) -> bool:
+    """Claude Code のスピナー/アクティビティ先頭グリフか判定。
+
+    Braille スピナー(U+2800–U+28FF)・ダ​ーバ​ッツの星(U+2700–U+27BF)・
+    中黒(·)・ブレット(•)・アスタリスク演算子(∗) を広めにカバーする。
+    """
+    if not ch:
+        return False
+    o = ord(ch)
+    return (
+        0x2800 <= o <= 0x28FF  # Braille spinner frames
+        or 0x2700 <= o <= 0x27BF  # ✳ ✶ ✻ ✽ など dingbats
+        or ch in "·•∗*✢◐◓◑◒"
+    )
+
+
+def _stable_live(live: str) -> str:
+    """先頭の回転グリフを除き、状態変化の署名に使える live 文言を返す。"""
+    text = live.lstrip()
+    while text and _is_activity_glyph(text[0]):
+        text = text[1:].lstrip()
+    return text
+
+
+_OBSERVED_LIMIT = 4096
+_observed: dict[str, tuple[tuple[object, ...], float | None]] = {}
+_observed_lock = threading.Lock()
+
+
+def _observe_activity(
+    name: str, signature: tuple[object, ...], now: float,
+) -> float | None:
+    """署名が前回から変わった時刻を返す。初回観測は活動として数えない。"""
+    with _observed_lock:
+        previous = _observed.get(name)
+        if previous is None:
+            _observed[name] = (signature, None)
+            return None
+        previous_signature, changed_at = previous
+        if previous_signature != signature:
+            changed_at = now
+            _observed[name] = (signature, changed_at)
+        return changed_at
+
+
+def _prune_observed(current_names: set[str]) -> None:
+    """消滅した行を落とし、観測キャッシュに明示的な上限を設ける。"""
+    with _observed_lock:
+        for name in set(_observed) - current_names:
+            _observed.pop(name, None)
+        overflow = len(_observed) - _OBSERVED_LIMIT
+        if overflow > 0:
+            oldest = sorted(
+                _observed,
+                key=lambda name: _observed[name][1] or 0,
+            )[:overflow]
+            for name in oldest:
+                _observed.pop(name, None)
+
+# 実エージェントではないインフラ/プールセッション
+INFRA_NAMES = {"mail-watcher"}
+WARMUP_NAMES = {"warm-opus", "warm-sonnet"}
+
+
+# --------------------------------------------------------------------------- #
+# tmux
+# --------------------------------------------------------------------------- #
+
+# One consumer per tmux endpoint, kept while that endpoint's socket is the same
+# file. Building one resolves and verifies the endpoint (a display-message
+# process each time); _tmux_run used to build one per tmux command, about a
+# fifth of a /api/agents computation. What is reused is only the endpoint
+# resolution. Every use, kept or new, first passes the same entry check as a
+# build (_tmux_helper_entry: the installed helper, or the negative admission
+# when it is missing), and the key is the exact socket path the shared resolver
+# picks now (runtime_tmux.legacy_endpoint), so an alias that now points
+# elsewhere is a new endpoint. Every command is still admitted
+# by the consumer. A restarted server makes a new socket file: rebuilt.
+_TMUX_CONSUMER_LOCK = threading.Lock()
+_TMUX_CONSUMER_CACHE: dict = {"key": None, "consumer": None, "entry": None}
+
+
+def _reset_tmux_consumer_cache():
+    with _TMUX_CONSUMER_LOCK:
+        _TMUX_CONSUMER_CACHE.update(key=None, consumer=None, entry=None)
+
+
+def _tmux_helper_entry():
+    """The installed transport helper a consumer is built from. When it is
+    missing: refused for a global or unproven placement, None (bare tmux) for a
+    proven pure legacy one. Run before every use, kept consumer or not."""
+    path=Path(HOOKS_DIR).parent/'bin/lib/runtime_tmux.py'
+    if not path.is_file():
+        # Mode admission above already rejected an unresolved global install.
+        if GLOBAL_MODE or _MODE_API['unproven_client_placement'](Path(HOOKS_DIR).parent):raise RuntimeError('GLOBAL_TARGET_HELPER_UNAVAILABLE')
+        return None
+    return path, path.with_name('legacy_consumer.py').is_file()
+
+
+def _consumer_still_current(consumer) -> bool:
+    transport = getattr(consumer, 'transport', None)
+    tmux = getattr(consumer, 'tmux', None)
+    identity = getattr(transport, 'identity', None)
+    if identity is None or not isinstance(tmux, dict) or 'validate_socket' not in tmux:
+        return False
+    try:
+        return tmux['validate_socket'](transport.path) == identity
+    except Exception:
+        return False
+
+
+def _tmux_consumer_key():
+    """The endpoint the shared resolver picks now (its own legacy_endpoint, no
+    process): a retargeted TMUX_TMPDIR alias or another TMUX is another key.
+    None when it cannot be told this way; then nothing is kept."""
+    try:
+        api = _MODE_API['runtime_tmux_api']() if 'runtime_tmux_api' in _MODE_API else None
+        endpoint = api.get('legacy_endpoint') if isinstance(api, dict) else None
+        if endpoint is None:
+            return None
+        path, server_pid = endpoint(environ=os.environ)
+    except Exception:
+        return None
+    return (HOOKS_DIR, os.environ.get('AGENTSTACK_HOME'), str(path), server_pid, id(_MODE_API))
+
+
+def _consumer_matches_key(consumer, key) -> bool:
+    """The consumer's actual socket is exactly the endpoint the key names (the
+    path the shared resolver picks now). The key and the build resolve at
+    different moments, so an alias moved in between must not leave a consumer
+    of one endpoint under the key of another."""
+    transport = getattr(consumer, 'transport', None)
+    path = getattr(transport, 'path', None)
+    return path is not None and str(Path(path)) == key[2]
+
+
+def _legacy_tmux_consumer():
+    try:
+        entry = _tmux_helper_entry()  # the same check a build makes, every time
+    except RuntimeError:
+        _reset_tmux_consumer_cache()  # refused: nothing kept carries past a refusal
+        raise
+    if entry is None:
+        _reset_tmux_consumer_cache()
+        return None
+    key = _tmux_consumer_key()
+    with _TMUX_CONSUMER_LOCK:
+        if key is not None and _TMUX_CONSUMER_CACHE["key"] == key and _TMUX_CONSUMER_CACHE["entry"] == entry:
+            consumer = _TMUX_CONSUMER_CACHE["consumer"]
+            if (consumer is not None and _consumer_matches_key(consumer, key)
+                    and _consumer_still_current(consumer)):
+                return consumer
+    consumer = _build_legacy_tmux_consumer(entry)
+    with _TMUX_CONSUMER_LOCK:
+        if (key is not None and consumer is not None and _consumer_matches_key(consumer, key)
+                and _consumer_still_current(consumer)):
+            _TMUX_CONSUMER_CACHE.update(key=key, consumer=consumer, entry=entry)
+        else:
+            _TMUX_CONSUMER_CACHE.update(key=None, consumer=None, entry=None)
+    return consumer
+
+
+def _build_legacy_tmux_consumer(entry=None):
+    entry = _tmux_helper_entry() if entry is None else entry
+    if entry is None:
+        return None
+    path, has_factory = entry
+    api=(_MODE_API['runtime_tmux_api']() if 'runtime_tmux_api' in _MODE_API else _runtime_runpy.run_path(str(path)))
+    home=Path(os.environ.get('AGENTSTACK_HOME',str(Path(HOOKS_DIR).parent)))
+    if 'LegacyConsumer' in api:return api['LegacyConsumer'](home)
+    factory=path.with_name('legacy_consumer.py')
+    if has_factory:
+        return _runtime_runpy.run_path(str(factory))['LegacyConsumer'](home,transport_api=api)
+    # An older complete transport may prove a pure legacy placement; otherwise
+    # absence of the adapter is not permission to type into an unknown pane.
+    if 'global_inventory' in api:
+        inventory=api['global_inventory'](home)
+        if inventory['global_complete'] and not inventory['proofs']:return None
+    raise RuntimeError('GLOBAL_TARGET_HELPER_UNAVAILABLE')
+
+def _tmux_run(args,**kwargs):
+    consumer=_legacy_tmux_consumer()
+    if consumer is None:return subprocess.run(['tmux',*args],**kwargs)
+    return consumer.command(args,**kwargs)
+
+def _tmux(args: list[str]) -> str:
+    try:
+        out = _tmux_run(
+            args,
+            capture_output=True,
+            text=True,
+            timeout=5,
+        )
+        return out.stdout if out.returncode == 0 else ""
+    except Exception:
+        return ""
+
+
+def tmux_state() -> dict:
+    """セッション名 -> {created, activity, attached, cmd, pane_pid, title} を返す。"""
+    sessions: dict[str, dict] = {}
+
+    fmt = SEP.join([
+        "#{session_name}",
+        "#{session_created}",
+        "#{session_activity}",
+        "#{session_id}",
+        "#{AGENTSTACK_MAIL_DISABLED}",
+        "#{AGENTSTACK_MAIL_DISABLED_REASON}",
+    ])
+    for line in _tmux(["list-sessions", "-F", fmt]).splitlines():
+        parts = _split_tmux_fields(line)
+        if len(parts) < 3:
+            continue
+        name, created, activity = parts[0], parts[1], parts[2]
+        sessions[name] = {
+            "name": name,
+            "created": _to_int(created),
+            "session_id": parts[3] if len(parts) >= 4 else "",
+            "mail_disabled": parts[4] if len(parts) >= 5 else "",
+            "mail_disabled_reason": parts[5] if len(parts) >= 6 else "",
+            "activity": _to_int(activity),
+            "attached": False,
+            "client_tty": None,
+            "cmd": "",
+            "pane_pid": 0,
+            "title": "",
+        }
+
+    # アクティブウィンドウのアクティブペインだけを採用 (title last + maxsplit)
+    fmt = SEP.join(
+        [
+            "#{session_name}",
+            "#{window_active}#{pane_active}",
+            "#{pane_current_command}",
+            "#{pane_pid}",
+            "#{pane_title}",
+        ]
+    )
+    for line in _tmux(["list-panes", "-a", "-F", fmt]).splitlines():
+        parts = _split_tmux_fields(line, 4)
+        if len(parts) == 5:
+            name, flags, cmd, pane_pid, title = parts
+        elif len(parts) == 4:
+            # demo / older fake tmux adapters may still emit the historical
+            # four-field row even when a fifth format field was requested.
+            name, flags, cmd, title = parts
+            pane_pid = ""
+        else:
+            continue
+        if flags != "11":  # active window + active pane
+            continue
+        if name in sessions:
+            sessions[name]["cmd"] = cmd
+            sessions[name]["pane_pid"] = _to_int(pane_pid)
+            sessions[name]["title"] = title
+
+    fmt = SEP.join(["#{client_session}", "#{client_tty}"])
+    for line in _tmux(["list-clients", "-F", fmt]).splitlines():
+        parts = _split_tmux_fields(line)
+        if len(parts) < 2:
+            continue
+        sname, tty = parts[0], parts[1]
+        if sname in sessions:
+            sessions[sname]["attached"] = True
+            sessions[sname]["client_tty"] = tty
+
+    _prune_runtime_cache(sessions)
+    return sessions
+
+
+def _to_int(s: str) -> int:
+    try:
+        return int(s)
+    except (ValueError, TypeError):
+        return 0
+
+
+_PROCESS_TREE_TTL = 4.5
+_PROCESS_TREE_CACHE: dict[str, object] = {"ts": 0.0, "tree": None}
+_PROCESS_TREE_LOCK = threading.Lock()
+
+
+def _parse_process_tree(
+    output: str,
+) -> tuple[dict[int, str], dict[int, list[int]]] | None:
+    """Parse one `ps -axo pid,ppid,comm` snapshot."""
+    names: dict[int, str] = {}
+    children: dict[int, list[int]] = {}
+    for line in output.splitlines():
+        parts = line.strip().split(None, 2)
+        if len(parts) != 3:
+            continue
+        try:
+            pid = int(parts[0])
+            ppid = int(parts[1])
+        except ValueError:
+            continue
+        names[pid] = os.path.basename(parts[2]).lower()
+        children.setdefault(ppid, []).append(pid)
+    return (names, children) if names else None
+
+
+def _process_tree_snapshot() -> tuple[dict[int, str], dict[int, list[int]]] | None:
+    """Return one cached host process tree, or None when it cannot be measured.
+
+    Dashboard polling happens every five seconds. Keep this on the same 4.5s
+    cadence as pane runtime reads so Deck / Network / EXIT share one `ps`
+    snapshot instead of spawning `ps` once per session or per consumer.
+    """
+    with _PROCESS_TREE_LOCK:
+        now = time.monotonic()
+        cached_at = float(_PROCESS_TREE_CACHE.get("ts") or 0.0)
+        if cached_at and now - cached_at < _PROCESS_TREE_TTL:
+            return _PROCESS_TREE_CACHE.get("tree")  # type: ignore[return-value]
+
+        tree = None
+        if sys.platform != "win32":
+            try:
+                result = subprocess.run(
+                    ["ps", "-axo", "pid=,ppid=,comm="],
+                    capture_output=True,
+                    text=True,
+                    timeout=3,
+                )
+                if result.returncode == 0:
+                    tree = _parse_process_tree(result.stdout)
+            except (OSError, subprocess.SubprocessError):
+                tree = None
+
+        _PROCESS_TREE_CACHE.update(ts=now, tree=tree)
+        return tree
+
+
+def _is_codex_process_name(name: str) -> bool:
+    executable = os.path.basename(name or "").lower()
+    return executable == "codex" or executable.startswith("codex-")
+
+
+def _is_claude_process_name(name: str) -> bool:
+    # Native Claude Code installs run as `claude`, or as a binary named by its
+    # version ("2.1.263") on 2.1.26x; the npm install runs under `node`.
+    executable = os.path.basename(name or "").lower()
+    return (
+        executable == "claude"
+        or executable == "node"
+        or bool(_VERSION_CMD_RE.match(executable))
+    )
+
+
+def _is_antigravity_process_name(name: str) -> bool:
+    executable = os.path.basename(name or "").lower()
+    return executable == "agy"
+
+
+def _supports_agent_process_liveness(program: str | None) -> bool:
+    return program in harness_runtime.HARNESSES or (program or "").startswith(("codex", "claude", "antigravity"))
+
+
+_NATIVE_COMMAND_CACHE = {}
+
+
+def _native_harness_pid(root, process_tree, program):
+    names, children = process_tree
+    stack, seen, unknown = [root], set(), False
+    now = time.monotonic()
+    while stack:
+        pid = stack.pop()
+        if pid in seen:
+            continue
+        seen.add(pid)
+        stack.extend(children.get(pid, ()))
+        if not harness_runtime.possible_process(program, names.get(pid, '')):
+            continue
+        cached = _NATIVE_COMMAND_CACHE.get(pid)
+        if not cached or now - cached[0] >= _PROCESS_TREE_TTL:
+            command = None
+            try:
+                result = subprocess.run(['ps', '-p', str(pid), '-o', 'args='],
+                                        capture_output=True, text=True, timeout=3)
+                if result.returncode == 0:
+                    command = result.stdout.strip()
+            except (OSError, subprocess.SubprocessError):
+                pass
+            if len(_NATIVE_COMMAND_CACHE) > 512:
+                _NATIVE_COMMAND_CACHE.clear()
+            cached = _NATIVE_COMMAND_CACHE[pid] = (now, command)
+        if cached[1] is None:
+            unknown = True
+        elif harness_runtime.matches_command(program, cached[1]):
+            return pid, False
+    return None, unknown
+
+
+def _is_agent_process_name(name: str, program: str | None) -> bool:
+    """Is this process the agent that `program` registered as?
+
+    Codex, Claude, and Antigravity can all sit behind a shell wrapper, so the
+    pane leader's name says nothing about whether the agent is alive. One
+    provider-aware process-tree matcher is the source of truth for DECK,
+    NETWORK, and provider-specific EXIT revalidation.
+    """
+    if (program or "").startswith("codex"):
+        return _is_codex_process_name(name)
+    if (program or "").startswith("claude"):
+        return _is_claude_process_name(name)
+    if (program or "").startswith("antigravity"):
+        return _is_antigravity_process_name(name)
+    return False
+
+
+def _agent_process_pid(
+    pane_pid: object,
+    process_tree: tuple[dict[int, str], dict[int, list[int]]] | None,
+    program: str | None,
+) -> int | None:
+    """Return the matching provider PID under a pane, or None when absent/unknown."""
+    if not _supports_agent_process_liveness(program):
+        return None
+    try:
+        root = int(pane_pid or 0)
+    except (TypeError, ValueError):
+        return None
+    if root <= 0 or process_tree is None:
+        return None
+    names, children = process_tree
+    if root not in names:
+        return None
+    if program in harness_runtime.HARNESSES:
+        return _native_harness_pid(root, process_tree, program)[0]
+
+    stack = [root]
+    seen: set[int] = set()
+    while stack:
+        pid = stack.pop()
+        if pid in seen:
+            continue
+        seen.add(pid)
+        if _is_agent_process_name(names.get(pid, ""), program):
+            return pid
+        stack.extend(children.get(pid, ()))
+    return None
+
+
+def _agent_process_alive(
+    pane_pid: object,
+    process_tree: tuple[dict[int, str], dict[int, list[int]]] | None,
+    program: str | None,
+) -> bool | None:
+    """Return True/False when measured, None when liveness is unknowable."""
+    if not _supports_agent_process_liveness(program):
+        return None
+    try:
+        root = int(pane_pid or 0)
+    except (TypeError, ValueError):
+        return None
+    if root <= 0 or process_tree is None:
+        return None
+    names, _children = process_tree
+    if root not in names:
+        return None
+    if program in harness_runtime.HARNESSES:
+        pid, unknown = _native_harness_pid(root, process_tree, program)
+        return None if unknown else pid is not None
+    return _agent_process_pid(root, process_tree, program) is not None
+
+
+def _codex_process_alive(
+    pane_pid: object,
+    process_tree: tuple[dict[int, str], dict[int, list[int]]] | None,
+) -> bool | None:
+    return _agent_process_alive(pane_pid, process_tree, "codex-cli")
+
+
+# --------------------------------------------------------------------------- #
+# ORRERY Mail SQLite (read-only)
+# --------------------------------------------------------------------------- #
+class _ClosingConnection(sqlite3.Connection):
+    """sqlite connection whose context manager also releases the file handle.
+
+    ``sqlite3.Connection.__exit__`` only commits or rolls back; it does not
+    close the connection.  Dashboard request handlers intentionally use
+    ``with _db()`` throughout, so make that spelling safe by construction.
+    Explicit ``con = _db(); con.close()`` callers remain supported as well.
+    """
+
+    def __exit__(self, exc_type, exc_value, traceback):
+        try:
+            return super().__exit__(exc_type, exc_value, traceback)
+        finally:
+            self.close()
+
+
+def _db():
+    return sqlite3.connect(
+        f"file:{DB_PATH}?mode=ro",
+        uri=True,
+        timeout=2,
+        factory=_ClosingConnection,
+    )
+
+
+class _RegistrationIndex:
+    """Every agent registration, read with one query for one poll.
+
+    A graph or agents poll looked registrations up per row, opening SQLite
+    once or twice per row: about 3,400 connections, each parsing the schema,
+    for 2,000 rows (AUDIT 2026-10-01). The index answers the same questions
+    as the per-row queries, in the same order, from a single read.
+    """
+
+    def __init__(self) -> None:
+        self.loaded = False
+        self.usable = False
+        self.by_name: dict[str, int] = {}
+        self.by_project: dict[tuple[str, str], sqlite3.Row] = {}
+
+    def load(self) -> bool:
+        if self.loaded:
+            return self.usable
+        self.loaded = True
+        if not os.path.isfile(DB_PATH):
+            return False
+        try:
+            with _db() as con:
+                con.row_factory = sqlite3.Row
+                rows = con.execute(
+                    "SELECT a.id, a.name, a.program, a.model, a.task_description, "
+                    "p.human_key FROM agents a LEFT JOIN projects p ON a.project_id=p.id "
+                    "ORDER BY a.last_active_ts DESC"
+                ).fetchall()
+        except sqlite3.Error:
+            return False
+        for row in rows:
+            # First in last_active_ts DESC order wins, as with LIMIT 1.
+            self.by_name.setdefault(row["name"], int(row["id"]))
+            if row["human_key"] is not None:
+                self.by_project.setdefault((row["human_key"], row["name"]), row)
+        self.usable = True
+        return True
+
+
+_REGISTRATION_BATCH = threading.local()
+
+
+@contextlib.contextmanager
+def _registration_batch(*, enabled: bool = True):
+    """Within this block, registration lookups on this thread share one read.
+
+    Only display polls use it; an action re-reads the database itself."""
+    previous = getattr(_REGISTRATION_BATCH, "index", None)
+    _REGISTRATION_BATCH.index = (previous or _RegistrationIndex()) if enabled else None
+    try:
+        yield
+    finally:
+        _REGISTRATION_BATCH.index = previous
+
+
+def _batched_registrations() -> _RegistrationIndex | None:
+    index = getattr(_REGISTRATION_BATCH, "index", None)
+    return index if index is not None and index.load() else None
+
+
+class _SingleFlightBusy(Exception):
+    """A display request waited past _SingleFlight.WAIT_LIMIT; answer 503."""
+
+
+class _SingleFlight:
+    """At most one computation per display query at a time.
+
+    Overlapping graph/agents polls (several cockpit tabs, DECK and NETWORK)
+    contended on the GIL and SQLite's mutex until one request took over 10 s,
+    past the cockpit's 6 s timeout, which re-fired it (AUDIT 2026-10-01).
+
+    Freshness is kept: a request never receives a computation that started
+    before it arrived. One that arrives while the query is being computed
+    waits for the next computation, which starts as soon as the running one
+    ends and serves every request that arrived in the meantime. Results are
+    dropped once delivered; nothing is reused over time.
+
+    A request waits at most WAIT_LIMIT seconds, then is answered busy. When a
+    shared computation fails, its waiters queue for the next single one rather
+    than each computing on its own, so a query that keeps failing still runs
+    once at a time (#161 review P3).
+    """
+
+    WAIT_LIMIT = 30.0
+
+    def __init__(self) -> None:
+        self._cond = threading.Condition()
+        self._states: dict[tuple, dict] = {}
+
+    def clear(self) -> None:
+        with self._cond:
+            self._states.clear()
+
+    def get(self, key: tuple, compute) -> bytes:
+        deadline = time.monotonic() + self.WAIT_LIMIT
+        with self._cond:
+            state = self._states.setdefault(
+                key, {"running": False, "started": 0, "results": {}, "wanted": {}})
+            # The first computation that starts after this request arrived.
+            target = self._claim(state)
+            while True:
+                if target in state["results"]:
+                    if state["results"][target] is not None:
+                        return self._release(key, state, target)
+                    # That computation failed; wait for the next one. Claim it
+                    # before dropping this claim, so the state stays registered
+                    # and a new request joins it instead of starting another.
+                    failed, target = target, self._claim(state)
+                    self._release(key, state, failed)
+                    continue
+                if not state["running"]:
+                    state["running"] = True
+                    state["started"] += 1
+                    break
+                remaining = deadline - time.monotonic()
+                if remaining <= 0:
+                    self._release(key, state, target)
+                    raise _SingleFlightBusy()
+                self._cond.wait(remaining)
+        try:
+            body = compute()
+        except BaseException:
+            body = None
+            raise
+        finally:
+            with self._cond:
+                state["running"] = False
+                state["results"][target] = body
+                self._cond.notify_all()
+                self._release(key, state, target)
+        return body
+
+    @staticmethod
+    def _claim(state: dict) -> int:
+        """Claim the next computation to start (lock held)."""
+        target = state["started"] + 1
+        state["wanted"][target] = state["wanted"].get(target, 0) + 1
+        return target
+
+    def _release(self, key: tuple, state: dict, target: int):
+        """Drop one claim on a computation (lock held); return its result."""
+        body = state["results"].get(target)
+        state["wanted"][target] -= 1
+        if not state["wanted"][target]:
+            del state["wanted"][target]
+            state["results"].pop(target, None)
+            if (not state["running"] and not state["wanted"]
+                    and self._states.get(key) is state):
+                del self._states[key]
+        return body
+
+
+_HTTP_SINGLE_FLIGHT = _SingleFlight()
+
+
+def _is_live_roster_row(row: dict) -> bool:
+    """The rows a live roster shows: running agents, never warm-up sessions.
+
+    The same test a live-roster client applies to the full answer itself."""
+    return bool(row.get("running") or row.get("category") == "agent") \
+        and row.get("category") != "warmup"
+
+
+class _AgentsAnswer:
+    """One /api/agents computation, written at most once per scope.
+
+    `scope=live` is for a client that shows only the live roster: about 3 %
+    of the rows of the 30-day window. It carries the
+    live rows unchanged plus `retired`, the names the full answer marks retired
+    (a client unpins those). Any other scope, or none, is the full answer,
+    byte for byte as before.
+    """
+
+    def __init__(self, history_days: float | None) -> None:
+        self.payload = {
+            "ts": int(time.time()),
+            "history_days": history_days,
+            "agents": build_agents(history_days),
+        }
+        self._lock = threading.Lock()
+        self._bodies: dict[str, bytes] = {}
+
+    def body(self, scope: str) -> bytes:
+        scope = "live" if scope == "live" else ""
+        with self._lock:
+            body = self._bodies.get(scope)
+            if body is None:
+                body = json.dumps(self._view(scope), ensure_ascii=False).encode()
+                self._bodies[scope] = body
+            return body
+
+    def _view(self, scope: str) -> dict:
+        if scope != "live":
+            return self.payload
+        rows = self.payload["agents"]
+        return {
+            "ts": self.payload["ts"],
+            "history_days": self.payload["history_days"],
+            "scope": "live",
+            "agents": [row for row in rows if _is_live_roster_row(row)],
+            "retired": [row["name"] for row in rows if row.get("category") == "retired"],
+        }
+
+
+def _with_registration_batch(function):
+    """Run one display computation over a single registration read."""
+
+    @functools.wraps(function)
+    def wrapper(*args, **kwargs):
+        with _registration_batch():
+            return function(*args, **kwargs)
+
+    return wrapper
+
+
+_RETIRED_AT_CACHE: dict[str, bool] = {}
+
+
+def _has_retired_at() -> bool:
+    """Does this ORRERY Mail's `agents` table have a `retired_at` column?
+
+    The dashboard reads a database it does not own, at whatever version the
+    operator installed. A tester running a forty-day-old ORRERY Mail has no such
+    column, and every query naming it raised `OperationalError: no such column:
+    a.retired_at` — which took out the whole card, and (before the descriptor
+    fix) leaked the connection on the way out.
+
+    Probe the schema rather than infer it from a version string: the column is
+    what we actually depend on, and asking is cheap.
+    """
+    try:
+        stamp = str(os.path.getmtime(DB_PATH))
+    except OSError:
+        return False
+    cached = _RETIRED_AT_CACHE.get(stamp)
+    if cached is not None:
+        return cached
+    con = None
+    present = False
+    try:
+        con = _db()
+        present = any(
+            row[1] == "retired_at" for row in con.execute("PRAGMA table_info(agents)")
+        )
+    except Exception:
+        present = False
+    finally:
+        if con is not None:
+            con.close()
+    _RETIRED_AT_CACHE.clear()
+    _RETIRED_AT_CACHE[stamp] = present
+    return present
+
+
+def _retired_at_select(alias: str = "a") -> str:
+    """`retired_at` where the column exists, a constant NULL where it does not.
+
+    A schema without the column has no notion of retirement, so "nothing is
+    retired" is the truthful answer, and every caller already handles NULL.
+    """
+    return f"{alias}.retired_at" if _has_retired_at() else "NULL AS retired_at"
+
+
+def _retired_names(project_key: str) -> set[str]:
+    """ORRERY Mail が retired と見なしている名前。列が無い版では空集合。
+
+    ORRERY Mail は 24 時間無活動で agent を retire する。終了した session を
+    片付けるぶんには妥当だが、**生きたまま idle だった常駐 agent** も巻き込む。
+    そして retired agent は送信も自分の inbox 読取も素通りし、受信だけが黙って
+    拒否されるので、当人も人間も気づけない。他 agent のメールが bounce して
+    初めて分かる。
+    """
+    if not project_key or not _has_retired_at():
+        return set()
+    con = None
+    try:
+        con = _db()
+        return {
+            r[0] for r in con.execute(
+                "SELECT a.name FROM agents a JOIN projects p ON p.id = a.project_id "
+                "WHERE p.human_key = ? AND a.retired_at IS NOT NULL",
+                (project_key,),
+            )
+        }
+    except Exception:
+        return set()
+    finally:
+        if con is not None:
+            con.close()
+
+
+def agentmail_state() -> tuple[dict, dict]:
+    """(agents_by_name, last_instruction_by_name)。DB が無くても空で返す。"""
+    agents: dict[str, dict] = {}
+    instr: dict[str, dict] = {}
+    if not os.path.exists(DB_PATH):
+        return agents, instr
+    con = None
+    try:
+        con = _db()
+        con.row_factory = sqlite3.Row
+        cur = con.cursor()
+
+        agents.update(_mail_registrations(con))
+
+        cur.execute(
+            """
+            SELECT a.name AS aname, m.subject, m.created_ts, m.importance,
+                   sn.name AS sender
+            FROM message_recipients mr
+            JOIN agents a   ON a.id  = mr.agent_id
+            JOIN messages m ON m.id  = mr.message_id
+            JOIN agents sn  ON sn.id = m.sender_id
+            JOIN (
+                SELECT mr2.agent_id, MAX(m2.created_ts) mc
+                FROM message_recipients mr2
+                JOIN messages m2 ON m2.id = mr2.message_id
+                GROUP BY mr2.agent_id
+            ) last ON last.agent_id = mr.agent_id AND last.mc = m.created_ts
+            """
+        )
+        for r in cur.fetchall():
+            instr[r["aname"]] = {
+                "subject": r["subject"],
+                "sender": r["sender"],
+                "importance": r["importance"],
+                "ts": _iso_to_epoch(r["created_ts"]),
+            }
+    except Exception:
+        pass
+    finally:
+        if con is not None:
+            con.close()
+    return agents, instr
+
+
+def _iso_to_epoch(s: str | None) -> int:
+    if not s:
+        return 0
+    try:
+        s = s.replace("T", " ").split("+")[0].strip()
+        if "." in s:
+            s = s.split(".")[0]
+        dt = datetime.strptime(s, "%Y-%m-%d %H:%M:%S")
+        return int(dt.replace(tzinfo=timezone.utc).timestamp())
+    except Exception:
+        return 0
+
+
+# --------------------------------------------------------------------------- #
+# 合成
+# --------------------------------------------------------------------------- #
+PENDING_RE = re.compile(r"^pending-\d+$")
+# Claude Code native binary の pane_current_command（例 "2.1.259"）
+_VERSION_CMD_RE = re.compile(r"^\d+\.\d+\.\d+$")
+
+
+def classify(name: str, cmd: str, title: str, in_mail: bool,
+             program: str | None = None,
+             agent_alive: bool | None = None) -> str:
+    if name in INFRA_NAMES:
+        return "infra"
+    if name in WARMUP_NAMES:
+        return "warmup"
+    if program in harness_runtime.HARNESSES and in_mail:
+        return 'finished' if agent_alive is False else 'agent'
+    glyph = bool(title) and _is_activity_glyph(title[0])
+    # Claude Code 2.1.26x の native バイナリは pane_current_command を
+    # "2.1.259" のようなバージョン文字列で報告する（2026-09-05 Pro 実測:
+    # ProOpus / ProSonnet / SeminarBot がいずれも "2.1.259"）。node / claude
+    # のどちらにも一致しないため、glyph の無い待機中に finished へ落ちていた。
+    claude = cmd in ("node", "claude") or bool(_VERSION_CMD_RE.match(cmd or "")) or glyph
+    # Codex and Claude both sit behind a shell wrapper, so pane_current_command
+    # alone cannot distinguish a live TUI from the shell-only husk left after
+    # exit. A measured process tree (any registered program) is authoritative.
+    # If measurement is unavailable, fall back to the cmd + glyph reading
+    # above, and for Codex to the historical registration + tmux rule rather
+    # than turning a possibly-live agent into FINISHED.
+    if in_mail and agent_alive is True:
+        claude = True
+    elif in_mail and agent_alive is False:
+        claude = False
+    elif program and program.startswith("codex") and in_mail and not claude:
+        claude = True
+    # ※ 「program=claude-code で登録済み＋tmux 生存なら agent」という Codex 式の
+    # fallback は入れない。Claude は REPL が終了すると pane が zsh に戻るので、
+    # その規則だと「登録は残るが REPL は死んだ」= finished を表現できなくなる
+    # （dashboard-demo の Calm-Turing がまさにその状態で、PR #6 の fallback で
+    # 崩れた）。真因はバージョン文字列の cmd なので、上の判定だけで足りる。
+    if PENDING_RE.match(name):
+        return "unnamed" if claude else "idle"
+    if claude:
+        return "agent"
+    if in_mail:
+        # ORRERY Mail に登録が残るが claude プロセスが生きていない
+        # = exit 済みでセッションだけ残骸として残っている
+        return "finished"
+    return "idle"
+
+
+HISTORY_DAYS_DEFAULT = 30.0
+
+
+def _owned_private_json(path: pathlib.Path, *, limit: int = 1_048_576) -> dict:
+    flags = os.O_RDONLY
+    if hasattr(os, "O_NOFOLLOW"):
+        flags |= os.O_NOFOLLOW
+    descriptor = os.open(path, flags)
+    try:
+        info = os.fstat(descriptor)
+        if (
+            not stat.S_ISREG(info.st_mode)
+            or info.st_uid != os.getuid()
+            or stat.S_IMODE(info.st_mode) & 0o077
+        ):
+            raise ValueError("unsafe private JSON")
+        raw = os.read(descriptor, limit + 1)
+    finally:
+        os.close(descriptor)
+    if len(raw) > limit:
+        raise ValueError("private JSON too large")
+    value = json.loads(raw)
+    if not isinstance(value, dict):
+        raise ValueError("private JSON object required")
+    return value
+
+
+def _persistent_profiles() -> dict[str, dict]:
+    """Return only non-secret, independently typed persistent profile fields.
+
+    ``surface`` describes the display/runtime carrier (tmux, Codex App) and is
+    intentionally not part of this result.  Existing rows therefore keep
+    their current surface while receiving ``interaction=unknown`` below.
+    Invalid, non-owned, or group/world-readable profiles are ignored rather
+    than weakening the whole dashboard response.
+    """
+    project_key = _project_key()
+    if not project_key:
+        return {}
+    try:
+        with _db() as connection:
+            instance_row = connection.execute(
+                "SELECT instance_id FROM mail_instances WHERE id = 1"
+            ).fetchone()
+            agent_rows = connection.execute(
+                """
+                SELECT a.id, a.name
+                  FROM agents a
+                  JOIN projects p ON p.id = a.project_id
+                 WHERE p.human_key = ?
+                """,
+                (project_key,),
+            ).fetchall()
+    except (OSError, sqlite3.Error):
+        return {}
+    if (
+        instance_row is None
+        or not isinstance(instance_row[0], str)
+        or not instance_row[0]
+    ):
+        return {}
+    server_instance_id = instance_row[0]
+    valid_agents = {
+        (row[0], row[1])
+        for row in agent_rows
+        if type(row[0]) is int and isinstance(row[1], str)
+    }
+
+    root = pathlib.Path(PERSISTENT_PROFILES_DIR)
+    try:
+        entries = list(root.glob("*.json"))
+    except OSError:
+        return {}
+    profiles: dict[str, dict] = {}
+    for path in entries:
+        try:
+            value = _owned_private_json(path)
+        except (OSError, ValueError):
+            continue
+        if value.get("kind") != "orrery-persistent-agent-v1":
+            continue
+        name = value.get("name")
+        if not isinstance(name, str) or not re.fullmatch(r"[A-Za-z0-9_.-]+", name):
+            continue
+        agent_id = value.get("agent_id")
+        if (
+            type(agent_id) is not int
+            or (agent_id, name) not in valid_agents
+            or value.get("project_key") != project_key
+        ):
+            continue
+        provider = value.get("provider")
+        interaction = value.get("interaction")
+        if (
+            not isinstance(provider, str)
+            or provider not in {"claude", "codex"}
+            or value.get("parentless") is not True
+            or value.get("lifecycle") != "persistent"
+            or not isinstance(interaction, str)
+            or interaction not in {"interactive", "headless"}
+        ):
+            continue
+        connection_value = value.get("connection")
+        if not isinstance(connection_value, str) or not connection_value:
+            continue
+        connection_path = pathlib.Path(
+            os.path.expandvars(connection_value)
+        ).expanduser()
+        if not connection_path.is_absolute():
+            connection_path = path.parent / connection_path
+        try:
+            authority = _owned_private_json(connection_path.absolute())
+        except (OSError, ValueError):
+            continue
+        if (
+            authority.get("kind") != "orrery-mail-connection-v1"
+            or authority.get("expected_server_instance_id") != server_instance_id
+        ):
+            continue
+        profiles[name] = {
+            "profile_provider": provider,
+            "parentless": True,
+            "lifecycle": "persistent",
+            "interaction": interaction,
+        }
+    return profiles
+
+
+def _parse_history_days(raw: str | None) -> float | None:
+    """`?days=` of /api/agents → days as float, None for the whole history.
+
+    Anything unparsable or non-positive falls back to the 30-day default so a
+    typo in the URL never widens the roster to every agent ever registered."""
+    text = (raw or "").strip().lower()
+    if text == "all":
+        return None
+    try:
+        days = float(text)
+    except ValueError:
+        return HISTORY_DAYS_DEFAULT
+    if not math.isfinite(days) or days <= 0:
+        return HISTORY_DAYS_DEFAULT
+    return days
+
+
+def _history_cutoff(days: float | None) -> tuple[str, tuple]:
+    """SQL fragment + params that bound `agents.last_active_ts` to the window.
+
+    `None` means no bound: the DECK's `all` history and the by-name lookups
+    behind jump / kill / exit, which must find an agent however old it is."""
+    if days is None:
+        return "", ()
+    return "AND a.last_active_ts > datetime('now', ?)", (f"-{days:g} days",)
+
+
+def _tmux_row_state(name: str, s: dict, m: dict | None, process_tree) -> tuple[str, str, bool, dict | None]:
+    """(program, category, running, watcher health) of one live tmux session.
+
+    The one place that decides whether a session is running. build_agents()
+    and lookup_agent() both call it, so exit/kill/jump judge an agent exactly
+    as the DECK shows it (2026-05-20: a second, simpler running check in
+    do_kill killed a live session).
+    """
+    program = (m or {}).get("program") or ""
+    agent_alive = (
+        _agent_process_alive(s.get("pane_pid"), process_tree, program)
+        if m is not None
+        else None
+    )
+    cat = classify(
+        name, s["cmd"], s["title"], m is not None,
+        program=program, agent_alive=agent_alive,
+    )
+    title = s["title"].strip()
+    running = s["cmd"] in ("node", "claude") or (
+        bool(title) and _is_activity_glyph(title[:1])
+    )
+    if agent_alive is not None:
+        running = agent_alive
+    elif program in harness_runtime.HARNESSES:
+        running = False
+    watcher_health = None
+    if name == "mail-watcher":
+        watcher_health = mail_watcher_health()
+        running = bool(watcher_health.get("watcher_running"))
+    # If process-tree measurement was unavailable, classify() preserves
+    # the historical fail-safe category; keep running in sync with it.
+    if not running and cat == "agent" and program not in harness_runtime.HARNESSES:
+        running = True
+    return program, cat, running, watcher_health
+
+
+def _apply_codex_app_runtime(row: dict, runtime: dict) -> None:
+    """Promote a gone Codex App agent from its provider-validated snapshot."""
+    app_live = _codex_app_live(runtime)
+    row.update(cmd="codex-app", live=app_live["live"],
+               surface="codex-app", model=runtime["model"],
+               model_raw=runtime["model"],
+               provider=_provider_of(runtime["model"]))
+    if app_live["running"]:
+        row.update(category="agent", running=True,
+                   act_state=app_live["act_state"])
+    else:
+        row.update(category="finished")
+
+
+def _mail_registrations(con, name: str | None = None) -> dict[str, dict]:
+    """The registration each name stands for: its unretired row with the
+    latest activity, and on a tie the one registered last (highest id).
+
+    agentmail_state() (the roster) and _mail_agent_for() (exit/kill/jump) both
+    choose through this one query, so they cannot pick different rows of the
+    same name -- on a tie they once did, and a live Codex looked finished to
+    kill (#179 review). Not scoped to a project, as the roster never was.
+    """
+    retired_filter = "retired_at IS NULL" if _has_retired_at() else "1=1"
+    rows = con.execute(
+        f"""
+        SELECT name, model, program, task_description, last_active_ts
+        FROM agents WHERE {retired_filter}{" AND name = ?" if name is not None else ""}
+        ORDER BY name, last_active_ts, id
+        """,
+        (name,) if name is not None else (),
+    ).fetchall()
+    chosen: dict[str, dict] = {}
+    for r in rows:  # ascending: the last row of a name is the one chosen
+        chosen[r["name"]] = {
+            "model": _display_model(r["model"]),
+            "model_raw": r["model"],
+            "program": r["program"],
+            "task": r["task_description"] or "",
+            "last_active": _iso_to_epoch(r["last_active_ts"]),
+        }
+    return chosen
+
+
+def _mail_agent_for(name: str) -> dict | None:
+    """agentmail_state()'s entry for one name, without reading every agent and
+    the last instruction of each."""
+    if not os.path.exists(DB_PATH):
+        return None
+    con = None
+    try:
+        con = _db()
+        con.row_factory = sqlite3.Row
+        return _mail_registrations(con, name).get(name)
+    except sqlite3.Error:
+        return None
+    finally:
+        if con is not None:
+            con.close()
+
+
+def lookup_agent(name: str) -> dict | None:
+    """One agent's name, category, running, attached and program, by name and
+    however old it is: the same verdict build_agents(None) gives that row,
+    without building every row of the whole history (each with its resume
+    capability and Mail fields). It still reads the tmux snapshot (every
+    session, as the roster does) and one Mail registration; what it no longer
+    does is the per-row work for every agent ever registered. exit/kill/jump need only this; under load the
+    whole history took over ten seconds (2026-10-02, a bulk exit reported
+    failed while the cockpit's relay gave up after six)."""
+    s = tmux_state().get(name)
+    if s is not None:
+        m = _mail_agent_for(name)
+        process_tree = _process_tree_snapshot() if m is not None else None
+        program, cat, running, _ = _tmux_row_state(name, s, m, process_tree)
+        return {"name": name, "category": cat, "running": running,
+                "attached": s["attached"], "program": program,
+                **harness_runtime.metadata(RUNTIME_DIR, name, program)}
+    project_key = _project_key()
+    if not project_key:
+        return None
+    con = None
+    try:
+        con = _db()
+        con.row_factory = sqlite3.Row
+        retired_flag = "a.retired_at IS NOT NULL" if _has_retired_at() else "0"
+        r = con.execute(
+            f"""
+            SELECT a.name, a.model, a.program, {retired_flag} AS retired
+            FROM agents a JOIN projects p ON a.project_id = p.id
+            WHERE p.human_key = ? AND a.name = ?
+            ORDER BY a.last_active_ts DESC LIMIT 1
+            """,
+            (project_key, name),
+        ).fetchone()
+    finally:
+        if con is not None:
+            con.close()
+    if r is None:
+        return None
+    row = {"name": name, "category": "retired" if r["retired"] else "gone",
+           "running": False, "attached": False, "program": r["program"] or "",
+           "model": r["model"]}
+    runtime = None if r["retired"] else _codex_app_runtimes().get(name)
+    if runtime:
+        _apply_codex_app_runtime(row, runtime)
+    row.update(harness_runtime.metadata(RUNTIME_DIR, name, row["program"]))
+    return row
+
+
+@_with_registration_batch
+def build_agents(history_days: float | None = HISTORY_DAYS_DEFAULT) -> list[dict]:
+    """Roster rows for the DECK. Live tmux sessions always appear; agents known
+    only to ORRERY Mail (gone / retired) appear when their last activity falls
+    within `history_days` (None = every agent ever registered)."""
+    sessions = tmux_state()
+    mail_agents, mail_instr = agentmail_state()
+    # One `ps` snapshot per refresh (4.5s TTL) shared by every registered
+    # agent, Codex and Claude alike.
+    process_tree = _process_tree_snapshot() if mail_agents else None
+    codex_apps = _codex_app_runtimes()
+    now = int(time.time())
+    didx = _deliverables_index()  # {agent: [...]}（60秒キャッシュ）
+    retired_names = _retired_names(_project_key())
+    substitutions = _name_substitutions()
+    persistent_profiles = _persistent_profiles()
+    rows = []
+    for name, s in sessions.items():
+        m = mail_agents.get(name)
+        program, cat, running, watcher_health = _tmux_row_state(name, s, m, process_tree)
+        title = s["title"].strip()
+        # ペインタイトルがコマンド名そのものや空ならライブ表示としては無意味
+        live = ""
+        if title and title not in (s["cmd"], name) and not title.startswith("/"):
+            live = title
+        if watcher_health is not None and not live and watcher_health.get("watcher_mode"):
+            live = f"watcher: {watcher_health['watcher_mode']}"
+        last_active = max(
+            s["activity"],
+            m["last_active"] if m else 0,
+        )
+        # 稼働中はペイン直読みの runtime（HP・状態・経過時間・窓）を一括取得。
+        # 4.5s TTL キャッシュ済みなので graph_payload との重複呼び出しは無料。
+        rt = (
+            (_native_context_runtime(name, s.get("created"), s.get("session_id"), program)
+             if program in harness_runtime.HARNESSES
+             else _agent_runtime(name, s.get("created"), s.get("session_id")))
+            if running else {}
+        )
+        pane_model = _pane_model_for(rt.get("pane_model"), (m or {}).get("program"))
+        rows.append(
+            {
+                "name": name,
+                "category": cat,
+                "running": running,
+                "attached": s["attached"],
+                # Exact same-name presence in ORRERY Mail is the identity link.
+                # tmux client attachment is a separate UI/safety signal and
+                # must never imply that registration succeeded.
+                "mail_linked": m is not None,
+                # Alive here, retired over there. The sweep cannot see tmux;
+                # this side can, so this side is where the contradiction shows
+                # up. Reported, never repaired on its own — the agent is still
+                # having a conversation, and silently changing its state is
+                # how "it looked fine" happens.
+                "retired_but_alive": name in retired_names,
+                # The name we asked ORRERY Mail for, when it granted a different
+                # one. Empty for everybody else.
+                "requested_name": substitutions.get(name, ""),
+                "cmd": s["cmd"],
+                "live": live,
+                # pane のステータスバー由来を優先（warm pool claim で DB
+                # の model が実 model と乖離するケースを救う）。
+                "model": _display_model(pane_model) or
+                         (m or {}).get("model", ""),
+                "model_raw": pane_model or (m or {}).get("model_raw", ""),
+                "program": program,
+                "provider": _provider_of(
+                    pane_model
+                    or (m or {}).get("model_raw")
+                    or (m or {}).get("model")
+                    or (m or {}).get("program")),
+                "ctx_window": (rt.get("ctx_window") if program in harness_runtime.HARNESSES else
+                               rt.get("ctx_window") or _ctx_window(
+                                   (m or {}).get("model_raw") or (m or {}).get("model"))),
+                "ctx_used": rt.get("ctx_used"),
+                "act_state": rt.get("act_state"),
+                "provider_stall": _provider_stall_view(name, s) if running else None,
+                "work_disp": rt.get("work_disp"),
+                "last_disp": rt.get("last_disp"),
+                "task": (m or {}).get("task", ""),
+                "instruction": mail_instr.get(name),
+                "deliv": len(didx.get(name, [])),
+                "mail_active": m["last_active"] if m else None,
+                "last_active": last_active,
+                "last_active_rel": _rel(last_active, now),
+                "created": s["created"],
+                "surface": "tmux",
+            }
+        )
+    # 2nd pass: tmux 不在の ORRERY Mail 登録 (retired / gone) も rows に含める。
+    # これが無いと kill 直後の retired agent が deck の showAll でも見えず、
+    # 検索・resume の起点が失われる (2026-05-20 ユーザー報告)。
+    seen = {r["name"] for r in rows}
+    project_key = _project_key()
+    if project_key:
+        con = None
+        try:
+            con = _db()
+            con.row_factory = sqlite3.Row
+            cur = con.cursor()
+            # 既定は過去30日に絞って historical noise を除外（全件出すと deck が
+            # 飽和する）。DECK の history セレクタが 7d / 30d / all を選ぶ。
+            retired_flag = (
+                "a.retired_at IS NOT NULL" if _has_retired_at() else "0"
+            )
+            cutoff_sql, cutoff_params = _history_cutoff(history_days)
+            cur.execute(
+                f"""
+                SELECT a.name, a.model, a.program, a.task_description, a.last_active_ts,
+                       {retired_flag} AS retired
+                FROM agents a
+                JOIN projects p ON a.project_id = p.id
+                WHERE p.human_key = ?
+                  {cutoff_sql}
+                ORDER BY a.last_active_ts DESC
+                """,
+                (project_key, *cutoff_params),
+            )
+            for r in cur.fetchall():
+                if r["name"] in seen:
+                    continue
+                la = _iso_to_epoch(r["last_active_ts"])
+                row = {
+                    "name": r["name"],
+                    "category": "retired" if r["retired"] else "gone",
+                    "running": False, "attached": False, "mail_linked": False,
+                    "cmd": "", "live": "",
+                    "model": _display_model(r["model"]), "model_raw": r["model"],
+                    "program": r["program"] or "",
+                    "provider": _provider_of(r["model"]),
+                    "ctx_window": None if r["program"] in harness_runtime.HARNESSES else _ctx_window(r["model"]),
+                    "ctx_used": None, "act_state": None,
+                    "work_disp": None, "last_disp": None,
+                    "task": r["task_description"] or "",
+                    "instruction": None,
+                    "deliv": len(didx.get(r["name"], [])),
+                    "mail_active": la,
+                    "last_active": la, "last_active_rel": _rel(la, now),
+                    "created": 0, "retired": bool(r["retired"]),
+                    "surface": "tmux",
+                }
+                # A Codex App runtime has no tmux pane.  It may still be a
+                # live dashboard agent, but only provider-validated snapshots
+                # are allowed to promote it from gone/retired.
+                runtime = None if r["retired"] else codex_apps.get(r["name"])
+                if runtime:
+                    _apply_codex_app_runtime(row, runtime)
+                rows.append(row)
+        except Exception:
+            pass  # 失敗しても tmux ベースの rows は返す
+        finally:
+            if con is not None:
+                con.close()
+
+    observed_now = time.time()
+    for row in rows:
+        row.update(harness_runtime.metadata(RUNTIME_DIR, row["name"], row.get("program")))
+        profile = persistent_profiles.get(row["name"])
+        row.update(
+            profile_provider=(profile or {}).get("profile_provider", ""),
+            parentless=(profile or {}).get("parentless"),
+            lifecycle=(profile or {}).get("lifecycle", "unknown"),
+            interaction=(profile or {}).get("interaction", "unknown"),
+        )
+        if row.get("program") in {"codex", "codex-cli"}:
+            row.update(_codex_history_binding(row["name"], now=observed_now))
+        row["resume_capability"] = _resume_capability_for_row(
+            row["name"],
+            row.get("program") or "",
+            category=row.get("category") or "",
+        )
+        row.update(_claude_row_mail_fields(row, category=row.get("category") or "", session_state=sessions.get(row["name"], {})))
+        signature = (
+            row.get("act_state"),
+            row.get("ctx_used"),
+            _stable_live(row.get("live") or ""),
+        )
+        row["observed_active"] = _observe_activity(
+            row["name"], signature, observed_now,
+        )
+    _prune_observed({row["name"] for row in rows})
+
+    order = {
+        "agent": 0,
+        "finished": 1,
+        "unnamed": 2,
+        "warmup": 3,
+        "infra": 4,
+        "idle": 5,
+        "gone": 6,
+        "retired": 7,
+    }
+    rows.sort(
+        key=lambda r: (
+            order.get(r["category"], 9),
+            0 if r["running"] else 1,
+            -r["last_active"],
+        )
+    )
+    return rows
+
+
+def _rel(epoch: int, now: int) -> str:
+    if not epoch:
+        return "—"
+    d = max(0, now - epoch)
+    if d < 60:
+        return f"{d}s 前"
+    if d < 3600:
+        return f"{d // 60}m 前"
+    if d < 86400:
+        return f"{d // 3600}h 前"
+    return f"{d // 86400}d 前"
+
+
+# --------------------------------------------------------------------------- #
+# Graph (親子 + ORRERY Mail 通信網)
+# --------------------------------------------------------------------------- #
+_CODEX_APP_PROVIDER = CodexAppRuntimeProvider()
+_CAPP_CACHE: dict = {"ts": 0.0, "map": {}}
+_CAPP_RUN_STATES = frozenset(("registering", "working", "waiting", "blocked"))
+
+
+def _codex_app_runtimes() -> dict[str, dict]:
+    """Return provider-validated Codex App records keyed by agent name."""
+    now = time.time()
+    if now - _CAPP_CACHE["ts"] < 4.5:
+        return _CAPP_CACHE["map"]
+    records: dict[str, dict] = {}
+    for snapshot in _CODEX_APP_PROVIDER.list_runtimes():
+        rec = dict(snapshot.metadata)
+        name = rec.get("agent_name")
+        if not isinstance(name, str) or not name:
+            continue
+        previous = records.get(name)
+        if previous and (previous.get("last_seen_at") or "") > (rec.get("last_seen_at") or ""):
+            continue
+        records[name] = rec
+    _CAPP_CACHE.update(ts=now, map=records)
+    return records
+
+
+def _codex_app_live(rec: dict) -> dict:
+    """Convert a provider record into the dashboard's live-state vocabulary."""
+    state = str(rec.get("state") or "")
+    seen = _iso_to_epoch(str(rec.get("last_seen_at") or "").replace("Z", ""))
+    delta = max(0, int(time.time()) - seen) if seen else 99999
+    # Bridge snapshots are write-on-change.  A once-working record that has not
+    # been refreshed for ten minutes must not remain visibly active forever.
+    if state in _CAPP_RUN_STATES and delta > 600:
+        state = "dormant"
+    running = state in _CAPP_RUN_STATES
+    delivery = rec.get("delivery") or {}
+    wake = str(delivery.get("wake_status") or "")
+    live = f"Codex App · {state}" if wake in ("", "idle") else f"Codex App · wake:{wake}"
+    return {
+        "present": True, "running": running, "attached": False,
+        "live": live, "state": "run" if running else "finished",
+        "sig": round(max(0.0, min(1.0, 1.0 - delta / 480.0)), 3) if running else 0.0,
+        "act_state": {"working": "work", "registering": "work", "waiting": "wait", "blocked": "ask"}.get(state),
+        "surface": "codex-app",
+    }
+
+
+def _open_codex_app(name: str) -> dict:
+    for snapshot in _CODEX_APP_PROVIDER.list_runtimes():
+        if snapshot.metadata.get("agent_name") == name:
+            result = _CODEX_APP_PROVIDER.perform(snapshot.external_id, "open")
+            if result.ok:
+                return {"ok": True, "action": "opened", "detail": "Codex App を前面化", **dict(result.details)}
+            return {"ok": False, "error": result.error or "Codex App activation failed"}
+    return {"ok": False, "error": "unknown Codex App runtime"}
+
+
+_GRAPH_CACHE: dict = {"ts": 0, "data": None}
+
+
+def _raw_graph() -> dict:
+    """graph_data.build_graph() を遅延 import + 8 秒キャッシュ。
+
+    build_graph の集計をポーリングのたびに繰り返さないようにする。"""
+    now = time.time()
+    if _GRAPH_CACHE["data"] is not None and now - _GRAPH_CACHE["ts"] < 8:
+        return _GRAPH_CACHE["data"]
+    if HERE not in sys.path:
+        sys.path.insert(0, HERE)
+    import graph_data  # noqa: PLC0415  (lazy: 壊れても全体は落とさない)
+
+    data = graph_data.build_graph()
+    _GRAPH_CACHE.update(ts=now, data=data)
+    return data
+
+
+# エージェント名 -> 成果物 LOG の索引（60秒キャッシュ）。
+# LOG_*.md の frontmatter `agent:` がノード名と一致するものを成果物とみなす。
+_DELIV_CACHE: dict = {"ts": 0.0, "key": None, "map": None}
+_DELIV_BASE_CACHE: dict = {"cwd": None, "base": None}
+_AGENT_FM_RE = re.compile(r"^agent:\s*(.+?)\s*$", re.M)
+
+
+def _deliverable_roots() -> list[str]:
+    """Return generic, project-scoped roots that may contain ``LOG_*.md``.
+
+    An explicit colon-separated ``AGENTSTACK_DELIVERABLE_ROOTS`` list is the
+    project's source of truth.  Otherwise the log skill's fallback contract is
+    used: ``logs/`` below the configured project.  With no project path, the
+    server's cwd is resolved to its git root once and then used as the fallback.
+    ``AGENTSTACK_VAULT`` remains a link-integration hint; it is not a private
+    directory-layout convention.
+    """
+    configured = os.environ.get("AGENTSTACK_DELIVERABLE_ROOTS", "").strip()
+    if configured:
+        candidates = configured.split(os.pathsep)
+    elif GLOBAL_MODE:
+        return []
+    else:
+        base = PROJECT_KEY if os.path.isabs(PROJECT_KEY) else ""
+        if not base:
+            base = VAULT if os.path.isabs(VAULT) else ""
+        if base:
+            base = os.path.realpath(os.path.expanduser(base))
+        else:
+            cwd = os.path.realpath(os.getcwd())
+            base = (
+                _DELIV_BASE_CACHE.get("base")
+                if _DELIV_BASE_CACHE.get("cwd") == cwd else None
+            )
+            if not base:
+                base = cwd
+                try:
+                    result = subprocess.run(
+                        ["git", "-C", cwd, "rev-parse", "--show-toplevel"],
+                        capture_output=True,
+                        text=True,
+                        timeout=2,
+                        check=False,
+                    )
+                    if result.returncode == 0 and result.stdout.strip():
+                        base = result.stdout.strip()
+                except (OSError, subprocess.SubprocessError):
+                    pass
+                _DELIV_BASE_CACHE.update(cwd=cwd, base=base)
+        candidates = [os.path.join(base, "logs")]
+
+    roots: list[str] = []
+    seen: set[str] = set()
+    for candidate in candidates:
+        candidate = candidate.strip()
+        if not candidate:
+            continue
+        root = os.path.realpath(os.path.expanduser(candidate))
+        if os.path.isdir(root) and root not in seen:
+            seen.add(root)
+            roots.append(root)
+    return roots
+
+
+def _deliverable_location(path: str, root: str) -> tuple[str, str]:
+    """Return ``(relative_path, obsidian_vault_name)`` for one result."""
+    if VAULT and not GLOBAL_MODE:
+        vault_root = os.path.realpath(VAULT)
+        real_path = os.path.realpath(path)
+        try:
+            if os.path.commonpath([real_path, vault_root]) == vault_root:
+                return (
+                    os.path.relpath(real_path, vault_root),
+                    os.path.basename(os.path.normpath(vault_root)),
+                )
+        except ValueError:
+            pass
+    return os.path.relpath(path, root), ""
+
+
+def _deliverables_index() -> dict:
+    """{agent_name: [{title, rel, mtime}, ...]} を返す（mtime 降順）。
+
+    走査対象は ``AGENTSTACK_DELIVERABLE_ROOTS``、未設定なら project の
+    ``logs/``。frontmatter 先頭付近のみ読むので軽量。"""
+    now = time.time()
+    roots = _deliverable_roots()
+    cache_key = (tuple(roots), os.path.realpath(VAULT) if VAULT else "")
+    cached = _DELIV_CACHE["map"]
+    if (cached is not None and _DELIV_CACHE.get("key") == cache_key
+            and now - _DELIV_CACHE["ts"] < 60):
+        return cached
+
+    idx: dict[str, list] = {}
+    seen_files: set[str] = set()
+    for root in roots:
+        for dp, _dn, fns in os.walk(root):
+            for fn in fns:
+                if not (fn.startswith("LOG_") and fn.endswith(".md")):
+                    continue
+                fp = os.path.join(dp, fn)
+                real_fp = os.path.realpath(fp)
+                if GLOBAL_MODE and not _is_within_root(real_fp, root):
+                    continue
+                if real_fp in seen_files:
+                    continue
+                seen_files.add(real_fp)
+                try:
+                    with open(fp, "r", encoding="utf-8", errors="ignore") as fh:
+                        head = fh.read(800)  # frontmatter のみで十分
+                except OSError:
+                    continue
+                m = _AGENT_FM_RE.search(head)
+                if not m:
+                    continue
+                ag = m.group(1).strip().strip('"').strip("'")
+                if not ag:
+                    continue
+                try:
+                    mt = int(os.path.getmtime(fp))
+                except OSError:
+                    mt = 0
+                rel, vault_name = _deliverable_location(fp, root)
+                idx.setdefault(ag, []).append(
+                    {"title": fn[:-3],
+                     "rel": rel,
+                     "vault": vault_name,
+                     "mtime": mt}
+                )
+    for v in idx.values():
+        v.sort(key=lambda x: -x["mtime"])
+    _DELIV_CACHE.update(ts=now, key=cache_key, map=idx)
+    return idx
+
+
+# --------------------------------------------------------------------------- #
+# Role annotations（ノードの「タスク内役割」ラベル: 人狼デモ / delegate 構図）
+#   $AGENTSTACK_RUNTIME_DIR/annotations.json =
+#       {agent_name: {"role": str, "emoji": str, "group": str}}
+#   tmux/agent-mail には無い情報を read-time に重ねる。色は spawn 系統に予約済
+#   なので役割は色で塗らず、ノード下のチップ文字で表現（UI 規約に従う）。
+# --------------------------------------------------------------------------- #
+ANNOT_PATH = os.path.join(RUNTIME_DIR, "annotations.json")
+LEGACY_ANNOT_PATH = os.path.join(HERE, "annotations.json")
+_ANNOT_CACHE: dict = {"path": "", "mtime": -1.0, "data": {}}
+_ANNOT_LOCK = threading.Lock()
+
+
+def _annotation_read_path() -> str:
+    """Return the canonical store, falling back to the pre-runtime location.
+
+    Once the runtime file exists it always wins.  This keeps a legacy install
+    readable until the next annotation write migrates the complete store.
+    """
+    if os.path.isfile(ANNOT_PATH):
+        return ANNOT_PATH
+    if os.path.isfile(LEGACY_ANNOT_PATH):
+        return LEGACY_ANNOT_PATH
+    return ANNOT_PATH
+
+
+def _annotations() -> dict:
+    """{agent_name: {role, emoji, group}} を返す。mtime ベースで再読込。
+
+    `{name: {...}}` の素形式と `{"agents": {name: {...}}}` ラッパの両対応。
+    壊れた JSON / 不在は空 dict（チップを出さないだけで全体は落とさない）。"""
+    path = _annotation_read_path()
+    try:
+        mt = os.path.getmtime(path)
+    except OSError:
+        _ANNOT_CACHE.update(path="", mtime=-1.0, data={})
+        return {}
+    if path == _ANNOT_CACHE.get("path") and mt == _ANNOT_CACHE["mtime"]:
+        return _ANNOT_CACHE["data"]
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            raw = json.load(f)
+    except (OSError, ValueError):
+        if path == _ANNOT_CACHE.get("path"):
+            return _ANNOT_CACHE.get("data") or {}
+        return {}
+    data: dict[str, dict] = {}
+    if isinstance(raw, dict):
+        src = raw.get("agents") if isinstance(raw.get("agents"), dict) else raw
+        for name, v in src.items():
+            if not isinstance(name, str) or not isinstance(v, dict):
+                continue
+            role = str(v.get("role", "")).strip()[:40]
+            emoji = str(v.get("emoji", "")).strip()[:8]
+            group = str(v.get("group", "")).strip()[:24]
+            if role or emoji or group:
+                data[name] = {"role": role, "emoji": emoji, "group": group}
+    _ANNOT_CACHE.update(path=path, mtime=mt, data=data)
+    return data
+
+
+# --------------------------------------------------------------------------- #
+# Name substitutions
+#   $AGENTSTACK_RUNTIME_DIR/name-substitutions.json =
+#       {registered_name: {"requested": str, "ts": str}}
+#
+#   ORRERY Mail does not always register the name it was asked for; which names
+#   it honours depends on its version. The agent then runs fine under a name
+#   nobody else can address it by, and the only trace is a missing portrait —
+#   a face is easy to read as a style choice, not as a fault. So the fact is
+#   recorded where it is known (at spawn) and stated in the UI, rather than
+#   left to be inferred from an absence.
+# --------------------------------------------------------------------------- #
+SUBST_PATH = os.path.join(RUNTIME_DIR, "name-substitutions.json")
+_SUBST_CACHE: dict = {"mtime": -1.0, "data": {}}
+_SUBST_LOCK = threading.Lock()
+
+
+def _name_substitutions() -> dict:
+    """{registered: requested}. Missing or corrupt file means no claims made."""
+    try:
+        mt = os.path.getmtime(SUBST_PATH)
+    except OSError:
+        _SUBST_CACHE.update(mtime=-1.0, data={})
+        return {}
+    if mt == _SUBST_CACHE["mtime"]:
+        return _SUBST_CACHE["data"]
+    try:
+        with open(SUBST_PATH, "r", encoding="utf-8") as f:
+            raw = json.load(f)
+    except (OSError, ValueError):
+        return _SUBST_CACHE.get("data") or {}
+    data: dict[str, str] = {}
+    if isinstance(raw, dict):
+        for name, entry in raw.items():
+            if not isinstance(name, str):
+                continue
+            requested = ""
+            if isinstance(entry, dict):
+                requested = str(entry.get("requested", "")).strip()[:128]
+            elif isinstance(entry, str):
+                requested = entry.strip()[:128]
+            if requested and requested != name:
+                data[name] = requested
+    _SUBST_CACHE.update(mtime=mt, data=data)
+    return data
+
+
+def _record_name_substitution(registered: str, requested: str) -> None:
+    """Persist that a requested identity was not the one granted.
+
+    Best effort by design: failing to write this must not fail a spawn that
+    otherwise worked. It is logged either way.
+    """
+    if not registered or not requested or registered == requested:
+        return
+    try:
+        with _SUBST_LOCK:
+            try:
+                with open(SUBST_PATH, "r", encoding="utf-8") as f:
+                    store = json.load(f)
+            except (OSError, ValueError):
+                store = {}
+            if not isinstance(store, dict):
+                store = {}
+            store[registered] = {
+                "requested": requested,
+                "ts": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+            }
+            os.makedirs(RUNTIME_DIR, exist_ok=True)
+            tmp = f"{SUBST_PATH}.{os.getpid()}.tmp"
+            with open(tmp, "w", encoding="utf-8") as f:
+                json.dump(store, f, indent=2, ensure_ascii=False)
+            os.replace(tmp, SUBST_PATH)
+    except OSError as e:
+        logging.warning("could not record name substitution %r->%r: %s",
+                        requested, registered, e)
+
+
+def _write_annotation(name: str, role: str, emoji: str,
+                      group: str = "") -> dict:
+    """1 エージェント分の annotation を upsert / 削除。
+
+    role / emoji / group がすべて空な場合だけ削除する。
+
+    runtime の annotations.json をロックして read-modify-write（atomic
+    replace）。旧 dashboard path しかない場合は内容を引き継いで新 path
+    に書く。"""
+    if not name or _NAME_RE.fullmatch(name) is None:
+        return {"ok": False, "error": "invalid name"}
+    role = (role or "").strip()[:40]
+    emoji = (emoji or "").strip()[:8]
+    group = (group or "").strip()[:24]
+    with _ANNOT_LOCK:
+        source_path = _annotation_read_path()
+        try:
+            with open(source_path, "r", encoding="utf-8") as f:
+                raw = json.load(f)
+            if not isinstance(raw, dict):
+                raw = {}
+        except (OSError, ValueError):
+            raw = {}
+        wrapped = isinstance(raw.get("agents"), dict)
+        store = raw["agents"] if wrapped else raw
+        removed = False
+        if role or emoji or group:
+            store[name] = {"role": role, "emoji": emoji, "group": group}
+        else:
+            store.pop(name, None)
+            removed = True
+        out = {"agents": store} if wrapped else store
+        os.makedirs(os.path.dirname(ANNOT_PATH), exist_ok=True)
+        tmp = ANNOT_PATH + ".tmp"
+        with open(tmp, "w", encoding="utf-8") as f:
+            json.dump(out, f, ensure_ascii=False, indent=2)
+        os.replace(tmp, ANNOT_PATH)
+    _ANNOT_CACHE.update(path="", mtime=-1.0)  # 次回 _annotations で強制再読込
+    if removed:
+        return {"ok": True, "removed": name}
+    return {"ok": True, "annot": {"name": name, "role": role,
+                                  "emoji": emoji, "group": group}}
+
+
+def _graph_health(g: dict) -> dict:
+    return {
+        **({"error": g["error"]} if "error" in g else {}),
+        "timestamp_diagnostics": g.get(
+            "timestamp_diagnostics", {"invalid_count": 0, "fields": {}}
+        ),
+        "degraded": bool(g.get("degraded")),
+    }
+
+
+def _graph_keep(nodes: list[dict], days: float, show_all: bool):
+    """Which nodes a graph view shows: all of them, or the running and recent.
+
+    Returns (keep, mx, sessions, codex_apps, process_tree) so the full payload
+    can reuse the tmux/process snapshot it was decided from."""
+    mx = max((n["last_active"] for n in nodes if n["last_active"]), default=0)
+    win = days * 86400
+    sessions = tmux_state()  # name -> {attached, cmd, title, activity, ...}
+    codex_apps = _codex_app_runtimes()
+    programs = {n["name"]: (n.get("program") or "") for n in nodes}
+    process_tree = (
+        _process_tree_snapshot()
+        if any(_supports_agent_process_liveness(program) for program in programs.values())
+        else None
+    )
+    if show_all:
+        keep = {n["name"] for n in nodes}
+    else:
+        # running_set: claude/node プロセスが alive な tmux session のみ。
+        # zsh husk (session 残存だが claude 非稼働) は除外する。
+        running_set: set[str] = set()
+        for nm, s in sessions.items():
+            t = (s.get("title") or "").strip()
+            running = s["cmd"] in ("node", "claude") or bool(
+                t and _is_activity_glyph(t[:1])
+            )
+            program = programs.get(nm, "")
+            agent_alive = _agent_process_alive(s.get("pane_pid"), process_tree, program)
+            if agent_alive is not None:
+                running = agent_alive
+            elif program in harness_runtime.HARNESSES:
+                running = False
+            elif program.startswith("codex") and not running:
+                running = True
+            if running:
+                running_set.add(nm)
+        retired_names = {n["name"] for n in nodes if n.get("retired")}
+        for nm, rec in codex_apps.items():
+            if nm not in retired_names and _codex_app_live(rec)["running"]:
+                running_set.add(nm)
+        # running な agent は window bypass、それ以外は last_active でフィルタ。
+        keep = {
+            n["name"]
+            for n in nodes
+            if n["name"] in running_set or
+               (n["last_active"] and (mx - n["last_active"]) <= win)
+        }
+    return keep, mx, sessions, codex_apps, process_tree
+
+
+def _graph_response(days: float, show_all: bool, spawn_only: bool) -> dict:
+    """The /api/graph body. spawn_only computes nothing per row."""
+    try:
+        if spawn_only:
+            payload = {"nodes": [], "edges": [], "spawn_only": True,
+                       **graph_spawn_payload(days, show_all)}
+        else:
+            payload = graph_payload(days, show_all)
+    except Exception as e:  # noqa: BLE001
+        payload = {"nodes": [], "edges": [], "spawn": [],
+                   "error": f"{type(e).__name__}: {e}",
+                   "timestamp_diagnostics": {
+                       "invalid_count": 0, "fields": {},
+                   },
+                   "degraded": True,
+                   **({"spawn_only": True} if spawn_only else {})}
+    payload["ts"] = int(time.time())
+    return payload
+
+
+def graph_spawn_payload(days: float, show_all: bool) -> dict:
+    """Only the parent/child lineage, for `spawn_only` callers (the cockpit).
+
+    The cockpit polls this every 6 s. It never needed the per-row resume
+    capability, Mail fields or runtime reads of the full payload, which cost
+    one or two SQLite connections per row (AUDIT 2026-10-01)."""
+    g = _raw_graph()
+    nodes = g.get("nodes", [])
+    if show_all:
+        keep = {n["name"] for n in nodes}
+    else:
+        keep = _graph_keep(nodes, days, show_all)[0] if nodes else set()
+    return {
+        "spawn": [s for s in g.get("spawn", []) if s["source"] in keep and s["target"] in keep],
+        **_graph_health(g),
+    }
+
+
+@_with_registration_batch
+def graph_payload(days: float, show_all: bool) -> dict:
+    """recency で間引いた {nodes, edges, spawn} + tmux ライブ状態。
+
+    graph_data normalizes both Rust INTEGER microseconds and legacy ISO TEXT
+    to UTC epoch seconds before this recency filter runs."""
+    g = _raw_graph()
+    graph_health = _graph_health(g)
+    nodes = g.get("nodes", [])
+    if not nodes:
+        return {
+            "nodes": [], "edges": [], "spawn": [], "total": 0,
+            **graph_health,
+        }
+    keep, mx, sessions, codex_apps, process_tree = _graph_keep(nodes, days, show_all)
+    now_real = int(time.time())
+
+    def live(name: str, program: str | None = None) -> dict:
+        s = sessions.get(name)
+        if not s:
+            if program == "codex-app" and (rec := codex_apps.get(name)):
+                return _codex_app_live(rec)
+            # tmux セッション無し = プロセス終了済み（DB登録のみ残る）
+            return {"present": False, "running": False, "attached": False,
+                    "live": "", "state": "gone", "sig": 0.0}
+        t = (s.get("title") or "").strip()
+        running = s["cmd"] in ("node", "claude") or (
+            bool(t) and _is_activity_glyph(t[:1])
+        )
+        agent_alive = _agent_process_alive(s.get("pane_pid"), process_tree, program)
+        if agent_alive is not None:
+            running = agent_alive
+        elif program in harness_runtime.HARNESSES:
+            running = False
+        elif program and program.startswith("codex") and not running:
+            running = True
+        live_txt = ""
+        if t and t not in (s.get("cmd", ""), name) and not t.startswith("/"):
+            live_txt = t
+        # 生存シグナル sig: tmux session_activity の新しさ＝実際に作業して
+        # いるかの近似。ORRERY Mail のメッセージ数(act)は作業量と無関係なので
+        # 脈拍駆動には使わない（CalmKepler レビュー P1 指摘）
+        delta = max(0, now_real - int(s.get("activity") or 0))
+        sig = max(0.0, min(1.0, 1.0 - delta / 480.0))
+        # graph ノードは全て ORRERY Mail 登録済。present だが claude 非稼働
+        # = exit 済でセッションだけ残った husk → idle ではなく finished
+        # HP(ctx 残量) + 動作状態は running のみ取得（capture-pane 抑制）
+        rt = (
+            (_native_context_runtime(name, s.get("created"), s.get("session_id"), program)
+             if program in harness_runtime.HARNESSES
+             else _agent_runtime(name, s.get("created"), s.get("session_id")))
+            if running else {}
+        )
+        return {
+            "present": True,
+            "running": running,
+            "attached": s.get("attached", False),
+            "live": live_txt,
+            "state": ("unknown" if program in harness_runtime.HARNESSES and agent_alive is None
+                      else "run" if running else "finished"),
+            "sig": round(sig, 3) if running else 0.0,
+            "ctx_used": rt.get("ctx_used"),
+            "act_state": rt.get("act_state"),
+            "provider_stall": _provider_stall_view(name, s) if running else None,
+            "ctx_window": rt.get("ctx_window"),  # ペイン直読み（権威）
+            "work_disp": rt.get("work_disp"),    # work 中の経過（live）
+            "work_secs": rt.get("work_secs"),
+            "last_disp": rt.get("last_disp"),    # wait 中の直前ターン尺
+            "pane_model": rt.get("pane_model"),  # ステータスバー由来モデル
+        }
+
+    didx = _deliverables_index()  # {agent: [...]}（60秒キャッシュ）
+    annots = _annotations()       # {agent: {role, emoji, group}}（mtime キャッシュ）
+    substitutions = _name_substitutions()  # {registered: requested}
+    persistent_profiles = _persistent_profiles()
+    fn = [
+        {**n, "rel": _rel(n["last_active"], mx) if n["last_active"] else "—",
+         "deliv": len(didx.get(n["name"], [])),
+         "annot": annots.get(n["name"]),
+         # 要求した名前が通らず別名で登録された場合のみ非空。肖像が出ない
+         # 理由をここで名指しする（顔の不在から察させない）。
+         "requested_name": substitutions.get(n["name"], ""),
+         "profile_provider": persistent_profiles.get(n["name"], {}).get("profile_provider", ""),
+         "parentless": persistent_profiles.get(n["name"], {}).get("parentless"),
+         "lifecycle": persistent_profiles.get(n["name"], {}).get("lifecycle", "unknown"),
+         "interaction": persistent_profiles.get(n["name"], {}).get("interaction", "unknown"),
+         **(lv := live(n["name"], n.get("program"))),
+         # 窓: running はペイン直読み(権威)、不在はモデル文字列で補完
+         "ctx_window": (lv.get("ctx_window") if n.get("program") in harness_runtime.HARNESSES
+                        else lv.get("ctx_window") or _ctx_window(n.get("model"))),
+         # モデル: pane 由来を優先 (warm pool claim で DB が乖離するケース)
+         #   display 形式に揃える (build_agents と同じ正規化)
+         "model": _display_model(_pane_model_for(lv.get("pane_model"), n.get("program"))) or n.get("model"),
+         "model_raw": _pane_model_for(lv.get("pane_model"), n.get("program")) or n.get("model") or "",
+         # provider: family ベースで anthropic / openai 等を判定（logo 用）
+         "provider": _provider_of(_pane_model_for(lv.get("pane_model"), n.get("program"))
+                                  or n.get("model") or n.get("program"))}
+        for n in nodes
+        if n["name"] in keep
+    ]
+    for row in fn:
+        row.update(harness_runtime.metadata(RUNTIME_DIR, row["name"], row.get("program")))
+        category = (
+            "retired"
+            if row.get("retired")
+            else (row.get("state") or ("run" if row.get("running") else "gone"))
+        )
+        row["resume_capability"] = _resume_capability_for_row(
+            row["name"], row.get("program") or "", category=category
+        )
+        row.update(_claude_row_mail_fields(row, category=category, session_state=sessions.get(row["name"], {})))
+    fe = [
+        e
+        for e in g.get("edges", [])
+        if e["source"] in keep and e["target"] in keep
+    ]
+    fs = [
+        s
+        for s in g.get("spawn", [])
+        if s["source"] in keep and s["target"] in keep
+    ]
+    return {
+        "nodes": fn,
+        "edges": fe,
+        "spawn": fs,
+        "total": len(nodes),
+        "shown": len(fn),
+        **graph_health,
+    }
+
+
+# --------------------------------------------------------------------------- #
+# Jump
+# --------------------------------------------------------------------------- #
+# Ghostty 自身の Scripting Suite を使う(System Events 非依存 = launchd でも可)。
+# OSC2 でセットした端末タイトル(= セッション名)を持つ terminal を探して focus。
+FOCUS_OSA = """
+on run argv
+  set tgt to item 1 of argv
+  tell application "Ghostty"
+    activate
+    repeat with w in windows
+      repeat with t in tabs of w
+        repeat with trm in terminals of t
+          try
+            if (name of trm) contains tgt then
+              focus trm
+              return "raised"
+            end if
+          end try
+        end repeat
+      end repeat
+    end repeat
+  end tell
+  return "activated"
+end run
+"""
+
+
+_NAME_RE = re.compile(r"[A-Za-z0-9_.\-]+")
+
+
+def _valid(session: str) -> bool:
+    return bool(session) and _NAME_RE.fullmatch(session) is not None
+
+
+def _has_session(session: str) -> bool:
+    # The tmux consumer refuses has-session on a missing target
+    # (TMUX_TARGET_UNAVAILABLE) instead of answering "no", so read absence
+    # from the session list and ask has-session only for a listed name.
+    listed = _tmux_run(['list-sessions', '-F', '#{session_name}'], capture_output=True, text=True)
+    if listed.returncode == 0 and session not in (listed.stdout or "").splitlines():
+        return False
+    return _tmux_run(['has-session', '-t', f'={session}'], capture_output=True).returncode == 0
+
+
+ITERM_OSA = """
+on run argv
+  set cmd to item 1 of argv
+  tell application "iTerm2"
+    activate
+    create window with default profile command cmd
+  end tell
+end run
+"""
+
+
+TERMINAL_OSA = """
+on run argv
+  set cmd to item 1 of argv
+  tell application "Terminal"
+    activate
+    do script cmd
+  end tell
+end run
+"""
+
+
+def _mac_app_exists(app_name: str) -> bool:
+    return (
+        os.path.isdir(os.path.join("/Applications", app_name))
+        or os.path.isdir(os.path.expanduser(f"~/Applications/{app_name}"))
+    )
+
+
+def _is_wsl() -> bool:
+    """True inside a WSL distro (kernel string carries 'microsoft')."""
+    if sys.platform != "linux":
+        return False
+    try:
+        with open("/proc/version", encoding="utf-8", errors="replace") as fh:
+            return "microsoft" in fh.read().lower()
+    except OSError:
+        return False
+
+
+def _wsl_distro() -> str:
+    return os.environ.get("WSL_DISTRO_NAME", "").strip()
+
+
+def _auto_terminal() -> str:
+    if sys.platform != "darwin":
+        # WSL2: Windows Terminal is reachable through interop as wt.exe, and a
+        # new tab running `wsl.exe -d <distro> --exec tmux attach` is the
+        # click-to-jump equivalent of a Ghostty window (2026-09-07).
+        if _is_wsl() and _wsl_distro() and shutil.which("wt.exe"):
+            return "wt"
+        return "none"
+    if _mac_app_exists("Ghostty.app") or shutil.which("ghostty"):
+        return "ghostty"
+    if _mac_app_exists("iTerm.app") or _mac_app_exists("iTerm2.app"):
+        return "iterm"
+    if _mac_app_exists("Terminal.app") or os.path.isdir(
+        "/System/Applications/Utilities/Terminal.app"
+    ):
+        return "terminal"
+    return "none"
+
+
+def _terminal_adapter() -> str:
+    if TERMINAL_SETTING in ("", "auto"):
+        return _auto_terminal()
+    if TERMINAL_SETTING in ("ghostty", "iterm", "terminal", "wt", "none"):
+        return TERMINAL_SETTING
+    return "none"
+
+
+def _terminal_unsupported() -> dict:
+    return {
+        "ok": False,
+        "error": "terminal jump unsupported; set AGENTSTACK_TERMINAL=ghostty, iterm, terminal, wt (WSL2), or none",
+    }
+
+
+def _zsh_safe_quote(a: str) -> str:
+    """shlex.quote + zsh の先頭展開対策。
+
+    shlex.quote は `=` と `~` を「安全」扱いして裸で返すが、zsh は
+    先頭 `=` を EQUALS 展開(`=cmd` → コマンドのパス)、先頭 `~` を
+    チルダ展開する。tmux の完全一致ターゲット `=SwiftBohr` をそのまま
+    `do script`(Terminal/iTerm は zsh で実行)へ渡すと
+    `zsh: SwiftBohr not found` になる。先頭がこれらの文字なら強制クオート。
+    """
+    s = shlex.quote(a)
+    if s == a and a[:1] in ("=", "~"):
+        s = "'" + a.replace("'", "'\\''") + "'"
+    return s
+
+
+def _shell_join(argv: list[str]) -> str:
+    return " ".join(_zsh_safe_quote(a) for a in argv)
+
+
+def _write_wt_launcher(tmux_args: list[str], title: str) -> str:
+    """One-shot launcher script for the wt adapter (see there).
+
+    Lives under the runtime dir, named after the session so a re-launch
+    overwrites rather than accumulates; removes itself once tmux has exec'd.
+    """
+    d = os.path.join(RUNTIME_DIR, "wt-launch")
+    os.makedirs(d, exist_ok=True)
+    safe = re.sub(r"[^A-Za-z0-9_.-]", "_", title) or "session"
+    path = os.path.join(d, f"{safe}.sh")
+    body = (
+        "#!/bin/bash\n"
+        f"rm -f {shlex.quote(path)}\n"
+        f"exec env -u TMUX -u TMUX_PANE {shlex.join(tmux_args)}\n"
+    )
+    tmp = path + ".tmp"
+    with open(tmp, "w", encoding="utf-8") as fh:
+        fh.write(body)
+    os.chmod(tmp, 0o700)
+    os.replace(tmp, path)
+    return path
+
+
+def _legacy_terminal_argv(tmux_args: list[str]) -> list[str]:
+    """Admit now and re-admit inside the actual terminal/ttyd child."""
+    if not tmux_args or tmux_args[0] != 'tmux':
+        return tmux_args
+    consumer = _legacy_tmux_consumer()
+    if consumer is None:
+        return tmux_args
+    consumer.admitted_argv(tmux_args[1:])
+    helper = Path(HOOKS_DIR).parent / 'bin/lib/runtime_tmux_consumer.py'
+    transport = consumer.transport
+    fixed = ['env', 'AGENTSTACK_HOME='+str(consumer.home)]
+    if transport.identity is not None:
+        fixed.append('TMUX='+str(transport.path)+','+str(transport.server_pid)+',0')
+    else:
+        fixed = ['env', '-u', 'TMUX', 'AGENTSTACK_HOME='+str(consumer.home), 'TMUX_TMPDIR='+str(transport.path.parent.parent)]
+    return [*fixed, sys.executable, str(helper), *tmux_args[1:]]
+
+
+def _open_terminal_tmux(tmux_args: list[str], title: str) -> dict:
+    adapter = _terminal_adapter()
+    if adapter == "none":return _terminal_unsupported()
+    try:
+        tmux_args = _legacy_terminal_argv(tmux_args)
+        if adapter == "ghostty":
+            cmd = [
+                "env", "-u", "TMUX", "-u", "TMUX_PANE",
+                "open", "-na", "Ghostty.app", "--args",
+                f"--title={title}", "-e",
+            ] + tmux_args
+            r = subprocess.run(cmd, capture_output=True, text=True, timeout=8)
+        elif adapter == "wt":
+            # Windows Terminal, new tab in the current window (-w 0), running
+            # the tmux command back inside this distro. The argv is written to
+            # a launcher script first: wt.exe's own CLI splits on `;` and the
+            # WSL interop re-quotes every argument, so a resume line such as
+            # `export A=..; exec claude --resume ..` came apart in transit
+            # ("The system cannot find the file specified", 2026-09-07). The
+            # script path has no spaces or quotes, so nothing on the Windows
+            # side has anything to reinterpret.
+            script = _write_wt_launcher(tmux_args, title)
+            cmd = [
+                "wt.exe", "-w", "0", "new-tab", "--title", title,
+                "wsl.exe", "-d", _wsl_distro(), "--exec", "bash", script,
+            ]
+            r = subprocess.run(cmd, capture_output=True, text=True, timeout=8)
+        else:
+            shell_cmd = _shell_join(
+                ["env", "-u", "TMUX", "-u", "TMUX_PANE"] + tmux_args
+            )
+            osa = ITERM_OSA if adapter == "iterm" else TERMINAL_OSA
+            r = subprocess.run(
+                ["osascript", "-e", osa, shell_cmd],
+                capture_output=True, text=True, timeout=8,
+            )
+        if r.returncode != 0:
+            msg = (r.stderr or r.stdout or "").strip()
+            return {"ok": False, "error": msg or f"{adapter} launch failed"}
+        return {"ok": True, "adapter": adapter}
+    except Exception as e:  # noqa: BLE001
+        return {"ok": False, "error": f"{adapter} launch failed: {e}"}
+
+
+def _resume_opens_terminal(open_terminal: bool | None = None) -> bool:
+    return open_terminal if open_terminal is not None else _env_text("AGENTSTACK_AUTO_OPEN_CHILD", "1") != "0"
+
+
+def _launch_resume_tmux(tmux_args: list[str], title: str, open_terminal: bool | None = None) -> dict:
+    if _resume_opens_terminal(open_terminal):
+        return _open_terminal_tmux(tmux_args, title=title)
+    # -A would attach to an existing session and block the HTTP request.
+    detached = ["-d" if arg == "-A" else arg for arg in tmux_args]
+    try:
+        if detached and detached[0]=='tmux':
+            result = _tmux_run(detached[1:],capture_output=True,text=True,timeout=8)
+        else:
+            result = subprocess.run(["env", "-u", "TMUX", "-u", "TMUX_PANE", *detached],
+                                    capture_output=True,text=True,timeout=8)
+    except Exception as exc:
+        return {"ok": False, "error": f"detached tmux launch failed: {exc}"}
+    if result.returncode:
+        return {"ok": False, "error": (result.stderr or result.stdout or "detached tmux launch failed").strip()}
+    return {"ok": True, "adapter": "detached"}
+
+
+def _launch_claude_resume_tmux(tmux_args: list[str], title: str,
+                             open_terminal: bool | None, replace_husk: bool) -> dict:
+    """Prepare a gated replacement, preserving the old shell until startup commits."""
+    generation = secrets.token_hex(12)
+    staging = f"{title}.resume-{generation}"
+    backup = f"{title}.husk-{generation}"
+    channel = f"agentstack-resume-{generation}"
+    old_id = new_id = None
+    old_renamed = False
+    creation_attempted = False
+    control_env = {key: value for key, value in os.environ.items() if key not in {"TMUX", "TMUX_PANE"}}
+
+    def tmux(*args):
+        result = _tmux_run([*args], capture_output=True, text=True, timeout=8, env=control_env)
+        if result.returncode:
+            raise RuntimeError("tmux resume preparation failed")
+        return result.stdout.strip()
+
+    try:
+        if replace_husk:
+            listing = tmux("list-sessions", "-F", "#{session_name}\t#{session_id}")
+            old_id = next((row.split("\t", 1)[1] for row in listing.splitlines()
+                           if row.startswith(title + "\t")), None)
+            if old_id is None or not re.fullmatch(r"\$\d+", old_id):
+                raise RuntimeError("Existing Claude shell could not be identified")
+        staged = list(tmux_args)
+        staged[staged.index("-s") + 1] = staging
+        staged = ["-d" if arg == "-A" else arg for arg in staged]
+        staged[2:2] = ["-P", "-F", "#{session_id}"]
+        wait_bin = shlex.quote(shutil.which("tmux") or "tmux")
+        staged[-1] = f"{wait_bin} wait-for {shlex.quote(channel)} || exit $?; " + staged[-1]
+        creation_attempted = True
+        result = subprocess.run(["env", "-u", "TMUX", "-u", "TMUX_PANE", *staged],
+                                capture_output=True, text=True, timeout=8)
+        if result.returncode:
+            raise RuntimeError("Detached Claude tmux preparation failed")
+        new_id = result.stdout.strip()
+        if not re.fullmatch(r"\$\d+", new_id):
+            # A successful creation has a unique name even if its receipt is malformed.
+            new_id = f"={staging}"
+            raise RuntimeError("New Claude session could not be identified")
+        adapter = "detached"
+        if _resume_opens_terminal(open_terminal):
+            opened = _open_terminal_tmux(["tmux", "attach-session", "-t", new_id], title=title)
+            if not opened.get("ok"):
+                raise RuntimeError("Claude terminal window could not be opened")
+            adapter = opened.get("adapter")
+        if old_id is not None:
+            tmux("rename-session", "-t", old_id, backup)
+            old_renamed = True
+        tmux("rename-session", "-t", new_id, title)
+        tmux("wait-for", "-S", channel)
+    except Exception as exc:
+        errors = []
+        if new_id is not None:
+            try:
+                tmux("kill-session", "-t", new_id)
+            except Exception:
+                errors.append("Prepared Claude session could not be removed")
+        elif creation_attempted:
+            # The tmux request can time out after creating the gated session.
+            # Its unique name is safe to clean even when no receipt was returned.
+            try:
+                _tmux_run(['kill-session', '-t', f'={staging}'], capture_output=True, text=True, timeout=8, env=control_env)
+            except Exception:
+                errors.append("Prepared Claude session cleanup could not be confirmed")
+        if old_renamed:
+            try:
+                tmux("rename-session", "-t", old_id, title)
+            except Exception:
+                errors.append(f"Original shell remains in {backup}; its name could not be restored")
+        answer = {"ok": False, "error": str(exc)}
+        if errors:
+            answer["rollback_errors"] = errors
+        return answer
+    # Startup is now committed. Failure to dispose the old shell must not
+    # turn a running CLI into a reported failed launch or retire its identity.
+    answer = {"ok": True, "adapter": adapter}
+    if old_id is not None:
+        try:
+            tmux("kill-session", "-t", old_id)
+        except Exception:
+            answer["warning"] = f"Original shell retained in {backup}"
+    return answer
+
+
+def _focus_existing_terminal(session: str) -> bool:
+    if _terminal_adapter() != "ghostty":
+        return False
+    try:
+        r = subprocess.run(
+            ["osascript", "-e", FOCUS_OSA, session],
+            capture_output=True,
+            text=True,
+            timeout=8,
+        )
+        return (r.stdout or "").strip() == "raised"
+    except Exception:
+        return False
+
+
+CLAUDE_PROJECTS = os.path.expanduser("~/.claude/projects")
+
+
+_TPATH_CACHE: dict[str, tuple[tuple, str | None]] = {}
+_CLAUDE_TRANSCRIPT_CATALOG_CACHE: dict = {
+    "checked_at": 0.0,
+    "root": "",
+    "key": None,
+}
+
+
+def _claude_transcript_catalog_key(*, refresh: bool = False) -> tuple:
+    """Cheap invalidation key for Claude transcript resolution results.
+
+    A transcript file grows while its session is live, but resume capability is
+    only requested after that session has finished.  New, removed, or renamed
+    transcripts update their project directory mtime, so statting the root and
+    its immediate project directories is enough to invalidate a completed-row
+    lookup without opening thousands of JSONL files on every dashboard poll.
+    """
+
+    root = os.path.realpath(CLAUDE_PROJECTS)
+    now = time.monotonic()
+    cached = _CLAUDE_TRANSCRIPT_CATALOG_CACHE
+    if (
+        not refresh
+        and cached["root"] == root
+        and cached["key"] is not None
+        and now - cached["checked_at"] < 1.0
+    ):
+        return cached["key"]
+    try:
+        root_mtime = os.stat(root).st_mtime_ns
+    except OSError:
+        key = (root, None, ())
+        cached.update(checked_at=now, root=root, key=key)
+        return key
+    projects = []
+    try:
+        with os.scandir(root) as entries:
+            for entry in entries:
+                try:
+                    if entry.is_dir():
+                        projects.append((entry.path, entry.stat().st_mtime_ns))
+                except OSError:
+                    continue
+    except OSError:
+        key = (root, root_mtime, ())
+        cached.update(checked_at=now, root=root, key=key)
+        return key
+    projects.sort()
+    key = (root, root_mtime, tuple(projects))
+    cached.update(checked_at=now, root=root, key=key)
+    return key
+
+
+def _store_claude_transcript_resolution(
+    session: str, catalog_key: tuple, path: str | None
+) -> None:
+    _TPATH_CACHE[session] = (catalog_key, path)
+    # A full /api/jump verification must be visible on the next DECK/NETWORK
+    # poll, rather than hidden behind the short cross-view capability cache.
+    _invalidate_resume_capability_cache(session)
+
+
+def _cached_claude_transcript_path(
+    session: str, *, refresh_catalog: bool = False,
+) -> tuple[bool, str | None, tuple]:
+    """Return a proven cached result without entering the content scanner."""
+
+    catalog_key = _claude_transcript_catalog_key(refresh=refresh_catalog)
+    indexed = _indexed_transcript(session)
+    if indexed:
+        _claim_transcript(indexed, session, 1 << 30, exact=True)
+        _store_claude_transcript_resolution(session, catalog_key, indexed)
+        return True, indexed, catalog_key
+    hit = _TPATH_CACHE.get(session)
+    if hit and hit[0] == catalog_key:
+        path = hit[1]
+        if path is None or os.path.isfile(path):
+            return True, path, catalog_key
+    return False, None, catalog_key
+
+
+def _ownership_score(text: str, name: str) -> int:
+    """text が name の「自分の transcript」である度合い。
+
+    単純な `"name"` 出現数だと、他エージェントを多く語る巨大な
+    オーケストレータ transcript(例: 親/事故対応セッション)が本人の
+    小さな transcript を出現数で上回り誤判定する。そこで「その
+    エージェントが“自分として”行動した痕跡」を強く重み付けする:
+      - `"sender_name": "N"` … N が send_message した(=N の transcript)
+      - `"agent_name": "N"`  … N が fetch_inbox/予約を自分で実行
+    これらは他人の transcript にはほぼ出ない(他人は N の sender_name で
+    送らない)。最後に素の `"N"` 出現を弱い加点として残す。
+    """
+    s = 0
+    for key, w in (("sender_name", 6), ("agent_name", 4)):
+        s += w * text.count(f'"{key}": "{name}"')
+        s += w * text.count(f'"{key}":"{name}"')
+    s += text.count(f'"{name}"')          # 弱い加点(mail 未使用 agent 用)
+    return s
+
+
+def _scan_selfref(files: list[str], name: str, cap: int) -> tuple[str | None, int]:
+    """files(新しい順)を最大 cap 件、各 3MB まで読み、所有度スコア最大の
+    (ファイル, スコア)を返す。スコア 0 なら (None, 0)。
+
+    スコアも返すのは、別エージェントが同じファイルを主張したときに
+    どちらが本人かを比べるため(下の _claim_transcript)。"""
+    best, best_s = None, 0
+    for f in files[:cap]:
+        try:
+            with open(f, encoding="utf-8", errors="ignore") as fh:
+                sc = _ownership_score(fh.read(3_000_000), name)
+        except OSError:
+            continue
+        if sc > best_s:
+            best, best_s = f, sc
+    return (best, best_s) if best_s > 0 else (None, 0)
+
+
+# transcript path -> (agent name, score, exact)。
+# 一本の transcript は一人のものである。この登録簿が無いと、子について
+# 多く語る親の transcript が子の小さな transcript を出現数で上回り、
+# 親子のカードに同じ履歴が出る(テスター報告 ⑯: 親子とも 66/66 で
+# 同一 jsonl、内容は親のもの)。名前ごとに独立に解いていたので、
+# 二人が同じ答えに到達しても誰も気づかなかった。
+_TPATH_OWNER: dict[str, tuple[str, int, bool]] = {}
+
+
+def _claim_transcript(path: str, name: str, score: int, *, exact: bool) -> bool:
+    """path を name のものとして主張する。通れば True。
+
+    exact(登録時に焼いた session index)は常に勝ち、決して奪われない。
+    ヒューリスティック同士は所有度スコアで比べ、弱いほうは諦める
+    ——他人の履歴を出すくらいなら、何も出さないほうがよい。
+    """
+    held = _TPATH_OWNER.get(path)
+    if held is not None and held[0] != name:
+        held_name, held_score, held_exact = held
+        if held_exact and not exact:
+            return False
+        if not exact and score <= held_score:
+            return False
+        # こちらの主張のほうが強い: 相手のキャッシュを捨てて奪う。
+        _TPATH_CACHE.pop(held_name, None)
+    _TPATH_OWNER[path] = (name, score, exact)
+    return True
+
+
+def _agent_window(name: str) -> tuple[int, int]:
+    """ORRERY Mail DB から (inception_epoch, last_active_epoch)。不明は 0。"""
+    if not os.path.exists(DB_PATH):
+        return (0, 0)
+    con = None
+    try:
+        con = _db()
+        r = con.execute(
+            "SELECT inception_ts, last_active_ts FROM agents "
+            "WHERE name=? ORDER BY last_active_ts DESC LIMIT 1",
+            (name,),
+        ).fetchone()
+        if r:
+            return (_iso_to_epoch(r[0]), _iso_to_epoch(r[1]))
+    except Exception:
+        pass
+    finally:
+        if con is not None:
+            con.close()
+    return (0, 0)
+
+
+def _all_transcripts() -> list[str]:
+    out = []
+    try:
+        for d in os.scandir(CLAUDE_PROJECTS):
+            if not d.is_dir():
+                continue
+            for f in os.scandir(d.path):
+                if f.name.endswith(".jsonl"):
+                    out.append(f.path)
+    except OSError:
+        pass
+    return out
+
+
+SESSION_INDEX_DIR = os.path.join(RUNTIME_DIR, "session_index")
+CODEX_LAUNCH_DIR = os.path.join(RUNTIME_DIR, "codex_launches")
+CODEX_BINDING_GRACE_SECONDS = 10.0
+
+
+def _agent_id_for_name(name: str) -> int | None:
+    """ORRERY Mail DB から name の最新 agent id を返す(無ければ None)。
+
+    UNIQUE(project_id, name) なので 1 プロジェクト内では name→id は一意。
+    プロジェクトをまたぐ同名は last_active 最新を採る。"""
+    if not os.path.exists(DB_PATH):
+        return None
+    if (index := _batched_registrations()) is not None:
+        return index.by_name.get(name)
+    con = None
+    try:
+        con = _db()
+        r = con.execute(
+            "SELECT id FROM agents WHERE name=? "
+            "ORDER BY last_active_ts DESC LIMIT 1",
+            (name,),
+        ).fetchone()
+        return int(r[0]) if r else None
+    except Exception:
+        return None
+    finally:
+        if con is not None:
+            con.close()
+
+
+def _indexed_transcript(name: str) -> str | None:
+    """精密マップ(record-session-index.py が登録時に書く id→sessionId/
+    transcript)から該当 transcript を引く。
+
+    name→ORRERY Mail id→`~/.agentstack/runtime/session_index/<id>.json` の
+    transcript_path を返す。これは selfref スコア+活動期間窓のヒューリス
+    ティックと違い、登録時に焼いた exact な対応なので同名使い回し・
+    last_active 固着のどちらにも左右されない。マップが無い(本フック導入前
+    に登録された古いエージェント)・ファイルが消えている場合は None を返し、
+    呼び出し側のヒューリスティックにフォールバックさせる。"""
+    aid = _agent_id_for_name(name)
+    if aid is None:
+        return None
+    f = os.path.join(SESSION_INDEX_DIR, f"{aid}.json")
+    try:
+        with open(f, encoding="utf-8") as fh:
+            o = json.load(fh)
+    except (OSError, ValueError):
+        return None
+    # Only a record that says what it is may be exact authority. Records
+    # written before the schema existed, and records made when one session
+    # registered a different agent, both name a transcript belonging to
+    # somebody else -- a parent's transcript once appeared on a child's card
+    # this way. Falling back to the heuristic is better than showing the wrong
+    # session with certainty.
+    if o.get("schema_version") != 2 or o.get("binding_kind") != "self":
+        return None
+    if o.get("agent_name") != name:
+        return None
+    caller = o.get("registered_by")
+    if not isinstance(caller, str) or (caller and caller != name):
+        return None
+    tp = o.get("transcript_path")
+    if isinstance(tp, str) and tp.endswith(".jsonl") and os.path.isfile(tp):
+        return tp
+    return None
+
+
+def _transcript_path(session: str) -> str | None:
+    """tmux セッション/エージェント名 → Claude transcript JSONL を特定。
+
+    各 transcript には自分の名前が JSON 値 `"<name>"`(register/inbox/
+    reservation/sender 等)として突出して多く現れる。これを使い:
+
+    1) 稼働中: tmux ペインの cwd → projects ディレクトリ配下で自己参照
+       最多の jsonl を選ぶ。
+    2) 終了済み(tmux ペイン無し): ORRERY Mail の活動期間(inception〜
+       last_active)で全 projects の jsonl を mtime 絞り込みし、自己参照
+       最多の jsonl を選ぶ。データは DB/ディスクに残るので閲覧可能。
+
+    結果は transcript project directory の mtime が変わるまで保持する。
+    """
+    cached, cached_path, catalog_key = _cached_claude_transcript_path(
+        session, refresh_catalog=True
+    )
+    if cached:
+        return cached_path
+
+    chosen: str | None = None
+    chosen_score = 0
+
+    # 1) 稼働中: tmux ペイン cwd 由来
+    out = _tmux_run(['display-message', '-p', '-t', session, '#{pane_current_path}'], capture_output=True, text=True, timeout=4)
+    cwd = (out.stdout or "").strip()
+    if out.returncode == 0 and cwd:
+        d = os.path.join(CLAUDE_PROJECTS, re.sub(r"[^A-Za-z0-9]", "-", cwd))
+        if os.path.isdir(d):
+            js = sorted(
+                (os.path.join(d, f) for f in os.listdir(d)
+                 if f.endswith(".jsonl")),
+                key=os.path.getmtime, reverse=True,
+            )
+            if js:
+                # 自己参照ヒット時のみ採用。0 件なら下の横断スキャンへ。
+                # (cwd dir の最新へフォールバックしない: `claude --resume`
+                #  を別 cwd から起動した等で cwd が transcript と不一致の
+                #  場合、無関係エージェントの履歴を誤表示するため)
+                chosen, chosen_score = _scan_selfref(js, session, 40)
+
+    # 2) cwd で特定できない(終了済み / resume で cwd 不一致 等):
+    #    全 projects 横断 + 活動期間 mtime 絞り込みで自己参照最多。
+    #    窓内で 0 件なら全件にフォールバックする。last_active_ts が登録時
+    #    から進まない(=登録だけして以後 ORRERY Mail を叩かず resume だけ
+    #    された)エージェントは活動期間窓が狭すぎ実ファイル(mtime が窓の
+    #    上限より新しい)を取りこぼすため(NobleHubble 事例)。窓優先で同名
+    #    使い回しは正しく区別しつつ、窓ミス時だけ全件で救済する。
+    if chosen is None:
+        inc, last = _agent_window(session)
+        files = _all_transcripts()
+        files.sort(key=_safe_mtime, reverse=True)
+        if inc or last:
+            lo = (inc or 0) - 21600          # 6h 前
+            hi = (last or 9_999_999_999) + 172800  # 2d 後
+            win = [f for f in files
+                   if lo <= _safe_mtime(f) <= hi]
+            chosen, chosen_score = _scan_selfref(win, session, 80)
+        if chosen is None:
+            chosen, chosen_score = _scan_selfref(files, session, 120)
+
+    if chosen is not None and not _claim_transcript(
+        chosen, session, chosen_score, exact=False
+    ):
+        # 同じファイルを、より強く主張する別エージェントがいる。
+        # 他人の履歴を見せるより空のほうがましなので諦める。
+        chosen = None
+
+    _store_claude_transcript_resolution(session, catalog_key, chosen)
+    return chosen
+
+
+ABS_CLAUDE = os.path.expanduser("~/.local/bin/claude")
+
+
+def _login_shell() -> str:
+    """Shell for `<shell> -lic <inner>` tmux launches.
+
+    zsh when installed (macOS default), otherwise bash: a stock Ubuntu / WSL2
+    has no zsh, and a hard-coded "zsh" made every resume fail there with
+    nothing in the pane. AGENTSTACK_CHILD_SHELL overrides, matching
+    spawn_child.sh.
+    """
+    override = os.environ.get("AGENTSTACK_CHILD_SHELL", "")
+    if override and os.access(override, os.X_OK):
+        return override
+    return shutil.which("zsh") or shutil.which("bash") or "bash"
+
+
+def _transcript_cwd(path: str) -> str | None:
+    """transcript JSONL から元の cwd を抽出（各イベントに `cwd` フィールド）。"""
+    try:
+        with open(path, encoding="utf-8", errors="ignore") as f:
+            for _ in range(60):  # 先頭付近に必ず出る
+                line = f.readline()
+                if not line:
+                    break
+                try:
+                    o = json.loads(line)
+                except ValueError:
+                    continue
+                c = o.get("cwd")
+                if isinstance(c, str) and os.path.isdir(c):
+                    return c
+    except OSError:
+        pass
+    return None
+
+
+def _agent_program(session: str) -> str:
+    """ORRERY Mail から program 文字列を引く（codex 判定用）。
+
+    register_agent の program は警告系で書き換わらず安定。空なら "" を返す。
+    codex は "codex" / "codex-cli" の双方があるため startswith("codex") で判定。"""
+    project_key = _project_key()
+    if not project_key:
+        return ""
+    try:
+        with _db() as con:
+            con.row_factory = sqlite3.Row
+            row = con.execute(
+                "SELECT a.program FROM agents a "
+                "JOIN projects p ON a.project_id=p.id "
+                "WHERE a.name=? AND p.human_key=? "
+                "ORDER BY a.last_active_ts DESC LIMIT 1",
+                (session, project_key),
+            ).fetchone()
+            return (row["program"] or "") if row else ""
+    except sqlite3.Error:
+        return ""
+
+
+def _claude_chrome_policy_module():
+    """Load hooks/claude_chrome_policy.py, the one validator for launch records."""
+    for path in (
+        os.path.join(HOOKS_DIR, "claude_chrome_policy.py"),
+        os.path.join(os.path.dirname(HERE), "hooks", "claude_chrome_policy.py"),
+    ):
+        if not os.path.isfile(path):
+            continue
+        spec = importlib.util.spec_from_file_location(
+            "agentstack_claude_chrome_policy", path)
+        if spec is None or spec.loader is None:
+            continue
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        return module
+    raise RuntimeError("claude_chrome_policy.py is unavailable")
+
+
+def _claude_child_chrome(session: str, sid: str) -> tuple[bool, str, str]:
+    """Return (``--chrome`` requested, launch id, error) for one Claude resume.
+
+    The launch id is returned whenever the conversation has a launch record,
+    including one that records only a tools selection (version 3).
+
+    Only the launch record bound to this conversation's session id decides;
+    the transcript's text never does. The record is bound to the session, not
+    only to the agent name, so a later launch under the same name cannot
+    change what this conversation resumes with. No record means the
+    conversation resumes unchanged (inherit). A record that exists but cannot
+    be validated stops the resume."""
+    if not re.fullmatch(r"[A-Za-z0-9_-]+", session or ""):
+        return False, "", ""
+    directory = os.path.join(RUNTIME_DIR, "child-agents")
+    path = os.path.join(directory, f"{session}.claude-launch.{sid}.json")
+    if not os.path.lexists(path):
+        return False, "", ""
+    try:
+        policy = _claude_chrome_policy_module()
+        state = policy.session_record(directory, session, sid)
+    except Exception as exc:  # noqa: BLE001 - any failure is fail-closed
+        return False, "", f"Claude in Chrome launch record is invalid: {exc}"
+    if state is None:
+        return False, "", ""
+    return state["claude_chrome"] is True, state["launch_id"], ""
+
+
+def _claude_child_tools(session: str, sid: str) -> tuple[dict | None, str]:
+    """Return (tools selection or None, error) from the same launch record.
+
+    Only a version 3 record with base mail-only or tools returns a selection;
+    the resume then rebuilds the same strict config and flags or stops."""
+    if not re.fullmatch(r"[A-Za-z0-9_-]+", session or ""):
+        return None, ""
+    directory = os.path.join(RUNTIME_DIR, "child-agents")
+    if not os.path.lexists(os.path.join(directory, f"{session}.claude-launch.{sid}.json")):
+        return None, ""
+    try:
+        state = _claude_chrome_policy_module().session_record(directory, session, sid)
+        tools_module = _child_tools_module()
+    except Exception as exc:  # noqa: BLE001 - any failure is fail-closed
+        return None, f"Claude in Chrome launch record is invalid: {exc}"
+    if state is None:
+        return None, ""
+    spec = {"base": state["base"], "tools": state["tools"]}
+    return (spec if state["version"] == 4 or tools_module.restrictive(spec) else None), ""
+
+
+def _claude_resume_tools(session: str, sid: str, cwd: str,
+                         chrome: bool) -> tuple[dict | None, dict | None, str]:
+    """(selection, claude plan, error) for resuming one Claude conversation.
+
+    Shared by do_resume and the resume forecast, so a row never says ready
+    for a resume that the tools check would refuse."""
+    spec, error = _claude_child_tools(session, sid)
+    if error or spec is None:
+        return None, None, error
+    tools_module = _child_tools_module()
+    try:
+        plan = tools_module.claude_plan(
+            spec, cwd=cwd, chrome=chrome,
+            claude_json=_env_path("AGENTSTACK_CLAUDE_JSON", "~/.claude.json"))
+    except tools_module.ToolsError as exc:
+        return spec, None, f"the tools this conversation was started with cannot be restored: {exc}"
+    return spec, plan, ""
+
+
+def _claude_resume_tools_capability(session: str, sid: str, transcript: str) -> str | None:
+    """The forecast's view of _claude_resume_tools: None or a reason code.
+
+    Conversations without a launch record (almost every row) cost one lstat."""
+    if not re.fullmatch(r"[A-Za-z0-9_-]+", session or "") or not os.path.lexists(
+            os.path.join(RUNTIME_DIR, "child-agents", f"{session}.claude-launch.{sid}.json")):
+        return None
+    chrome, _launch_id, chrome_error = _claude_child_chrome(session, sid)
+    if chrome_error:
+        return "config_unrestorable"
+    spec, _plan, error = _claude_resume_tools(session, sid, _transcript_cwd(transcript) or "", chrome)
+    if error:
+        return "config_unrestorable"
+    if spec is not None:
+        try:
+            _, reason = _claude_conversation_reason(session)
+            if not reason and _claude_resume_material(session)[2] is None:
+                return "config_unrestorable"
+        except _ResumeCapabilityError as exc:
+            return exc.code
+    return None
+
+
+def do_resume(session: str, *, open_terminal: bool | None = None, replace_husk: bool = False) -> dict:
+    """retire 済み / 過去セッションを tmux 再開する。
+
+    Claude は `claude --resume <sid>`、Codex は `codex resume <sid>`。
+    transcript ファイル名/メタ = sessionId、`cwd` = 元の作業ディレクトリ。
+    Claude は detached tmux で CLI を待機させ、起動準備の成功後に解放する。
+    セッション名はエージェント名に揃える(identity 整合)。
+
+    ※ codex agent は ~/.claude/projects/ に自分の transcript を持たないため
+      Claude 用 _transcript_path の selfref 探索だと「その名前を最も多く参照
+      する別 agent(=子)の transcript」を誤マッチする(親 agent が子 agent の
+      会話で復元される事故の実績あり)。program で先に分岐して回避する。"""
+    program = _agent_program(session)
+    if program in harness_runtime.HARNESSES:
+        return _do_resume_native(session, program, open_terminal=open_terminal, replace_husk=replace_husk)
+    if program.startswith("antigravity"):
+        return {
+            "ok": False,
+            "error": (
+                "Antigravity resume is not supported by ORRERY; "
+                "start a new Antigravity session instead"
+            ),
+        }
+    if program == "codex-app" and session in _codex_app_runtimes():
+        return _open_codex_app(session)
+    if program.startswith("codex"):
+        return _do_resume_codex(session) if open_terminal is None else _do_resume_codex(session, open_terminal=open_terminal)
+    if not program.startswith("claude"):
+        return {
+            "ok": False,
+            "error": "Agent provider is unconfirmed; transcript resume is unavailable",
+        }
+    path = _transcript_path(session)
+    if not path:
+        return {"ok": False,
+                "error": f"'{session}' の会話ログが見つからず再開できません"}
+    sid = os.path.basename(path)[:-6]  # 末尾 .jsonl を除去
+    if not re.fullmatch(r"[0-9A-Fa-f-]{8,}", sid):
+        return {"ok": False, "error": f"sessionId 不正: {sid}"}
+    cwd = _transcript_cwd(path)
+    if not cwd:
+        return {"ok": False,
+                "error": "元の作業ディレクトリ(cwd)を特定できず再開できません"}
+    if not os.path.exists(ABS_CLAUDE):
+        return {"ok": False, "error": "claude CLI が見つかりません"}
+    # Claude tmux is prepared detached; an optional terminal attaches afterward.
+    #
+    # 重要: claude を「単一文字列」で tmux に渡すと tmux は `/bin/sh -c`
+    # で実行し ~/.zshrc を読まない → ~/.local/bin が PATH に入らず
+    # ("Native installation ... not in your PATH") claude/フックが
+    # 不安定化しクラッシュループした(2026-05-18 事故)。
+    # 対策: `zsh -lic <inner>` を独立 argv で渡す。tmux は複数引数なら
+    # execvp で直接起動するので sh 層が消え、ログイン対話 zsh が .zshrc
+    # (24行目で ~/.local/bin を PATH へ追加) を source する。多重防御
+    # として inner 先頭でも明示 export し、exec で claude にプロセス
+    # 置換(余分なシェルを残さず tmux セッション名=エージェント名を維持)。
+    # zshexit 事故(2026-05-18)は .zshrc 側で根治済み(真因は巨大 context
+    # ではなく zshexit が Bash サブシェル exit 毎に tmux セッションを kill
+    # していた事)。サイズに関わらず常に --resume で会話を完全復元する。
+    # AGENT_NAME を export してから exec claude する。これがないと claude
+    # 内部の register_agent で AGENT_NAME 環境変数が空となり、サーバーが
+    # ランダム名を発番してしまう (2026-05-22 GreenOstwald 事例、
+    # 2026-05-26 PinkGuericke 事例)。
+    inner = (
+        'export PATH="$HOME/.local/bin:$PATH"; '
+        f'export AGENT_NAME={session}; '
+        f'exec {shlex.quote(ABS_CLAUDE)} --resume {sid} -n {session}'
+    )
+    # A child started with --claude-chrome gets --chrome back on resume. Its
+    # browser policy is repeated by session-start-reminder.sh from the same
+    # launch record, so the resumed model re-checks the target browser.
+    chrome, chrome_launch_id, chrome_error = _claude_child_chrome(session, sid)
+    if chrome_error:
+        return {"ok": False, "error": chrome_error}
+    # A child started with base/tools is resumed with the same strict config
+    # and flags, rebuilt from the launch record and the current user settings,
+    # or not at all.
+    tools_spec, tools_plan, tools_error = _claude_resume_tools(session, sid, cwd, chrome)
+    if tools_error:
+        return {"ok": False, "resume_capability": "config_unrestorable", "error": tools_error}
+    if chrome or tools_spec is not None:
+        # The launch id lets the SessionStart hook bind this session, and a
+        # later /clear in it, to the same launch record.
+        inner = (
+            'export PATH="$HOME/.local/bin:$PATH"; '
+            f'export AGENT_NAME={session}; '
+            f'export AGENTSTACK_RUNTIME_DIR={shlex.quote(RUNTIME_DIR)}; '
+            f'export AGENTSTACK_CLAUDE_LAUNCH_ID={shlex.quote(chrome_launch_id)}; '
+            f'exec {shlex.quote(ABS_CLAUDE)} --resume {sid} -n {session}'
+            + (' --chrome' if chrome else '')
+        )
+        if chrome and tools_plan is None:
+            # Legacy Chrome records have no base/tools selection to rebuild.
+            # Restore the launch's browser approvals without changing MCP scope.
+            allowed = _child_tools_module().claude_chrome_allowed_tools()
+            inner += ' --allowed-tools ' + shlex.quote(','.join(allowed))
+
+    try:
+        _, conversation_reason = _claude_conversation_reason(session)
+        if conversation_reason:
+            return _launch_claude_conversation(session, sid, cwd, conversation_reason,
+                                               open_terminal=open_terminal, replace_husk=replace_husk)
+    except _ResumeCapabilityError as exc:
+        return {"ok": False, "resume_capability": exc.code, "error": str(exc)}
+
+    mail_was_retired = False
+    mail_restore_attempted = False
+    registration = None
+    child_state = None
+    legacy_generation = None
+    resume_started = False
+    try:
+        registration, token, child_state = _claude_resume_material(session)
+        legacy = child_state is not None and "_legacy_sha256" in child_state
+        if child_state is not None:
+            module = _child_resume_module()
+        if legacy:
+            # Authenticate an existing owned row before any migration writes.
+            mail_was_retired = _register_claude_resume(session, registration, token, legacy=True)
+            legacy_generation = secrets.token_hex(16)
+            child_state = module.begin_legacy_claude_migration(
+                pathlib.Path(RUNTIME_DIR), session, registration=registration, legacy=child_state,
+                generation=legacy_generation, retention_days=_legacy_claude_retention_days(),
+            )
+            resume_started = True
+        elif child_state is not None:
+            module.begin_resume(
+                pathlib.Path(RUNTIME_DIR), session, agent_id=registration["agent_id"],
+                project_key=registration["project_key"], program=registration["program"],
+            )
+            resume_started = True
+        if tools_plan is not None and child_state is None:
+            raise _ResumeCapabilityError(
+                "config_unrestorable",
+                "this conversation was started with base/tools, and without its child "
+                "state it would resume with all of the user's MCP servers")
+        if child_state is not None:
+            mcp_config = _write_claude_resume_mcp_config(
+                session, registration, parent=child_state.get("parent_agent"),
+                servers=(tools_plan or {}).get("servers"))
+            flags = "".join(" " + shlex.quote(flag) for flag in (tools_plan or {}).get("flags", ()))
+            inner = inner.replace(" --resume ", f" --mcp-config {shlex.quote(mcp_config)} --strict-mcp-config{flags} --resume ", 1)
+        if not legacy:
+            mail_was_retired = _register_claude_resume(session, registration, token)
+        mail_restore_attempted = True
+        _set_claude_mail_retired(session, registration, retired=False)
+    except Exception as exc:
+        result = {"ok": False, "error": "Claude resume state could not be restored",
+                  "resume_capability": "config_unrestorable"}
+        if isinstance(exc, _ResumeCapabilityError):
+            result.update(error=str(exc), resume_capability=exc.code)
+        if legacy_generation is not None or resume_started:
+            _rollback_claude_resume_local(session, registration, legacy_generation=legacy_generation,
+                                         resume_started=resume_started, result=result,
+                                         restore_mail=mail_restore_attempted and mail_was_retired)
+        if mail_restore_attempted and mail_was_retired and legacy_generation is None:
+            _rollback_claude_mail(session, registration, result)
+        return result
+    resume_environment = {
+        "AGENT_NAME": session, "AGENTSTACK_RESERVED_IDENTITY": "1", "CLAUDECODE": "1",
+        "AGENTSTACK_MAIL_DISABLED": "0", "AGENTSTACK_MAIL_DISABLED_REASON": "",
+        "AGENTSTACK_AUTO_OPEN_CHILD": _env_text("AGENTSTACK_AUTO_OPEN_CHILD", "1"),
+        "AGENTSTACK_HOME": os.environ.get("AGENTSTACK_HOME") or os.path.dirname(HERE),
+        "AGENTSTACK_RUNTIME_DIR": RUNTIME_DIR, "AGENTSTACK_HOOKS_DIR": HOOKS_DIR,
+        "AGENTSTACK_PROJECT_KEY": registration["project_key"],
+        "AGENTSTACK_MCP_URL": _env_text("AGENTSTACK_MCP_URL", "http://127.0.0.1:18765/mcp"),
+        "AGENTSTACK_MAIL_ENV": MAIL_ENV_PATH,
+        "AGENTSTACK_MAIL_HTTP_BEARER_MODE": MAIL_HTTP_BEARER_MODE,
+        "AGENTSTACK_CHILD_RESUME_RETENTION_DAYS": _env_text("AGENTSTACK_CHILD_RESUME_RETENTION_DAYS", "30"),
+    }
+    if os.environ.get("AGENTSTACK_PYTHON", "").strip():
+        resume_environment["AGENTSTACK_PYTHON"] = os.environ["AGENTSTACK_PYTHON"]
+    # The resumed session's SessionStart hook re-registers from the shell and
+    # takes its model from here. Without it the registered model was replaced
+    # by `claude-code`, or by a model the tmux server environment carried
+    # (#144). Only this session-scoped name is set: AGENTSTACK_CLAUDE_MODEL is
+    # the default for agents this session later launches.
+    resume_environment["CLAUDE_CHILD_MODEL"] = registration.get("model") or "claude-code"
+    inner = ('unset CHILD_REGISTRATION_TOKEN PARENT_AGENT CLAUDE_CHILD_MCP_CONFIG AGENTSTACK_CLAUDE_LAUNCH_ID; '
+             + "".join(f"export {key}={shlex.quote(value)}; " for key, value in resume_environment.items()) + inner)
+    cleanup = os.path.join(HOOKS_DIR, "cleanup-child-agent.sh")
+    exit_warning = None
+    if child_state is not None:
+        inner = inner.replace(f"exec {shlex.quote(ABS_CLAUDE)}", shlex.quote(ABS_CLAUDE), 1)
+        inner += (f'; CLAUDE_STATUS=$?; /bin/bash {shlex.quote(cleanup)}; '
+                  'CLEANUP_STATUS=$?; [[ "$CLAUDE_STATUS" -ne 0 ]] && exit "$CLAUDE_STATUS"; '
+                  'exit "$CLEANUP_STATUS"')
+    elif mail_was_retired:
+        # A token-only Claude has no child state, so the child cleanup above
+        # never ran and the row this resume unretired stayed active after
+        # exit (#143). Give back only the retirement; the token is kept.
+        if os.path.isfile(cleanup):
+            inner = inner.replace(f"exec {shlex.quote(ABS_CLAUDE)}", shlex.quote(ABS_CLAUDE), 1)
+            inner += (f'; CLAUDE_STATUS=$?; AGENTSTACK_CLEANUP_RETIRE_ONLY=1 '
+                      f'PROJECT_KEY={shlex.quote(registration["project_key"])} '
+                      f'/bin/bash {shlex.quote(cleanup)} {shlex.quote(session)}; exit "$CLAUDE_STATUS"')
+        else:
+            exit_warning = "Cleanup helper unavailable; the Mail row stays active after this agent exits"
+
+    # env -u TMUX -u TMUX_PANE: 端末プロセスに TMUX が継承されると
+    # 以後の全ウィンドウへ幽霊 TMUX が伝播し、cx 等の `[[ -n "$TMUX" ]]` 判定が
+    # 誤爆する(2026-06-02 調査)。dashboard が tmux 内から再起動された場合に備え剥がす。
+    launch = _launch_claude_resume_tmux(
+        ["tmux", "new-session", "-A", "-s", session, "-c", cwd,
+         *[arg for key, value in resume_environment.items() for arg in ("-e", f"{key}={value}")],
+         _login_shell(), "-lic", inner],
+        title=session,
+        open_terminal=open_terminal,
+        replace_husk=replace_husk,
+    )
+    if launch.get("ok"):
+        if legacy_generation is not None:
+            try:
+                finished = module.finish_legacy_claude_migration(
+                    pathlib.Path(RUNTIME_DIR), session, generation=legacy_generation, rollback=False)
+                if not finished:
+                    launch["warning"] = "Legacy Claude migration was superseded; current material was preserved"
+            except Exception:
+                launch["warning"] = "Legacy Claude migration undo remains; confirm startup before operator recovery"
+        result = {
+            "ok": True,
+            "action": "resumed",
+            "resume_mode": "mail",
+            "detail": f"会話を tmux で再開 (sid {sid[:8]}… / {cwd})",
+            "terminal": launch.get("adapter"),
+        }
+        if launch.get("warning") or exit_warning:
+            result["warning"] = "; ".join(filter(None, (launch.get("warning"), exit_warning)))
+        return result
+    result = {"ok": False, "error": f"resume 起動失敗: {launch.get('error')}"}
+    if launch.get("rollback_errors"):
+        result["rollback_errors"] = launch["rollback_errors"]
+    if legacy_generation is not None or resume_started:
+        _rollback_claude_resume_local(session, registration, legacy_generation=legacy_generation,
+                                     resume_started=resume_started, result=result, restore_mail=mail_was_retired)
+    if mail_was_retired and legacy_generation is None:
+        _rollback_claude_mail(session, registration, result)
+    return result
+
+
+def _codex_meta(path: str) -> tuple[str | None, str | None]:
+    """Codex rollout 1 行目 session_meta から (session_id, cwd) を返す。"""
+    try:
+        with open(path, encoding="utf-8", errors="ignore") as f:
+            first = f.readline().strip()
+        o = json.loads(first)
+        if not isinstance(o, dict) or o.get("type") != "session_meta":
+            return None, None
+        p = o.get("payload")
+        if not isinstance(p, dict):
+            return None, None
+        sid = p.get("id")
+        cwd = p.get("cwd")
+        if not isinstance(cwd, str) or not os.path.isdir(cwd):
+            cwd = None
+        return (sid if isinstance(sid, str) else None), cwd
+    except (OSError, ValueError):
+        return None, None
+
+
+def _worktree_root() -> str:
+    """Return the persistent root used by spawn_child.sh for new worktrees."""
+    install_root = os.environ.get("AGENTSTACK_HOME") or os.path.expanduser(
+        "~/.agentstack"
+    )
+    configured = os.environ.get("AGENTSTACK_WORKTREE_ROOT") or os.path.join(
+        install_root, "worktrees"
+    )
+    return os.path.abspath(os.path.expanduser(configured))
+
+
+def _codex_child_add_dirs(extra: list[str] | None = None) -> list[str]:
+    """Writable roots for a Codex agent launched by the product.
+
+    Mirrors codex_child_add_dirs in hooks/spawn_child.sh: project, NEW AGENT
+    presets and typeahead roots, install dir, worktree base, the pre-#57
+    /tmp/cc-worktrees compatibility root, ~/.claude, ~/.codex, then
+    AGENTSTACK_CODEX_ADD_DIRS. Missing directories are dropped and duplicates
+    collapse on realpath (macOS /tmp -> /private/tmp)."""
+    raw: list[str] = [PROJECT_KEY or VAULT]
+    raw += os.environ.get("AGENTSTACK_SPAWN_DIRS", "").split(":")
+    raw += os.environ.get("AGENTSTACK_SPAWN_ROOTS", "").split(":")
+    raw += [
+        os.environ.get("AGENTSTACK_HOME") or os.path.expanduser("~/.agentstack"),
+        _worktree_root(),
+        "/tmp/cc-worktrees",  # #57 migration compatibility; remove later.
+        os.path.expanduser("~/.claude"),
+        os.path.expanduser("~/.codex"),
+    ]
+    raw += list(extra or [])
+    raw += os.environ.get("AGENTSTACK_CODEX_ADD_DIRS", "").split(":")
+    seen: list[str] = []
+    for entry in raw:
+        if not entry:
+            continue
+        expanded = os.path.expanduser(entry)
+        if not os.path.isdir(expanded):
+            continue
+        resolved = os.path.realpath(expanded)
+        if resolved not in seen:
+            seen.append(resolved)
+    return seen
+
+
+def _codex_child_launch_flags(extra_dirs: list[str] | None = None) -> str:
+    """Sandbox / approval / network / --add-dir flags for a product-launched Codex.
+
+    Same policy as spawn_child.sh: AGENTSTACK_CODEX_CHILD_APPROVAL (default
+    `never` — an unattended agent has nobody to answer prompts),
+    AGENTSTACK_CODEX_NETWORK (default on; workspace-write blocks the network
+    otherwise and every curl / git fetch becomes a prompt or a failure)."""
+    approval = os.environ.get("AGENTSTACK_CODEX_CHILD_APPROVAL", "").strip() or "never"
+    network = os.environ.get("AGENTSTACK_CODEX_NETWORK", "").strip().lower() or "on"
+    sandbox = os.environ.get("AGENTSTACK_CODEX_SANDBOX", "").strip() or "workspace-write"
+    parts = [f"--sandbox {shlex.quote(sandbox)} --ask-for-approval {shlex.quote(approval)}"]
+    parts.append("-c check_for_update_on_startup=false")
+    if network not in ("0", "off", "false", "no"):
+        parts.append("-c sandbox_workspace_write.network_access=true")
+    parts += [f"--add-dir {shlex.quote(d)}" for d in _codex_child_add_dirs(extra_dirs)]
+    return " ".join(parts)
+
+
+_CODEX_PROGRAMS = {"codex", "codex-cli"}
+_CODEX_CHILD_STATE_MAX_BYTES = 65536
+
+
+class _PrivateFileError(ValueError):
+    """A private-file validation failure with a stable machine reason."""
+
+    def __init__(self, reason: str, message: str):
+        super().__init__(message)
+        self.reason = reason
+
+
+class _ResumeCapabilityError(ValueError):
+    """A resume prerequisite failure with a public capability code."""
+
+    def __init__(self, code: str, message: str):
+        super().__init__(message)
+        self.code = code
+
+
+_CHILD_RESUME_MODULES: dict[str, object] = {}
+
+
+def global_child_resume(body: dict) -> dict:
+    """Explicit stable client root only; no legacy registration lookup."""
+    name = body.get('client_name')
+    config = body.get('client_config')
+    if not isinstance(name,str) or not isinstance(config,str):
+        return {'ok':False,'error':'CONTEXT_REQUIRED'}
+    prepare = body.get('prepare_only') is True and body.get('open') in (None, False)
+    execute = body.get('prepare_only') is False and body.get('open') is True
+    if not prepare and not execute:
+        return {'ok':False,'error':'GLOBAL_EXECUTION_CONFIRMATION_REQUIRED'}
+    library = pathlib.Path(__file__).resolve().parents[1] / 'bin/lib/agentstack-register.sh'
+    command=['/bin/bash',str(library),'resume-child','--context',config,
+        '--client-name',name,'--detached']
+    if prepare:command.append('--prepare-only')
+    completed = subprocess.run(command,capture_output=True,text=True,timeout=60)
+    if completed.returncode:
+        return {'ok':False,'error':completed.stderr.strip() or 'GLOBAL_RESUME_FAILED'}
+    return json.loads(completed.stdout)
+
+
+def _child_resume_helper_path() -> str:
+    configured = os.environ.get("AGENTSTACK_CHILD_RESUME_HELPER", "").strip()
+    install_home = os.environ.get("AGENTSTACK_HOME", "").strip()
+    if install_home:
+        candidates = [configured, os.path.join(install_home, "hooks", "child_resume.py")]
+    else:
+        candidates = [
+            configured,
+            os.path.join(HOOKS_DIR, "child_resume.py"),
+            os.path.join(os.path.dirname(HERE), "hooks", "child_resume.py"),
+        ]
+    return next((path for path in candidates if path and os.path.isfile(path)), "")
+
+
+def _child_resume_module():
+    path = _child_resume_helper_path()
+    if not path:
+        raise _ResumeCapabilityError(
+            "config_unrestorable", "Child resume helper is unavailable"
+        )
+    cached = _CHILD_RESUME_MODULES.get(path)
+    if cached is not None:
+        return cached
+    spec = importlib.util.spec_from_file_location("agentstack_child_resume", path)
+    if spec is None or spec.loader is None:
+        raise _ResumeCapabilityError(
+            "config_unrestorable", "Child resume helper cannot be loaded"
+        )
+    module = importlib.util.module_from_spec(spec)
+    try:
+        spec.loader.exec_module(module)
+    except Exception as exc:
+        raise _ResumeCapabilityError(
+            "config_unrestorable", "Child resume helper cannot be loaded"
+        ) from exc
+    if not all(
+        hasattr(module, name)
+        for name in ("ResumeStateError", "inspect_retained", "purge_expired")
+    ):
+        raise _ResumeCapabilityError(
+            "config_unrestorable", "Child resume helper is incomplete"
+        )
+    _CHILD_RESUME_MODULES[path] = module
+    return module
+
+
+def _read_private_regular(path: str, label: str, limit: int) -> bytes:
+    """Read one owner-only regular file without following a final symlink."""
+
+    try:
+        info = os.lstat(path)
+    except OSError as exc:
+        raise _PrivateFileError("unavailable", f"{label} is unavailable") from exc
+    if not stat.S_ISREG(info.st_mode):
+        raise _PrivateFileError("type", f"{label} is not a regular file")
+    if info.st_uid != os.getuid():
+        raise _PrivateFileError(
+            "ownership", f"{label} is not owned by the dashboard user"
+        )
+    if stat.S_IMODE(info.st_mode) & 0o077:
+        raise _PrivateFileError("permissions", f"{label} permissions must be 0600")
+    flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_NONBLOCK", 0)
+    try:
+        descriptor = os.open(path, flags)
+    except OSError as exc:
+        raise _PrivateFileError("unavailable", f"{label} is unavailable") from exc
+    try:
+        opened = os.fstat(descriptor)
+        if not stat.S_ISREG(opened.st_mode) or opened.st_uid != os.getuid():
+            raise _PrivateFileError("changed", f"{label} changed while it was opened")
+        if stat.S_IMODE(opened.st_mode) & 0o077:
+            raise _PrivateFileError(
+                "permissions", f"{label} permissions must be 0600"
+            )
+        raw = os.read(descriptor, limit + 1)
+    finally:
+        os.close(descriptor)
+    if len(raw) > limit:
+        raise _PrivateFileError("size", f"{label} is too large")
+    return raw
+
+
+def _private_file_capability(
+    error: _PrivateFileError, *, unavailable: str
+) -> str:
+    if error.reason in {"ownership", "permissions", "changed"}:
+        return "credential_permission"
+    return unavailable
+
+
+def _codex_resume_child_home(
+    session: str, registration: dict
+) -> tuple[str, str]:
+    """Verify retained state and return the fresh-home target plus saved profile."""
+
+    if not _valid(session):
+        raise _ResumeCapabilityError(
+            "invalid_identity", "Codex child identity is unsafe"
+        )
+    module = _child_resume_module()
+    try:
+        state = module.inspect_retained(
+            pathlib.Path(RUNTIME_DIR),
+            session,
+            agent_id=registration["agent_id"],
+            project_key=registration["project_key"],
+            program=registration["program"],
+        )
+    except module.ResumeStateError as exc:
+        raise _ResumeCapabilityError(exc.code, str(exc)) from exc
+
+    install_home = os.environ.get("AGENTSTACK_HOME") or os.path.dirname(HERE)
+    source_home = os.path.expanduser(
+        os.environ.get("CODEX_HOME", "").strip() or "~/.codex"
+    )
+    runner = os.path.expanduser(
+        os.environ.get("AGENTSTACK_MCP_PROXY", "").strip()
+        or os.path.join(
+            install_home,
+            "integrations",
+            "codex_app",
+            "plugin",
+            "scripts",
+            "run-mcp.sh",
+        )
+    )
+    if not os.path.isdir(source_home) or not (
+        os.path.isfile(runner) and os.access(runner, os.X_OK)
+    ):
+        raise _ResumeCapabilityError(
+            "config_unrestorable",
+            "current Codex home or child Mail proxy is unavailable",
+        )
+    child_home = os.path.join(
+        RUNTIME_DIR, "child-agents", f"{session}.codex-home"
+    )
+    if os.path.realpath(source_home) == os.path.realpath(child_home):
+        raise _ResumeCapabilityError(
+            "config_unrestorable",
+            "current Codex home cannot be the generated child home",
+        )
+    # The tools record is applied by build-home; check it here too, so the
+    # forecast does not say ready for a build that would fail.
+    record = os.path.join(RUNTIME_DIR, "child-agents", f"{session}.tools.json")
+    if os.path.lexists(record):
+        tools_module = _child_tools_module()
+        try:
+            spec = tools_module.read_codex_record(record)
+            if spec is not None:
+                if spec["base"] == "mail-only" and state["codex_mcp_profile"] != "orrery-only":
+                    raise tools_module.ToolsError("the tools record and the MCP profile disagree")
+                import tomllib  # only here: build-home already needs Python 3.11
+
+                config_path = os.path.join(source_home, "config.toml")
+                config = tomllib.loads(pathlib.Path(config_path).read_text()) if os.path.exists(config_path) else {}
+                overlay = os.environ.get("AGENTSTACK_CODEX_CHILD_CONFIG_OVERLAY", "").strip()
+                if overlay:
+                    try:
+                        extra = tomllib.loads(pathlib.Path(overlay).read_text())
+                        module._drop_protected_overlay_tables(extra)
+                        module._deep_merge(config, extra)
+                    except (ValueError, OSError):
+                        pass
+                tools_module.codex_apply(config, spec)
+        except (OSError, ValueError) as exc:
+            raise _ResumeCapabilityError(
+                "config_unrestorable",
+                f"the tools this Codex child was started with cannot be restored: {exc}",
+            ) from exc
+    return child_home, state["codex_mcp_profile"]
+
+
+def _validate_codex_standalone_credential(session: str) -> None:
+    """Require the private owner credential used by reserved re-registration."""
+
+    token_key = re.sub(r"[^A-Za-z0-9_.-]", "_", session)
+    token_path = os.path.join(RUNTIME_DIR, f"agent_token_{token_key}")
+    try:
+        token = _read_private_regular(
+            token_path, "Codex standalone credential", 4096
+        )
+    except _PrivateFileError as exc:
+        capability = (
+            "credential_permission"
+            if exc.reason in {"ownership", "permissions", "changed", "type"}
+            else "credential_missing"
+        )
+        raise _ResumeCapabilityError(
+            capability, str(exc)
+        ) from exc
+    if not token.strip():
+        raise _ResumeCapabilityError(
+            "credential_missing", "Codex standalone credential is empty"
+        )
+
+
+def _claude_resume_material(session: str) -> tuple[dict, str, dict | None]:
+    """Validate retained child state or an existing top-level owner credential."""
+    if not _valid(session):
+        raise _ResumeCapabilityError("invalid_identity", "Unsafe Claude identity")
+    registration = _claude_registration(session)
+    if registration is None:
+        raise _ResumeCapabilityError("registration_missing", "Claude registration unavailable")
+    state_path = os.path.join(RUNTIME_DIR, "child-agents", f"{session}.json")
+    tombstone = os.path.join(RUNTIME_DIR, "child-resume-tombstones",
+                             f"{registration['agent_id']}.json")
+    state = None
+    if os.path.lexists(state_path) or os.path.lexists(tombstone):
+        module = _child_resume_module()
+        try:
+            if os.path.lexists(state_path):
+                if not hasattr(module, "inspect_legacy_claude"):
+                    raise _ResumeCapabilityError("config_unrestorable", "Child resume helper needs updating")
+                state = module.inspect_legacy_claude(
+                    pathlib.Path(RUNTIME_DIR), session, agent_id=registration["agent_id"],
+                    project_key=registration["project_key"], program=registration["program"],
+                )
+            if state is not None:
+                _legacy_claude_retention_days()
+                registration = _legacy_claude_owned_registration(session, registration)
+            else:
+                state = module.inspect_retained(
+                    pathlib.Path(RUNTIME_DIR), session, agent_id=registration["agent_id"],
+                    project_key=registration["project_key"], program=registration["program"],
+                )
+        except module.ResumeStateError as exc:
+            raise _ResumeCapabilityError(exc.code, str(exc)) from exc
+    try:
+        raw = _read_private_regular(os.path.join(RUNTIME_DIR, f"agent_token_{session}"),
+                                    "Claude owner credential", 4096)
+        token = raw.decode("utf-8").strip() if isinstance(raw, bytes) else raw.strip()
+    except _PrivateFileError as exc:
+        code = "credential_permission" if exc.reason in {"ownership", "permissions", "changed", "type"} else "credential_missing"
+        raise _ResumeCapabilityError(code, "Claude owner credential unavailable") from exc
+    except UnicodeDecodeError as exc:
+        raise _ResumeCapabilityError("credential_missing", "Invalid Claude credential") from exc
+    if not token:
+        raise _ResumeCapabilityError("credential_missing", "Claude owner credential is empty")
+    if state is not None and not secrets.compare_digest(token.encode(), state["registration_token"].encode()):
+        raise _ResumeCapabilityError("identity_mismatch", "Claude credential changed during validation")
+    if state is not None:
+        if not os.path.isfile(os.path.join(HOOKS_DIR, "cleanup-child-agent.sh")):
+            raise _ResumeCapabilityError("config_unrestorable", "Child cleanup helper unavailable")
+        runner = _claude_resume_proxy_runner()
+        if not os.path.isfile(runner) or not os.access(runner, os.X_OK):
+            raise _ResumeCapabilityError("config_unrestorable", "Child Mail proxy unavailable")
+    return registration, token, state
+
+
+
+_CLAUDE_MAIL_UNAVAILABLE = {
+    "credential_absent": "The owner credential file is missing.",
+    "retention_expired": "The retained Mail credential has expired.",
+    "mail_schema_unsupported": "The running ORRERY Mail needs an update and restart for owner authentication.",
+}
+
+# What the person running the machine can do about it. Only an old Mail has a
+# fix: a missing or expired credential cannot be recovered from the dashboard.
+_CLAUDE_MAIL_REMEDY = {
+    "mail_schema_unsupported": (
+        "To keep Mail, update ORRERY Mail before resuming. For the Mail this project's installer "
+        "deployed: in an up-to-date orrery-telemetry checkout run "
+        "./scripts/install.sh --update-mail --dry-run, then ./scripts/install.sh --update-mail. "
+        "If the dry run refuses, stop and follow docs/agentstack-mail-update.md instead. "
+        "Afterwards this agent's resume should no longer say WITHOUT MAIL; a conversation already "
+        "resumed without Mail must exit first. Without the update, resuming stays conversation only."
+    ),
+}
+
+
+def _claude_conversation_reason(session: str) -> tuple[dict, str | None]:
+    """Inspect all existing material before classifying a known safe absence.
+
+    No mutations, RPC registration, guessed identity, or exception-message matching.
+    Missing/schema-old/expired are conversation-only; unsafe or ambiguous remains fatal.
+    """
+    if not _valid(session):
+        raise _ResumeCapabilityError("invalid_identity", "Unsafe Claude identity")
+    registration = _claude_registration(session)
+    if registration is None:
+        raise _ResumeCapabilityError("registration_missing", "Claude registration unavailable")
+    runtime = pathlib.Path(RUNTIME_DIR)
+    root = runtime / "child-agents"
+    state_path = root / f"{session}.json"
+    token_path = runtime / f"agent_token_{session}"
+    module = _child_resume_module()
+    def read_optional(path, label, limit):
+        try:
+            path.lstat()
+        except FileNotFoundError:
+            return None
+        except OSError:
+            raise _ResumeCapabilityError("config_unrestorable", "Resume material cannot be inspected") from None
+        try:
+            return _read_private_regular(str(path), label, limit)
+        except _PrivateFileError:
+            raise _ResumeCapabilityError("credential_permission", "Existing resume material is unsafe or unreadable") from None
+    read_optional(root / f".{session}.resume.lock", "Claude resume lock", 4096)
+    raw = read_optional(state_path, "Claude child state", module.MAX_STATE_BYTES)
+    token_raw = read_optional(token_path, "Claude owner credential", 4096)
+    config_raw = read_optional(root / f"{session}.mcp.json", "Claude proxy config", module.MAX_STATE_BYTES)
+    if config_raw is not None:
+        try:
+            config = json.loads(config_raw)
+            if not isinstance(config, dict) or not isinstance(config.get("mcpServers"), dict):
+                raise ValueError()
+        except (ValueError, UnicodeDecodeError):
+            raise _ResumeCapabilityError("config_unrestorable", "Existing Claude proxy config is invalid") from None
+    token = None
+    if token_raw is not None:
+        try:
+            token = token_raw.decode("utf-8").strip()
+        except UnicodeDecodeError:
+            raise _ResumeCapabilityError("credential_missing", "Existing Claude credential is invalid") from None
+        if not token:
+            raise _ResumeCapabilityError("credential_missing", "Existing Claude credential is empty")
+    legacy = False
+    expired = False
+    if raw is not None:
+        try:
+            state = json.loads(raw)
+            if not isinstance(state, dict):
+                raise ValueError()
+        except (ValueError, UnicodeDecodeError):
+            raise _ResumeCapabilityError("config_unrestorable", "Existing Claude state is invalid") from None
+        legacy = set(state) == {"agent_name", "project_key", "registration_token"}
+        try:
+            if legacy:
+                if state["agent_name"] != session or state["project_key"] != registration["project_key"]:
+                    raise module.ResumeStateError("identity_mismatch", "Legacy Claude identity mismatch")
+            else:
+                module._validate_identity(state, agent_name=session, agent_id=registration["agent_id"],
+                                          project_key=registration["project_key"], program=registration["program"])
+                if not module._retained_shape(state) or state.get("program") != registration["program"]:
+                    raise module.ResumeStateError("config_unrestorable", "Claude state is incomplete")
+                if state.get("resume_in_progress_at") is None:
+                    module.require_retired(state)
+                module._parse_timestamp(state.get("retired_at"), "retired_at")
+                expiry = module._parse_timestamp(state.get("resume_expires_at"), "resume_expires_at")
+                expired = module._utc_now(None) >= expiry
+            saved_token = state.get("registration_token")
+            if not isinstance(saved_token, str) or not saved_token or len(saved_token) > 4096:
+                raise module.ResumeStateError("credential_missing", "Saved Claude credential is invalid")
+            try:
+                saved_bytes = saved_token.encode("utf-8")
+            except UnicodeEncodeError:
+                raise module.ResumeStateError("credential_missing", "Saved Claude credential is invalid") from None
+            if token is not None and not secrets.compare_digest(token.encode(), saved_bytes):
+                raise module.ResumeStateError("identity_mismatch", "Claude credentials belong to different registrations")
+            if state.get("resume_in_progress_at") is not None:
+                raise module.ResumeStateError("config_unrestorable", module.RESUME_NOT_FINISHED)
+        except module.ResumeStateError as exc:
+            raise _ResumeCapabilityError(exc.code, str(exc)) from exc
+    # Pending wins over missing/expiry, even when no state remains.
+    for suffix in ("registration-pending", "legacy-migration"):
+        if os.path.lexists(root / f".{session}.{suffix}.json"):
+            raise _ResumeCapabilityError("config_unrestorable", "Claude registration or migration is pending")
+    tombstone = read_optional(runtime / "child-resume-tombstones" / f"{registration['agent_id']}.json",
+                              "Claude retention tombstone", 16384)
+    if tombstone is not None:
+        try:
+            removed = json.loads(tombstone)
+            if (not isinstance(removed, dict) or removed.get("agent_id") != registration["agent_id"]
+                    or removed.get("agent_name") != session or removed.get("project_key") != registration["project_key"]):
+                raise ValueError()
+            reason = removed.get("reason")
+            if reason not in {"purged", "retention_expired"}:
+                raise ValueError()
+        except (ValueError, UnicodeDecodeError):
+            raise _ResumeCapabilityError("identity_mismatch", "Claude retention tombstone is invalid") from None
+        if reason == "purged":
+            raise _ResumeCapabilityError("purged", "Claude resume material was explicitly purged")
+        expired = True
+    if expired:
+        return registration, "retention_expired"
+    if token is None:
+        return registration, "credential_absent"
+    if legacy:
+        # A known older advertised schema is different from a failed tools/list.
+        _legacy_claude_owned_registration(session, registration)
+        allowed = _mcp_tool_parameters("register_agent")
+        if allowed is not None and "existing_agent_id" not in allowed:
+            return registration, "mail_schema_unsupported"
+    return registration, None
+
+
+def _conversation_mail_fields(reason: str) -> dict:
+    remedy = _CLAUDE_MAIL_REMEDY.get(reason, "")
+    return {"mail_status": "unavailable", "mail_reason": reason,
+            "mail_message": " ".join(filter(None, (
+                "This agent cannot send or receive ORRERY Mail.", _CLAUDE_MAIL_UNAVAILABLE[reason], remedy))),
+            **({"mail_remedy": remedy} if remedy else {})}
+
+
+def _launch_claude_conversation(session: str, sid: str, cwd: str, reason: str, *,
+                                open_terminal: bool | None, replace_husk: bool) -> dict:
+    module = _child_resume_module()
+    # Serialize with modern migration/purge. Revalidate immediately before the
+    # gated launch; no canonical state, token, proxy config or Mail row is changed.
+    try:
+        with module._AgentLock(pathlib.Path(RUNTIME_DIR) / "child-agents" / f".{session}.resume.lock", exclusive=True):
+            registration, current = _claude_conversation_reason(session)
+            if current != reason:
+                raise _ResumeCapabilityError("identity_mismatch", "Claude resume prerequisites changed")
+            fields = _conversation_mail_fields(reason)
+            environment = {
+                "AGENT_NAME": session, "CLAUDECODE": "1", "AGENTSTACK_RESERVED_IDENTITY": "1",
+                "AGENTSTACK_MAIL_DISABLED": "1", "AGENTSTACK_MAIL_DISABLED_REASON": reason,
+                "AGENTSTACK_RUNTIME_DIR": RUNTIME_DIR, "AGENTSTACK_PROJECT_KEY": registration["project_key"],
+                "AGENTSTACK_AUTO_OPEN_CHILD": _env_text("AGENTSTACK_AUTO_OPEN_CHILD", "1"),
+            }
+            notice = fields["mail_message"] + " Do not register, recover credentials, or use Mail from this conversation."
+            if fields.get("mail_remedy"):
+                # The remedy restarts the shared Mail: it is the person's to choose, not this agent's.
+                notice += " Leave the Mail update to the person running this machine; do not run it yourself."
+            command = [ABS_CLAUDE, "--resume", sid, "-n", session,
+                       "--strict-mcp-config", "--mcp-config", '{"mcpServers":{}}',
+                       "--settings", '{"disableAllHooks":true}', "--no-chrome",
+                       "--append-system-prompt", notice]
+            inner = ('unset CHILD_REGISTRATION_TOKEN PARENT_AGENT CLAUDE_CHILD_MCP_CONFIG '
+                     'AGENTSTACK_CLAUDE_LAUNCH_ID MCP_AGENT_MAIL_TOKEN; '
+                     'export PATH="$HOME/.local/bin:$PATH"; ' +
+                     ''.join(f"export {key}={shlex.quote(value)}; " for key, value in environment.items()) +
+                     "printf '%s\n' " + shlex.quote(notice) + "; exec " + shlex.join(command))
+            launch = _launch_claude_resume_tmux(
+                ["tmux", "new-session", "-A", "-s", session, "-c", cwd,
+                 *[arg for key, value in environment.items() for arg in ("-e", f"{key}={value}")],
+                 _login_shell(), "-lic", inner], title=session, open_terminal=open_terminal, replace_husk=replace_husk)
+    except module.ResumeStateError as exc:
+        raise _ResumeCapabilityError(exc.code, str(exc)) from exc
+    if not launch.get("ok"):
+        return {"ok": False, "error": "Conversation resume startup failed", **fields,
+                **({"rollback_errors": launch["rollback_errors"]} if launch.get("rollback_errors") else {})}
+    _invalidate_resume_capability_cache(session)
+    return {"ok": True, "action": "resumed", "resume_mode": "conversation_only", "resume_capability": "ready",
+            "detail": f"Conversation resumed in tmux (sid {sid[:8]}… / {cwd}); Mail unavailable",
+            "terminal": launch.get("adapter"), **fields,
+            **({"warning": launch["warning"]} if launch.get("warning") else {})}
+
+
+def _claude_row_mail_fields(row: dict, *, category: str, session_state: dict | None = None) -> dict:
+    program = row.get("program") or ""
+    if program and not program.startswith("claude"):
+        return {}
+    # A running conversation-only session retains its explicit warning across
+    # dashboard restarts. There is no inferred/secret runtime sidecar. Only
+    # _launch_claude_conversation sets the tmux marker, so an empty program is
+    # read too: the running row of a retired owner has no Mail program.
+    if row.get("running"):
+        if session_state is not None:
+            reason = session_state.get("mail_disabled_reason", "") if session_state.get("mail_disabled") == "1" else ""
+        else:
+            try:
+                disabled = _tmux_session_env(row["name"], "AGENTSTACK_MAIL_DISABLED")
+                reason = _tmux_session_env(row["name"], "AGENTSTACK_MAIL_DISABLED_REASON") if disabled == "1" else ""
+            except (OSError, subprocess.SubprocessError):
+                reason = ""
+        return _conversation_mail_fields(reason) if reason in _CLAUDE_MAIL_UNAVAILABLE else {}
+    if not program:
+        return {}
+    # `resume_capability` says whether the conversation can be resumed; it is
+    # `ready` for conversation-only resumes too. `resume_mode` is what
+    # /api/jump will do (#145): `mail` authenticates the owner and unretires
+    # it or refuses without launching; `conversation_only` never touches Mail.
+    # `verification_required` has already passed these material checks.
+    if category in _RESUME_CATEGORIES and row.get("resume_capability") in {"ready", "verification_required"}:
+        try:
+            _, reason = _claude_conversation_reason(row["name"])
+        except _ResumeCapabilityError:
+            return {}
+        if reason:
+            return {"resume_mode": "conversation_only", **_conversation_mail_fields(reason)}
+        return {"resume_mode": "mail"}
+    return {}
+
+def _claude_resume_proxy_runner() -> str:
+    install_home = os.environ.get("AGENTSTACK_HOME") or os.path.dirname(HERE)
+    return os.environ.get("AGENTSTACK_MCP_PROXY") or os.path.join(
+        install_home, "integrations", "codex_app", "plugin", "scripts", "run-mcp.sh")
+
+
+def _write_claude_resume_mcp_config(session: str, registration: dict, *, parent=None,
+                                    servers: dict | None = None) -> str:
+    """Regenerate the same child-owned proxy routing used on fresh spawn.
+
+    hooks/child_tools.py builds the file for both the launcher and this
+    resume: the proxy under every ORRERY Mail name, plus the selected servers.
+    ``parent`` is the one spawn_child recorded in the child state; without it
+    the resumed proxy reports the child as a root with no parent.
+    """
+    if parent is not None and (not isinstance(parent, str)
+                               or not _child_resume_module().PROXY_AGENT_NAME.fullmatch(parent)):
+        raise _ResumeCapabilityError("config_unrestorable", "The recorded parent cannot be given to the Mail proxy")
+    proxy = {"command": _claude_resume_proxy_runner(), "args": [], "env": {
+        "AGENTSTACK_PROXY_AGENT_NAME": session,
+        "AGENTSTACK_PROXY_TOKEN_FILE": os.path.join(RUNTIME_DIR, f"agent_token_{session}"),
+        "AGENTSTACK_PROXY_PROGRAM": "claude-code",
+        "AGENTSTACK_PROJECT_KEY": registration["project_key"],
+        "AGENTSTACK_MCP_URL": _env_text("AGENTSTACK_MCP_URL", "http://127.0.0.1:18765/mcp"),
+        "AGENTSTACK_MAIL_ENV": MAIL_ENV_PATH,
+        "AGENTSTACK_MAIL_HTTP_BEARER_MODE": MAIL_HTTP_BEARER_MODE,
+        "AGENTSTACK_RUNTIME_DIR": RUNTIME_DIR,
+    }}
+    if parent:
+        proxy["env"]["AGENTSTACK_PROXY_PARENT_AGENT"] = parent
+    if os.environ.get("AGENTSTACK_PYTHON", "").strip():
+        proxy["env"]["AGENTSTACK_PYTHON"] = os.environ["AGENTSTACK_PYTHON"]
+    config = _child_tools_module().claude_config(
+        proxy, claude_json=_env_path("AGENTSTACK_CLAUDE_JSON", "~/.claude.json"), servers=servers)
+    path = pathlib.Path(RUNTIME_DIR) / "child-agents" / f"{session}.mcp.json"
+    _child_resume_module()._atomic_json(path, config)
+    return str(path)
+
+
+def _legacy_claude_retention_days() -> int:
+    try:
+        days = int(_env_text("AGENTSTACK_CHILD_RESUME_RETENTION_DAYS", "30"))
+    except ValueError as exc:
+        raise _ResumeCapabilityError("config_unrestorable", "Invalid child retention setting") from exc
+    if days <= 0:
+        raise _ResumeCapabilityError("retention_expired", "Legacy child retention is disabled")
+    return days
+
+
+def _legacy_claude_owned_registration(session: str, registration: dict) -> dict:
+    """Never call registration to create or claim a legacy owner identity."""
+    try:
+        with _db() as con:
+            con.row_factory = sqlite3.Row
+            row = con.execute(
+                "SELECT a.id, a.name, a.program, p.id AS project_id, p.human_key, "
+                "(a.registration_token IS NOT NULL AND length(trim(a.registration_token)) > 0) AS has_owner "
+                "FROM agents a JOIN projects p ON a.project_id=p.id "
+                "WHERE a.id=? AND a.name=? COLLATE BINARY AND p.human_key=? COLLATE BINARY",
+                (registration["agent_id"], session, registration["project_key"]),
+            ).fetchone()
+    except (OSError, sqlite3.Error):
+        raise _ResumeCapabilityError("registration_missing", "Original Claude owner registration unavailable") from None
+    if row is None:
+        raise _ResumeCapabilityError("registration_missing", "Original Claude registration does not exist")
+    if row["program"] not in {"claude", "claude-code"} or row["program"] != registration["program"]:
+        raise _ResumeCapabilityError("identity_mismatch", "Original Claude registration changed")
+    if not row["has_owner"]:
+        raise _ResumeCapabilityError("credential_missing", "Original Claude registration has no owner; refusing enrollment")
+    result = {**registration, "project_id": int(row["project_id"])}
+    if "project_id" in registration and result["project_id"] != registration["project_id"]:
+        raise _ResumeCapabilityError("identity_mismatch", "Original Claude project changed")
+    return result
+
+
+def _rollback_claude_resume_local(session: str, registration: dict, *, legacy_generation: str | None,
+                                resume_started: bool, result: dict, restore_mail: bool = False) -> None:
+    try:
+        module = _child_resume_module()
+    except Exception:
+        result.setdefault("rollback_errors", []).append("Claude resume material recovery helper unavailable")
+        return
+    if legacy_generation is not None:
+        try:
+            # An intentional purge/new attempt wins. A stale rollback is a no-op.
+            module.finish_legacy_claude_migration(
+                pathlib.Path(RUNTIME_DIR), session, generation=legacy_generation, rollback=True,
+                before_finish=(lambda: _rollback_claude_mail(session, registration, result)) if restore_mail else None,
+            )
+        except Exception:
+            result.setdefault("rollback_errors", []).append("Legacy Claude material could not be restored")
+    elif resume_started:
+        for action in (
+            lambda: module.discard_generated(pathlib.Path(RUNTIME_DIR), session),
+            lambda: module.cancel_resume(pathlib.Path(RUNTIME_DIR), session,
+                                         agent_id=registration["agent_id"], project_key=registration["project_key"]),
+        ):
+            try:
+                action()
+            except Exception:
+                result.setdefault("rollback_errors", []).append("Claude child resume material could not be restored")
+
+
+def _register_claude_resume(session: str, registration: dict, token: str, *, legacy: bool = False) -> bool:
+    """Authenticate the saved identity and capture its authoritative Mail state."""
+    if legacy:
+        _legacy_claude_owned_registration(session, registration)
+    arguments = {
+        "project_key": registration["project_key"], "name": session,
+        "program": registration["program"], "model": registration.get("model", ""),
+        "task_description": registration.get("task_description", ""),
+        "registration_token": token,
+    }
+    if legacy:
+        arguments["existing_agent_id"] = registration["agent_id"]
+    registered = _mcp_call("register_agent", arguments)
+    if not registered.get("ok"):
+        if registered.get("error_code") == "existing_owner_authentication_unavailable":
+            raise _ResumeCapabilityError(
+                "config_unrestorable",
+                "Update and restart the dashboard and bundled ORRERY Mail together; "
+                "existing-owner authentication support could not be confirmed",
+            )
+        raise _ResumeCapabilityError("credential_missing", "Claude owner authentication failed; refusing resume")
+    data = registered.get("data") or {}
+    if (type(data.get("id")) is not int or data["id"] != registration["agent_id"]
+            or data.get("name") != session):
+        raise _ResumeCapabilityError("identity_mismatch", "Claude registration changed; refusing resume")
+    if legacy and (data.get("program") != registration["program"]
+                   or type(data.get("project_id")) is not int
+                   or data["project_id"] != registration["project_id"]):
+        raise _ResumeCapabilityError("identity_mismatch", "Claude owner authentication returned another project/provider")
+    return bool(data.get("retired_at"))
+
+
+def _set_claude_mail_retired(session: str, registration: dict, *, retired: bool) -> None:
+    active = _mcp_call("retire_agent" if retired else "unretire_agent", {
+        "project_key": registration["project_key"], "agent_name": session,
+    })
+    data = active.get("data") or {}
+    if (not active.get("ok") or data.get("status") != ("retired" if retired else "active")
+            or data.get("agent_name") != session
+            or data.get("project_key") != registration["project_key"]):
+        raise _ResumeCapabilityError("config_unrestorable", "Claude Mail could not be unretired; refusing resume")
+
+
+def _rollback_claude_mail(session: str, registration: dict, result: dict) -> None:
+    try:
+        _set_claude_mail_retired(session, registration, retired=True)
+    except Exception:
+        result.setdefault("rollback_errors", []).append("Claude Mail retirement could not be restored")
+
+
+RESUME_CAPABILITY_MESSAGES = {
+    "ready": "Resume prerequisites are verified.",
+    "verification_required": (
+        "Transcript ownership and working directory will be verified on resume."
+    ),
+    "not_required": "This session is already available without transcript resume.",
+    "invalid_identity": "The saved agent identity is not safe to resume.",
+    "unsupported_provider": "This provider does not support transcript resume.",
+    "no_history": "No verified transcript is available for this agent.",
+    "cwd_missing": "The original working directory is unavailable.",
+    "terminal_unavailable": "No supported terminal adapter is configured.",
+    "cli_missing": "The provider CLI or resume bootstrap is unavailable.",
+    "registration_missing": "The original project registration cannot be verified.",
+    "provenance_missing": (
+        "This Codex row predates child provenance and cannot be resumed safely."
+    ),
+    "credential_missing": "The saved owner credential is unavailable or invalid.",
+    "credential_permission": "The saved owner credential permissions are unsafe.",
+    "identity_mismatch": "The saved identity does not match this row.",
+    "config_unrestorable": "The resume configuration or Mail restoration could not be completed safely.",
+    "retention_expired": "The child resume retention period has expired.",
+    "purged": "The retained child resume material was explicitly purged.",
+}
+
+_RESUME_CATEGORIES = frozenset({"finished", "gone", "retired"})
+_CODEX_MCP_PROFILES = frozenset({"inherit", "orrery-only"})
+_RESUME_CAPABILITY_CACHE_TTL = 10.0
+_RESUME_CAPABILITY_CACHE_MAX = 4096
+_RESUME_CAPABILITY_CACHE: dict[tuple, tuple[float, str]] = {}
+_RESUME_CAPABILITY_CACHE_LOCK = threading.Lock()
+
+
+def _invalidate_resume_capability_cache(session: str) -> None:
+    with _RESUME_CAPABILITY_CACHE_LOCK:
+        for key in list(_RESUME_CAPABILITY_CACHE):
+            if key[0] == session:
+                _RESUME_CAPABILITY_CACHE.pop(key, None)
+
+
+def _codex_resume_provenance(
+    session: str,
+    *,
+    registration: dict | None = None,
+    transcript_path: str | None = None,
+) -> tuple[dict | None, str | None]:
+    """Return verified, non-secret child provenance from a bound receipt.
+
+    The receipt is independent of private child material and therefore still
+    distinguishes a managed child from an unmanaged Codex session after expiry
+    or explicit purge removes state and credentials. Current private state is a
+    compatibility source for a launch that has not produced its first receipt.
+    """
+
+    registration = registration or _codex_registration(session)
+    transcript_path = transcript_path or _codex_transcript_path(session)
+    if registration is not None and transcript_path:
+        receipt_path = os.path.join(
+            SESSION_INDEX_DIR, f"{registration['agent_id']}.json"
+        )
+        try:
+            os.lstat(receipt_path)
+        except FileNotFoundError:
+            pass
+        except OSError:
+            return None, "config_unrestorable"
+        else:
+            try:
+                receipt = json.loads(
+                    _read_private_regular(
+                        receipt_path,
+                        "Codex session receipt",
+                        _CODEX_CHILD_STATE_MAX_BYTES,
+                    ).decode("utf-8")
+                )
+            except _PrivateFileError as exc:
+                return None, _private_file_capability(
+                    exc, unavailable="config_unrestorable"
+                )
+            except (UnicodeDecodeError, json.JSONDecodeError):
+                return None, "config_unrestorable"
+            identity_matches = (
+                isinstance(receipt, dict)
+                and receipt.get("schema_version") == 2
+                and receipt.get("binding_kind") == "self"
+                and receipt.get("provider") == "codex"
+                and receipt.get("program") == registration["program"]
+                and type(receipt.get("agent_id")) is int
+                and receipt["agent_id"] == registration["agent_id"]
+                and receipt.get("agent_name") == session
+                and receipt.get("project_key") == registration["project_key"]
+                and receipt.get("registered_by") == session
+                and isinstance(receipt.get("transcript_path"), str)
+                and os.path.realpath(receipt["transcript_path"])
+                == os.path.realpath(transcript_path)
+            )
+            if not identity_matches:
+                value = receipt if isinstance(receipt, dict) else None
+                return value, "identity_mismatch"
+            provenance = {
+                key: receipt.get(key)
+                for key in (
+                    "agent_id",
+                    "agent_name",
+                    "project_key",
+                    "provider",
+                    "program",
+                    "launch_origin",
+                    "codex_mcp_profile",
+                )
+            }
+            child = (
+                provenance["launch_origin"] == "child"
+                and isinstance(provenance["codex_mcp_profile"], str)
+                and provenance["codex_mcp_profile"] in _CODEX_MCP_PROFILES
+            )
+            standalone = (
+                provenance["launch_origin"] == "standalone"
+                and provenance["codex_mcp_profile"] is None
+            )
+            if child or standalone:
+                return provenance, None
+            return provenance, "provenance_missing"
+
+    state_path = os.path.join(RUNTIME_DIR, "child-agents", f"{session}.json")
+    try:
+        os.lstat(state_path)
+    except FileNotFoundError:
+        return None, "provenance_missing"
+    except OSError:
+        return None, "config_unrestorable"
+    try:
+        state = json.loads(
+            _read_private_regular(
+                state_path, "Codex child state", _CODEX_CHILD_STATE_MAX_BYTES
+            ).decode("utf-8")
+        )
+    except _PrivateFileError as exc:
+        return None, _private_file_capability(
+            exc, unavailable="config_unrestorable"
+        )
+    except (UnicodeDecodeError, json.JSONDecodeError):
+        return None, "config_unrestorable"
+    if not isinstance(state, dict):
+        return None, "config_unrestorable"
+    if (
+        state.get("launch_origin") != "child"
+        or not isinstance(state.get("codex_mcp_profile"), str)
+        or state.get("codex_mcp_profile") not in _CODEX_MCP_PROFILES
+    ):
+        return state, "provenance_missing"
+    return state, None
+
+
+def _native_resume_launcher_ready():
+    try:
+        return bool(re.search(r'^NATIVE_RESUME_CONTRACT=1$', Path(SPAWN_SCRIPT).read_text(), re.M))
+    except OSError:
+        return False
+
+
+def _native_resume_material(session, program):
+    registration = _resume_registration(session, {program})
+    if registration is None:
+        raise _ResumeCapabilityError('registration_missing', 'Native registration is unavailable')
+    module = _child_resume_module()
+    try:
+        state = module.inspect_retained(Path(RUNTIME_DIR), session,
+            agent_id=registration['agent_id'], project_key=registration['project_key'], program=program)
+        document = module.native_resume_input(Path(RUNTIME_DIR), state)
+    except module.ResumeStateError as error:
+        raise _ResumeCapabilityError(error.code, str(error)) from None
+    except (OSError, ValueError, TypeError):
+        raise _ResumeCapabilityError('config_unrestorable', 'Native resume material is unavailable') from None
+    if not _native_resume_launcher_ready():
+        raise _ResumeCapabilityError('cli_missing', 'Native resume launcher is unavailable')
+    return registration, state, document
+
+
+def _native_prepare_resume(session):
+    _standard_catalog_module().thin_launcher().prepare_resume(Path(RUNTIME_DIR), session)
+
+
+def _do_resume_native(session, program, *, open_terminal=None, replace_husk=False):
+    started = mail_changed = was_retired = False
+    registration = None
+    try:
+        module = _child_resume_module()
+        registration, state, document = _native_resume_material(session, program)
+        module.begin_resume(Path(RUNTIME_DIR), session, agent_id=registration['agent_id'],
+                            project_key=registration['project_key'], program=program)
+        started = True
+        _native_prepare_resume(session)
+        # Reuse existing-owner authentication; never create a replacement identity.
+        registration = {**registration, 'model': document['model']}
+        was_retired = _register_claude_resume(session, registration, state['registration_token'])
+        mail_changed = True
+        _set_claude_mail_retired(session, registration, retired=False)
+        environment = {
+            'AGENTSTACK_HOME': str(Path(HOOKS_DIR).parent), 'AGENTSTACK_RUNTIME_DIR': RUNTIME_DIR,
+            'AGENTSTACK_HOOKS_DIR': HOOKS_DIR, 'AGENTSTACK_PROJECT_KEY': registration['project_key'],
+            'AGENTSTACK_MCP_URL': _env_text('AGENTSTACK_MCP_URL', 'http://127.0.0.1:18765/mcp'),
+            'AGENTSTACK_MAIL_ENV': MAIL_ENV_PATH, 'AGENTSTACK_MAIL_HTTP_BEARER_MODE': MAIL_HTTP_BEARER_MODE,
+            'AGENT_NAME': session, 'AGENTSTACK_RESERVED_IDENTITY': '1',
+        }
+        if os.environ.get('AGENTSTACK_PYTHON'):
+            environment['AGENTSTACK_PYTHON'] = os.environ['AGENTSTACK_PYTHON']
+        command = shlex.join(['/bin/bash', SPAWN_SCRIPT, '--resume-native', session])
+        launched = _launch_claude_resume_tmux(
+            ['tmux', 'new-session', '-A', '-s', session, '-c', document['cwd'],
+             *[arg for key, value in environment.items() for arg in ('-e', key + '=' + value)],
+             _login_shell(), '-lic', command], title=session,
+            open_terminal=open_terminal, replace_husk=replace_husk)
+        if not launched.get('ok'):
+            raise _ResumeCapabilityError('config_unrestorable', 'Native resume startup failed')
+    except Exception as error:
+        result = {'ok': False, 'resume_capability': getattr(error, 'code', 'config_unrestorable'),
+                  'error': 'Native resume prerequisites or startup could not be confirmed'}
+        if started:
+            try:
+                module.cancel_resume(Path(RUNTIME_DIR), session, agent_id=registration['agent_id'],
+                                     project_key=registration['project_key'])
+            except Exception:
+                result['rollback_errors'] = ['Native retained state could not be restored']
+        if mail_changed and was_retired:
+            _rollback_claude_mail(session, registration, result)
+        return result
+    _invalidate_resume_capability_cache(session)
+    return {'ok': True, 'action': 'resumed', 'resume_capability': 'ready',
+            'terminal': launched.get('adapter'),
+            **({'warning': launched['warning']} if launched.get('warning') else {})}
+
+
+def _resume_capability(
+    session: str,
+    program: str,
+    *,
+    category: str,
+    verify_transcript: bool = True,
+    open_terminal: bool | None = None,
+) -> str:
+    """Return the fixed reason code shared by every dashboard resume surface.
+
+    This function is read-only.  `/api/jump` calls it again immediately before
+    any husk is killed or terminal process is opened, so stale UI state never
+    becomes authority for a resume.
+    """
+
+    if category not in _RESUME_CATEGORIES:
+        return "not_required"
+    if not _valid(session):
+        return "invalid_identity"
+    normalized_program = (program or "").strip().lower()
+    if (
+        normalized_program.startswith("antigravity")
+        or normalized_program == "codex-app"
+    ):
+        return "unsupported_provider"
+    if not (
+        normalized_program.startswith("claude")
+        or normalized_program in _CODEX_PROGRAMS
+        or normalized_program in harness_runtime.HARNESSES
+    ):
+        return "unsupported_provider"
+    if _resume_opens_terminal(open_terminal) and _terminal_adapter() == "none":
+        return "terminal_unavailable"
+
+    if normalized_program in harness_runtime.HARNESSES:
+        try:
+            _native_resume_material(session, normalized_program)
+        except _ResumeCapabilityError as error:
+            return error.code
+        return 'ready'
+
+    if normalized_program.startswith("claude"):
+        if not verify_transcript:
+            try:
+                _, reason = _claude_conversation_reason(session)
+                if not reason:
+                    _claude_resume_material(session)
+            except _ResumeCapabilityError as exc:
+                return exc.code
+        if verify_transcript:
+            path = _transcript_path(session)
+        else:
+            resolved, path, _catalog_key = _cached_claude_transcript_path(session)
+            if not resolved:
+                if not os.path.exists(ABS_CLAUDE):
+                    return "cli_missing"
+                return "verification_required"
+        if not path:
+            return "no_history"
+        sid = os.path.basename(path)[:-6] if path.endswith(".jsonl") else ""
+        if not re.fullmatch(r"[0-9A-Fa-f-]{8,}", sid):
+            return "no_history"
+        if not _transcript_cwd(path):
+            return "cwd_missing"
+        if not os.path.exists(ABS_CLAUDE):
+            return "cli_missing"
+        try:
+            _, reason = _claude_conversation_reason(session)
+            if not reason:
+                _claude_resume_material(session)
+        except _ResumeCapabilityError as exc:
+            return exc.code
+        tools_code = _claude_resume_tools_capability(session, sid, path)
+        if tools_code:
+            return tools_code
+        return "ready"
+
+    path = _codex_transcript_path(session)
+    if not path:
+        return "no_history"
+    sid, cwd = _codex_meta(path)
+    if not sid or not re.fullmatch(r"[0-9A-Fa-f-]{8,}", sid):
+        return "no_history"
+    if not cwd:
+        return "cwd_missing"
+    registration = _codex_registration(session)
+    if registration is None:
+        return "registration_missing"
+    provenance, provenance_error = _codex_resume_provenance(
+        session,
+        registration=registration,
+        transcript_path=path,
+    )
+    if provenance_error:
+        return provenance_error
+    launch_origin = provenance.get("launch_origin") if provenance else None
+    if launch_origin == "child":
+        try:
+            child_home, child_profile = _codex_resume_child_home(
+                session, registration
+            )
+        except _ResumeCapabilityError as exc:
+            return exc.code
+        except ValueError:
+            # A new validation branch must fail closed until it receives an
+            # explicit stable code; never classify it from mutable message text.
+            return "config_unrestorable"
+        if not child_home or child_profile not in _CODEX_MCP_PROFILES:
+            return "config_unrestorable"
+    elif launch_origin == "standalone":
+        try:
+            _validate_codex_standalone_credential(session)
+        except _ResumeCapabilityError as exc:
+            return exc.code
+    else:
+        return "provenance_missing"
+    install_home = os.environ.get("AGENTSTACK_HOME") or os.path.dirname(HERE)
+    bootstrap = os.path.join(install_home, "bin", "agentstack-codex-bootstrap")
+    if not os.path.isfile(bootstrap) or not shutil.which("codex"):
+        return "cli_missing"
+    return "ready"
+
+
+def _resume_capability_for_row(
+    session: str, program: str, *, category: str
+) -> str:
+    """Short-lived display cache around the authoritative predicate.
+
+    DECK and NETWORK poll independently, so uncached ALL views repeated every
+    transcript/index/private-file check twice per interval.  The action API
+    deliberately bypasses this cache and calls ``_resume_capability`` itself.
+    """
+
+    normalized_program = (program or "").strip().lower()
+    transcript_catalog_key = (
+        _claude_transcript_catalog_key()
+        if normalized_program.startswith("claude")
+        else None
+    )
+    key = (session, normalized_program, category, transcript_catalog_key)
+    now = time.monotonic()
+    with _RESUME_CAPABILITY_CACHE_LOCK:
+        hit = _RESUME_CAPABILITY_CACHE.get(key)
+        if hit and now - hit[0] < _RESUME_CAPABILITY_CACHE_TTL:
+            return hit[1]
+
+    capability = _resume_capability(
+        session,
+        program,
+        category=category,
+        verify_transcript=False,
+    )
+    with _RESUME_CAPABILITY_CACHE_LOCK:
+        if len(_RESUME_CAPABILITY_CACHE) >= _RESUME_CAPABILITY_CACHE_MAX:
+            expired = [
+                cache_key
+                for cache_key, (stored_at, _value) in (
+                    _RESUME_CAPABILITY_CACHE.items()
+                )
+                if now - stored_at >= _RESUME_CAPABILITY_CACHE_TTL
+            ]
+            for cache_key in expired:
+                _RESUME_CAPABILITY_CACHE.pop(cache_key, None)
+            if len(_RESUME_CAPABILITY_CACHE) >= _RESUME_CAPABILITY_CACHE_MAX:
+                oldest = min(
+                    _RESUME_CAPABILITY_CACHE,
+                    key=lambda cache_key: _RESUME_CAPABILITY_CACHE[cache_key][0],
+                )
+                _RESUME_CAPABILITY_CACHE.pop(oldest, None)
+        _RESUME_CAPABILITY_CACHE[key] = (now, capability)
+    return capability
+
+
+def _resume_unavailable(capability: str) -> dict:
+    return {
+        "ok": False,
+        "error": RESUME_CAPABILITY_MESSAGES.get(
+            capability, "Resume prerequisites could not be verified."
+        ),
+        "resume_capability": capability,
+    }
+
+
+def _rebuild_codex_child_home(
+    session: str, registration: dict, child_home: str, mcp_profile: str, work_dir: str = ""
+) -> None:
+    """Recreate the isolated home from current user config, never a snapshot."""
+
+    helper = _child_resume_helper_path()
+    install_home = os.environ.get("AGENTSTACK_HOME") or os.path.dirname(HERE)
+    source_home = os.path.expanduser(
+        os.environ.get("CODEX_HOME", "").strip() or "~/.codex"
+    )
+    runner = os.path.expanduser(
+        os.environ.get("AGENTSTACK_MCP_PROXY", "").strip()
+        or os.path.join(
+            install_home,
+            "integrations",
+            "codex_app",
+            "plugin",
+            "scripts",
+            "run-mcp.sh",
+        )
+    )
+    token_key = re.sub(r"[^A-Za-z0-9_.-]", "_", session)
+    token_file = os.path.join(RUNTIME_DIR, f"agent_token_{token_key}")
+    command = [
+        os.environ.get("AGENTSTACK_PYTHON", "").strip() or sys.executable,
+        helper,
+        "build-home",
+        "--runtime-dir",
+        RUNTIME_DIR,
+        "--home",
+        child_home,
+        "--source",
+        source_home,
+        "--runner",
+        runner,
+        "--child",
+        session,
+        "--project-key",
+        registration["project_key"],
+        "--token-file",
+        token_file,
+        "--mcp-url",
+        _env_text("AGENTSTACK_MCP_URL", "http://127.0.0.1:18765/mcp"),
+        "--mail-env",
+        MAIL_ENV_PATH,
+        "--bearer-mode",
+        MAIL_HTTP_BEARER_MODE,
+        "--python-bin",
+        os.environ.get("AGENTSTACK_PYTHON", "").strip(),
+        "--mcp-profile",
+        mcp_profile,
+        "--overlay",
+        os.environ.get("AGENTSTACK_CODEX_CHILD_CONFIG_OVERLAY", "").strip(),
+        # A child in a git worktree keeps the hook trust given to its source.
+        "--work-dir",
+        work_dir,
+    ]
+    try:
+        result = subprocess.run(
+            command, capture_output=True, text=True, timeout=30, check=False,
+            env={**os.environ, "AGENTSTACK_TOOLS_CHANGE_GENERATION": _child_resume_module().tools_change_generation()},
+        )
+    except (OSError, subprocess.SubprocessError) as exc:
+        raise _ResumeCapabilityError(
+            "config_unrestorable", "Codex child home could not be regenerated"
+        ) from exc
+    if result.returncode != 0 or not os.path.isfile(
+        os.path.join(child_home, "config.toml")
+    ):
+        raise _ResumeCapabilityError(
+            "config_unrestorable", "Codex child home could not be regenerated"
+        )
+
+
+def _do_resume_codex(session: str, *, open_terminal: bool | None = None) -> dict:
+    """Codex agent を `codex resume <sid>` で tmux 再開する。
+
+    rollout は ~/.codex/sessions/.../rollout-*.jsonl。session_meta.payload の
+    id=session_id / cwd=作業ディレクトリ。cx と同じ起動条件を再現する:
+      - installed agentstack-codex-bootstrap を source（AGENT_NAME export + ORRERY Mail
+        再登録 + mail-watcher 起動 + tmux リネーム）
+      - launch_codex_workspace.sh と同じ writable scope / sandbox / approval
+    project-scoped session index と rollout header の ID 一致で path を引き、
+    時刻 / cwd / selfref の推測へ落ちない（_codex_transcript_path）。"""
+    path = _codex_transcript_path(session)
+    if not path:
+        return {"ok": False,
+                "error": f"'{session}' の Codex rollout 対応付けを確認できず再開できません"}
+    sid, cwd = _codex_meta(path)
+    if not sid or not re.fullmatch(r"[0-9A-Fa-f-]{8,}", sid):
+        return {"ok": False, "error": f"Codex session id 不正: {sid}"}
+    if not cwd:
+        return {"ok": False,
+                "error": "元の作業ディレクトリ(cwd)を特定できず再開できません"}
+    registration = _codex_registration(session)
+    if registration is None:
+        return {"ok": False,
+                "error": "Codex の正式な project/agent 登録を確認できず再開できません"}
+    provenance, provenance_error = _codex_resume_provenance(
+        session,
+        registration=registration,
+        transcript_path=path,
+    )
+    if provenance_error:
+        return _resume_unavailable(provenance_error)
+    launch_origin = provenance.get("launch_origin") if provenance else None
+    child_home = ""
+    child_profile = ""
+    try:
+        if launch_origin == "child":
+            child_home, child_profile = _codex_resume_child_home(
+                session, registration
+            )
+            _rebuild_codex_child_home(
+                session, registration, child_home, child_profile, cwd or ""
+            )
+        elif launch_origin == "standalone":
+            _validate_codex_standalone_credential(session)
+        else:
+            return _resume_unavailable("provenance_missing")
+    except _ResumeCapabilityError as exc:
+        return _resume_unavailable(exc.code)
+    except ValueError as exc:
+        return {"ok": False, "error": f"Codex child 設定を確認できません: {exc}"}
+    install_home = os.environ.get("AGENTSTACK_HOME") or os.path.dirname(HERE)
+    bootstrap = os.path.join(install_home, "bin", "agentstack-codex-bootstrap")
+    if not os.path.isfile(bootstrap):
+        return {
+            "ok": False,
+            "error": f"Codex resume bootstrap が見つかりません: {bootstrap}",
+        }
+    # The product bootstrap clears inherited launch pairs, re-registers the
+    # reserved identity and persists a fresh launch generation.  `&&` is the
+    # safety boundary: a bootstrap/prepare failure must not reach Codex exec.
+    src = f'source {shlex.quote(bootstrap)} {shlex.quote(cwd)}'
+    launch_prefix = (
+        'export PATH="$HOME/.local/bin:$PATH"; '
+        f'export AGENT_NAME={shlex.quote(session)}; '
+        'export AGENTSTACK_RESERVED_IDENTITY=1; '
+        'export AGENTSTACK_CODEX_LAUNCH_KIND=resume; '
+        f'export AGENTSTACK_CODEX_RESUME_SESSION_ID={shlex.quote(sid)}; '
+        f'export AGENTSTACK_CODEX_LAUNCH_ORIGIN={shlex.quote(launch_origin)}; '
+    )
+    if launch_origin == "child":
+        generation = _child_resume_module().tools_change_generation()
+        if generation:
+            launch_prefix += f'export AGENTSTACK_TOOLS_CHANGE_GENERATION={shlex.quote(generation)}; '
+        child_home_env = (
+            f'export CODEX_HOME={shlex.quote(child_home)}; '
+            f'export CODEX_SHARED_CODEX_DIR={shlex.quote(child_home)}; '
+            f'export AGENTSTACK_CODEX_CHILD_MCP_PROFILE={shlex.quote(child_profile)}; '
+        )
+        cleanup = os.path.join(install_home, "hooks", "cleanup-child-agent.sh")
+        discard_generated = " ".join(
+            shlex.quote(part)
+            for part in (
+                os.environ.get("AGENTSTACK_PYTHON", "").strip() or sys.executable,
+                _child_resume_helper_path(),
+                "discard-generated",
+                "--runtime-dir",
+                RUNTIME_DIR,
+                "--agent-name",
+                session,
+            )
+        )
+        inner = (
+            f'{launch_prefix}{child_home_env}'
+            f'if {src}; then '
+            f'env -u OPENAI_API_KEY codex resume {sid} '
+            f'-C {shlex.quote(cwd)} '
+            f'{_codex_child_launch_flags([child_home])}; '
+            'CODEX_STATUS=$?; '
+            f'/bin/bash {shlex.quote(cleanup)}; CLEANUP_STATUS=$?; '
+            '[[ "$CODEX_STATUS" -ne 0 ]] && exit "$CODEX_STATUS"; '
+            'exit "$CLEANUP_STATUS"; '
+            'else BOOTSTRAP_STATUS=$?; '
+            f'{discard_generated} >/dev/null 2>&1 || true; '
+            'exit "$BOOTSTRAP_STATUS"; fi'
+        )
+    else:
+        inner = (
+            f'{launch_prefix}{src} && '
+            f'exec env -u OPENAI_API_KEY codex resume {sid} '
+            f'-C {shlex.quote(cwd)} {_codex_child_launch_flags()}'
+        )
+    # Claude in Chrome defaults (possibly in the tmux server env) belong to
+    # Claude children; a Codex child must not hand them on to its own spawns.
+    inner = (
+        'unset AGENTSTACK_CLAUDE_CHILD_CHROME AGENTSTACK_CLAUDE_CHILD_CHROME_DEVICE; '
+        + inner
+    )
+    resume_environment = {
+        "AGENTSTACK_HOME": install_home,
+        "AGENTSTACK_RUNTIME_DIR": RUNTIME_DIR,
+        "AGENTSTACK_PROJECT_KEY": registration["project_key"],
+        "AGENTSTACK_HOOKS_DIR": os.path.join(install_home, "hooks"),
+        "AGENTSTACK_MCP_URL": _env_text(
+            "AGENTSTACK_MCP_URL", "http://127.0.0.1:18765/mcp"
+        ),
+        "AGENTSTACK_MAIL_ENV": MAIL_ENV_PATH,
+        "AGENTSTACK_MAIL_HTTP_BEARER_MODE": MAIL_HTTP_BEARER_MODE,
+        "AGENTSTACK_MANAGED_AGENTS_FILE": _env_path(
+            "AGENTSTACK_MANAGED_AGENTS_FILE",
+            os.path.join(RUNTIME_DIR, "managed_agents.txt"),
+        ),
+        "AGENTSTACK_CHILD_RESUME_RETENTION_DAYS": _env_text(
+            "AGENTSTACK_CHILD_RESUME_RETENTION_DAYS", "30"
+        ),
+        "AGENTSTACK_AUTO_OPEN_CHILD": _env_text("AGENTSTACK_AUTO_OPEN_CHILD", "1"),
+    }
+    configured_python = os.environ.get("AGENTSTACK_PYTHON", "").strip()
+    if configured_python:
+        resume_environment["AGENTSTACK_PYTHON"] = configured_python
+    tmux_environment = [
+        argument
+        for key, value in resume_environment.items()
+        for argument in ("-e", f"{key}={value}")
+    ]
+    launch = _launch_resume_tmux(
+        [
+            "tmux",
+            "new-session",
+            "-A",
+            "-s",
+            session,
+            "-c",
+            cwd,
+            *tmux_environment,
+            _login_shell(),
+            "-lic",
+            inner,
+        ],
+        title=session,
+        open_terminal=open_terminal,
+    )
+    if launch.get("ok"):
+        detail = f"Codex 会話を tmux で再開 (sid {sid[:8]}… / {cwd})"
+        return {
+            "ok": True,
+            "action": "resumed",
+            "detail": detail,
+            "terminal": launch.get("adapter"),
+        }
+    return {"ok": False, "error": f"codex resume 起動失敗: {launch.get('error')}"}
+
+
+def _safe_mtime(p: str) -> float:
+    try:
+        return os.path.getmtime(p)
+    except OSError:
+        return 0.0
+
+
+def _block_text(content) -> list[tuple[str, str]]:
+    """message.content (str or block list) → [(kind, text)] に正規化。"""
+    if isinstance(content, str):
+        return [("text", content)] if content.strip() else []
+    rows: list[tuple[str, str]] = []
+    for b in content or []:
+        if not isinstance(b, dict):
+            continue
+        t = b.get("type")
+        if t == "text" and b.get("text", "").strip():
+            rows.append(("text", b["text"]))
+        elif t == "thinking" and b.get("thinking", "").strip():
+            rows.append(("thinking", b["thinking"]))
+        elif t == "tool_use":
+            inp = b.get("input", {})
+            s = json.dumps(inp, ensure_ascii=False)
+            if len(s) > 240:
+                s = s[:240] + "…"
+            rows.append(("tool_use", f"{b.get('name', '?')}  {s}"))
+        elif t == "tool_result":
+            c = b.get("content", "")
+            if isinstance(c, list):
+                c = " ".join(
+                    x.get("text", "") for x in c if isinstance(x, dict)
+                )
+            c = str(c).strip()
+            if len(c) > 400:
+                c = c[:400] + "…"
+            if c:
+                rows.append(("tool_result", c))
+    return rows
+
+
+def _resume_registration(session: str, programs: set[str]) -> dict | None:
+    """Return the exact project registration, never an alias or another provider."""
+
+    include_profile = "claude" in programs or bool(programs.intersection(harness_runtime.HARNESSES))
+    project_key = _project_key()
+    if not project_key or not os.path.isfile(DB_PATH):
+        return None
+    if (index := _batched_registrations()) is not None:
+        row = index.by_project.get((project_key, session))
+        program = (row["program"] or "") if row else ""
+        if not row or program not in programs:
+            return None
+        claude = include_profile
+        return {
+            "agent_id": int(row["id"]),
+            "agent_name": session,
+            "project_key": project_key,
+            "program": program,
+            "model": (row["model"] or "") if claude else "",
+            "task_description": (row["task_description"] or "") if claude else "",
+        }
+    try:
+        with _db() as con:
+            con.row_factory = sqlite3.Row
+            profile_columns = ", a.model, a.task_description" if include_profile else ""
+            row = con.execute(
+                f"SELECT a.id, a.program{profile_columns} FROM agents a "
+                "JOIN projects p ON a.project_id=p.id "
+                "WHERE a.name=? AND p.human_key=? "
+                "ORDER BY a.last_active_ts DESC LIMIT 1",
+                (session, project_key),
+            ).fetchone()
+    except sqlite3.Error:
+        return None
+    program = (row["program"] or "") if row else ""
+    if not row or program not in programs:
+        return None
+    return {
+        "agent_id": int(row["id"]),
+        "agent_name": session,
+        "project_key": project_key,
+        "program": program,
+        "model": (row["model"] or "") if "model" in row.keys() else "",
+        "task_description": (row["task_description"] or "") if "task_description" in row.keys() else "",
+    }
+
+
+def _codex_registration(session: str) -> dict | None:
+    return _resume_registration(session, {"codex", "codex-cli"})
+
+
+def _claude_registration(session: str) -> dict | None:
+    return _resume_registration(session, {"claude", "claude-code"})
+
+
+def _verified_codex_index(
+    session: str,
+    registration: dict,
+    expected_launch_id: str,
+    expected_session_id: str,
+    expected_receipt_id: str,
+) -> str | None:
+    """Validate one receipt against registration, launch, and rollout header."""
+
+    agent_id = registration["agent_id"]
+    project_key = registration["project_key"]
+    index_path = os.path.join(SESSION_INDEX_DIR, f"{agent_id}.json")
+    try:
+        with open(index_path, encoding="utf-8") as handle:
+            record = json.load(handle)
+    except (OSError, ValueError):
+        return None
+    if not isinstance(record, dict):
+        return None
+
+    if record.get("schema_version") != 2:
+        return None
+    if record.get("binding_kind") != "self" or record.get("provider") != "codex":
+        return None
+    if record.get("program") != registration["program"]:
+        return None
+    if type(record.get("agent_id")) is not int or record["agent_id"] != agent_id:
+        return None
+    if record.get("agent_name") != session or record.get("project_key") != project_key:
+        return None
+    if record.get("registered_by") != session:
+        return None
+    if record.get("launch_id") != expected_launch_id:
+        return None
+    if record.get("receipt_id") != expected_receipt_id:
+        return None
+
+    session_id = record.get("session_id")
+    transcript_path = record.get("transcript_path")
+    if session_id != expected_session_id:
+        return None
+    if not isinstance(transcript_path, str) or not transcript_path.endswith(".jsonl"):
+        return None
+    real_transcript = os.path.realpath(transcript_path)
+    if not os.path.isfile(real_transcript):
+        # Receipts written before #58 kept the child CODEX_HOME route.  Normal
+        # cleanup removes that directory but leaves the shared rollout intact.
+        # Recover only this exact legacy layout; an arbitrary missing receipt
+        # path must never turn into a scan of the user's Codex history.
+        if not os.path.isabs(transcript_path) or not _valid(session):
+            return None
+        recorded_path = os.path.abspath(os.path.expanduser(transcript_path))
+        child_sessions = os.path.abspath(
+            os.path.join(
+                RUNTIME_DIR,
+                "child-agents",
+                f"{session}.codex-home",
+                "sessions",
+            )
+        )
+        try:
+            if os.path.commonpath([recorded_path, child_sessions]) != child_sessions:
+                return None
+            relative = os.path.relpath(recorded_path, child_sessions)
+        except ValueError:
+            return None
+        source_home = os.path.expanduser(
+            os.environ.get("CODEX_HOME") or "~/.codex"
+        )
+        source_sessions = os.path.realpath(os.path.join(source_home, "sessions"))
+        recovered = os.path.realpath(os.path.join(source_sessions, relative))
+        try:
+            if os.path.commonpath([recovered, source_sessions]) != source_sessions:
+                return None
+        except ValueError:
+            return None
+        if not os.path.isfile(recovered):
+            return None
+        real_transcript = recovered
+        transcript_path = recovered
+    header_session_id, _cwd = _codex_meta(real_transcript)
+    if header_session_id != session_id:
+        return None
+    return transcript_path
+
+
+_CODEX_BINDING_REASONS = {
+    "awaiting_hook": "Waiting for this run's history binding receipt.",
+    "binding_missing": "This launch has no verified registration binding.",
+    "hook_not_observed": (
+        "This run did not produce a verified history binding receipt. "
+        "Check that the AgentStack Codex plugin is installed and enabled, "
+        "review/approve its lifecycle hooks in Codex /hooks, then start a new "
+        "Codex process."
+    ),
+    "no_transcript": "This run did not provide a usable transcript file.",
+    "id_mismatch": "The runtime session ID did not match the rollout metadata.",
+    "write_failed": "The verified history receipt could not be written.",
+    "unsupported_source": "This runtime lifecycle event could not be bound safely.",
+    "receipt_missing": "This run's verified history receipt is unavailable.",
+    "invalid_binding": "History binding is unconfirmed because this launch's registration binding is invalid.",
+    "disabled": "This session is configured not to save transcript history.",
+}
+
+
+def _codex_history_binding(session: str, *, now: float | None = None) -> dict:
+    """Return visible binding state for the current launch, never a guess."""
+
+    registration = _codex_registration(session)
+    if registration is None:
+        return {
+            "history_binding": "unconfirmed",
+            "history_binding_reason": _CODEX_BINDING_REASONS["invalid_binding"],
+            "history_binding_reason_code": "invalid_binding",
+        }
+    launch_path = os.path.join(CODEX_LAUNCH_DIR, f"{registration['agent_id']}.json")
+    try:
+        with open(launch_path, encoding="utf-8") as handle:
+            launch = json.load(handle)
+    except (OSError, ValueError):
+        launch = None
+    launch_kind = launch.get("launch_kind") if isinstance(launch, dict) else None
+    resume_session_id = (
+        launch.get("resume_session_id") if isinstance(launch, dict) else None
+    )
+    fallback_launch_id = (
+        launch.get("fallback_launch_id") if isinstance(launch, dict) else None
+    )
+    fallback_receipt_id = (
+        launch.get("fallback_receipt_id") if isinstance(launch, dict) else None
+    )
+    resume_fields_valid = (
+        launch_kind == "startup"
+        and resume_session_id is None
+        and fallback_launch_id is None
+        and fallback_receipt_id is None
+    ) or (
+        launch_kind == "resume"
+        and isinstance(resume_session_id, str)
+        and bool(re.fullmatch(r"[0-9A-Fa-f-]{8,}", resume_session_id))
+        and isinstance(fallback_launch_id, str)
+        and bool(fallback_launch_id)
+        and isinstance(fallback_receipt_id, str)
+        and bool(fallback_receipt_id)
+    )
+    valid_common = (
+        isinstance(launch, dict)
+        and launch.get("schema_version") == 1
+        and launch.get("provider") == "codex"
+        and launch.get("program") == registration["program"]
+        and type(launch.get("agent_id")) is int
+        and launch.get("agent_id") == registration["agent_id"]
+        and launch.get("agent_name") == session
+        and launch.get("project_key") == registration["project_key"]
+        and isinstance(launch.get("launch_id"), str)
+        and bool(launch.get("launch_id"))
+        and launch_kind in {"startup", "resume"}
+        and resume_fields_valid
+        and type(launch.get("binding_conflicted")) is bool
+        and (
+            launch.get("claimed_session_id") is None
+            or (
+                isinstance(launch.get("claimed_session_id"), str)
+                and bool(launch.get("claimed_session_id"))
+            )
+        )
+        and (
+            launch.get("receipt_id") is None
+            or (
+                isinstance(launch.get("receipt_id"), str)
+                and bool(launch.get("receipt_id"))
+            )
+        )
+    )
+    if not valid_common:
+        reason = "binding_missing" if launch is None else "invalid_binding"
+        return {
+            "history_binding": "unconfirmed",
+            "history_binding_reason": _CODEX_BINDING_REASONS[reason],
+            "history_binding_reason_code": reason,
+        }
+    if launch.get("history_mode") == "disabled" and launch.get("binding_expected") is False:
+        return {
+            "history_binding": "disabled",
+            "history_binding_reason": _CODEX_BINDING_REASONS["disabled"],
+            "history_binding_reason_code": "disabled",
+        }
+    if launch.get("history_mode") != "enabled" or launch.get("binding_expected") is not True:
+        return {
+            "history_binding": "unconfirmed",
+            "history_binding_reason": _CODEX_BINDING_REASONS["invalid_binding"],
+            "history_binding_reason_code": "invalid_binding",
+        }
+    if launch.get("binding_conflicted") is True:
+        return {
+            "history_binding": "unconfirmed",
+            "history_binding_reason": _CODEX_BINDING_REASONS["id_mismatch"],
+            "history_binding_reason_code": "id_mismatch",
+        }
+
+    claimed_session_id = launch.get("claimed_session_id")
+    receipt_id = launch.get("receipt_id")
+    transcript = None
+    if isinstance(claimed_session_id, str) and isinstance(receipt_id, str):
+        transcript = _verified_codex_index(
+            session,
+            registration,
+            launch["launch_id"],
+            claimed_session_id,
+            receipt_id,
+        )
+    if transcript:
+        return {
+            "history_binding": "bound",
+            "history_binding_reason": "",
+            "history_binding_reason_code": "bound",
+            "transcript_path": transcript,
+        }
+
+    # Codex 0.156 emits SessionStart(resume) on the first submitted prompt,
+    # not when the REPL opens.  Until that hook claims this fresh expectation,
+    # retain only the exact receipt used to choose `codex resume <session_id>`.
+    # The nonce pair, registration, requested ID, and rollout header are all
+    # revalidated here. Any hook transition sets a current receipt nonce (or a
+    # conflict), so this fallback cannot survive a failed/conflicting claim.
+    if (
+        launch_kind == "resume"
+        and claimed_session_id is None
+        and receipt_id is None
+        and launch.get("binding_conflicted") is False
+    ):
+        fallback = _verified_codex_index(
+            session,
+            registration,
+            fallback_launch_id,
+            resume_session_id,
+            fallback_receipt_id,
+        )
+        if fallback:
+            return {
+                "history_binding": "bound",
+                "history_binding_reason": "",
+                "history_binding_reason_code": "bound",
+                "transcript_path": fallback,
+            }
+
+    reason = launch.get("last_reason")
+    if reason not in _CODEX_BINDING_REASONS or reason == "disabled":
+        reason = "receipt_missing" if reason == "bound" else "hook_not_observed"
+    observed_at = time.time() if now is None else float(now)
+    expected_at = launch.get("expected_at")
+    grace_age = (
+        observed_at - float(expected_at)
+        if type(expected_at) in {int, float}
+        else None
+    )
+    if (
+        grace_age is not None
+        and 0.0 <= grace_age < CODEX_BINDING_GRACE_SECONDS
+        and reason == "hook_not_observed"
+    ):
+        return {
+            "history_binding": "pending",
+            "history_binding_reason": _CODEX_BINDING_REASONS["awaiting_hook"],
+            "history_binding_reason_code": "awaiting_hook",
+        }
+    return {
+        "history_binding": "unconfirmed",
+        "history_binding_reason": _CODEX_BINDING_REASONS[reason],
+        "history_binding_reason_code": reason,
+    }
+
+
+def _codex_indexed_transcript(session: str) -> str | None:
+    """Return a receipt verified for the current Codex launch, or fail closed.
+
+    A Codex rollout has no agent name, so cwd, timestamps and candidate counts
+    cannot establish ownership. The session index is authoritative only when
+    it agrees with the current project's ORRERY Mail row and with the runtime
+    session id in the rollout header. Claude's legacy index reader deliberately
+    remains separate because its pre-provider records have a different
+    compatibility contract.
+    """
+    state = _codex_history_binding(session)
+    path = state.get("transcript_path")
+    return path if state.get("history_binding") == "bound" and isinstance(path, str) else None
+
+
+def _codex_transcript_path(session: str) -> str | None:
+    """Resolve Codex history only through a verified session-index binding.
+
+    This path intentionally has no cache and no timestamp/cwd scan. Reading
+    the small index on every request makes a newly written, replaced or removed
+    binding visible immediately and prevents a prior guessed path (including a
+    cached ``None``) from becoming authority for the current run.
+    """
+    return _codex_indexed_transcript(session)
+
+
+def _events_from_codex_jsonl(path: str) -> list[dict]:
+    """Codex rollout JSONL を Claude 互換の events list に正規化する。
+
+    Codex の構造:
+      {"timestamp": ISO, "type": "response_item",
+       "payload": {"type":"message", "role":"user|assistant|developer",
+                   "content":[{"type":"text", "text":"..."}]}}
+
+    developer ロール（システムプロンプト埋め込み等）はノイズになるので
+    除外し、user / assistant のみを events に展開する。
+    """
+    events: list[dict] = []
+    try:
+        with open(path, encoding="utf-8") as f:
+            for line in f:
+                events.extend(_codex_line_events(line))
+    except OSError:
+        pass
+    return events
+
+
+def _codex_line_events(line: str) -> list[dict]:
+    """The history events of one Codex rollout line (see _events_from_codex_jsonl)."""
+    line = line.strip()
+    if not line:
+        return []
+    try:
+        o = json.loads(line)
+    except ValueError:
+        return []
+    if not isinstance(o, dict) or o.get("type") != "response_item":
+        return []
+    payload = o.get("payload") or {}
+    if payload.get("type") != "message":
+        return []
+    role = payload.get("role")
+    if role not in ("user", "assistant"):
+        return []
+    ts = o.get("timestamp", "")
+    content = payload.get("content")
+    if isinstance(content, str):
+        return [{"role": role, "kind": "text", "text": content, "ts": ts}] if content.strip() else []
+    if not isinstance(content, list):
+        return []
+    events = []
+    for blk in content:
+        if not isinstance(blk, dict):
+            continue
+        btype = blk.get("type", "text")
+        txt = blk.get("text", "") or ""
+        # Codex は input_text / output_text を使う (Claude の text と等価)
+        if btype in ("text", "input_text", "output_text") and txt.strip():
+            events.append({"role": role, "kind": "text", "text": txt, "ts": ts})
+        elif btype in ("image", "image_url", "input_image"):
+            events.append({"role": role, "kind": "image", "text": "", "ts": ts})
+    return events
+
+
+def _claude_line_events(line: str) -> list[dict]:
+    """The history events of one Claude Code transcript line."""
+    line = line.strip()
+    if not line:
+        return []
+    try:
+        o = json.loads(line)
+    except ValueError:
+        return []
+    if not isinstance(o, dict):
+        return []
+    typ = o.get("type")
+    if typ not in ("user", "assistant"):
+        return []
+    msg = o.get("message") or {}
+    role = msg.get("role", typ)
+    ts = o.get("timestamp", "")
+    return [{"role": role, "kind": kind, "text": txt, "ts": ts}
+            for kind, txt in _block_text(msg.get("content"))]
+
+
+_HISTORY_TAIL_BLOCK = 1 << 20
+
+
+def _tail_events(path: str, line_events, limit: int) -> tuple[list[dict], bool]:
+    """The last `limit` events of a JSONL transcript, read from the end.
+
+    A transcript can be hundreds of megabytes; reading it whole on every
+    HISTORY open took seconds. This reads backwards a block at a time and
+    stops once more than `limit` events are known (or the file starts), so
+    `has_more` is exact: True only when an older event exists. Events keep
+    their order within a line; a line is decoded only when it is complete.
+    """
+    collected: list[list[dict]] = []  # per line, newest first
+    count = 0
+
+    def take(raw: bytes) -> bool:
+        """Add one complete line; True once more than `limit` events are known."""
+        nonlocal count
+        try:
+            events = line_events(raw.decode("utf-8"))
+        except UnicodeDecodeError:
+            return False
+        if events:
+            collected.append(events)
+            count += len(events)
+        return count > limit
+
+    with open(path, "rb") as f:
+        f.seek(0, os.SEEK_END)
+        position = f.tell()
+        # The line that starts before the block just read and continues into
+        # newer bytes, kept as pieces (oldest first): a line of many blocks is
+        # joined once, when its start is found, never re-copied per block.
+        partial: list[bytes] = []
+        done = False
+        while position > 0 and not done:
+            start = max(0, position - _HISTORY_TAIL_BLOCK)
+            f.seek(start)
+            block = f.read(position - start)
+            position = start
+            pieces = block.split(b"\n")
+            if len(pieces) == 1:  # no line starts inside this block
+                partial.insert(0, block)
+                continue
+            # pieces[-1] begins after the last newline: it completes the line
+            # held in `partial`. pieces[0] may continue in an older block.
+            complete = [pieces[-1] + b"".join(partial), *reversed(pieces[1:-1])]
+            partial = [pieces[0]]
+            for raw in complete:
+                if take(raw):
+                    done = True
+                    break
+        if not done and position == 0 and partial:
+            take(b"".join(partial))  # the file's first line
+    ordered = [event for events in reversed(collected) for event in events]
+    return ordered[-limit:], count > limit
+
+
+def history_payload(session: str, limit: int) -> dict:
+    if not _valid(session):
+        return {"ok": False, "error": "invalid session name"}
+    # Provider-specific transcript formats must never fall through into
+    # another provider's heuristic search. Antigravity stream-json results are
+    # not Claude/Codex transcripts, so history is unavailable until a native
+    # Antigravity history source is implemented.
+    program = _agent_program(session)
+    if program.startswith("antigravity"):
+        return {
+            "ok": False,
+            "error": "Antigravity transcript history is not available",
+        }
+    # codex agent は Claude 用 selfref 探索だと子の transcript を誤マッチする
+    # ため、program で先に分岐する（do_resume と同じ理由）。
+    if program.startswith("codex"):
+        path = _codex_transcript_path(session)
+        if not path:
+            if program in {"codex", "codex-cli"}:
+                binding = _codex_history_binding(session)
+                return {"ok": False, "error": binding["history_binding_reason"], **binding}
+            return {"ok": False, "error": "Codex transcript history binding is unconfirmed"}
+        is_codex = True
+    elif program.startswith("claude"):
+        path = _transcript_path(session)
+        is_codex = False
+        if not path:
+            path = _codex_transcript_path(session)
+            is_codex = bool(path)
+    else:
+        return {
+            "ok": False,
+            "error": "Agent provider is unconfirmed; transcript history is unavailable",
+        }
+    if not path:
+        return {
+            "ok": False,
+            "error": "transcript が見つかりません"
+            "（このエージェント名の会話ログがディスク上に存在しない）",
+        }
+    line_events = _codex_line_events if is_codex else _claude_line_events
+    window = {}
+    if limit > 0:
+        # Only the newest `limit` events are shown: read them from the end.
+        # The total is not counted (that needs the whole file), so `total`
+        # equals `shown` and `has_more` says whether older events exist.
+        try:
+            events, has_more = _tail_events(path, line_events, limit)
+        except OSError as e:
+            if is_codex:
+                events, has_more = [], False
+            else:
+                return {"ok": False, "error": f"read 失敗: {e}"}
+        total = len(events)
+        window = {"history_window": "tail", "has_more": has_more}
+    else:
+        if is_codex:
+            events = _events_from_codex_jsonl(path)
+        else:
+            events = []
+            try:
+                with open(path, encoding="utf-8") as f:
+                    for line in f:
+                        events.extend(_claude_line_events(line))
+            except OSError as e:
+                return {"ok": False, "error": f"read 失敗: {e}"}
+        total = len(events)
+        if limit and total > limit:
+            events = events[-limit:]
+    result = {
+        "ok": True,
+        "session": session,
+        "file": os.path.basename(path),
+        "source": "codex" if is_codex else "claude",
+        "total": total,
+        "shown": len(events),
+        "events": events,
+        **window,
+    }
+    if is_codex:
+        result.update(history_binding="bound", history_binding_reason="")
+    return result
+
+
+# --------------------------------------------------------------------------- #
+# Edge messages — network view で edge クリック時の thread side-drawer 用。
+#   2 agents (a, b) 間で project_id 一致の messages を双方向に列挙。
+#   recipient 側は message_recipients 経由なので 1 message に複数 recipient
+#   ある場合は DISTINCT で重複排除しつつ「a と b が含まれる」 message を返す。
+# --------------------------------------------------------------------------- #
+def edge_messages_payload(a: str, b: str, limit: int = 60) -> dict:
+    if not a or not b:
+        return {"ok": False, "error": "a and b required"}
+    if not (_valid(a) and _valid(b)):
+        return {"ok": False, "error": "invalid agent name"}
+    project_key = _project_key()
+    if not project_key:
+        return {"ok": False, "error": "AGENTSTACK_PROJECT_KEY or AGENTSTACK_VAULT is not configured"}
+    try:
+        with _db() as con:
+            con.row_factory = sqlite3.Row
+            cur = con.cursor()
+            cur.execute(
+                """
+                SELECT m.id, m.created_ts, m.subject, m.body_md, m.importance,
+                       m.thread_id, m.topic, m.ack_required,
+                       sa.name AS sender, ra.name AS recipient,
+                       mr.kind, mr.read_ts, mr.ack_ts
+                FROM messages m
+                JOIN projects   p  ON p.id  = m.project_id
+                JOIN agents     sa ON sa.id = m.sender_id
+                JOIN message_recipients mr ON mr.message_id = m.id
+                JOIN agents     ra ON ra.id = mr.agent_id
+                WHERE p.human_key = ?
+                  AND (
+                        (sa.name = ? AND ra.name = ?)
+                     OR (sa.name = ? AND ra.name = ?)
+                  )
+                ORDER BY m.created_ts DESC
+                LIMIT ?
+                """,
+                (project_key, a, b, b, a, max(1, min(200, limit))),
+            )
+            rows = cur.fetchall()
+    except sqlite3.Error as e:
+        return {"ok": False, "error": f"{type(e).__name__}: {e}"}
+
+    # 1 message が cc/bcc 等で複数 recipient を持つ場合、上の JOIN で
+    # ra.name = ?(a or b) で既に絞られているため、(message_id, recipient)
+    # の組は最大2行（双方向の重複は無いはず）。ID で dedup しつつ
+    # kind / read_ts / ack_ts は最初に見つかった行のものを採用。
+    seen: set = set()
+    messages: list = []
+    for r in rows:
+        if r["id"] in seen:
+            continue
+        seen.add(r["id"])
+        messages.append({
+            "id": r["id"],
+            "ts": r["created_ts"],
+            "ts_unix": _iso_to_epoch(r["created_ts"]),
+            "sender": r["sender"],
+            "recipient": r["recipient"],
+            "subject": r["subject"] or "",
+            "body": r["body_md"] or "",
+            "importance": (r["importance"] or "").lower(),
+            "thread_id": r["thread_id"],
+            "topic": r["topic"],
+            "ack_required": bool(r["ack_required"]),
+            "kind": r["kind"],
+            "read_ts": r["read_ts"],
+            "ack_ts": r["ack_ts"],
+        })
+    return {"ok": True, "a": a, "b": b, "count": len(messages),
+            "messages": messages}
+
+
+# --------------------------------------------------------------------------- #
+# messages-since — network view の comet アニメ用に since 以降の新規 message
+#   を取得。複数 recipient は 1 行ずつ展開して返す（comet を分けて飛ばす）。
+#   リプレイ防止のため since は now-300s 未満には遡らない。
+# --------------------------------------------------------------------------- #
+_BODY_HEAD_STRIP_RE = re.compile(r"^[#>*\-\s`]+")
+
+def messages_since_payload(since_ts: int, limit: int = 80) -> dict:
+    now = int(time.time())
+    since_ts = max(int(since_ts or 0), now - 300)
+    project_key = _project_key()
+    if not project_key:
+        return {"ok": True, "now": now, "since": since_ts, "messages": []}
+    try:
+        with _db() as con:
+            con.row_factory = sqlite3.Row
+            cur = con.cursor()
+            # created_ts は ISO 文字列 (例 "2026-05-21 01:35:26.258733")
+            # で保存されているため、unix int の since と直接比較できない。
+            # strftime('%s', ...) で int 化して比較する。
+            # DESC + reverse で「最新 N 件」を確実に拾う（バースト時の取りこぼし防止）
+            cur.execute(
+                """
+                SELECT m.id,
+                       CAST(strftime('%s', m.created_ts) AS INTEGER) AS ts_unix,
+                       m.subject, m.body_md, m.importance,
+                       m.thread_id, sa.name AS sender, ra.name AS recipient,
+                       mr.kind
+                FROM messages m
+                JOIN projects p ON p.id = m.project_id
+                JOIN agents sa ON sa.id = m.sender_id
+                JOIN message_recipients mr ON mr.message_id = m.id
+                JOIN agents ra ON ra.id = mr.agent_id
+                WHERE p.human_key = ?
+                  AND CAST(strftime('%s', m.created_ts) AS INTEGER) > ?
+                ORDER BY m.created_ts DESC, m.id DESC
+                LIMIT ?
+                """,
+                (project_key, since_ts, max(1, min(200, limit))),
+            )
+            rows = list(reversed(cur.fetchall()))
+    except sqlite3.Error as e:
+        return {"ok": False, "now": now, "error": f"{type(e).__name__}: {e}",
+                "messages": []}
+    out: list = []
+    for r in rows:
+        body = (r["body_md"] or "").strip()
+        # 本文先頭の見出し/箇条書きマーカーを軽く除去して読める形に
+        first = body.split("\n", 1)[0] if body else ""
+        excerpt = _BODY_HEAD_STRIP_RE.sub("", first)[:120]
+        out.append({
+            "id": r["id"],
+            "ts": r["ts_unix"],
+            "sender": r["sender"],
+            "recipient": r["recipient"],
+            "subject": (r["subject"] or "").strip()[:90],
+            "excerpt": excerpt,
+            "importance": (r["importance"] or "normal").lower(),
+            "kind": r["kind"],
+            "thread_id": r["thread_id"],
+        })
+    return {"ok": True, "now": now, "since": since_ts, "messages": out}
+
+
+# --------------------------------------------------------------------------- #
+# Agent history (Task E) — detail panel の 24h sparkline 用。
+#   ORRERY Mail SQLite から 1 エージェントの「送信 / 受信 / spawn / retire」を
+#   時系列順に返す。live state ではなく past trace を可視化するための専用源。
+#
+# 区分判定:
+#   - mail_sent / mail_recv : message_recipients の sender/recipient 関係
+#   - spawn      : subject が 「タスク依頼」or 「Task X:」 で始まる送信 → 子起動
+#   - retire     : agents.retired_at がウィンドウ内に入っている場合
+#   - context_warn は本セッションでは未実装（live で別系統に出すべきため）
+#
+# 60s in-memory cache（同じ name+hours へのバースト fetch を吸収）。
+# 出力イベント数は 200 件上限（超えたら時間で均等間引き＝spike を保つ）。
+# --------------------------------------------------------------------------- #
+_HIST_CACHE: dict[tuple[str, int], tuple[float, dict]] = {}
+_HIST_TTL = 60.0
+_HIST_LOCK = threading.Lock()
+_SPAWN_SUBJ_RE = re.compile(
+    r"^(?:\s*re:\s*)?(?:タスク依頼|Task\s+[A-Z0-9][\w\-]*\s*[:：])",
+    re.IGNORECASE,
+)
+
+
+def _classify_sent_subject(subj: str) -> str:
+    if subj and _SPAWN_SUBJ_RE.match(subj):
+        return "spawn"
+    return "mail_sent"
+
+
+# Task H: transcript JSONL から `?` (permission prompt 待ち) を抽出。
+#   ヒューリスティクス: tool_use → 対応 tool_result の gap が ASK_GAP_MIN_S 以上
+#   ある場合、その間を ask 状態とみなす（ユーザー承認待ち）。完璧ではないが
+#   実用上「Edit/Write/Bash で人間が物理キーを叩く間」を概ね捉える。
+#   ・toolUse 検出対象: 権限ダイアログが頻出する Tool 一式
+#   ・per-agent cap: 16 イベント (start/end ペア×8) で UI を埋め尽くさない
+_ASK_TOOLS = {"Edit", "Write", "MultiEdit", "NotebookEdit", "Bash"}
+_ASK_GAP_MIN_S = 25       # gap [s] 以上で ask 状態とみなす
+_ASK_CAP_PER_AGENT = 16   # events 数の上限（pair なので÷2）
+_ASK_CACHE: dict[tuple[str, int, int], tuple[float, list[dict]]] = {}
+_ASK_CACHE_TTL = 120.0    # 2 分: transcript 走査は重いので長めキャッシュ
+_ASK_CACHE_LOCK = threading.Lock()
+
+
+def _extract_ask_events(path: str | None, name: str,
+                        since: int, until: int) -> list[dict]:
+    """transcript JSONL → ask_start / ask_end events list。
+
+    cache key = (transcript path, since, until) で 2 分 TTL。
+    path=None / 読めない / 該当 0 件 → 空 list を返す（replay は壊れない）。
+    """
+    if not path or since <= 0 or until <= since:
+        return []
+    key = (path, since, until)
+    now = time.time()
+    with _ASK_CACHE_LOCK:
+        hit = _ASK_CACHE.get(key)
+        if hit and (now - hit[0]) < _ASK_CACHE_TTL:
+            return hit[1]
+    events: list[dict] = []
+    pending: dict[str, int] = {}   # tool_use_id -> ts
+    try:
+        with open(path, encoding="utf-8", errors="ignore") as f:
+            for line in f:
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    o = json.loads(line)
+                except ValueError:
+                    continue
+                ts = _iso_to_epoch(o.get("timestamp", ""))
+                if not ts:
+                    continue
+                # 範囲外は読み飛ばし (transcript は時系列なので break しても良いが
+                #  並びが乱れているケースを許容して continue にしている)
+                if ts < since:
+                    continue
+                if ts > until + 300:
+                    # 末尾の十分先まで来たら打ち切り (transcript は append-only)
+                    break
+                msg = o.get("message") or {}
+                content = msg.get("content")
+                if not isinstance(content, list):
+                    continue
+                for blk in content:
+                    if not isinstance(blk, dict):
+                        continue
+                    bt = blk.get("type")
+                    if bt == "tool_use":
+                        tname = blk.get("name", "")
+                        if tname in _ASK_TOOLS:
+                            tid = blk.get("id")
+                            if isinstance(tid, str):
+                                pending[tid] = ts
+                    elif bt == "tool_result":
+                        tid = blk.get("tool_use_id")
+                        if not isinstance(tid, str):
+                            continue
+                        start_ts = pending.pop(tid, 0)
+                        if not start_ts:
+                            continue
+                        gap = ts - start_ts
+                        if gap < _ASK_GAP_MIN_S:
+                            continue
+                        if start_ts < since or start_ts > until:
+                            continue
+                        events.append({
+                            "ts": start_ts, "kind": "ask_start",
+                            "agent": name, "ref": "", "subject": "",
+                            "importance": "normal",
+                            "sender": name, "recipient": "",
+                            "id": None,
+                        })
+                        events.append({
+                            "ts": min(ts, until), "kind": "ask_end",
+                            "agent": name, "ref": "", "subject": "",
+                            "importance": "normal",
+                            "sender": name, "recipient": "",
+                            "id": None,
+                        })
+                        if len(events) >= _ASK_CAP_PER_AGENT:
+                            break
+                if len(events) >= _ASK_CAP_PER_AGENT:
+                    break
+    except OSError:
+        events = []
+    with _ASK_CACHE_LOCK:
+        _ASK_CACHE[key] = (now, events)
+        if len(_ASK_CACHE) > 64:
+            for k, _ in sorted(_ASK_CACHE.items(), key=lambda kv: kv[1][0])[:16]:
+                _ASK_CACHE.pop(k, None)
+    return events
+
+
+def agent_history_payload(name: str = "", hours: int | None = 24,
+                          names: list[str] | None = None,
+                          include_pane_states: bool = False) -> dict:
+    """Single (`name`) or multi-agent (`names`) history payload.
+
+    Task G: `names=` is the union/replay path. Events get an `agent` field
+    (whose timeline this row belongs to). Mail events seen by both endpoints
+    in the selected set are de-duplicated to the sender-side row so the
+    mail-comet engine doesn't fire two comets for one message.
+
+    Task G+ (auto-range): `hours=None` means "fit window to actual event
+    range" — we fetch a generous 7d window, then crop to [oldest, newest]
+    with ±5% pad. Empty range falls back to 1h. Caller can still pin the
+    window explicitly with `hours=N` (existing behavior).
+    """
+    if names:
+        unique = [n for n in dict.fromkeys(names) if _valid(n)]
+        if not unique:
+            return {"ok": False, "error": "invalid agent names"}
+        names_list = unique
+        is_multi = len(names_list) > 1
+    else:
+        if not _valid(name):
+            return {"ok": False, "error": "invalid agent name"}
+        names_list = [name]
+        is_multi = False
+    # hours_in: 明示 hours は keep、None は auto-range path へ
+    auto_range = hours is None
+    if not auto_range:
+        hours = max(1, min(168, int(hours)))  # 1h .. 7d
+    fetch_hours = 168 if auto_range else hours        # auto は 7d ぶん引いて crop
+    cache_key: tuple = (tuple(sorted(names_list)), hours, bool(include_pane_states))
+    now = int(time.time())
+    # キャッシュヒット（now はキャッシュ時刻のまま）
+    with _HIST_LOCK:
+        ent = _HIST_CACHE.get(cache_key)
+        if ent and (time.time() - ent[0]) < _HIST_TTL:
+            return ent[1]
+
+    project_key = _project_key()
+    if not project_key:
+        return {"ok": False, "error": "AGENTSTACK_PROJECT_KEY or AGENTSTACK_VAULT is not configured"}
+    since = now - fetch_hours * 3600
+    agent_infos: dict[str, dict] = {}   # name -> {id, inception_ts, retired_at}
+    raw_events: list[dict] = []
+    selected_names: set[str] = set(names_list)
+    try:
+        with _db() as con:
+            con.row_factory = sqlite3.Row
+            cur = con.cursor()
+            for nm in names_list:
+                cur.execute(
+                    f"""
+                    SELECT a.id, a.inception_ts, {_retired_at_select()}
+                    FROM agents a
+                    JOIN projects p ON p.id = a.project_id
+                    WHERE p.human_key = ? AND a.name = ?
+                    ORDER BY a.last_active_ts DESC
+                    LIMIT 1
+                    """,
+                    (project_key, nm),
+                )
+                row = cur.fetchone()
+                if not row:
+                    continue
+                agent_infos[nm] = {
+                    "id": row["id"],
+                    "inception_ts": row["inception_ts"],
+                    "retired_at": row["retired_at"],
+                }
+            if not agent_infos:
+                return {"ok": False, "error": "agent not found"}
+
+            for nm, info in agent_infos.items():
+                agent_id = info["id"]
+                # Expand one event per recipient so replay can animate every
+                # broadcast edge.  The client groups cards sharing a message
+                # id, while ``rcpt_n`` preserves the recipient count label.
+                cur.execute(
+                    """
+                    SELECT m.id,
+                           CAST(strftime('%s', m.created_ts) AS INTEGER) AS ts,
+                           m.subject, m.importance, m.thread_id,
+                           ra.name AS recipient,
+                           (SELECT COUNT(DISTINCT mr2.agent_id)
+                              FROM message_recipients mr2
+                              WHERE mr2.message_id = m.id) AS rcpt_n
+                    FROM messages m
+                    JOIN projects p ON p.id = m.project_id
+                    JOIN message_recipients mr ON mr.message_id = m.id
+                    JOIN agents ra ON ra.id = mr.agent_id
+                    WHERE p.human_key = ?
+                      AND m.sender_id = ?
+                      AND CAST(strftime('%s', m.created_ts) AS INTEGER) >= ?
+                    GROUP BY m.id, ra.id
+                    ORDER BY m.created_ts ASC, ra.id ASC
+                    """,
+                    (project_key, agent_id, since),
+                )
+                for r in cur.fetchall():
+                    subj = (r["subject"] or "").strip()
+                    kind = _classify_sent_subject(subj)
+                    raw_events.append({
+                        "id": r["id"],
+                        "ts": r["ts"],
+                        "kind": kind,
+                        "ref": r["recipient"] or "",
+                        "subject": subj[:140],
+                        "importance": (r["importance"] or "normal").lower(),
+                        "agent": nm,
+                        "sender": nm,
+                        "recipient": r["recipient"] or "",
+                        "rcpt_n": r["rcpt_n"] or 1,
+                        "thread_id": r["thread_id"],
+                    })
+                # 受信
+                cur.execute(
+                    """
+                    SELECT m.id,
+                           CAST(strftime('%s', m.created_ts) AS INTEGER) AS ts,
+                           m.subject, m.importance, m.thread_id,
+                           sa.name AS sender
+                    FROM messages m
+                    JOIN projects p ON p.id = m.project_id
+                    JOIN message_recipients mr ON mr.message_id = m.id
+                    JOIN agents sa ON sa.id = m.sender_id
+                    WHERE p.human_key = ?
+                      AND mr.agent_id = ?
+                      AND CAST(strftime('%s', m.created_ts) AS INTEGER) >= ?
+                    ORDER BY m.created_ts ASC
+                    """,
+                    (project_key, agent_id, since),
+                )
+                for r in cur.fetchall():
+                    raw_events.append({
+                        "id": r["id"],
+                        "ts": r["ts"],
+                        "kind": "mail_recv",
+                        "ref": r["sender"] or "",
+                        "subject": (r["subject"] or "").strip()[:140],
+                        "importance": (r["importance"] or "normal").lower(),
+                        "agent": nm,
+                        "sender": r["sender"] or "",
+                        "recipient": nm,
+                        "thread_id": r["thread_id"],
+                    })
+                # retire
+                retire_ts = _iso_to_epoch(info["retired_at"]) if info["retired_at"] else 0
+                if retire_ts and retire_ts >= since:
+                    raw_events.append({
+                        "id": None,
+                        "ts": retire_ts,
+                        "kind": "retire",
+                        "ref": "",
+                        "subject": "agent retired",
+                        "importance": "normal",
+                        "agent": nm,
+                        "sender": nm,
+                        "recipient": "",
+                    })
+    except sqlite3.Error as e:
+        return {"ok": False, "error": f"{type(e).__name__}: {e}"}
+
+    # Dedupe — when sender も recipient も選択集合に居る mail は sender 側のみ採用
+    sent_msg_ids = {
+        e["id"] for e in raw_events
+        if e["kind"] in ("mail_sent", "spawn") and e["id"] is not None
+    }
+    deduped: list[dict] = []
+    for e in raw_events:
+        if (
+            e["kind"] == "mail_recv"
+            and e["id"] in sent_msg_ids
+            and e.get("sender") in selected_names
+        ):
+            continue
+        deduped.append(e)
+    events = deduped
+
+    # Task H: transcript から ask_start/ask_end を mining (include_pane_states 時)
+    # transcript が無い / Codex / Edit 系を呼ばない agent は何も追加されない。
+    if include_pane_states:
+        ask_window_until = max((e["ts"] for e in events), default=now) if events else now
+        for nm in agent_infos:
+            tpath = _transcript_path(nm)
+            if not tpath:
+                continue
+            ask_evs = _extract_ask_events(tpath, nm, since, ask_window_until)
+            events.extend(ask_evs)
+
+    events.sort(key=lambda ev: ev["ts"])
+
+    # ── auto-range: hours 省略時は events の min/max を ±5% pad して window 化 ──
+    # 明示 hours の場合は range = [since, now] をそのまま採用（互換性のため now_ts も維持）。
+    if auto_range:
+        if events:
+            ev_min = events[0]["ts"]
+            ev_max = events[-1]["ts"]
+            span = max(1, ev_max - ev_min)
+            pad = int(span * 0.05)
+            range_start = max(since, ev_min - pad)
+            # newest event より先には伸ばさない（"now" は range の右端＝最終イベント時刻）
+            range_end = min(now, ev_max + pad)
+            # ただし span が極端に短い (5min 未満) と scrubber が tap しづらいので 5min まで膨らます
+            if (range_end - range_start) < 300:
+                cx = (range_end + range_start) // 2
+                range_start = max(since, cx - 150)
+                range_end = min(now, cx + 150)
+        else:
+            # 0 件: fallback 1h を「直近 1h」として返す（events も range も虚無）
+            range_end = now
+            range_start = now - 3600
+    else:
+        range_start = since
+        range_end = now
+
+    # 上限間引き（spawn/retire/exit/ask は温存 — topology & 状態変化は希少だから）
+    #   さらに multi 選択時は「選択エージェント同士の mail」も温存する。これが
+    #   replay の主役（=ユーザーが見たい会話）であり、stride 間引きに巻き込むと
+    #   "6 件やりとりしたのに 1 件しか出ない" になる（third-party との cross-
+    #   traffic で total_raw が膨らみ、pair の大半が stride から外れて消える）。
+    #   GROUP-ONLY フィルタはこの events をさらに絞るだけなので、ここで pair を
+    #   落とすとフロント側ではもう回復できない。pair は全件残し、間引くのは
+    #   third-party を含む周辺トラフィックのみ。
+    def _is_in_group_mail(e: dict) -> bool:
+        if e.get("kind") not in ("mail_sent", "mail_recv"):
+            return False
+        s = e.get("sender")
+        # recipient は multi 宛で "Name +N" 形になりうるので先頭名で判定
+        r = (e.get("recipient") or "").split(" ", 1)[0]
+        return s in selected_names and r in selected_names
+
+    max_events = 400 if is_multi else 200
+    total_raw = len(events)
+    if total_raw > max_events:
+        keep_kinds = {"spawn", "retire", "exit", "ask_start", "ask_end"}
+        keep_idx = {
+            i for i, e in enumerate(events)
+            if e["kind"] in keep_kinds or (is_multi and _is_in_group_mail(e))
+        }
+        keep_idx.add(0)
+        keep_idx.add(total_raw - 1)
+        budget = max_events - len(keep_idx)
+        if budget > 0:
+            stride = max(1, total_raw // budget)
+            for i in range(0, total_raw, stride):
+                keep_idx.add(i)
+                if len(keep_idx) >= max_events:
+                    break
+        events = [events[i] for i in sorted(keep_idx)]
+
+    # Task H: range_start 時点での graph state snapshot
+    #   alive_agents = inception_ts ≤ range_start AND (retired_at は range_start より後 / 未 retire)
+    #   時刻が分からない agent は alive 扱い（保守的 fallback）。
+    alive_agents: list[str] = []
+    for nm, info in agent_infos.items():
+        inc = _iso_to_epoch(info["inception_ts"])
+        ret = _iso_to_epoch(info["retired_at"]) if info["retired_at"] else 0
+        if (not inc) or inc <= range_start:
+            if (not ret) or ret > range_start:
+                alive_agents.append(nm)
+    # auto モードでは since_ts / now_ts を「窓の見える側」に合わせる（UI が
+    # この値で sparkline / scrubber を組むため）。total_raw は dedupe 後の本数。
+    payload: dict = {
+        "ok": True,
+        "hours": hours,            # 明示時は秒数、auto 時は None
+        "auto_range": auto_range,
+        "since_ts": range_start,
+        "now_ts": range_end,
+        "range": {"start_ts": range_start, "end_ts": range_end},
+        "total_raw": total_raw,
+        "events": events,
+        "initial_state": {
+            "ts": range_start,
+            "alive_agents": alive_agents,
+        },
+        "include_pane_states": bool(include_pane_states),
+    }
+    if is_multi:
+        payload["names"] = list(agent_infos.keys())
+        payload["agents"] = {
+            nm: {
+                "inception_ts": _iso_to_epoch(info["inception_ts"]),
+                "retired_ts": _iso_to_epoch(info["retired_at"]) or None,
+            }
+            for nm, info in agent_infos.items()
+        }
+    else:
+        only = next(iter(agent_infos))
+        info = agent_infos[only]
+        payload["name"] = only
+        payload["inception_ts"] = _iso_to_epoch(info["inception_ts"])
+        payload["retired_ts"] = (
+            _iso_to_epoch(info["retired_at"]) if info["retired_at"] else None
+        )
+    with _HIST_LOCK:
+        _HIST_CACHE[cache_key] = (time.time(), payload)
+        # 簡易 LRU 風: 50 entries 超えたら古い順に間引き
+        if len(_HIST_CACHE) > 50:
+            for k, _ in sorted(_HIST_CACHE.items(), key=lambda kv: kv[1][0])[:10]:
+                _HIST_CACHE.pop(k, None)
+    return payload
+
+
+try:
+    from dashboard.terminal_state import (_CTX_RE, _CTX_CODEX_LEFT_RE, _CTX_CODEX_USED_RE, _WORK_RE, _WORK_CLAUDE_TASK_RE, _WORK_CODEX_RE, _ASK_Q_RE, _ASK_OPT_RE, _ASK_YN_RE, _ASK_CODEX_RE, _QUESTION_RE)
+except ModuleNotFoundError:
+    from terminal_state import (_CTX_RE, _CTX_CODEX_LEFT_RE, _CTX_CODEX_USED_RE, _WORK_RE, _WORK_CLAUDE_TASK_RE, _WORK_CODEX_RE, _ASK_Q_RE, _ASK_OPT_RE, _ASK_YN_RE, _ASK_CODEX_RE, _QUESTION_RE)
+# --------------------------------------------------------------------------- #
+# Agent runtime probe — コンテキスト残量(HP) + 動作状態を tmux ペインから読む
+#   Claude Code / Codex の TUI 表示を read-only パース。新データ源は持たない。
+#   - ctx_used : Claude "ctx: N% used" / Codex "Context N% left|used" → HP
+#   - act_state: work(生成中) / wait(返答待ち) / ask(承認待ち)
+#   capture-pane は重いので running セッションのみ・4.5s TTL でキャッシュ
+#   （フロントの /api/graph ポーリング=5s と同位相にして 1 周期 1 capture）。
+#   ※ Claude と Codex は書式が排他（"ctx: N% used" は Claude のみ、"Context
+#     N% left" は Codex のみ）なので両方 try しても誤マッチしない。各 Codex
+#     書式は実ペインで確証済み（cxprobe 観測 2026-06-02）。
+# --------------------------------------------------------------------------- #
+# Codex ステータスライン: "gpt-5.5 medium · Context 70% left · ~/path"。
+#   "left"=残量(→used=100-N) / "used"=使用率。Claude の _CTX_RE と排他。
+# 生成中: 入力ロック中ヒント or 経過時間+トークンカウンタの作業ステータス行
+#   実測例: "✽ Stewing… (2m 46s · ↓ 8.5k tokens · thought for 1s)"
+# Claude Code 新TUI (2026-08 実測): タスクwidget 稼働時のスピナー行は
+#   "✽ <進行中タスク名>…" だけになり、esc to interrupt・経過時間・token 数が
+#   一切出ない → _WORK_RE 全滅で work が wait に化ける。グリフ行＋折返し2行以内の
+#   "…" を作業中の証拠にする。タスク名折返しでグリフが単独行になる形も許容。
+#   idle ペインにグリフ開始行が残らないことを Claude 6 ペインで負例確認済み。
+#   "·" は単独行だと汎用的すぎるので "…" 必須側のみに含める。
+#   ⚠ 2026-08-03 修正: 初版は待機中を work と誤判定した。同じグリフが **完了
+#   マーカー** ("✻ Cooked for 8s") にも使われ、しかも継続行が空行を跨いで別
+#   ブロックまで届いたため、無関係な過去ログの "…" と結合していた。2点で塞ぐ:
+#     (1) 継続行は非空行のみ = 空行は折返しでなく別ブロックの開始
+#     (2) グリフ行が "… for 8s" 形の完了マーカーなら除外（末尾が "…" の正当な
+#         スピナーは末尾が duration でないので巻き添えにならない）
+#   全 tmux 37 セッションで現行版と比較し、落ちるのは誤検知1体のみ・正しい
+#   work 判定は不変であることを実測済み。
+# Codex 生成中スピナー行: "• Working (1s • esc to interrupt)" / "• Thinking (…"。
+#   "esc to interrupt" は _WORK_RE でも拾えるが、文言変更に備え spinner+経過尺
+#   (… (Ns) という形)も正本にする。prose 誤マッチを避けるため経過尺を必須化。
+# 承認待ち: 権限プロンプト "Do you want to …?" + 番号付き選択(❯ 1. …)。
+#   旧 y/n 系もフォールバック。※実プロンプトで書式確定させること。
+# Codex 承認待ちモーダルの確定フッター。番号付き選択のセレクタが › (U+203A)
+#   で Claude と別字形なので、常時出るこのフッター行を正本にする。
+#   実ペイン: "Press enter to confirm or esc to cancel"。
+# AskUserQuestion ウィジェット: フッターに "Enter to select" + "Esc to cancel" が
+# 同じ 1 行に並ぶ（中黒 · や Tab/Arrow keys を挟む）。DOTALL にすると過去スク
+# ロールに残った報告本文等にも誤マッチするため敢えて単一行にする。
+# 2026-05-20 FrostyEinstein が完了報告本文に regex 文字列を書いた瞬間、自分自身が
+# question 判定される自己マッチ事故が発生。
+# コンテキスト窓: ステータスラインの "Opus 4.7 (1M context)" を直読み。
+#   登録モデル文字列より確実（実セッションが報告する値そのもの）。
+_WIN_RE = re.compile(r"\(\s*([\d.]+\s*[MK])\s*context\s*\)", re.IGNORECASE)
+_WIN_MODEL_RE = re.compile(
+    r"(?im)^\s*Model:\s*[^\n]*\bwith\s+([\d.]+\s*[MK])\s+context\b"
+)
+# 狭いペインでは Claude の Model 行が ``with 1M con…`` の途中で省略
+# される。この緩和は Model: 行の末尾だけに限定し、通常の会話やコードに
+# 出てくる ``1M con`` を context window と誤読しない。
+_WIN_TRUNC_RE = re.compile(
+    r"(?im)^\s*Model:\s*[^\n]*\bwith\s+([\d.]+\s*[MK])\s+"
+    r"con(?:t(?:e(?:x(?:t)?)?)?)?(?:[.…]{1,3})?\)?\s*$"
+)
+# 実モデル: pane のステータスバーに出る文字列を直読み。
+#   Claude Code: "| Opus 4.6 | ctx: 59% used"
+#   Codex:       "gpt-5.4 xhigh · Context 46% left"
+# 登録時 model 文字列は warm pool claim 等で書き換わるため信用しない。
+#   2026-09-04: Fable/Mythos を追加。未知の Claude family だと statusline を
+#   素通りし、末尾10行の会話中に出た "gpt-5.6" を実モデルと誤読して provider
+#   まで openai に化けた（ProOpus が cockpit で Codex 表示になった実害）。
+#   同時に、ctx 表示と同じ行（= statusline）を最優先で読むようにし、会話中の
+#   モデル名（"gpt-5.6-sol に委任"）を statusline より先に拾わないようにする。
+_MODEL_PANE_RE = re.compile(
+    r"\b(Opus|Sonnet|Haiku|Fable|Mythos)\s+(\d+(?:\.\d+)?)\b"
+    r"|\b(gpt-\d+(?:\.\d+)?)(?:-(codex|mini|nano|turbo|thinking))?\b",
+    re.IGNORECASE,
+)
+_STATUSLINE_HINT_RE = re.compile(
+    r"ctx:\s*\d+%\s*used|Context\s+\d+%\s*(?:left|used)"
+    # Codex footer before any context is used: "gpt-5.6-terra medium · ~/dir"
+    r"|^\s*gpt-\S+\s+(?:low|medium|high|xhigh|max|ultra)\s+[·•]"
+    # Claude's /model or /status line: "Model: Default (Opus 5 with 1M context)"
+    r"|^\s*Model:\s",
+    re.IGNORECASE)
+
+
+def _pane_model_from(tail: str) -> str | None:
+    """末尾行群から実モデル名を読む。statusline（ctx 表示・Codex footer・
+    ``Model:`` 行）だけを見る。会話本文は読まない。
+
+    2026-09-07 WSL2 実害: statusline 未設定の Claude Code 親が「gpt-5.6-terra
+    の子に委任」と話しただけで、末尾全体フォールバックが gpt-5.6 を実モデルと
+    誤読し、cockpit で Codex 表示になった。statusline が無いペインは None を
+    返し、ORRERY Mail の登録（program / model）に判断を委ねる。"""
+    for src in (ln for ln in tail.splitlines() if _STATUSLINE_HINT_RE.search(ln)):
+        mm = _MODEL_PANE_RE.search(src)
+        if not mm:
+            continue
+        if mm.group(1):  # Claude family
+            return f"{mm.group(1).title()} {mm.group(2)}"
+        base, variant = mm.group(3), mm.group(4)
+        return f"{base}-{variant}" if variant else base
+    return None
+
+
+def _pane_model_for(pane_model: str | None, program: str | None) -> str | None:
+    """pane 由来モデルを採用してよいか。登録 program が示す vendor と食い違う
+    読み（claude-code の pane から gpt-*）は捨てて登録側に任せる。"""
+    if not pane_model:
+        return None
+    registered = _provider_of(program)
+    observed = _provider_of(pane_model)
+    if registered and observed and registered != observed:
+        return None
+    return pane_model
+
+# 稼働経過時間。work 中: スピナー行の先頭尺。
+#   Claude: "(2m 24s · ↓ … tokens …)"（区切り · = U+00B7）
+#   Codex : "(1s • esc to interrupt)"（区切り • = U+2022）→ 両方許容。
+#   wait 中: 直前ターン要約 "✻ Crunched for 1m 36s" / "Churned for 47s"。
+_ACTIVE_T_RE = re.compile(
+    r"\(\s*(?:(\d+)\s*h\s*)?(?:(\d+)\s*m\s*)?(\d+)\s*s\s*[·•]")
+_LAST_T_RE = re.compile(
+    r"\b(?:for|in)\s+(?:(\d+)\s*h\s*)?(?:(\d+)\s*m\s*)?(\d+)\s*s\b",
+    re.IGNORECASE)
+
+
+def _dur(h: int, m: int, s: int) -> tuple[int, str]:
+    """(h,m,s) → (総秒, 表示)。表示は最大2桁単位でコンパクトに。"""
+    secs = h * 3600 + m * 60 + s
+    if h:
+        disp = f"{h}h{m:02d}m"
+    elif m:
+        disp = f"{m}m{s:02d}s"
+    else:
+        disp = f"{s}s"
+    return secs, disp
+
+
+_RT_TTL = 4.5
+_RT_STICKY_KEYS = ("pane_model", "ctx_window")
+_rt_cache: dict[str, tuple[float, str, dict]] = {}
+_rt_lock = threading.Lock()
+# Kept separately so provider-specific evidence does not change runtime parsing.
+_provider_captures: dict[str, tuple[str, float, dict]] = {}
+_provider_monitor = None
+_provider_thread = None
+_provider_stop = threading.Event()
+
+
+def _provider_generation(session: dict) -> str:
+    return _runtime_generation(session.get("created"), session.get("session_id")) + ":" + str(session.get("pane_pid", 0))
+
+
+def _provider_stall_view(name: str, session: dict):
+    if _provider_monitor is None:
+        return None
+    return _provider_monitor.view(name, _provider_generation(session))
+
+
+@_with_registration_batch
+def _provider_stall_samples():
+    samples = []
+    sessions = tmux_state()
+    agents, _ = agentmail_state()
+    tree = _process_tree_snapshot() if agents else None
+    for name, session in sessions.items():
+        agent = agents.get(name)
+        if not agent or agent.get("program") not in {"codex", "codex-cli"}:
+            continue
+        try:
+            if not _tmux_row_state(name, session, agent, tree)[2]:
+                continue
+            registration = _codex_registration(name)
+            if not registration:
+                continue
+            _agent_runtime(name, session.get("created"), session.get("session_id"))
+            with _rt_lock:
+                captured = _provider_captures.get(name)
+            generation = _runtime_generation(session.get("created"), session.get("session_id"))
+            if not captured or captured[0] != generation:
+                continue
+            env = _tmux(["show-environment", "-t", "=" + name, "PARENT_AGENT"]).strip()
+            parent = env.removeprefix("PARENT_AGENT=") if env.startswith("PARENT_AGENT=") else ""
+            samples.append(dict(name=name, agent_id=registration["agent_id"],
+                project_key=registration["project_key"], generation=_provider_generation(session),
+                parent=parent, capture_id=captured[1], evidence=captured[2]))
+        except Exception:
+            logging.warning("Provider-stop sample unavailable for %s", name)
+    return samples
+
+
+def _provider_stall_send(row: dict, event: dict) -> str:
+    """Use the child's canonical owner material and the existing Mail helper."""
+    name, parent = row["name"], row["parent"]
+    if not _valid(name) or not _valid(parent) or parent == name:
+        return "parent_unverified"
+    session = tmux_state().get(name)
+    if not session or _provider_generation(session) != row["generation"]:
+        return "parent_unverified"
+    env = _tmux(["show-environment", "-t", "=" + name, "PARENT_AGENT"]).strip()
+    if env != "PARENT_AGENT=" + parent:
+        return "parent_unverified"
+    registration = _codex_registration(name)
+    if not registration or registration["agent_id"] != row["agent_id"] or registration["project_key"] != row["project_key"]:
+        return "parent_unverified"
+    if not _resume_registration(parent, {"codex", "codex-cli", "claude", "claude-code"}):
+        return "parent_unverified"
+    try:
+        module = _child_resume_module()
+        state = module._load_state(Path(RUNTIME_DIR) / "child-agents" / (name + ".json"))
+        module._validate_identity(state, agent_name=name, agent_id=row["agent_id"],
+                                  project_key=row["project_key"], program="codex")
+        token = _runtime_agent_token(name)
+        if state.get("parent_agent") != parent or not token or not secrets.compare_digest(token, state.get("registration_token", "")):
+            return "parent_unverified"
+    except Exception:
+        return "parent_unverified"
+    result = _mcp_call("send_message", dict(project_key=row["project_key"],
+        sender_name=name, sender_token=token, to=[parent], importance="high",
+        subject=f"{name} が model の容量エラーで停止", body_md=provider_stalls.message(event)), timeout=3)
+    # An HTTP failure may occur after Mail commits. Never create a second send.
+    if result.get("ok"):
+        return "sent"
+    return "failed" if result.get("rejected") else "delivery_unknown"
+
+
+def _start_provider_stall_monitor():
+    global _provider_monitor, _provider_thread
+    if GLOBAL_MODE or os.name == "nt" or _provider_monitor is not None:
+        return
+    _provider_stop.clear()
+    _provider_monitor = provider_stalls.Monitor(Path(RUNTIME_DIR) / "provider-stalls.json",
+        _provider_stall_send, session_names=mail_signals.session_names)
+    _provider_thread = threading.Thread(target=_provider_monitor.run,
+        args=(_provider_stall_samples, _provider_stop), name="provider-stalls", daemon=True)
+    _provider_thread.start()
+
+
+@atexit.register
+def _stop_provider_stall_monitor():
+    _provider_stop.set()
+    if _provider_thread and _provider_thread is not threading.current_thread():
+        _provider_thread.join(timeout=4)
+
+
+def _runtime_activity(text: str) -> tuple[str, str]:
+    """Read the current control block; historical controls never outrank it.
+
+    An ordinary composer follows a live spinner too, so it is not by itself
+    proof of waiting. Keep the adjacent work block, including wrapped Claude
+    task labels, but not a spinner above a later reply or completed control.
+    This is display observation only; compact admission uses terminal_state.
+    """
+    lines = text.splitlines()
+
+    def rule(line):
+        return re.fullmatch(r"[─━]{8,}", line.strip()) is not None
+
+    def chrome(line):
+        row = line.strip()
+        return (not row or rule(row) or bool(_STATUSLINE_HINT_RE.search(row))
+                or row.startswith(("? for shortcuts", "⏵", "←", "→")))
+
+    # Only a complete composer suffix can supersede old modal text. Numbered
+    # choices use the same pointer, but are not an ordinary input prompt.
+    composer = None
+    for index in range(len(lines) - 1, max(-1, len(lines) - 17), -1):
+        prompt = re.fullmatch(r"\s*[❯›](?:\s+(.*))?", lines[index])
+        if prompt is None or re.match(r"\d+\.\s", prompt.group(1) or ""):
+            continue
+        suffix = lines[index + 1:]
+        if (any(_STATUSLINE_HINT_RE.search(row) or row.strip().startswith("? for shortcuts")
+                for row in suffix) and all(chrome(row) for row in suffix)):
+            composer = index
+            break
+    current = lines[:composer] if composer is not None else lines[:]
+    while current and (not current[-1].strip() or rule(current[-1])):
+        current.pop()
+
+    # The work marker must reach the end of this block, rather than merely
+    # occur somewhere in the capture. A single exact interrupt hint remains a
+    # supported minimal UI; prose mentioning that hint is not a control.
+    def continuation(row):
+        value = row.strip()
+        if not value:
+            return True
+        return (row[:1].isspace()
+                and not value.startswith(("⏺", "•", "❯", "›", "```", "~~~", "Hooks need review"))
+                and not (_ASK_Q_RE.match(value) or _QUESTION_RE.match(value) or _ASK_CODEX_RE.match(value))
+                and not (_is_activity_glyph(value[0]) and _LAST_T_RE.search(value)))
+
+    # Retain the existing 25-line task-widget window. Only indented widget
+    # continuations may follow a live work label; replies and later controls
+    # end that block. The label itself still has at most two wrapped lines.
+    for start in range(len(current) - 1, max(-1, len(current) - 26), -1):
+        block = current[start:]
+        if not block[0].strip() or not all(continuation(row) for row in block[1:]):
+            continue
+        for width in range(1, min(3, len(block)) + 1):
+            label = block[:width]
+            if any(not row.strip() for row in label):
+                continue
+            candidate = "\n".join(row.strip() for row in label)
+            if candidate == "esc to interrupt":
+                return "work", candidate
+            if not (_is_activity_glyph(candidate[0]) or candidate[0] in "▌●"):
+                continue
+            # Codex uses the same timed interrupt UI for MCP initialization.
+            if (width == 1 and candidate[0] in "•▌●"
+                    and _ACTIVE_T_RE.search(candidate) and _WORK_RE.search(candidate)
+                    and candidate.endswith("esc to interrupt)")):
+                return "work", candidate
+            if width > 1 and len(label[0].strip()) == 1:
+                candidate = label[0].strip() + " " + " ".join(row.strip() for row in label[1:])
+            match = _WORK_CODEX_RE.match(candidate) or _WORK_CLAUDE_TASK_RE.match(candidate)
+            if match and "\n" not in candidate[match.end():].rstrip():
+                return "work", "\n".join(label)
+    if composer is not None:
+        return "wait", ""
+
+    # These footer controls must still be current. Looking at the last control
+    # rather than reversing work/ask priority also preserves new work after an
+    # answered modal that remains in the scrollback.
+    rows = [row.strip() for row in current[-16:] if row.strip()]
+    if not rows:
+        return "wait", ""
+    # Codex hook trust has its own footer, not the normal command-approval one.
+    # Require the complete current menu transcribed from the reviewed screen;
+    # the title or a prose explanation of hook trust is not an approval UI.
+    hook = rows[-7:]
+    if (len(hook) == 7 and hook[0] == "Hooks need review"
+            and re.fullmatch(r"[1-9]\d* hooks? (?:is|are) new or changed\.", hook[1])
+            and hook[2] == "Hooks can run outside the sandbox after you trust them."
+            and [re.sub(r"^[›❯>]\s*", "", row) for row in hook[3:6]] == [
+                "1. Review hooks", "2. Trust all and continue",
+                "3. Continue without trusting (hooks won't run)"]
+            and any(re.match(r"[›❯>]\s*[123]\.", row) for row in hook[3:6])
+            and hook[6] == "enter confirm · esc skip"):
+        return "ask", ""
+    # The existing question literal may put its footer before numbered choices.
+    # Only those choices may follow it; arbitrary later output is not current UI.
+    for index, row in enumerate(rows):
+        if (_QUESTION_RE.fullmatch(row)
+                and all(re.fullmatch(r"[❯>›]?\s*\d+\.\s+.+", option)
+                        for option in rows[index + 1:])):
+            return "question", ""
+    if _ASK_CODEX_RE.fullmatch(rows[-1]) or _ASK_YN_RE.search(rows[-1]):
+        return "ask", ""
+    for index, row in enumerate(rows):
+        if _ASK_Q_RE.match(row) and rows[index + 1:]:
+            options = rows[index + 1:]
+            if (any(_ASK_OPT_RE.match(option) for option in options)
+                    and all(re.fullmatch(r"[❯>›]?\s*\d+\.\s+.+", option) for option in options)):
+                return "ask", ""
+    return "wait", ""
+
+
+def _parse_runtime(text: str) -> dict:
+    """ペイン文字列 → runtime 値。現在の操作領域から動作状態を読む。"""
+    m = _CTX_RE.search(text)
+    if m:                                   # Claude: "ctx: N% used"
+        ctx_used = int(m.group(1))
+    else:                                   # Codex: "Context N% left|used"
+        cl = _CTX_CODEX_LEFT_RE.search(text)
+        cu = _CTX_CODEX_USED_RE.search(text)
+        if cl:
+            ctx_used = 100 - int(cl.group(1))
+        elif cu:
+            ctx_used = int(cu.group(1))
+        else:
+            ctx_used = None
+    # 既存の完全な ``(1M context)`` は従来どおり全 capture から採り、
+    # Model 行の新書式・幅切れだけは誤読を避けるため末尾10行に限定する。
+    tail_for_model = "\n".join(text.splitlines()[-10:])
+    w = (
+        _WIN_RE.search(text)
+        or _WIN_MODEL_RE.search(tail_for_model)
+        or _WIN_TRUNC_RE.search(tail_for_model)
+    )
+    ctx_window = re.sub(r"\s+", "", w.group(1)).upper() if w else None
+    # ペイン由来の実モデル (steruslineから抽出。末尾10行に限定して
+    # スクロールバッファ内のコード片やテキスト中の誤マッチを避ける)
+    pane_model = _pane_model_from(tail_for_model)
+    act, work_block = _runtime_activity(text)
+    work_secs = work_disp = last_disp = None
+    if act == "work":
+        t = _ACTIVE_T_RE.search(work_block)
+        if t:
+            work_secs, work_disp = _dur(
+                int(t.group(1) or 0), int(t.group(2) or 0), int(t.group(3)))
+    else:
+        # 直前ターンの所要（最後にマッチしたもの＝最新）
+        ms = _LAST_T_RE.findall(text)
+        if ms:
+            h, m, s = ms[-1]
+            _, last_disp = _dur(int(h or 0), int(m or 0), int(s))
+    return {"ctx_used": ctx_used, "act_state": act,
+            "ctx_window": ctx_window, "work_secs": work_secs,
+            "work_disp": work_disp, "last_disp": last_disp,
+            "pane_model": pane_model}
+
+
+def _runtime_generation(created: int | None, session_id: str | None) -> str:
+    """tmux server 内で session を一意にする generation token。"""
+    return f"{int(created or 0)}:{session_id or ''}"
+
+
+def _prune_runtime_cache(sessions: dict[str, dict]) -> None:
+    """終了または同名で再作成された tmux session の runtime を破棄する。"""
+    generations = {
+        name: _runtime_generation(
+            record.get("created"), record.get("session_id")
+        )
+        for name, record in sessions.items()
+    }
+    with _rt_lock:
+        for name, (_, generation, _) in list(_rt_cache.items()):
+            if generations.get(name) != generation:
+                _rt_cache.pop(name, None)
+                _provider_captures.pop(name, None)
+
+
+_NATIVE_CONTEXT_CACHE = {}
+
+
+def _native_context_runtime(session, created, session_id, program):
+    """Native context/activity from one capture; missing evidence stays unknown."""
+    generation = (program, _runtime_generation(created, session_id))
+    now = time.monotonic()
+    with _rt_lock:
+        cached = _NATIVE_CONTEXT_CACHE.get(session)
+        if cached and cached[1] == generation and now - cached[0] < _RT_TTL:
+            return cached[2]
+    result = {'ctx_used': None, 'ctx_window': None, 'act_state': None}
+    if _valid(session):
+        try:
+            capture = _tmux_run(['capture-pane', '-p', '-J', '-t', '=' + session, '-S', '-45'],
+                                capture_output=True, text=True, timeout=3)
+            if capture.returncode == 0:
+                result = harness_context.parse_context(capture.stdout, program)
+                result['act_state'] = harness_activity.parse_activity(capture.stdout, program)
+        except (OSError, subprocess.SubprocessError):
+            pass
+    with _rt_lock:
+        if len(_NATIVE_CONTEXT_CACHE) > 512:
+            _NATIVE_CONTEXT_CACHE.clear()
+        _NATIVE_CONTEXT_CACHE[session] = (now, generation, result)
+    return result
+
+
+def _agent_runtime(
+    session: str,
+    session_created: int | None,
+    session_id: str | None = None,
+) -> dict:
+    """running session の runtime。属性だけを generation 内で保持する。"""
+    now = time.monotonic()
+    generation = _runtime_generation(session_created, session_id)
+    with _rt_lock:
+        hit = _rt_cache.get(session)
+        if hit and hit[1] != generation:
+            _rt_cache.pop(session, None)
+            hit = None
+        if hit and (now - hit[0]) < _RT_TTL:
+            return hit[2]
+    out = {"ctx_used": None, "act_state": None, "ctx_window": None,
+           "work_secs": None, "work_disp": None, "last_disp": None,
+           "pane_model": None}
+    if _valid(session):
+        try:
+            r = _tmux_run(['capture-pane', '-p', '-J', '-t', session, '-S', '-45'], capture_output=True, text=True, timeout=3)
+            if r.returncode == 0:
+                out = _parse_runtime(r.stdout)
+                with _rt_lock:
+                    _provider_captures[session] = (generation, now, provider_stalls.observe(r.stdout))
+            else:
+                with _rt_lock:
+                    _provider_captures[session] = (generation, now, {"state": "unknown"})
+        except Exception:
+            with _rt_lock:
+                _provider_captures[session] = (generation, now, {"state": "unknown"})
+    with _rt_lock:
+        previous = _rt_cache.get(session)
+        if previous and previous[1] == generation:
+            for key in _RT_STICKY_KEYS:
+                if not out.get(key):
+                    out[key] = previous[2].get(key)
+        _rt_cache[session] = (now, generation, out)
+    return out
+
+
+def term_capture(session: str, lines: int) -> dict:
+    """tmux ペインを ANSI 付き(-e)でキャプチャ。読み取り専用。
+
+    capture-pane -e は SGR(色)のみ出力しカーソル制御は含まないため、
+    フロントは SGR パーサだけで安全に描画できる。"""
+    if not _valid(session):
+        return {"ok": False, "error": "invalid session name"}
+    if not _has_session(session):
+        return {"ok": False, "error": f"session '{session}' は存在しません"}
+    lines = max(40, min(4000, lines))
+    # capture-pane の -t はペイン指定。= 接頭辞は不可なのでセッション名を
+    # そのまま渡す(存在は上で has-session -t =session で厳密確認済み)。
+    out = _tmux_run(['capture-pane', '-e', '-p', '-J', '-t', session, '-S', f'-{lines}'], capture_output=True, text=True, timeout=6)
+    if out.returncode != 0:
+        return {"ok": False, "error": "capture-pane 失敗"}
+    return {"ok": True, "session": session, "content": out.stdout}
+
+
+# --------------------------------------------------------------------------- #
+# ttyd: ブラウザ埋め込みのフル対話端末 (Phase 3)
+#   セッションごとに on-demand で ttyd を 127.0.0.1 の空きポートに起動。
+#   既存があれば再利用。一定時間アクセスが無いものは reaper が掃除。
+# --------------------------------------------------------------------------- #
+TTYD_BIN = shutil.which("ttyd") or "/opt/homebrew/bin/ttyd"
+_TTYD: dict[str, dict] = {}
+_TTYD_LOCK = threading.Lock()
+_TTYD_IDLE = 900  # 15分アクセスが無ければ停止
+
+
+def _free_port() -> int:
+    s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    s.bind(("127.0.0.1", 0))
+    p = s.getsockname()[1]
+    s.close()
+    return p
+
+
+def _ttyd_alive(rec: dict) -> bool:
+    return rec.get("proc") and rec["proc"].poll() is None
+
+
+def ttyd_ensure(session: str) -> dict:
+    if not _valid(session):
+        return {"ok": False, "error": "invalid session name"}
+    if not _has_session(session):
+        return {"ok": False, "error": f"session '{session}' は存在しません"}
+    if not os.path.exists(TTYD_BIN):
+        return {"ok": False, "error": "ttyd が見つかりません"}
+    with _TTYD_LOCK:
+        try:
+            attach_args = _legacy_terminal_argv(['tmux', 'attach', '-t', f'={session}'])
+        except (OSError, RuntimeError, ValueError, KeyError, TypeError) as exc:
+            return {'ok': False, 'error': str(exc)}
+        rec = _TTYD.get(session)
+        if rec and _ttyd_alive(rec) and rec.get('attach_args') != attach_args:
+            _ttyd_kill(rec)
+            _TTYD.pop(session, None)
+            rec = None
+        if rec and _ttyd_alive(rec):
+            rec["last"] = time.time()
+            return {"ok": True, "url": f"http://127.0.0.1:{rec['port']}/",
+                    "port": rec["port"], "reused": True}
+        port = _free_port()
+        # -W 書込可(対話) / -i 127.0.0.1 ローカル限定 / -m 同時3 /
+        # -t 端末オプション / once しない(再利用) / tmux にミラー attach
+        proc = subprocess.Popen(
+            [TTYD_BIN, "-p", str(port), "-i", "127.0.0.1", "-W",
+             "-m", "3", "-t", "fontSize=13",
+             "-t", "titleFixed=" + session,
+             "-t", "disableLeaveAlert=true",
+             *attach_args],
+            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+            start_new_session=True,
+        )
+        _TTYD[session] = {"proc": proc, "port": port, "last": time.time(), "attach_args": attach_args}
+    time.sleep(0.5)  # ttyd の listen 開始を待つ
+    if proc.poll() is not None:
+        return {"ok": False, "error": "ttyd 起動失敗"}
+    return {"ok": True, "url": f"http://127.0.0.1:{port}/",
+            "port": port, "reused": False}
+
+
+def _ttyd_kill(rec: dict) -> None:
+    try:
+        rec["proc"].terminate()
+    except Exception:
+        pass
+
+
+def _ttyd_reaper() -> None:
+    while True:
+        time.sleep(120)
+        now = time.time()
+        with _TTYD_LOCK:
+            for s in list(_TTYD):
+                rec = _TTYD[s]
+                if not _ttyd_alive(rec) or now - rec["last"] > _TTYD_IDLE:
+                    _ttyd_kill(rec)
+                    _TTYD.pop(s, None)
+
+
+@atexit.register
+def _ttyd_cleanup() -> None:
+    for rec in list(_TTYD.values()):
+        _ttyd_kill(rec)
+
+
+_TOOLS_UNSET = object()
+
+
+def do_jump(session: str, *, open_terminal: bool | None = None,
+            base=_TOOLS_UNSET, tools=_TOOLS_UNSET) -> dict:
+    """A tools request replaces a stopped managed child's selection."""
+    if not isinstance(session, str) or not re.fullmatch(r"[A-Za-z0-9_.\-]+", session):
+        return {"ok": False, "error": "invalid session name"}
+    requested = base is not _TOOLS_UNSET or tools is not _TOOLS_UNSET
+    if not requested and not os.path.lexists(os.path.join(RUNTIME_DIR, "child-agents", f"{session}.json")):
+        return _do_jump(session, open_terminal=open_terminal)
+    try:
+        module = _child_resume_module()
+        with module.tools_change_lock(pathlib.Path(RUNTIME_DIR), session):
+            if requested:
+                return _jump_with_tools(session, module, base=base, tools=tools,
+                                        open_terminal=open_terminal)
+            return _do_jump(session, open_terminal=open_terminal)
+    except (ValueError, OSError) as exc:
+        return {"ok": False, "error": str(exc), "resume_capability": "config_unrestorable"}
+
+
+def _jump_with_tools(session, module, *, base, tools, open_terminal):
+    program = _agent_program(session)
+    provider = "codex" if program in _CODEX_PROGRAMS else "claude" if program in {"claude", "claude-code"} else None
+    if provider is None:
+        return {"ok": False, "error": "Tools changes require a retained Claude or Codex CLI child"}
+    live = _child_session_live(session, module.boot_time())
+    if live is None:
+        return {"ok": False, "error": "Cannot confirm whether the child has stopped"}
+    if live:
+        found = lookup_agent(session)
+        if not found or found.get("category") != "finished":
+            return {"ok": False, "error": "Exit the child and confirm it has stopped before changing tools"}
+    selection = _child_tools_module()
+    if base is not _TOOLS_UNSET and base not in ("default", "mail-only"):
+        return {"ok": False, "error": "base must be default or mail-only"}
+    if tools is not _TOOLS_UNSET and not isinstance(tools, dict):
+        return {"ok": False, "error": "tools must be an object"}
+    runtime = pathlib.Path(RUNTIME_DIR)
+    if provider == "codex":
+        path = _codex_transcript_path(session)
+        sid, cwd = _codex_meta(path) if path else (None, None)
+        registration = _codex_registration(session)
+        if not path or not registration or not sid or not cwd:
+            return {"ok": False, "error": "The child's conversation and registration cannot be verified"}
+        provenance, error = _codex_resume_provenance(session, registration=registration, transcript_path=path)
+        if error or not provenance or provenance.get("launch_origin") != "child":
+            return {"ok": False, "error": "Tools changes require a retained child conversation"}
+        state = module.inspect_retained(runtime, session, agent_id=registration["agent_id"],
+                                        project_key=registration["project_key"], program=registration["program"])
+        record = runtime / "child-agents" / f"{session}.tools.json"
+        old = selection.read_codex_record(str(record)) or {
+            "base": "mail-only" if state["codex_mcp_profile"] == "orrery-only" else "default", "tools": {}}
+    else:
+        path = _transcript_path(session)
+        sid = os.path.basename(path)[:-6] if path else ""
+        cwd = _transcript_cwd(path) if path else ""
+        if not sid or not cwd or _claude_conversation_reason(session)[1]:
+            return {"ok": False, "error": "Tools changes require a retained child conversation"}
+        registration, _token, state = _claude_resume_material(session)
+        if state is None or "_legacy_sha256" in state:
+            return {"ok": False, "error": "Tools changes require a retained child conversation"}
+        policy = _claude_chrome_policy_module()
+        record = pathlib.Path(policy.session_path(str(runtime / "child-agents"), session, sid))
+        prior = policy.session_record(str(record.parent), session, sid)
+        old = {"base": prior["base"], "tools": prior["tools"]} if prior else {"base": "default", "tools": {}}
+        if prior and prior["claude_chrome"] and "browser" not in old["tools"]:
+            old["tools"] = {**old["tools"], "browser": {"device": prior["chrome_device"]}}
+    spec = selection.normalize(old["base"] if base is _TOOLS_UNSET else base,
+                               old["tools"] if tools is _TOOLS_UNSET else tools)
+    selection.check_provider(spec, provider)
+    if provider == "codex":
+        source = pathlib.Path(os.path.expanduser(os.environ.get("CODEX_HOME", "").strip() or "~/.codex"))
+        config_path = source / "config.toml"
+        config = module._toml().loads(config_path.read_text()) if config_path.exists() else {}
+        overlay = os.environ.get("AGENTSTACK_CODEX_CHILD_CONFIG_OVERLAY", "").strip()
+        if overlay:
+            try:
+                extra = module._toml().loads(pathlib.Path(overlay).read_text())
+                module._drop_protected_overlay_tables(extra)
+                module._deep_merge(config, extra)
+            except (ValueError, OSError):
+                pass  # Same optional overlay contract as build-home.
+        selection.codex_apply(config, spec)
+        candidate = {"version": selection.CODEX_RECORD_VERSION, **spec}
+        profile = "orrery-only" if spec["base"] == "mail-only" else "inherit"
+    else:
+        chrome = "browser" in spec["tools"]
+        selection.claude_plan(spec, cwd=cwd, chrome=chrome,
+                             claude_json=_env_path("AGENTSTACK_CLAUDE_JSON", "~/.claude.json"))
+        candidate = {"version": 4, "agent_name": session, "session_id": sid,
+                     "launch_id": secrets.token_hex(16), "standalone": False,
+                     "claude_chrome": chrome,
+                     "chrome_device": spec["tools"].get("browser", {}).get("device", ""), **spec}
+        profile = None
+    generation = module.begin_tools_change(runtime, session, state, record, candidate, profile)
+    try:
+        with module.owned_tools_change(generation):
+            _invalidate_resume_capability_cache(session)
+            result = _do_jump(session, open_terminal=open_terminal)
+        if result.get("ok") and result.get("action") != "resumed":
+            result = {"ok": False, "error": "The child became active before the tools-changing resume"}
+    except Exception:
+        # Only this generation may restore the previous selection/config.
+        module.finish_tools_change(runtime, session, generation, commit=False)
+        raise
+    if result.get("ok"):
+        try:
+            module.finish_tools_change(runtime, session, generation, commit=True)
+        except Exception:
+            # Launch has already been accepted. Do not undo a selection used
+            # by a running child or report that accepted launch as a failure.
+            result = {**result, "warning": "; ".join(filter(None, (
+                result.get("warning"), f"Tools change ({generation}) cleanup is pending; recover this generation before another resume")))}
+    else:
+        module.finish_tools_change(runtime, session, generation, commit=False)
+    _invalidate_resume_capability_cache(session)
+    if result.get("ok"):
+        result = {**result, "tools_changed": True, "base": spec["base"], "tools": spec["tools"]}
+    return result
+
+
+def _do_jump(session: str, *, open_terminal: bool | None = None) -> dict:
+    if not re.fullmatch(r"[A-Za-z0-9_.\-]+", session or ""):
+        return {"ok": False, "error": "invalid session name"}
+    # Codex App lives outside tmux and its provider owns the safe activation
+    # action.  Check it before the terminal-adapter gate. Keep the program
+    # read-back for the finished-session policy below as well.
+    program = _agent_program(session)
+    if program == "codex-app" and session in _codex_app_runtimes():
+        # open:false asks for nothing to be brought forward (the embedded
+        # cockpit asks before every jump): it is running, so say so and leave
+        # the native app where it is.
+        if open_terminal is False:
+            return {"ok": True, "action": "already_running", "terminal": "codex-app"}
+        return _open_codex_app(session)
+    preference = {} if open_terminal is None else {"open_terminal": open_terminal}
+    has_session = _has_session(session)
+    if not has_session:
+        # tmux セッションが無い = retire済み/過去セッション(gone)。
+        # UI の表示時点を信用せず、同じ capability を API 境界で再検査する。
+        capability = _resume_capability(session, program, category="gone", **preference)
+        if capability != "ready":
+            return _resume_unavailable(capability)
+        return do_resume(session, **preference)
+
+    # tmux セッションは在るが、claude が死んで「素の zsh 残骸(husk)」だけが
+    # 残っている場合がある(= category 'finished')。この husk に attach しても
+    # 死んだシェルに繋がるだけで会話は復元しない。さらに do_resume へ流しても
+    # `tmux new-session -A` が husk を掴んで resume コマンドを実行しないため、
+    # 先に husk を kill してから do_resume で新規セッションを作る必要がある。
+    # (2026-06-04「dashboard から resume が起こらない」報告の真因)
+    # 信頼源は build_agents() の category（do_kill と同じ流儀。do_jump 内に
+    # 独自 running 判定を書かない＝2026-05-20 自己kill 事故の教訓）。
+    cat = None
+    try:
+        found = lookup_agent(session)  # by name: however old the agent is
+        cat = found["category"] if found else None
+    except Exception:  # noqa: BLE001
+        cat = None
+    # Claude/Codex finished sessions are husks whose provider-native resume
+    # path can restore the conversation. Antigravity currently has no ORRERY
+    # resume implementation; killing its surviving human shell here would turn
+    # a harmless attachable shell into irreversible data loss. Preserve that
+    # shell and let the normal terminal attach path handle the jump instead.
+    if cat == "finished" and not program.startswith("antigravity"):
+        # A provider husk is not a successful conversation resume.  When the
+        # prerequisites fail, refuse the action but leave the shell intact:
+        # attaching would report false success, while killing it would discard
+        # the last recoverable artifact.
+        capability = _resume_capability(session, program, category="finished", **preference)
+        if capability != "ready":
+            return _resume_unavailable(capability)
+        if program.startswith("claude") or program in harness_runtime.HARNESSES:
+            return do_resume(session, replace_husk=True, **preference)
+        _tmux_run(['kill-session', '-t', f'={session}'], capture_output=True)
+        return do_resume(session, **preference)
+
+    if open_terminal is False:
+        return {"ok": True, "action": "already_running", "terminal": "detached"}
+    if _terminal_adapter() == "none":
+        return _terminal_unsupported()
+
+    # 1) Ghostty adapter では既存ウィンドウの前面化を試みる。
+    if _focus_existing_terminal(session):
+        return {
+            "ok": True,
+            "action": "raised",
+            "detail": "既存ウィンドウを前面化",
+            "terminal": "ghostty",
+        }
+
+    # 2) 対応端末で新規ウィンドウを開き、tmux attach -d で古いクライアントを外す。
+    launch = _open_terminal_tmux(
+        ["tmux", "attach", "-d", "-t", f"={session}"],
+        title=session,
+    )
+    if launch.get("ok"):
+        return {
+            "ok": True,
+            "action": "opened",
+            "detail": "固定タイトル付き新規ウィンドウで attach (-d)",
+            "terminal": launch.get("adapter"),
+        }
+    return {"ok": False, "error": f"open 失敗: {launch.get('error')}"}
+
+
+def do_kill(session: str, mode: str = "both") -> dict:
+    """finished/gone エージェントを kill する。
+
+    mode: 'tmux' (husk shell のみ kill) / 'retire' (ORRERY Mail soft retire のみ) /
+          'both' (デフォ＝両方)。
+
+    安全弁:
+      - session 名 _valid() 必須、warm-*/pending-* は拒否
+      - **build_agents() の category を信頼源**に finished/gone のみ許可。
+        独自 running 判定を do_kill 内に書かない (2026-05-20 自己kill 事故)。
+      - retire は soft (`agent.retired_at` を立てるだけ)。transcript JSONL は
+        一切触れず、`claude --resume` も do_resume も後から動く
+      - hard_delete は使わない (ORRERY Mail timestamp 情報を保持し
+        _transcript_path() の finished-branch 探索を温存)
+    """
+    if mode not in ("both", "tmux", "retire"):
+        return {"ok": False, "error": "invalid mode"}
+    if not _valid(session):
+        return {"ok": False, "error": "invalid session name"}
+    if session.startswith("warm-") or session.startswith("pending-"):
+        return {"ok": False, "error": "warmup/pending sessions are protected"}
+
+    # category check: build_agents() を信頼源にして finished/gone のみ許可。
+    # 過去の事故 (2026-05-20): do_kill 内の独自 running 判定が cmd チェック
+    # のみで title 活動グリフ条件を抜かしており、SwiftFaraday(自分自身)を
+    # kill する事故が発生。build_agents の compound 判定 (cmd OR activity
+    # glyph) を信頼源として再利用する。
+    target = None
+    try:
+        target = lookup_agent(session)  # by name: however old the agent is
+    except Exception as e:
+        return {"ok": False, "error": f"failed to enumerate agents: {e}"}
+    if target is None:
+        return {"ok": False, "error": f"agent '{session}' not found"}
+    if target.get("running"):
+        return {"ok": False,
+                "error": f"agent '{session}' is running - refusing to kill",
+                "category": target.get("category")}
+    # attached=True は「人間が現に画面で見ている tmux client がいる」状態。
+    # running 判定が /compact 等で false negative になっても、attached は
+    # tmux 直接シグナルで信頼できる。2026-05-20 SilverBoltzmann kill 起点の
+    # SwiftFaraday 連鎖事故の真因はここの穴 (running=False かつ attached=True
+    # で kill ボタンが出てしまった)。defense in depth として独立ガード化。
+    if target.get("attached"):
+        return {"ok": False,
+                "error": f"agent '{session}' has an attached tmux client "
+                         "- refusing to kill (detach first)",
+                "category": target.get("category")}
+    if target["category"] not in ("finished", "gone"):
+        return {"ok": False,
+                "error": f"agent '{session}' category={target['category']} "
+                         "- only finished/gone are killable"}
+
+    actions = []
+
+    # 1) retire 先 (ORRERY Mail の retired_at を立てる)
+    if mode in ("both", "retire"):
+        project_key = _project_key()
+        if not project_key:
+            actions.append("retire-no-project-key")
+            row = None
+        else:
+            try:
+                with _db() as conn:
+                    conn.row_factory = sqlite3.Row
+                    row = conn.execute(
+                        f"SELECT a.id, {_retired_at_select()} FROM agents a "
+                        "JOIN projects p ON a.project_id=p.id "
+                        "WHERE a.name=? AND p.human_key=?",
+                        (session, project_key),
+                    ).fetchone()
+            except Exception as e:
+                row = None
+                actions.append(f"retire-db-err:{e}")
+        if row is None:
+            actions.append("retire-no-record")
+        elif row["retired_at"]:
+            actions.append("retire-already")
+        else:
+            # `retire_agent` is the published MCP tool; loopback callers may
+            # soft-retire without the registration token. The old mail UI's
+            # `/mail/api/retire-agent` route is not served by ORRERY Mail
+            # (404), which left DECK's RETIRE killing tmux but never retiring.
+            retired = _mcp_call(
+                "retire_agent",
+                {"project_key": project_key, "agent_name": session},
+                timeout=8,
+            )
+            actions.append("retired" if retired.get("ok")
+                           else f"retire-err:{retired.get('error')}")
+
+    # 2) tmux kill (husk shell があれば)
+    if mode in ("both", "tmux"):
+        if _has_session(session):
+            r = _tmux_run(['kill-session', '-t', f'={session}'], capture_output=True, text=True)
+            actions.append("tmux-killed" if r.returncode == 0
+                           else f"tmux-fail:{r.stderr.strip()}")
+        else:
+            actions.append("tmux-absent")
+
+    return {"ok": True, "session": session, "mode": mode, "actions": actions}
+
+
+# --------------------------------------------------------------------------- #
+# do_spawn — dashboard から子エージェントを spawn する control panel 入口。
+#   1) ORRERY Mail に HTTP/JSON-RPC で register_agent → child name 取得
+#   2) /api/annotate ロジックで role/emoji/group を反映 (失敗しても続行)
+#   3) HTTP/JSON-RPC で send_message → child inbox にタスクメッセージ投函
+#   4) spawn_child.sh --pre-registered を background で起動 (tmux + terminal)
+#   観測専用だった dashboard を control plane として完結させる。
+# --------------------------------------------------------------------------- #
+MCP_HTTP_URL = _env_text(
+    "AGENTSTACK_MCP_URL", "http://127.0.0.1:18765/mcp"
+)
+SPAWN_SCRIPT = _env_path(
+    "AGENTSTACK_SPAWN_SCRIPT",
+    os.path.join(HOOKS_DIR, "spawn_child.sh"),
+)
+SOURCE_REPO = HERE  # vault 外、自前 git の親 repo
+# Claude Code の local catalog が使えない場合の bundled fallback。
+# _SPAWN_MODELS は既存 extension との互換性のため mapping のまま保つ。
+# The bundled candidates are the alias table's current models plus the
+# previous generation, so no second copy of the generation names lives here.
+_SPAWN_MODELS = {
+    model: ("claude-code", model)
+    for model in (*_CLAUDE_BUNDLED_ALIASES.values(), "claude-sonnet-5", "claude-opus-5")
+}
+
+
+def _claude_spawn_default_model() -> str:
+    """What the CLI launcher runs for an omitted model: the current Opus.
+
+    It follows the local catalog's designated Opus (its "main" row), never the
+    first entry of a list, so an allow-list's order still cannot change it.
+    """
+    return _claude_alias_default()
+_CODEX_DEFAULT_MODEL = codex_models.DEFAULT_MODEL
+_CODEX_DEFAULT_MODELS = codex_models.DEFAULT_MODELS
+_CODEX_EFFORTS = codex_models.EFFORTS
+SPAWN_SCIENTISTS_SCRIPT = os.path.join(os.path.dirname(HERE), "bin", "lib", "agentstack-scientists.sh")
+
+
+def _claude_catalog():
+    catalog = _resolve_claude_catalog(tuple(_SPAWN_MODELS))
+    if catalog.source == "override" or catalog.error:
+        return catalog  # An explicit allow-list is never widened.
+    # What the aliases launch is a candidate even when the catalog that named
+    # it has gone stale, so the picker's default matches the launcher's.
+    extra = tuple(model for model in _claude_alias_models() if model not in catalog.models)
+    return _dataclass_replace(catalog, models=catalog.models + extra) if extra else catalog
+
+
+def _claude_models() -> list[str]:
+    return list(_claude_catalog().models)
+
+
+def _claude_default_model(models: list[str]) -> str:
+    default = _claude_spawn_default_model()
+    if default in models:
+        return default
+    return ""  # A restrictive override requires an explicit choice, not a new default.
+
+
+def _codex_models() -> list[str]:
+    """Candidates only; explicit authorization is checked at launch time."""
+    return list(codex_models.candidate_models())
+
+
+def _agent_name_comparison_key(name: str) -> str:
+    """Normalize only for identity comparisons across stock/local servers.
+
+    Legacy Mail preserved ``Adjective-Scientist`` while some local
+    deployments deterministically remove the hyphen.  API calls, tmux names,
+    and credential paths must keep the register_agent read-back verbatim; this
+    helper is deliberately limited to occupancy/duplicate comparisons.
+    """
+    return (name or "").replace("-", "").casefold()
+
+
+def _spawn_name_status(name: str) -> str:
+    """Return available/occupied/unknown; database failures fail closed."""
+    if not name or not os.path.exists(DB_PATH):
+        return "unknown"
+    comparison_key = _agent_name_comparison_key(name)
+    try:
+        with _db() as con:
+            registered_names = (
+                row[0] for row in con.execute("SELECT name FROM agents")
+                if isinstance(row[0], str)
+            )
+            occupied = any(
+                _agent_name_comparison_key(registered) == comparison_key
+                for registered in registered_names
+            )
+        return "occupied" if occupied else "available"
+    except sqlite3.Error:
+        return "unknown"
+
+
+def _spawn_name_vocabulary() -> tuple[list[str], list[str]]:
+    """Load the launcher-owned scientist/adjective vocabulary once."""
+    if sys.platform == "win32":
+        from scripts.windows.spawn_catalog import load_vocabulary
+        try:
+            return load_vocabulary(SPAWN_SCIENTISTS_SCRIPT)
+        except ValueError:
+            return [], []
+    try:
+        output = subprocess.run(
+            [
+                "bash", "-c",
+                'source "$1" && ags_scientist_list && printf "\\036" && '
+                'ags_adjective_list',
+                "suggest-name", SPAWN_SCIENTISTS_SCRIPT,
+            ],
+            capture_output=True, text=True, timeout=3, check=True,
+        ).stdout
+    except (OSError, subprocess.SubprocessError):
+        return [], []
+    scientists_raw, separator, adjectives_raw = output.partition("\036")
+    if not separator:
+        return [], []
+    scientists = [
+        line.strip() for line in scientists_raw.splitlines() if line.strip()
+    ]
+    adjectives = [
+        line.strip() for line in adjectives_raw.splitlines() if line.strip()
+    ]
+    return scientists, adjectives
+
+
+def suggest_spawn_name(scientist: str, attempts: int = 20) -> str | None:
+    """Pick an available Adjective-Scientist name; unknown fails closed."""
+    if not re.fullmatch(r"[A-Za-z]{2,63}", scientist or ""):
+        return None
+    scientists, adjectives = _spawn_name_vocabulary()
+    if scientist not in scientists:
+        return None
+    for adjective in secrets.SystemRandom().sample(adjectives, min(attempts, len(adjectives))):
+        candidate = f"{adjective}-{scientist}"
+        if _spawn_name_status(candidate) == "available":
+            return candidate
+    return None
+
+
+def _suggest_any_spawn_name(attempts: int = 75) -> str | None:
+    """Generate a safe explicit name for AUTO spawn instead of MCP auto-name.
+
+    A stock server can return a separator-less auto-name that is later coerced
+    on token-bearing re-registration.  Supplying an available hyphenated name
+    keeps registration idempotent, while read-back still follows local servers
+    that remove the separator.
+    """
+    scientists, adjectives = _spawn_name_vocabulary()
+    candidates = [
+        f"{adjective}-{scientist}"
+        for adjective in adjectives
+        for scientist in scientists
+    ]
+    for candidate in secrets.SystemRandom().sample(
+            candidates, min(attempts, len(candidates))):
+        if _spawn_name_status(candidate) == "available":
+            return candidate
+    return None
+
+
+def _spawn_roots() -> list[str]:
+    raw_roots = os.environ.get("AGENTSTACK_SPAWN_ROOTS", "").split(":")
+    roots = raw_roots if any(raw_roots) else [os.path.expanduser("~")]
+    return [os.path.realpath(os.path.expanduser(root)) for root in roots if os.path.isdir(os.path.expanduser(root))]
+
+
+def _is_within_root(path: str, root: str) -> bool:
+    try:
+        return os.path.commonpath([path, root]) == root
+    except ValueError:
+        return False
+
+
+_SPAWN_DIR_SUGGESTION_CAP = 500
+
+
+def spawn_directory_suggestions(raw_path: str) -> dict:
+    """List visible child directories without allowing traversal outside configured roots."""
+    roots = _spawn_roots()
+    raw_path = (raw_path or "").strip()
+    if not roots or any(part == ".." for part in raw_path.split(os.sep)):
+        return {"path": None, "dirs": []}
+    target = os.path.realpath(os.path.expanduser(raw_path or roots[0]))
+    allowed_roots = [root for root in roots if _is_within_root(target, root)]
+    if not allowed_roots or not os.path.isdir(target):
+        return {"path": None, "dirs": []}
+    root = max(allowed_roots, key=len)
+    dirs: list[dict[str, str]] = []
+    try:
+        with os.scandir(target) as entries:
+            for entry in entries:
+                if entry.name.startswith("."):
+                    continue
+                try:
+                    real_entry = os.path.realpath(entry.path)
+                    if entry.is_dir(follow_symlinks=True) and _is_within_root(real_entry, root):
+                        dirs.append({"name": entry.name, "path": real_entry})
+                except OSError:
+                    continue
+    except OSError:
+        return {"path": target, "dirs": []}
+    dirs.sort(key=lambda item: item["name"].lower())
+    # The page filters these by the typed prefix, so the cap must be large
+    # enough to hold a whole directory listing: capped at 20, a vault with
+    # 25 top-level folders could never suggest the last five, whatever was typed.
+    return {"path": target, "dirs": dirs[:_SPAWN_DIR_SUGGESTION_CAP], "truncated": len(dirs) > _SPAWN_DIR_SUGGESTION_CAP}
+
+
+_SPAWN_STATUS_CACHE: dict = {"ts": 0.0, "key": None, "data": {}}
+_SPAWN_STATUS_TTL = 4.5
+_SPAWN_STATUS_LOCK = threading.Lock()
+
+
+def _spawn_scientist_statuses(
+        adjectives: list[str], scientists: list[str]) -> dict[str, str]:
+    """Report whether each scientist has at least one free adjective pairing.
+
+    Read the agent roster once, then evaluate every dynamically-loaded
+    adjective/scientist combination in Python.  This remains one SQL query even
+    when the vocabulary grows beyond SQLite's traditional parameter limit.
+    """
+    if not adjectives or not scientists or not os.path.exists(DB_PATH):
+        return {scientist: "unknown" for scientist in scientists}
+    try:
+        db_mtime = os.stat(DB_PATH).st_mtime_ns
+    except OSError:
+        return {scientist: "unknown" for scientist in scientists}
+    key = (DB_PATH, db_mtime, tuple(adjectives), tuple(scientists))
+    now = time.monotonic()
+    with _SPAWN_STATUS_LOCK:
+        if (_SPAWN_STATUS_CACHE["key"] == key
+                and now - _SPAWN_STATUS_CACHE["ts"] < _SPAWN_STATUS_TTL):
+            return dict(_SPAWN_STATUS_CACHE["data"])
+    try:
+        with _db() as con:
+            occupied = {
+                _agent_name_comparison_key(row[0])
+                for row in con.execute("SELECT name FROM agents")
+                if isinstance(row[0], str)
+            }
+    except sqlite3.Error:
+        statuses = {scientist: "unknown" for scientist in scientists}
+    else:
+        statuses = {
+            scientist: (
+                "available"
+                if any(
+                    _agent_name_comparison_key(
+                        f"{adjective}-{scientist}") not in occupied
+                    for adjective in adjectives
+                )
+                else "occupied"
+            )
+            for scientist in scientists
+        }
+    with _SPAWN_STATUS_LOCK:
+        _SPAWN_STATUS_CACHE.update(ts=now, key=key, data=statuses)
+    return dict(statuses)
+
+
+def _standard_catalog_module():
+    # provider_server loads this core by file with no package, even when the
+    # dashboard package is available. Try that root before direct-script mode.
+    try:
+        from dashboard import managed_catalog
+    except ModuleNotFoundError as error:
+        if error.name not in ('dashboard', 'dashboard.managed_catalog'):
+            raise
+        import managed_catalog
+    return managed_catalog
+
+
+def _spawn_catalog_providers():
+    # Share launcher configuration checks and the I5 capability evidence.
+    return _standard_catalog_module().standard_catalog(
+        os.environ.get("AGENTSTACK_MANAGED_SPAWN_CONFIG"),
+        mode="global" if GLOBAL_MODE else "legacy")
+
+
+
+def spawn_names_payload() -> dict:
+    """Picker data; scientist vocabulary is emitted by the launcher source."""
+    if sys.platform == "win32":
+        from scripts.windows.spawn_catalog import UNAVAILABLE, load_vocabulary
+        scientists, adjectives = load_vocabulary(SPAWN_SCIENTISTS_SCRIPT)
+        statuses = _spawn_scientist_statuses(adjectives, scientists)
+        return {
+            "unavailable": UNAVAILABLE,
+            "names": [{"name": name, "portrait": bool(_portrait_file(name, False)),
+                       "status": statuses.get(name, "unknown")} for name in scientists],
+            "adjectives": adjectives,
+            "naming": "adjective-scientist",
+        }
+    try:
+        output = subprocess.run(
+            ["bash", "-c", 'source "$1" && ags_adjective_list && printf "\\036" && ags_scientist_list', "spawn-names", SPAWN_SCIENTISTS_SCRIPT],
+            capture_output=True, text=True, timeout=3, check=True,
+        ).stdout
+    except (OSError, subprocess.SubprocessError) as e:
+        raise ValueError(f"scientist vocabulary unavailable: {e}") from e
+    adjective_text, _, scientist_text = output.partition("\x1e")
+    adjectives = [line.strip() for line in adjective_text.splitlines() if line.strip()]
+    scientists = [line.strip() for line in scientist_text.splitlines() if line.strip()]
+    statuses = _spawn_scientist_statuses(adjectives, scientists)
+    raw_dirs = os.environ.get("AGENTSTACK_SPAWN_DIRS", "").split(":")
+    # Keep `~` symbolic in the API; do_spawn expands it only at launch time.
+    # Unset: the project folder first (the first chip is the default, and only
+    # there does the agent get the project's CLAUDE.md), then home.
+    dirs = [value for value in raw_dirs if value] or [d for d in (PROJECT_KEY, "~") if d]
+    claude_catalog = _claude_catalog()
+    claude_models = list(claude_catalog.models)
+    claude_default = _claude_default_model(claude_models)
+    return {
+        "names": [{"name": name, "portrait": bool(_portrait_file(name, False)),
+                   "status": statuses.get(name, "unknown")} for name in scientists],
+        "adjectives": adjectives,
+        "naming": "adjective-scientist",
+        "dirs": dirs,
+        "models": list(claude_models),
+        "default_model": claude_default,
+        "providers": [
+            {"id": "claude", "label": "Claude", "program": "claude-code", "models": list(claude_models), "default_model": claude_default,
+             "efforts": list(claude_models_mod.EFFORT_LEVELS), "effort_default": "",
+             "model_efforts": {m: list(claude_models_mod.effort_policy(m)[0]) for m in claude_models},
+             "model_effort_defaults": {m: claude_models_mod.effort_policy(m)[1] for m in claude_models},
+             "model_source": claude_catalog.source, "model_error": claude_catalog.error,
+             "overflow_models": [m for m in claude_catalog.overflow if m != claude_default]},
+            codex_models.provider_catalog(),
+        ] + _spawn_catalog_providers(),
+    }
+
+
+def _mcp_bearer() -> str:
+    """ORRERY Mail .env から HTTP_BEARER_TOKEN を読む。空なら ''。"""
+    if not os.path.exists(MAIL_ENV_PATH):
+        return ""
+    try:
+        with open(MAIL_ENV_PATH, encoding="utf-8") as f:
+            for line in f:
+                ln = line.strip()
+                if not ln or ln.startswith("#"):
+                    continue
+                if ln.startswith("HTTP_BEARER_TOKEN"):
+                    _, _, v = ln.partition("=")
+                    return v.strip().strip('"').strip("'")
+    except OSError:
+        pass
+    return ""
+
+
+def _legacy_mail_bearer_enabled() -> bool:
+    """Select the legacy transport credential without changing its default."""
+    if MAIL_HTTP_BEARER_MODE == "enabled":
+        return True
+    if MAIL_HTTP_BEARER_MODE == "disabled":
+        return False
+    if MAIL_HTTP_BEARER_MODE == "auto":
+        return True
+    raise ValueError(
+        "AGENTSTACK_MAIL_HTTP_BEARER_MODE must be auto, enabled, or disabled"
+    )
+
+
+def _mcp_jsonrpc(method: str, params: dict, timeout: int = 15) -> dict:
+    """Send one selected-authority MCP request and normalize its envelope."""
+    try:
+        bearer_enabled = _legacy_mail_bearer_enabled()
+    except ValueError as exc:
+        return {"ok": False, "error": str(exc)}
+    token = _mcp_bearer() if bearer_enabled else ""
+    if bearer_enabled and not token:
+        return {"ok": False, "error": "HTTP_BEARER_TOKEN missing from ORRERY Mail env"}
+    payload = json.dumps({
+        # MCP servers may cache/replay duplicate JSON-RPC ids.  A fixed id made
+        # sequential register/send calls consume an unrelated prior response.
+        "jsonrpc": "2.0", "id": secrets.token_hex(8), "method": method,
+        "params": params,
+    }).encode()
+    headers = {
+        "Content-Type": "application/json",
+        "Accept": "application/json, text/event-stream",
+    }
+    if token:
+        headers["Authorization"] = f"Bearer {token}"
+    req = urllib.request.Request(
+        MCP_HTTP_URL, data=payload,
+        headers=headers,
+        method="POST",
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as r:
+            raw = r.read().decode("utf-8", errors="replace")
+    except Exception as e:  # noqa: BLE001
+        return {"ok": False, "error": f"{type(e).__name__}: {e}"}
+    for line in raw.splitlines():
+        if line.startswith("data:"):
+            raw = line[5:].strip()
+            break
+    try:
+        body = json.loads(raw)
+    except ValueError as e:
+        return {"ok": False, "error": f"invalid JSON-RPC response: {e}"}
+    if isinstance(body, dict) and body.get("error"):
+        error = body["error"]
+        # Protocol dispatch/argument failures precede execution. Internal
+        # errors (-32603, server-defined codes) can follow a committed send.
+        rejected = isinstance(error, dict) and error.get("code") in (-32600, -32601, -32602)
+        return {"ok": False, "error": str(error), "rejected": rejected}
+    if not isinstance(body, dict) or "result" not in body:
+        return {"ok": False, "error": "JSON-RPC response has no result"}
+    return {"ok": True, "result": body["result"]}
+
+
+_MCP_TOOL_PARAMETER_CACHE: dict[tuple[str, str], set[str]] = {}
+
+
+def _mcp_tool_parameters(tool: str) -> set[str] | None:
+    """Read the live tool schema so strict and lenient servers both work."""
+    key = (MCP_HTTP_URL, tool)
+    if key in _MCP_TOOL_PARAMETER_CACHE:
+        return _MCP_TOOL_PARAMETER_CACHE[key]
+    listing = _mcp_jsonrpc("tools/list", {})
+    if not listing["ok"]:
+        return None
+    result = listing.get("result")
+    if not isinstance(result, dict):
+        return None
+    for definition in result.get("tools") or []:
+        if not isinstance(definition, dict) or definition.get("name") != tool:
+            continue
+        properties = (
+            (definition.get("inputSchema") or {}).get("properties") or {}
+        )
+        allowed = set(properties)
+        _MCP_TOOL_PARAMETER_CACHE[key] = allowed
+        return allowed
+    return None
+
+
+def _mcp_send_rejected(method: str, text: str) -> bool:
+    """Recognize only Mail refusals whose source precedes message creation."""
+    if method != "send_message":
+        return False
+    text = text.removeprefix("Error calling tool 'send_message': ")
+    # boundary.py: ToolArgumentBoundary rejects before invoking the tool.
+    # app.py: send_message checks contact policy and sender_token before
+    # _deliver_message/_create_message. These fixed messages are contracted
+    # against real FastMCP responses in test_provider_stalls.py.
+    # ToolExecutionError.error_type is not published on this legacy wire;
+    # generic INVALID_ARGUMENT/ValueError, OS errors and isError alone say
+    # nothing about commit timing and must remain delivery_unknown.
+    return bool(
+        re.fullmatch(r"Tool 'send_message' does not accept \d+ of the supplied argument\(s\); check the published schema", text)
+        or re.match(r"Tool 'send_message' rejected its arguments: \d+ validation error\(s\)(?: |$)", text)
+        or text == "Recipient is not accepting messages."
+        or text.startswith("Contact approval required for recipients: ")
+        or re.fullmatch(r"Invalid argument value: sender_token does not match registered token for agent '[A-Za-z0-9]+'\. Check that all parameters have valid values\.", text)
+    )
+
+
+def _mcp_call(method: str, args: dict, timeout: int = 15) -> dict:
+    """Call one ORRERY Mail tool, shaping arguments to its advertised schema."""
+    allowed = _mcp_tool_parameters(method)
+    if (method == "register_agent" and "existing_agent_id" in args
+            and (allowed is None or "existing_agent_id" not in allowed)):
+        # This recovery guard must never be silently dropped for an older Mail.
+        return {"ok": False, "error": "ORRERY Mail needs existing-owner authentication support",
+                "error_code": "existing_owner_authentication_unavailable"}
+    prepared = args if allowed is None else {
+        key: value for key, value in args.items() if key in allowed
+    }
+    response = _mcp_jsonrpc(
+        "tools/call", {"name": method, "arguments": prepared}, timeout
+    )
+    if not response["ok"]:
+        return response
+    result = response.get("result")
+    if not isinstance(result, dict):
+        return {"ok": False, "error": "unexpected tools/call result"}
+    if result.get("isError"):
+        text = " ".join(
+            str(block.get("text", ""))
+            for block in result.get("content") or []
+            if isinstance(block, dict)
+        ).strip()
+        return {"ok": False, "error": text or "ORRERY Mail tool failed",
+                "rejected": _mcp_send_rejected(method, text)}
+    # Newer MCP servers expose the decoded payload in structuredContent.
+    try:
+        data = result.get("structuredContent")
+        if not isinstance(data, dict):
+            text = result["content"][0]["text"]
+            try:
+                data = json.loads(text)
+            except ValueError:
+                lowered = text.lower()
+                if "error calling tool" in lowered or "validation error" in lowered:
+                    return {"ok": False, "error": text.strip(),
+                            "rejected": _mcp_send_rejected(method, text.strip())}
+                data = {"text": text}
+    except (KeyError, IndexError, TypeError, ValueError) as e:
+        return {"ok": False, "error": f"unexpected response shape: {e}"}
+    return {"ok": True, "data": data}
+
+
+def _runtime_agent_token(agent_name: str) -> str:
+    """Read one exact runtime owner-token file without following symlinks."""
+    if not _valid(agent_name):
+        return ""
+    token_key = re.sub(r"[^A-Za-z0-9_.-]", "_", agent_name)
+    path = os.path.join(RUNTIME_DIR, f"agent_token_{token_key}")
+    flags = os.O_RDONLY
+    if hasattr(os, "O_NOFOLLOW"):
+        flags |= os.O_NOFOLLOW
+    try:
+        fd = os.open(path, flags)
+        with os.fdopen(fd, encoding="utf-8") as token_file:
+            token = token_file.read(4097).strip()
+    except OSError:
+        return ""
+    return token if token and len(token) <= 4096 else ""
+
+
+_SPAWN_LAUNCHES: dict[str, dict] = {}
+_SPAWN_LAUNCHES_LOCK = threading.Lock()
+_SPAWN_LAUNCH_RETENTION = 1800.0
+
+
+def _spawn_launch_record(name: str, result: dict) -> None:
+    """Remember the outcome of an asynchronous launch for /api/spawn-status."""
+    if result.get("pending"):
+        state = "launching"
+    elif result.get("ok"):
+        state = "ready"
+    else:
+        state = "failed"
+    now = time.time()
+    with _SPAWN_LAUNCHES_LOCK:
+        for stale in [k for k, v in _SPAWN_LAUNCHES.items()
+                      if now - v["ts"] > _SPAWN_LAUNCH_RETENTION]:
+            _SPAWN_LAUNCHES.pop(stale, None)
+        previous = _SPAWN_LAUNCHES.get(name)
+        _SPAWN_LAUNCHES[name] = {
+            "ts": now,
+            "started": previous["started"] if previous else now,
+            "state": state,
+            "result": result,
+        }
+
+
+_SPAWN_REASON_PREFIX = "[spawn_child] reason: "
+
+
+def _spawn_log_tail_and_reason(log_path, start_offset: int = 0) -> tuple[str, str]:
+    """The current launch interval's tail and first applicable cause line.
+
+    spawn_child.sh writes "[spawn_child] reason: ..." when it stops on
+    something only the user can resolve (Claude Code's first-run setup, its
+    Chrome question). That line becomes the launch error the cockpit shows;
+    without it the user saw only an exit status.
+    """
+    try:
+        with open(log_path, "rb") as f:
+            f.seek(start_offset)
+            text = f.read().decode("utf-8", errors="replace")
+    except OSError:
+        return "", ""
+    reason = ""
+    # Explicit readiness failures outrank rejected candidates that the launcher
+    # may have successfully replaced. Within each class keep the first cause.
+    lines = text.splitlines()
+    for line in lines:
+        if line.startswith(_SPAWN_REASON_PREFIX):
+            reason = line[len(_SPAWN_REASON_PREFIX):].strip()
+            break
+    if not reason:
+        error = next((line.strip() for line in lines if line.startswith("Error:")), "")
+        reason = error
+        # A discarded candidate is relevant only when resolution exhausted
+        # every candidate. If a replacement CLI later fails, show that error.
+        if error.startswith("Error: no usable Codex CLI found"):
+            candidates = [line.strip() for line in lines
+                          if line.startswith("note: skipping ")]
+            if candidates:
+                budget = max(0, 500 - len("; " + error))
+                reason = "; ".join(candidates)
+                if len(reason) > budget:
+                    visible = []
+                    for index, candidate in enumerate(candidates):
+                        remaining = len(candidates) - index - 1
+                        suffix = f"; (+{remaining} more skipped candidates)" if remaining else ""
+                        joined = "; ".join([*visible, candidate])
+                        if len(joined + suffix) > budget:
+                            remaining += 1
+                            suffix = f"; (+{remaining} more skipped candidates)"
+                            if not visible:
+                                # Even one candidate may contain a very long path.
+                                remaining -= 1
+                                suffix = f"; (+{remaining} more skipped candidates)" if remaining else ""
+                                visible = [candidate[:max(0, budget - len(suffix) - 1)] + "…"]
+                            reason = "; ".join(visible) + suffix
+                            break
+                        visible.append(candidate)
+                    else:
+                        reason = "; ".join(visible)
+                reason = f"{reason}; {error}" if budget and len(reason) <= budget else error
+    return text[-1000:], reason[:500]
+
+
+def spawn_launch_status(name: str) -> dict:
+    with _SPAWN_LAUNCHES_LOCK:
+        entry = _SPAWN_LAUNCHES.get(name)
+    if entry is None:
+        return {"ok": False, "error": "no launch recorded for this name"}
+    result = entry["result"]
+    return {
+        "ok": True,
+        "name": name,
+        "state": entry["state"],
+        "age": round(time.time() - entry["started"], 1),
+        "error": result.get("error"),
+        "detail": result.get("detail"),
+        "result": result if entry["state"] != "launching" else None,
+    }
+
+
+def spawn_launch_statuses() -> dict:
+    return {"ok": True, "launches": {name: spawn_launch_status(name) for name in list(_SPAWN_LAUNCHES)}}
+
+
+@dataclass(frozen=True)
+class SpawnLaunchSpec:
+    """Resolved launch contract for one NEW AGENT child.
+
+    Only trusted Python code builds a spec: ``do_spawn`` for the built-in
+    Claude/Codex providers, and optional provider extensions loaded by
+    ``provider_server.py``.  A ``/api/spawn`` payload never supplies one, so it
+    cannot choose the launcher, registered program, provider identity, or
+    launcher environment.  Every launch carries its own spec, so concurrent
+    spawns never share or temporarily rewrite module-level launcher state.
+    """
+
+    provider: str
+    program: str
+    model: str
+    script: str
+    effort: str = ""
+    # Launcher flags placed after --standalone and before --model.
+    provider_args: tuple[str, ...] = ()
+    effort_arg: bool = False
+    standalone_supported: bool = True
+    worktree_required: bool = False
+    # False when the launcher delivers the canonical task itself.
+    task_mail: bool = True
+    launcher_env: tuple[tuple[str, str], ...] = ()
+    # Launcher-only handoff files, removed once the launcher has exited.
+    handoff_paths: tuple[str, ...] = ()
+    # Deliver a readiness timeout to the launcher's whole process group.  Such
+    # a launcher owns its TERM/EXIT cleanup (reservations, registration,
+    # worktree, branch), so it is given the cleanup grace below.
+    signal_process_group: bool = False
+    # Seconds a signalled launcher may spend exiting before SIGKILL.  None
+    # selects the canonical grace for this kind of launcher.
+    termination_grace: float | None = None
+    model_note: str = ""
+
+    def __post_init__(self) -> None:
+        grace = self.termination_grace
+        if grace is not None and (
+                isinstance(grace, bool) or not isinstance(grace, (int, float))
+                or not math.isfinite(grace) or grace <= 0):
+            raise ValueError("termination_grace must be a positive number of seconds")
+
+
+# How long a launcher may take to report readiness before it is signalled.
+_SPAWN_READINESS_TIMEOUT_SECONDS = 120
+# Canonical Claude/Codex launchers have no cleanup of their own: TERM, then
+# KILL shortly after.
+_SPAWN_TERMINATE_GRACE_SECONDS = 5.0
+# A launcher that owns cleanup releases and retires over ORRERY Mail and
+# removes a git worktree before it exits.  Each of those calls is itself
+# time-bounded, so allow their sum instead of killing the cleanup midway.
+_SPAWN_CLEANUP_GRACE_SECONDS = 150.0
+# After SIGKILL, only reap; nothing is left to finish.
+_SPAWN_KILL_REAP_SECONDS = 5.0
+# A final shared cleanup is separately bounded after failed startup.
+_SPAWN_FAILURE_CLEANUP_SECONDS = 30.0
+# The page's wait for an asynchronous verdict: never shorter than the 140s it
+# has always used; current servers advertise their larger cleanup budget.
+_SPAWN_DEFAULT_WATCH_SECONDS = 140
+# Covers the page's 2s poll, the tmux probes and the credential checks that run
+# after the launcher is reaped but before the verdict is recorded.
+_SPAWN_WATCH_MARGIN_SECONDS = 10.0
+# Longest registration token read back from a runtime credential file.
+_AGENT_TOKEN_MAX_CHARS = 4096
+
+
+def _spawn_termination_grace(spec: SpawnLaunchSpec) -> float:
+    if spec.termination_grace is not None:
+        return float(spec.termination_grace)
+    if spec.signal_process_group:
+        return _SPAWN_CLEANUP_GRACE_SECONDS
+    return _SPAWN_TERMINATE_GRACE_SECONDS
+
+
+def _spawn_verdict_deadline_seconds(spec: SpawnLaunchSpec) -> int:
+    """Seconds the page should wait for an asynchronous launch verdict.
+
+    Derived only from server constants and the trusted spec: readiness timeout,
+    then the full termination grace, the post-SIGKILL reap and the final
+    shared cleanup. A spawn payload has no say in it.
+    """
+    worst = (_SPAWN_READINESS_TIMEOUT_SECONDS + _spawn_termination_grace(spec)
+             + _SPAWN_KILL_REAP_SECONDS + _SPAWN_FAILURE_CLEANUP_SECONDS
+             + _SPAWN_WATCH_MARGIN_SECONDS)
+    return max(_SPAWN_DEFAULT_WATCH_SECONDS, math.ceil(worst))
+
+
+# Credential states that are a copy interrupted midway (or never started) and
+# may therefore be replaced by the complete token.
+_SPAWN_CREDENTIAL_REPLACEABLE = ("missing", "empty", "partial")
+_SPAWN_CREDENTIAL_STATE_TEXT = {
+    "missing": "missing",
+    "empty": "empty",
+    "partial": "a partial copy",
+    "foreign": "holding a different value",
+    "oversized": "oversized",
+    "not-regular": "not a regular file",
+    "not-owned": "owned by another user",
+    "unreadable": "unreadable",
+}
+
+
+def _spawn_credential_state(path: str, expected: str) -> str:
+    """Classify one spawn credential file without following symlinks.
+
+    ``complete`` only for a regular file owned by this user whose whole content
+    is the registered token.  An empty file or a prefix of the token is a copy
+    that was interrupted; any other content was not written from this launch's
+    token and is never treated as usable or replaceable.
+    """
+    try:
+        info = os.lstat(path)
+    except FileNotFoundError:
+        return "missing"
+    except OSError:
+        return "unreadable"
+    if not stat.S_ISREG(info.st_mode):
+        return "not-regular"
+    if info.st_uid != os.getuid():
+        return "not-owned"
+    flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_NONBLOCK", 0)
+    try:
+        fd = os.open(path, flags)
+    except FileNotFoundError:
+        return "missing"
+    except OSError:
+        return "unreadable"
+    with os.fdopen(fd, "rb") as handle:
+        opened = os.fstat(handle.fileno())
+        if not stat.S_ISREG(opened.st_mode):
+            return "not-regular"
+        if opened.st_uid != os.getuid():
+            return "not-owned"
+        raw = handle.read(_AGENT_TOKEN_MAX_CHARS + 2)
+    if len(raw) > _AGENT_TOKEN_MAX_CHARS + 1:
+        return "oversized"
+    try:
+        token = raw.decode("utf-8").strip()
+    except UnicodeDecodeError:
+        return "foreign"
+    if not token:
+        return "empty"
+    if len(token) > _AGENT_TOKEN_MAX_CHARS:
+        return "oversized"
+    if token == expected:
+        return "complete"
+    if expected.startswith(token):
+        return "partial"
+    return "foreign"
+
+
+def _promote_spawn_credential(path: str, token: str, current_state: str) -> bool:
+    """Install ``token`` at ``path`` (mode 0600) in one atomic step.
+
+    The token is written and synced to an exclusive temporary file first, so
+    ``path`` never shows a partial copy.  A missing path is claimed with
+    link(2), which fails instead of replacing a credential that appeared in
+    the meantime; an empty or partial regular file is replaced with rename(2),
+    which swaps the directory entry and never writes through a symlink.
+    """
+    if current_state not in _SPAWN_CREDENTIAL_REPLACEABLE:
+        return False
+    temp = os.path.join(
+        os.path.dirname(path),
+        f".{os.path.basename(path)}.{secrets.token_hex(8)}.tmp")
+    flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0)
+    try:
+        fd = os.open(temp, flags, 0o600)
+    except OSError as e:
+        logging.warning("failed to stage recovery credential %s: %s", path, e)
+        return False
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as handle:
+            os.fchmod(handle.fileno(), 0o600)
+            handle.write(token)
+            handle.flush()
+            os.fsync(handle.fileno())
+        # Re-inspect right before installing, so a credential that became
+        # complete, foreign or a link since the first look is left alone.
+        if _spawn_credential_state(path, token) != current_state:
+            return False
+        if current_state == "missing":
+            os.link(temp, path)
+        else:
+            os.replace(temp, path)
+        return True
+    except OSError as e:
+        logging.warning("failed to install recovery credential %s: %s", path, e)
+        return False
+    finally:
+        try:
+            os.unlink(temp)
+        except OSError:
+            pass
+
+
+def _spawn_unavailable_error() -> dict | None:
+    if sys.platform == "win32":
+        from scripts.windows.spawn_catalog import UNAVAILABLE
+        return {"ok": False, "error": UNAVAILABLE}
+    return None
+
+
+def _spawn_request(payload: dict) -> tuple[dict | None, dict | None]:
+    """Validate the provider-independent NEW AGENT fields of a payload."""
+    allowed = {
+        "parent", "standalone", "task", "role", "group", "worktree",
+        "worktree_base", "name", "dir", "provider", "model", "effort",
+        "claude_chrome", "claude_chrome_device", "async", "dry_run", "headless", "emoji",
+        "base", "tools", "harness", "helper_model",
+    }
+    if str(payload.get("provider") or "").strip().lower() == "gemini":
+        allowed.add("resources")
+    unknown = sorted(set(payload) - allowed)
+    if unknown:
+        return None, {"ok": False, "error": f"unknown spawn fields: {', '.join(unknown)}"}
+    if "dry_run" in payload and not isinstance(payload["dry_run"], bool):
+        return None, {"ok": False, "error": "dry_run must be boolean"}
+    if "standalone" in payload and not isinstance(payload["standalone"], bool):
+        return None, {"ok": False, "error": "standalone must be boolean"}
+    if "headless" in payload and not isinstance(payload["headless"], bool):
+        return None, {"ok": False, "error": "headless must be boolean"}
+    if "emoji" in payload and not isinstance(payload["emoji"], str):
+        return None, {"ok": False, "error": "emoji must be a string"}
+    standalone = payload.get("standalone", False)
+    request = {
+        "dry_run": payload.get("dry_run", False),
+        "standalone": standalone,
+        "parent": (payload.get("parent") or "").strip(),
+        "task": (payload.get("task") or "").strip(),
+        "role": (payload.get("role") or "").strip()[:40],
+        "group": (payload.get("group") or "").strip()[:24],
+        "worktree": bool(payload.get("worktree")),
+        "worktree_base": (payload.get("worktree_base") or "").strip(),
+        "requested_name": (payload.get("name") or "").strip(),
+        "work_dir": os.path.expanduser((payload.get("dir") or SOURCE_REPO).strip()),
+    }
+    if not standalone and (
+            not request["parent"]
+            or _NAME_RE.fullmatch(request["parent"]) is None):
+        return None, {"ok": False, "error": "parent name invalid"}
+    if standalone:
+        request["parent"] = ""
+    if not request["task"]:
+        return None, {"ok": False, "error": "task description required"}
+    return request, None
+
+
+_CLAUDE_CHROME_DEVICE_RE = re.compile(r"[A-Za-z0-9._:-]{1,128}")
+
+
+def _child_tools_module():
+    """Load hooks/child_tools.py, the one parser of base/tools selections."""
+    for path in (
+        os.path.join(HOOKS_DIR, "child_tools.py"),
+        os.path.join(os.path.dirname(HERE), "hooks", "child_tools.py"),
+    ):
+        if not os.path.isfile(path):
+            continue
+        spec = importlib.util.spec_from_file_location("agentstack_child_tools", path)
+        if spec is None or spec.loader is None:
+            continue
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        return module
+    raise RuntimeError("child_tools.py is unavailable")
+
+
+def _spawn_tools_args(payload: dict, provider: str, chrome: bool,
+                      chrome_device: str) -> tuple[tuple[str, ...], str | None]:
+    """Launcher arguments for the payload's base/tools, or an error message.
+
+    Omitted fields add nothing. Explicit default/empty selections suppress
+    installer defaults by passing --base default."""
+    if "base" not in payload and "tools" not in payload:
+        return (), None
+    tools_module = _child_tools_module()
+    base = payload.get("base")
+    if base is not None and not isinstance(base, str):
+        return (), "base must be a string"
+    try:
+        spec = tools_module.normalize(base, payload.get("tools"))
+        tools_module.check_provider(spec, provider)
+        if provider == "claude":
+            tools_module.merge_chrome(spec, chrome, chrome_device)
+    except tools_module.ToolsError as exc:
+        return (), str(exc)
+    args: list[str] = []
+    if spec["base"] != "default":
+        args += ["--base", spec["base"]]
+    tools = spec["tools"]
+    if "browser" in tools:
+        device = tools["browser"]["device"]
+        args += ["--tools", "browser:" + device if device else "browser"]
+    if "screen" in tools:
+        screen = tools["screen"]
+        value = "screen:" + screen["access"]
+        if screen["server"]:
+            value += ":" + screen["server"]
+        args += ["--tools", value]
+    approve_all = set(tools.get("approve_all", ()))
+    for name in tools.get("mcp", ()):
+        args += ["--tools", "mcp:" + name + (":all" if name in approve_all else "")]
+    if not args and provider in ("claude", "codex", "dsh", "hermes"):
+        # An explicit empty form selection must suppress installer defaults.
+        args = ["--base", "default"]
+    return tuple(args), None
+
+
+def do_spawn(payload: dict) -> dict:
+    """spawn フォーム payload から子エージェントを spawn して child name を返す。
+
+    payload: {parent?, standalone?, name?, dir?, role?, group?, task,
+              provider?, model?, effort?, claude_chrome?, claude_chrome_device?,
+              base?, tools?}.
+    """
+    if not isinstance(payload, dict):
+        return {"ok": False, "error": "spawn payload must be an object"}
+    if "attempt_id" in payload:
+        return {"ok": False, "error": "attempt requests are no longer supported; use standard spawn",
+                "error_code": "unsupported_attempt"}
+    raw_provider = payload.get("provider") or "claude"
+    if not isinstance(raw_provider, str):
+        return {"ok": False, "error": "provider must be a string"}
+    provider = raw_provider.strip().lower()
+    harness = payload.get("harness")
+    native = {"claude": ("claude-code", "claudecode"),
+              "codex": ("codex-cli", "codex"), "gemini": ("gemini",)}
+    if ((provider in ("deepseek", "strata") and harness not in ("dsh", "hermes"))
+            or (provider not in ("deepseek", "strata") and "harness" in payload
+                and harness not in native.get(provider, ()))):
+        return {"ok": False, "error": "unsupported harness", "error_code": "unsupported_harness"}
+    helper_model = payload.get("helper_model")
+    if provider not in ("deepseek", "strata") and helper_model not in (None, "same"):
+        return {"ok": False, "error": "unsupported helper model"}
+    for field in ("model", "effort"):
+        if payload.get(field) is not None and not isinstance(payload[field], str):
+            return {"ok": False, "error": f"{field} must be a string"}
+    # Metadata is resolved here; launcher arguments only come from our spec.
+    payload = {k: v for k, v in payload.items() if k not in ("harness", "helper_model")}
+    unavailable = _spawn_unavailable_error()
+    if unavailable:
+        return unavailable
+    _request, error = _spawn_request(payload)
+    if error:
+        return error
+    claude_catalog = _claude_catalog() if provider == "claude" else None
+    if claude_catalog and claude_catalog.error:
+        return {"ok": False, "error": claude_catalog.error}
+    if provider == "claude" and not payload.get("model") and payload.get("dry_run") is not True:
+        # The omitted model becomes a formal ID here, and the launcher passes a
+        # formal ID through unchecked: decide it against the claude the child
+        # will run, found the way the launcher finds it. Without that answer,
+        # stop before registering rather than decide on an old one.
+        if _bind_claude_child_cli_path(HOOKS_DIR) is None:
+            return {"ok": False, "error": "could not find the claude a child would run "
+                    "(hooks/claude-child-bin.sh failed); choose a model explicitly or retry"}
+    default_model = (
+        _claude_spawn_default_model()
+        if provider == "claude"
+        else ""  # Codex resolves its default from the current local catalog.
+    )
+    model = (payload.get("model") or default_model).strip()
+    effort = (payload.get("effort") or "").strip().lower()
+    # Claude in Chrome. The request is authoritative: omitted / false means
+    # inherit (no flag; the user's Claude settings decide), true adds --chrome,
+    # and a deviceId implies true. The launcher's env defaults are stripped in
+    # _spawn_launch so an unchecked box cannot be overridden by them.
+    chrome = payload.get("claude_chrome", False)
+    chrome_device = payload.get("claude_chrome_device", "")
+    if not isinstance(chrome, bool):
+        return {"ok": False, "error": "claude_chrome must be a boolean"}
+    if not isinstance(chrome_device, str):
+        return {"ok": False, "error": "claude_chrome_device must be a string"}
+    chrome_device = chrome_device.strip()
+    if chrome_device:
+        if "claude_chrome" in payload and not chrome:
+            return {"ok": False,
+                    "error": "claude_chrome_device requires claude_chrome"}
+        if not _CLAUDE_CHROME_DEVICE_RE.fullmatch(chrome_device):
+            return {"ok": False,
+                    "error": "claude_chrome_device must match [A-Za-z0-9._:-]{1,128}"}
+        chrome = True
+    if chrome and provider != "claude":
+        return {"ok": False,
+                "error": f"claude_chrome not supported for provider: {provider}"}
+    # base / tools (hooks/child_tools.py). Everything that depends on the
+    # child's final directory is checked again by the launcher, which fails
+    # closed before tmux starts.
+    tools_args, tools_error = _spawn_tools_args(payload, harness if provider in ("deepseek", "strata") else provider, chrome, chrome_device)
+    if tools_error:
+        return {"ok": False, "error": tools_error}
+    if provider == "claude":
+        # Discovery only adds choices; only an explicit override restricts IDs.
+        if (not _is_claude_model_id(model)
+                or (claude_catalog.source == "override" and model not in claude_catalog.models)):
+            return {"ok": False, "error": f"model not allowed for provider claude: {model}"}
+        try:
+            effort = claude_models_mod.resolve_effort(model, effort)
+        except ValueError as exc:
+            return {"ok": False, "error": str(exc)}
+        chrome_args: tuple[str, ...] = ()
+        if chrome_device:
+            chrome_args = ("--claude-chrome-device", chrome_device)
+        elif chrome:
+            chrome_args = ("--claude-chrome",)
+        spec = SpawnLaunchSpec(
+            provider="claude", program="claude-code", model=model,
+            script=SPAWN_SCRIPT, provider_args=chrome_args + tools_args,
+            effort=effort, effort_arg=bool(effort),
+        )
+    elif provider == "codex":
+        try:
+            launcher = codex_models.resolve_launcher()
+            catalog = codex_models.resolve_catalog(launcher=launcher)
+            model_note = catalog.note if not model or model.lower() == "sol" else ""
+            model = codex_models.normalize_model(model, catalog=catalog)
+            effort = codex_models.resolve_effort(model, effort, catalog)
+        except ValueError as exc:
+            return {"ok": False, "error": str(exc)}
+        spec = SpawnLaunchSpec(
+            provider="codex", program="codex-cli", model=model,
+            script=SPAWN_SCRIPT, effort=effort, model_note=model_note,
+            provider_args=("--codex",) + tools_args,
+            launcher_env=(("AGENTSTACK_CODEX_BIN", launcher.binary),) if launcher.binary else (),
+            effort_arg=bool(effort),
+        )
+    elif provider in ("deepseek", "strata"):
+        selected = None
+        for row in _spawn_catalog_providers():
+            if row.get("id") != provider:
+                continue
+            for candidate in row.get("models", []):
+                if isinstance(candidate, dict) and candidate.get("id") == model:
+                    selected = next((h for h in candidate.get("harnesses", [])
+                                     if h.get("id") == harness), None)
+        if not selected or selected.get("available") is not True:
+            return {"ok": False, "error": "model and harness are unavailable",
+                    "error_code": "spawn_pair_unavailable"}
+        if effort and effort not in (selected.get("efforts") or []):
+            return {"ok": False, "error": "effort not supported for model and harness"}
+        try:
+            helper = harness_helpers.validate_helper_model(helper_model,
+                selected.get('helper_models') or [harness_helpers.SAME])
+        except ValueError:
+            return {'ok': False, 'error': 'invalid helper model for model and harness',
+                    'error_code': 'invalid_helper_model'}
+        helper_args = ('--helper-model', helper) if helper != 'same' else ()
+        spec = SpawnLaunchSpec(
+            provider=provider, program=harness, model=model, script=SPAWN_SCRIPT,
+            provider_args=("--harness", harness, "--backend", provider) + helper_args + tools_args,
+            effort=effort, effort_arg=bool(effort),
+        )
+    else:
+        return {"ok": False, "error": f"provider not allowed: {provider}"}
+    return spawn_with_launch_spec(payload, spec)
+
+
+def spawn_with_launch_spec(payload: dict, spec: SpawnLaunchSpec) -> dict:
+    """Launch one child from a payload and a trusted, already-validated spec.
+
+    This is the internal extension point for provider code running inside the
+    dashboard process; the HTTP API only reaches ``do_spawn``.  From this call
+    onward the spec's handoff files belong to the launch and are removed once
+    no launcher can still read them.
+    """
+    if not isinstance(spec, SpawnLaunchSpec):
+        raise TypeError("spawn_with_launch_spec requires a SpawnLaunchSpec")
+    handoff = {"transferred": False}
+
+    def discard_handoff() -> None:
+        if payload.get("dry_run") is True or handoff.get('cleanup_unknown'):
+            return
+        for path in spec.handoff_paths:
+            try:
+                os.unlink(path)
+            except FileNotFoundError:
+                pass
+            except OSError as e:
+                logging.warning("failed to remove spawn handoff %s: %s", path, e)
+
+    try:
+        unavailable = _spawn_unavailable_error()
+        if unavailable:
+            return unavailable
+        request, error = _spawn_request(payload)
+        if error:
+            return error
+        if spec.provider not in ("claude", "codex") and spec.program not in harness_runtime.HARNESSES and (
+                payload.get("tools") or payload.get("base") not in (None, "default")):
+            return {"ok": False,
+                    "error": f"base and tools are not supported for provider: {spec.provider}"}
+        return _spawn_launch(payload, request, spec, handoff, discard_handoff)
+    finally:
+        if not handoff["transferred"]:
+            discard_handoff()
+
+
+def _spawn_env_overrides(payload: dict, spec: SpawnLaunchSpec) -> dict[str, str]:
+    env = dict(spec.launcher_env)
+    if "headless" in payload:
+        env["AGENTSTACK_AUTO_OPEN_CHILD"] = "0" if payload["headless"] else "1"
+    return env
+
+
+def _spawn_argv(request: dict, spec: SpawnLaunchSpec,
+                child_name: str, token_file: str) -> list[str]:
+    """Build both preview and actual launch arguments without side effects."""
+    args = [spec.script, "--pre-registered", child_name, "--child-token-file", token_file]
+    if request["standalone"]:
+        args.append("--standalone")
+    args.extend(spec.provider_args)
+    args.extend(["--model", spec.model])
+    if spec.effort_arg:
+        args.extend(["--effort", spec.effort])
+    if request["worktree"] or spec.worktree_required:
+        args.append("--worktree")
+        if request["worktree_base"]:
+            args.extend(["--worktree-base", request["worktree_base"]])
+    args.extend([request["task"][:4000] if request["standalone"] else request["task"][:80],
+                 request["work_dir"]])
+    return args
+
+
+def _codex_self_update_on_screen(session: str) -> bool:
+    """Whether the session shows Codex replacing itself (`npm install -g`).
+
+    A global npm install renames directories as it goes; killing it midway
+    left neither the old nor the new codex usable on the machine (#60).
+    """
+    try:
+        result = _tmux_run(['capture-pane', '-t', f'={session}', '-p'], capture_output=True, text=True, timeout=5)
+    except (OSError, subprocess.SubprocessError):
+        return False
+    pane = getattr(result, "stdout", "")
+    return isinstance(pane, str) and "Updating Codex via" in pane
+
+
+def _failed_spawn_cleanup(script: str, child_name: str, environment: dict) -> bool:
+    """The common launcher-owned cleanup decides what material to retain."""
+    helper = Path(script).with_name('cleanup-child-agent.sh')
+    if not helper.is_file():
+        return False
+    try:
+        result = subprocess.run(['/bin/bash', str(helper), child_name],
+            env=environment, capture_output=True, text=True, timeout=_SPAWN_FAILURE_CLEANUP_SECONDS)
+        return result.returncode == 0
+    except (OSError, subprocess.SubprocessError):
+        return False
+
+
+def _spawn_launch(payload: dict, request: dict, spec: SpawnLaunchSpec,
+                  handoff: dict, discard_handoff) -> dict:
+    standalone = request["standalone"]
+    parent = request["parent"]
+    task = request["task"]
+    role = request["role"]
+    group = request["group"]
+    worktree = request["worktree"] or spec.worktree_required
+    worktree_base = request["worktree_base"]
+    requested_name = request["requested_name"]
+    work_dir = request["work_dir"]
+    provider = spec.provider
+    program = spec.program
+    model_str = spec.model
+    effort = spec.effort
+    model_notice = {"model_note": spec.model_note} if spec.model_note else {}
+
+    if standalone and not spec.standalone_supported:
+        return {"ok": False,
+                "error": f"standalone not supported for provider {provider}"}
+    if requested_name and re.fullmatch(
+            r"[A-Z][A-Za-z]{1,63}(?:-[A-Z][A-Za-z]{1,63})?",
+            requested_name) is None:
+        return {"ok": False, "error": "name invalid"}
+    if requested_name and _spawn_name_status(requested_name) != "available":
+        return {"ok": False, "error": "name is occupied or cannot be verified"}
+    if not os.path.isdir(work_dir):
+        return {"ok": False, "error": f"dir does not exist: {work_dir}"}
+    if not os.path.exists(spec.script):
+        return {"ok": False, "error": f"spawn script missing: {spec.script}"}
+    project_key = _project_key()
+    if not project_key:
+        return {"ok": False, "error": "AGENTSTACK_PROJECT_KEY or AGENTSTACK_VAULT is not configured"}
+
+    if request["dry_run"]:
+        return {
+            "ok": True, "dry_run": True, "provider": provider,
+            **model_notice,
+            "model": model_str, "effort": effort, "dir": work_dir,
+            "standalone": standalone, "worktree": worktree,
+            "argv": _spawn_argv(request, spec, requested_name or "<child-name>",
+                                "<child-token-file>"),
+            "launcher_env": _spawn_env_overrides(payload, spec),
+        }
+
+    if not requested_name:
+        requested_name = _suggest_any_spawn_name() or ""
+        if not requested_name:
+            return {"ok": False,
+                    "error": "no available agent name could be verified"}
+
+    task_short = task[:80]
+
+    # 1) Always send an explicit hyphenated request name.  The response name
+    # is authoritative and may be separator-less on a local patched server.
+    child_token = secrets.token_urlsafe(32)
+    reg = _mcp_call("register_agent", {
+        "project_key": project_key,
+        "program": program,
+        "model": model_str,
+        "task_description": task_short,
+        "registration_token": child_token,
+        "name": requested_name,
+    })
+    if not reg["ok"]:
+        return {"ok": False,
+                "error": f"register_agent failed: {reg.get('error')}"}
+    registration = reg["data"] or {}
+    child_name = registration.get("name", "")
+    if not child_name or _NAME_RE.fullmatch(child_name) is None:
+        return {"ok": False,
+                "error": f"invalid child name from register: {child_name!r}"}
+    server_token = registration.get("registration_token", "")
+    if not isinstance(server_token, str):
+        server_token = ""
+    effective_child_token = server_token.strip() or child_token
+    registered_agent_id = registration.get("id")
+    name_substituted = child_name != requested_name
+    if name_substituted:
+        logging.warning("spawn register normalized requested name %r to %r", requested_name, child_name)
+        # A log line nobody reads is how this stayed invisible. Persist it so
+        # the agent carries the discrepancy in the UI for as long as it exists.
+        _record_name_substitution(child_name, requested_name)
+
+    # 2) role/emoji/group annotation (best-effort, failure is non-fatal)
+    annot_status = "skipped"
+    if role or group:
+        try:
+            ar = _write_annotation(child_name, role, "", group)
+            annot_status = "ok" if ar.get("ok") else f"fail:{ar.get('error')}"
+        except Exception as e:  # noqa: BLE001
+            annot_status = f"err:{e}"
+
+    def retained_registration_error(
+            error: str, *, registration_may_remain: bool = False, **extra) -> dict:
+        """Report a post-registration failure without pretending it rolled back.
+
+        The dashboard's service credential can create registrations, but it is
+        intentionally not used as an owner credential to delete them.  Keep
+        this explicit so callers do not retry and silently create more junk
+        identities.
+        """
+        registration_status = "may remain" if registration_may_remain else "remains"
+        result = {
+            "ok": False,
+            **model_notice,
+            "error": (
+                f"{error}; child registration '{child_name}' {registration_status} because "
+                "the dashboard server has no permission to delete it"
+            ),
+            "child_name": child_name,
+            "requested_name": requested_name,
+            "name_substituted": name_substituted,
+            "annot": annot_status,
+            "registration_retained": True,
+        }
+        result.update(extra)
+        return result
+
+    if provider in {"claude", "codex"} and (
+        type(registered_agent_id) is not int or registered_agent_id <= 0
+    ):
+        return retained_registration_error(
+            "register_agent returned no positive numeric id for child binding")
+
+    # Registration defaults are contact-gated on ORRERY Mail. Match the
+    # normal launcher path and open the new child before delivering its task.
+    # The live schema removes registration_token for lenient builds that do
+    # not accept it, while strict builds receive the server-issued credential.
+    contact = _mcp_call("set_contact_policy", {
+        "project_key": project_key,
+        "agent_name": child_name,
+        "policy": "open",
+        "registration_token": effective_child_token,
+    })
+    if not contact["ok"]:
+        return retained_registration_error(
+            f"set_contact_policy failed: {contact.get('error')}")
+
+    # 3) Normal children receive the task through agent-mail.  Standalone
+    # children have no parent/sender, so the launcher receives the full task
+    # directly and no synthetic self-mail is created.
+    if not standalone:
+        parent_token = _runtime_agent_token(parent)
+        if not parent_token:
+            return retained_registration_error(
+                f"parent registration token unavailable for '{parent}'")
+    # A launcher that delivers the task itself owns the only task authority;
+    # a second copy by mail would carry conflicting completion instructions.
+    if not standalone and spec.task_mail:
+        subject = f"タスク依頼: {task[:50]}"
+        body_lines = [
+            "> [via dashboard +NEW AGENT]",
+            "",
+            "## 依頼内容", "", task, "",
+            "## 補足", "",
+            f"- 親エージェント: {parent}",
+            "- spawn 元: dashboard `+ NEW AGENT` (POST /api/spawn)",
+            f"- ORRERY Mail の project_key は `{project_key}` を使うこと "
+            "(cwd ではない、特に worktree モード時は必須)",
+        ]
+        if worktree:
+            body_lines += [
+                f"- 分離 worktree モードで起動 (branch: exp/{child_name})",
+                f"- worktree base: {worktree_base or 'HEAD'}",
+                f"- worktree dir: {os.path.join(_worktree_root(), child_name)}",
+            ]
+        body_lines += [
+            "- 完了したら親に reply してください。",
+        ]
+        snd = _mcp_call("send_message", {
+            "project_key": project_key,
+            "sender_name": parent,
+            "to": [child_name],
+            "cc": [parent],
+            "subject": subject,
+            "body_md": "\n".join(body_lines),
+            "importance": "high",
+            "sender_token": parent_token,
+        })
+        if not snd["ok"]:
+            return retained_registration_error(
+                f"send_message failed: {snd.get('error')}")
+
+    # 4) spawn_child.sh --pre-registered を background で起動
+    token_file = ""
+    token_created = False
+    token_identity = None
+    launch_attempt = secrets.token_hex(16)
+    log_fh = None
+    log_path = None
+    log_start_offset = 0
+
+    token_key = re.sub(r"[^A-Za-z0-9_.-]", "_", child_name)
+    owner_credential = os.path.join(RUNTIME_DIR, f"agent_token_{token_key}")
+
+<<<<<<< /Users/huyuhutaru/.dev-storage-governor/examforge/20261022T063810Z-build-cache-e4007ade/source/dashboard/server.py
+    def remove_spawn_credentials(keep_owner_credential: bool = False) -> None:
+        """Remove both the one-shot handoff and any launcher-persisted copies.
+
+        ``keep_owner_credential`` removes only the one-shot handoff; callers
+        use it once ``retain_recovery_credential`` has decided what survives.
+        """
+        nonlocal token_created
+        paths = []
+        if token_created and token_file:
+            paths.extend([token_file, f"{token_file}.binding.json"])
+        if not keep_owner_credential:
+            paths.extend([
+                owner_credential,
+                os.path.join(RUNTIME_DIR, "child-agents", f"{child_name}.json"),
+            ])
+        for path in paths:
+=======
+    def remove_spawn_credentials() -> None:
+        """Only the handoff created by this request is ours to remove."""
+        nonlocal token_created
+        if token_created and token_file and token_identity is not None:
+>>>>>>> /Users/huyuhutaru/.dev-storage-governor/examforge/20261022T063810Z-build-cache-e4007ade/source/docs/orrery-up-2/merge-inputs/dashboard/server.py.local
+            try:
+                current = os.lstat(token_file)
+                if (current.st_dev, current.st_ino) == token_identity:
+                    os.unlink(token_file)
+            except FileNotFoundError:
+                pass
+            except OSError as error:
+                logging.warning("failed to remove owned handoff: %s", error)
+        token_created = False
+
+<<<<<<< /Users/huyuhutaru/.dev-storage-governor/examforge/20261022T063810Z-build-cache-e4007ade/source/dashboard/server.py
+    def retain_recovery_credential() -> tuple[str, dict]:
+        """Keep one usable owner credential after a launcher's cleanup was killed.
+
+        The launcher may have died before, during, or after copying the
+        one-shot handoff to the owner path.  Prefer the owner path, the only
+        one cleanup-child-agent.sh reads: keep it when complete, or install the
+        unconsumed handoff there when it is missing, empty or a partial copy.
+        Otherwise keep the handoff itself and say where it is, or say that no
+        usable copy is left.  Returns the error clause and result fields.
+        """
+        nonlocal token_created
+        owner_state = _spawn_credential_state(owner_credential, effective_child_token)
+        handoff_state = (
+            _spawn_credential_state(token_file, effective_child_token)
+            if token_created and token_file else "missing")
+        promoted = False
+        if owner_state in _SPAWN_CREDENTIAL_REPLACEABLE and handoff_state == "complete":
+            promoted = _promote_spawn_credential(
+                owner_credential, effective_child_token, owner_state)
+            owner_state = _spawn_credential_state(owner_credential, effective_child_token)
+        if owner_state == "complete":
+            remove_spawn_credentials(keep_owner_credential=True)
+            origin = ("installed from the unconsumed one-shot handoff at"
+                      if promoted else "kept at")
+            return (
+                f"owner credential {origin} {owner_credential}; "
+                f"cleanup-child-agent.sh {child_name} can retire the "
+                "registration with it and requests release of its file "
+                "reservations, but does not remove the worktree or branch",
+                {"recovery_credential": owner_credential,
+                 "cleanup_child_agent_can_recover": True})
+        owner_text = _SPAWN_CREDENTIAL_STATE_TEXT.get(owner_state, owner_state)
+        if handoff_state == "complete":
+            # The handoff is now the only usable copy: hand it to the human.
+            token_created = False
+            return (
+                "the only usable owner credential is the unconsumed one-shot "
+                f"handoff kept at {token_file}; {owner_credential} is "
+                f"{owner_text} and was left untouched, and "
+                "cleanup-child-agent.sh reads only that path, so it cannot "
+                "retire this child or release its file reservations",
+                {"recovery_credential": token_file,
+                 "cleanup_child_agent_can_recover": False})
+        handoff_text = _SPAWN_CREDENTIAL_STATE_TEXT.get(handoff_state, handoff_state)
+        remove_spawn_credentials(keep_owner_credential=True)
+        return (
+            f"no usable owner credential remains ({owner_credential} is "
+            f"{owner_text}; the one-shot handoff is {handoff_text}), so "
+            "cleanup-child-agent.sh cannot retire this child or release its "
+            "file reservations",
+            {"recovery_credential": None,
+             "cleanup_child_agent_can_recover": False})
+
+    spawn_stop_confirmed = False
+
+    def kill_spawn_session() -> bool:
+        nonlocal spawn_stop_confirmed
+        spawn_stop_confirmed = False
+        if log_path is None:
+            # Logging failed before the launcher started: no session ownership.
+            return False
+        tail, _ = _spawn_log_tail_and_reason(log_path, log_start_offset)
+        if any(marker in tail for marker in (
+                "Harness start/stop unconfirmed; recovery state retained",
+                "[spawn_child] creation unconfirmed; recovery state and worktree retained")):
+            # The launcher never acknowledged ownership of this session.
+            return False
+        if provider == "codex" and _codex_self_update_on_screen(child_name):
+            print(f"spawn {child_name}: Codex is updating itself; session left running (#60)", file=sys.stderr)
+            return False
+        try:
+            probe = _tmux_run(['has-session', '-t', f'={child_name}'], capture_output=True, text=True)
+            if probe.returncode:
+                # A transport refusal (also exit 1) is not proof of absence.
+                spawn_stop_confirmed = "can't find session" in (getattr(probe, 'stderr', '') or '')
+            else:
+                killed = _tmux_run(['kill-session', '-t', f'={child_name}'], capture_output=True, text=True)
+                spawn_stop_confirmed = killed.returncode == 0
+        except (OSError, subprocess.SubprocessError):
+            pass
+        return spawn_stop_confirmed
+
+    def failed_spawn_result(error, **fields):
+        nonlocal token_created
+        cleanup_env = {**env, 'AGENTSTACK_RUNTIME_DIR': RUNTIME_DIR,
+                       'AGENTSTACK_HOOKS_DIR': str(Path(spec.script).parent),
+                       'AGENTSTACK_PROJECT_KEY': project_key}
+        owner_ready = False
+        if spawn_stop_confirmed:
+            owner_state = _spawn_credential_state(owner_credential, effective_child_token)
+            if (owner_state in _SPAWN_CREDENTIAL_REPLACEABLE and token_created and token_file
+                    and _spawn_credential_state(token_file, effective_child_token) == "complete"):
+                _promote_spawn_credential(owner_credential, effective_child_token, owner_state)
+                owner_state = _spawn_credential_state(owner_credential, effective_child_token)
+            owner_ready = owner_state == "complete"
+        if owner_ready and _failed_spawn_cleanup(spec.script, child_name, cleanup_env):
+            # A successful cleanup may intentionally retain a resumable child.
+            # Only the consumed one-shot handoff is ours to discard here.
+            remove_spawn_credentials(keep_owner_credential=True)
+            return retained_registration_error(error, **fields)
+        token_created = False
+        handoff['cleanup_unknown'] = True
+        return retained_registration_error(
+            error + '; cleanup is unconfirmed; owner state and credential handoff were retained',
+            cleanup_incomplete=True, cleanup_state='unknown', **fields)
+=======
+    def kill_spawn_session() -> None:
+        # A delayed dashboard callback cannot kill a successor by name. The
+        # launcher journal must match this request and still own every object.
+        import importlib.util
+        helper = os.path.join(os.path.dirname(SPAWN_SCRIPT), "seat_lifecycle.py")
+        try:
+            spec = importlib.util.spec_from_file_location("dashboard_seat_lifecycle", helper)
+            lifecycle = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(lifecycle)
+            seat = lifecycle.Seat(RUNTIME_DIR, child_name)
+            with seat.locked(blocking=False):
+                value = seat.validate(seat.attempt_journal(launch_attempt))
+                if (value is None or value.get("attempt") != launch_attempt
+                        or not value.get("session_started")):
+                    return
+                subprocess.run(["tmux", "kill-session", "-t", f"={child_name}"],
+                               capture_output=True, text=True)
+                seat.delete(value["journal"])
+        except (OSError, ValueError, KeyError, TypeError, ImportError, AttributeError):
+            logging.warning("no matching launch ownership; preserving seat %s", child_name)
+>>>>>>> /Users/huyuhutaru/.dev-storage-governor/examforge/20261022T063810Z-build-cache-e4007ade/source/docs/orrery-up-2/merge-inputs/dashboard/server.py.local
+
+    token_dir = os.path.join(RUNTIME_DIR, "spawn-tokens")
+    try:
+        os.makedirs(token_dir, mode=0o700, exist_ok=True)
+        os.chmod(token_dir, 0o700)
+        token_file = os.path.join(
+            token_dir, f"{child_name}.{secrets.token_hex(16)}.token")
+        open_flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL
+        if hasattr(os, "O_NOFOLLOW"):
+            open_flags |= os.O_NOFOLLOW
+        fd = os.open(token_file, open_flags, 0o600)
+        token_created = True
+        opened = os.fstat(fd)
+        token_identity = (opened.st_dev, opened.st_ino)
+        with os.fdopen(fd, "w") as f:
+            f.write(effective_child_token)
+            f.flush()
+            os.fsync(f.fileno())
+        os.chmod(token_file, 0o600)
+<<<<<<< /Users/huyuhutaru/.dev-storage-governor/examforge/20261022T063810Z-build-cache-e4007ade/source/dashboard/server.py
+        if provider in {"claude", "codex", "deepseek", "strata"}:
+            binding_file = f"{token_file}.binding.json"
+            binding_fd = os.open(binding_file, open_flags, 0o600)
+            with os.fdopen(binding_fd, "w") as f:
+                json.dump(
+                    {
+                        "agent_id": registered_agent_id,
+                        "agent_name": child_name,
+                        "project_key": project_key,
+                        "program": program,
+                    },
+                    f,
+                    separators=(",", ":"),
+                    sort_keys=True,
+                )
+                f.write("\n")
+                f.flush()
+                os.fsync(f.fileno())
+            os.chmod(binding_file, 0o600)
+=======
+        from pathlib import Path
+        sys.path.insert(0, os.path.dirname(SPAWN_SCRIPT))
+        from seat_lifecycle import bind_handoff
+        bind_handoff(Path(RUNTIME_DIR), Path(token_file), child_name, project_key)
+>>>>>>> /Users/huyuhutaru/.dev-storage-governor/examforge/20261022T063810Z-build-cache-e4007ade/source/docs/orrery-up-2/merge-inputs/dashboard/server.py.local
+    except Exception as e:  # noqa: BLE001
+        remove_spawn_credentials()
+        return retained_registration_error(f"spawn token write failed: {e}")
+
+    args = _spawn_argv(request, spec, child_name, token_file)
+    env = os.environ.copy()
+    # Provider values first: the identity/context keys below always win.
+    env.update(_spawn_env_overrides(payload, spec))
+    # A dashboard request states Claude in Chrome explicitly (spec.provider_args);
+    # the CLI env defaults would otherwise turn an unchecked box back on.
+    env.pop("AGENTSTACK_CLAUDE_CHILD_CHROME", None)
+    env.pop("AGENTSTACK_CLAUDE_CHILD_CHROME_DEVICE", None)
+    # The form/API selection is authoritative. The UI initializes its visible
+    # choices from installer defaults; the launcher must not append them again
+    # (or restore a choice the operator removed).
+    env.pop("AGENTSTACK_CHILD_DEFAULT_TOOLS", None)
+    if spec.provider == "codex" and not env.get("AGENTSTACK_PYTHON", "").strip():
+        # Direct development servers need the same interpreter as the API;
+        # installed services already carry the installer's pinned interpreter.
+        env["AGENTSTACK_PYTHON"] = sys.executable
+    if standalone:
+        env.pop("PARENT_AGENT", None)
+    else:
+        env["PARENT_AGENT"] = parent
+    env["PROJECT_KEY"] = project_key
+    env["AGENTSTACK_LAUNCH_ATTEMPT_ID"] = launch_attempt
+    # launchd の最小 PATH には ~/.local/bin が無く、spawn_child.sh が tmux 内で
+    # 起動する `zsh -lc` は非対話シェルのため ~/.zshrc を source せず claude が
+    # PATH に乗らない (cold start で claude 即落ち → tmux session が cleanup-
+    # child-agent.sh で kill され "can't find pane" になる)。ここで明示的に
+    # ~/.local/bin を先頭に挿しておく (Claude CLI の標準インストール位置)。
+    home_local = os.path.expanduser("~/.local/bin")
+    current_path = env.get("PATH", "")
+    if home_local not in current_path.split(":"):
+        env["PATH"] = f"{home_local}:{current_path}" if current_path else home_local
+    try:
+        log_dir = os.path.join(HERE, "logs")
+        os.makedirs(log_dir, exist_ok=True)
+        log_fh = open(os.path.join(log_dir, "spawn.log"), "ab", buffering=0)
+        log_path = log_fh.name
+        log_start_offset = log_fh.tell()
+        ts = datetime.now(timezone.utc).isoformat()
+        log_fh.write(
+            f"\n=== {ts} spawn child={child_name} parent={parent} "
+            f"provider={provider} model={model_str} effort={effort or '-'} "
+            f"standalone={standalone} worktree={worktree} ===\n".encode())
+        if spec.model_note:
+            log_fh.write(f"note: {spec.model_note}\n".encode())
+        proc = subprocess.Popen(args, stdout=log_fh, stderr=log_fh, env=env,
+                                start_new_session=True)
+
+        # The launcher performs readiness/death detection and consumes the
+        # one-shot token before returning.  Wait for that verdict instead of
+        # treating a briefly-created tmux session as success.
+        def signal_launcher(signum: int) -> None:
+            if spec.signal_process_group:
+                # start_new_session made the launcher its group leader, so the
+                # group also reaches whichever helper it is waiting on.
+                os.killpg(proc.pid, signum)
+            elif signum == signal.SIGTERM:
+                proc.terminate()
+            else:
+                proc.kill()
+
+        grace = _spawn_termination_grace(spec)
+
+        def stop_launcher() -> bool:
+            """TERM the launcher; True when it exited within its grace."""
+            try:
+                signal_launcher(signal.SIGTERM)
+                proc.wait(timeout=grace)
+                return True
+            except Exception:  # noqa: BLE001
+                pass
+            try:
+                signal_launcher(signal.SIGKILL)
+            except Exception:  # noqa: BLE001
+                pass
+            try:
+                proc.wait(timeout=_SPAWN_KILL_REAP_SECONDS)
+            except Exception:  # noqa: BLE001
+                pass
+            return False
+
+        def settle() -> dict:
+            if hasattr(proc, "wait"):
+                try:
+                    returncode = proc.wait(timeout=_SPAWN_READINESS_TIMEOUT_SECONDS)
+                except subprocess.TimeoutExpired:
+                    stopped = stop_launcher()
+                    kill_spawn_session()
+                    error = ("spawn launcher did not finish readiness checks "
+                             f"within {_SPAWN_READINESS_TIMEOUT_SECONDS:g}s")
+                    if stopped or not spec.signal_process_group:
+                        return failed_spawn_result(
+                            error, registration_may_remain=spec.signal_process_group)
+                    # The launcher's own cleanup was killed midway, so nothing
+                    # it created is known to be gone.  Say so, and keep a
+                    # credential that can still release and retire it.
+                    recovery, fields = retain_recovery_credential()
+                    return retained_registration_error(
+                        f"{error}; its cleanup did not finish within {grace:g}s "
+                        "of SIGTERM and was killed, so its file reservations, "
+                        "registration, worktree and branch may remain; "
+                        f"{recovery}",
+                        cleanup_incomplete=True, **fields)
+                if returncode != 0:
+                    kill_spawn_session()
+                    tail, reason = _spawn_log_tail_and_reason(log_path, log_start_offset)
+                    error = f"spawn launcher exited with status {returncode}"
+                    return failed_spawn_result(
+                        f"{reason} ({error})" if reason else error,
+                        detail=tail)
+
+            probe = _tmux_run(['has-session', '-t', f'={child_name}'], capture_output=True, text=True)
+            if probe.returncode:
+                kill_spawn_session()
+                tail, reason = _spawn_log_tail_and_reason(log_path, log_start_offset)
+                error = "spawn launcher exited before a live tmux session was created"
+                return failed_spawn_result(
+                    f"{reason} ({error})" if reason else error,
+                    detail=tail)
+            return {
+                "ok": True,
+                **model_notice,
+                "child_name": child_name,
+                "requested_name": requested_name,
+                "name_substituted": name_substituted,
+                "tmux_session": child_name,
+                "annot": annot_status,
+                "worktree": worktree,
+                "standalone": standalone,
+                "provider": provider,
+                "model": model_str,
+                "effort": effort or None,
+            }
+
+        if payload.get("async") is True:
+            # The verdict is unchanged; only who waits for it. The page closes
+            # its modal now and reads the outcome from /api/spawn-status, so a
+            # ten-second readiness wait no longer holds a dialog open over the
+            # rest of the UI. The thread owns the log handle from here.
+            pending = {
+                "ok": True,
+                **model_notice,
+                "pending": True,
+                "child_name": child_name,
+                "requested_name": requested_name,
+                "name_substituted": name_substituted,
+                "tmux_session": child_name,
+                "annot": annot_status,
+                "worktree": worktree,
+                "standalone": standalone,
+                "provider": provider,
+                "model": model_str,
+                "effort": effort or None,
+                # How long the page waits for the verdict; from the spec and
+                # server constants only, never from the payload.
+                "verdict_deadline_seconds": _spawn_verdict_deadline_seconds(spec),
+            }
+            _spawn_launch_record(child_name, pending)
+            owned_log = log_fh
+            log_fh = None
+
+            def runner() -> None:
+                try:
+                    verdict = settle()
+                except Exception as e:  # noqa: BLE001
+                    kill_spawn_session()
+                    verdict = failed_spawn_result(f"spawn launch failed: {e}")
+                finally:
+                    owned_log.close()
+                    discard_handoff()
+                _spawn_launch_record(child_name, verdict)
+
+            threading.Thread(target=runner, name=f"spawn-{child_name}", daemon=True).start()
+            handoff["transferred"] = True
+            return pending
+
+        result = settle()
+    except Exception as e:  # noqa: BLE001
+        kill_spawn_session()
+        return failed_spawn_result(f"spawn launch failed: {e}")
+    finally:
+        if log_fh is not None:
+            log_fh.close()
+
+    return result
+
+
+_AGENT_PROCESS_NAMES = {"claude", "codex", "node", "agy"}
+
+
+def _tmux_session_env(session: str, key: str) -> str:
+    """Read one tmux session environment value without executing shell text."""
+    if not _valid(session) or re.fullmatch(r"[A-Z0-9_]+", key or "") is None:
+        return ""
+    result = _tmux_run(['show-environment', '-t', f'={session}', key], capture_output=True, text=True, timeout=3)
+    if result.returncode != 0:
+        return ""
+    line = (result.stdout or "").strip()
+    prefix = f"{key}="
+    return line[len(prefix):] if line.startswith(prefix) else ""
+
+
+def _fresh_agent_process_pid(session: str, program: str | None) -> int | None:
+    """Re-read tmux + ps immediately before a destructive provider signal."""
+    if not _valid(session) or not _supports_agent_process_liveness(program):
+        return None
+    pane = _tmux_run(['display-message', '-t', session, '-p', '#{pane_pid}'], capture_output=True, text=True, timeout=3)
+    try:
+        pane_pid = int((pane.stdout or "").strip()) if pane.returncode == 0 else 0
+    except ValueError:
+        return None
+    if pane_pid <= 0:
+        return None
+    try:
+        measured = subprocess.run(
+            ["ps", "-axo", "pid=,ppid=,comm="],
+            capture_output=True, text=True, timeout=3,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return None
+    if measured.returncode != 0:
+        return None
+    return _agent_process_pid(pane_pid, _parse_process_tree(measured.stdout), program)
+
+
+def _pane_agent_process(session: str, ps_output: str | None = None) -> str:
+    """Name of a live agent process (claude / codex / node) under the pane, or "".
+
+    `#{pane_current_command}` is the foreground process *group leader*, and
+    under a `bash -lc '… codex …'` wrapper (Linux / WSL2: no job control, so
+    the child shares bash's group) that is "bash" even while Codex is alive.
+    do_exit then took the zombie-shell branch and typed a bare `exit` into
+    Codex (2026-09-07, SandyTuring on WSL2). Walk the pane's descendants
+    instead of trusting the leader's name.
+    """
+    if ps_output is None:
+        pid_r = _tmux_run(['display-message', '-t', session, '-p', '#{pane_pid}'], capture_output=True, text=True)
+        try:
+            pane_pid = int(pid_r.stdout.strip())
+        except ValueError:
+            return ""
+        ps_r = subprocess.run(["ps", "-axo", "pid=,ppid=,comm="], capture_output=True, text=True)
+        ps_output = ps_r.stdout
+        root = pane_pid
+    else:
+        root = None
+    children: dict[int, list[tuple[int, str]]] = {}
+    for line in ps_output.splitlines():
+        parts = line.split(None, 2)
+        if len(parts) < 3:
+            continue
+        try:
+            pid, ppid = int(parts[0]), int(parts[1])
+        except ValueError:
+            continue
+        children.setdefault(ppid, []).append((pid, os.path.basename(parts[2]).lower()))
+    if root is None:
+        # Test entry point: the pane pid is the first line's pid.
+        first = ps_output.strip().splitlines()[0].split(None, 2)
+        root = int(first[0])
+    queue = [root]
+    seen = set()
+    while queue:
+        pid = queue.pop()
+        if pid in seen:
+            continue
+        seen.add(pid)
+        for child_pid, comm in children.get(pid, []):
+            if comm in _AGENT_PROCESS_NAMES:
+                return comm
+            queue.append(child_pid)
+    return ""
+
+
+def do_exit(session: str) -> dict:
+    """running/finished エージェントに `/exit` を送り、Claude を graceful exit させる。
+
+    安全弁:
+      - session 名 _valid() 必須、warm-*/pending-* は拒否
+      - build_agents() の category を信頼源に running/finished のみ許可（gone は拒否）
+      - _has_session() で tmux session が実在することを確認
+      - attached=True は拒否せず、actions に警告を含める
+    """
+    if not _valid(session):
+        return {"ok": False, "error": "invalid session name"}
+    if session.startswith("warm-") or session.startswith("pending-"):
+        return {"ok": False, "error": "warmup/pending sessions are protected"}
+
+    target = None
+    try:
+        target = lookup_agent(session)  # by name: however old the agent is
+    except Exception as e:
+        return {"ok": False, "error": f"failed to enumerate agents: {e}"}
+    if target is None:
+        return {"ok": False, "error": f"agent '{session}' not found"}
+    if target["category"] not in ("agent", "finished"):
+        return {"ok": False,
+                "error": f"agent '{session}' category={target['category']} "
+                         "- only running/finished are exitable",
+                "category": target.get("category")}
+    if not _has_session(session):
+        return {"ok": False, "error": f"tmux session '{session}' not found"}
+
+    actions = []
+    if target.get("attached"):
+        actions.append("warn-attached")
+
+    # Delegated Antigravity children are non-interactive stream-json runners.
+    # Sending `/exit` to their pane cannot reach the provider safely. Re-read
+    # the process tree now (not the 4.5s dashboard cache), signal only the
+    # measured `agy` PID, and leave the bash runner alive so it can report,
+    # release reservations, retire the child, and clean transient state.
+    program = _agent_program(session)
+    if (
+        target["category"] == "agent"
+        and program.startswith("antigravity")
+        and _tmux_session_env(session, "AGENTSTACK_RESERVED_IDENTITY") == "1"
+    ):
+        provider_pid = _fresh_agent_process_pid(session, program)
+        if provider_pid is None:
+            return {
+                "ok": False,
+                "error": "Antigravity process could not be revalidated; refusing to signal",
+            }
+        try:
+            _MODE_API['request_provider_exit'](send=None,
+                interrupt=lambda signum: os.kill(provider_pid, signum),
+                delegated_antigravity=True)
+        except ProcessLookupError:
+            return {
+                "ok": False,
+                "error": "Antigravity process exited before the interrupt could be sent",
+            }
+        except OSError as exc:
+            return {"ok": False, "error": f"Antigravity interrupt failed: {exc}"}
+        actions.extend(["provider-headless:antigravity", "interrupt-sent"])
+        return {"ok": True, "session": session, "actions": actions}
+
+    # pane で動いているプロセスを確認
+    # Claude Code は Python プロセス → "Python" / シェルゾンビは "zsh"/"bash" 等
+    _SHELL_PROCS = {"zsh", "bash", "sh", "fish", "csh", "tcsh", "dash"}
+    pane_cmd_r = _tmux_run(['display-message', '-t', session, '-p', '#{pane_current_command}'], capture_output=True, text=True)
+    pane_cmd = pane_cmd_r.stdout.strip().lower()
+
+    # build_agents() resolves Codex liveness from the shared process snapshot
+    # (#19), so a measured Codex husk arrives here as "finished". Claude is
+    # still classified from pane_current_command plus the title glyph, and on
+    # macOS every Claude session is `zsh > claude` (the pane leader is the
+    # shell), so a Claude whose title carries no glyph is "finished" while its
+    # REPL is alive. The descendant walk stays as the last guard: a shell
+    # `exit` is typed only when nothing agent-like runs below the pane.
+    agent_proc = ""
+    if pane_cmd in _SHELL_PROCS and target["category"] == "finished":
+        agent_proc = _pane_agent_process(session)
+        if agent_proc:
+            actions.append(f"wrapper-shell:{pane_cmd}>{agent_proc}")
+
+    shell_exit = pane_cmd in _SHELL_PROCS and target["category"] == "finished" and not agent_proc
+    def send_exit(*keys):
+        r = _tmux_run(['send-keys', '-t', session, *keys], capture_output=True, text=True)
+        if r.returncode != 0:
+            raise RuntimeError(f"tmux send-keys failed: {r.stderr.strip()}")
+    try:
+        actions.append(_MODE_API['request_provider_exit'](
+            send=send_exit, interrupt=None, shell_exit=shell_exit, pause=time.sleep))
+    except RuntimeError as exc:
+        return {"ok": False, "error": str(exc)}
+    if shell_exit:
+        actions.append(f"zombie-pane:{pane_cmd}")
+
+    return {"ok": True, "session": session, "actions": actions}
+
+
+# --------------------------------------------------------------------------- #
+# Mail health (notify-daemon + watcher 可観測性)
+# --------------------------------------------------------------------------- #
+NOTIFY_STATE_FILE = os.path.join(RUNTIME_DIR, "notify-state.json")
+SIGNAL_PROJECTS_DIR = os.path.join(SIGNALS_DIR, "projects")
+_MAIL_HEALTH_CACHE: dict = {"ts": 0.0, "data": None}
+
+
+def _slugify_project_key(project_key: str) -> str:
+    return re.sub(r"[^a-z0-9]+", "-", project_key.lower()).strip("-")
+
+
+def _signal_agent_dirs() -> list[str]:
+    project_key = _project_key()
+    if project_key:
+        return [os.path.join(SIGNAL_PROJECTS_DIR,
+                             _slugify_project_key(project_key), "agents")]
+    try:
+        return [
+            os.path.join(entry.path, "agents")
+            for entry in os.scandir(SIGNAL_PROJECTS_DIR)
+            if entry.is_dir()
+        ]
+    except OSError:
+        return []
+
+
+def _pidfile_process_running(
+    pidfile: str,
+    expected_command_marker: str,
+    heartbeat_file: str = "",
+) -> tuple[bool, int | None]:
+    try:
+        with open(pidfile, encoding="utf-8") as handle:
+            pid = int(handle.readline().strip())
+    except (OSError, ValueError):
+        return False, None
+    if pid <= 1:
+        return False, None
+    try:
+        os.kill(pid, 0)
+    except (OSError, ProcessLookupError):
+        return False, None
+
+    command = ""
+    proc_cmdline = f"/proc/{pid}/cmdline"
+    try:
+        with open(proc_cmdline, "rb") as handle:
+            command = handle.read(65536).replace(b"\0", b" ").decode(
+                "utf-8", errors="replace"
+            )
+    except OSError:
+        try:
+            process = subprocess.run(
+                ["ps", "-p", str(pid), "-o", "command="],
+                capture_output=True,
+                text=True,
+                timeout=3,
+            )
+            if process.returncode == 0:
+                command = process.stdout
+        except Exception:
+            command = ""
+    if command:
+        if expected_command_marker not in command:
+            return False, None
+    else:
+        try:
+            heartbeat_age = time.time() - os.path.getmtime(heartbeat_file)
+        except OSError:
+            return False, None
+        if heartbeat_age < 0 or heartbeat_age > 45:
+            return False, None
+    return True, pid
+
+
+def _launchctl_job_running(label: str) -> bool:
+    try:
+        process = subprocess.run(
+            ["launchctl", "list", label],
+            capture_output=True,
+            text=True,
+            timeout=3,
+        )
+        match = re.search(r'"?PID"?\s*=\s*(\d+)', process.stdout)
+        return (
+            process.returncode == 0
+            and match is not None
+            and int(match.group(1)) > 1
+        )
+    except Exception:
+        return False
+
+
+def _systemd_user_unit_running(unit: str) -> bool:
+    """True when `systemctl --user is-active <unit>` reports active (Linux)."""
+    if sys.platform != "linux":
+        return False
+    try:
+        process = subprocess.run(
+            ["systemctl", "--user", "is-active", unit],
+            capture_output=True,
+            text=True,
+            timeout=3,
+        )
+        return process.returncode == 0 and process.stdout.strip() == "active"
+    except Exception:
+        return False
+
+
+def mail_watcher_health() -> dict:
+    now = time.time()
+    cached = _MAIL_HEALTH_CACHE["data"]
+    if cached is not None and now - _MAIL_HEALTH_CACHE["ts"] < 5:
+        return cached
+
+    result: dict = {
+        "ok": True,
+        "ts": int(now),
+        "last_success_ts": None,
+        "last_success_age_s": None,
+        "recent_results": {},
+        "signal_count": 0,
+        "daemon_running": False,
+        "watcher_running": False,
+        "watcher_mode": None,
+        "watcher_pid": None,
+        "status": "unknown",
+    }
+
+    if os.path.exists(NOTIFY_STATE_FILE):
+        try:
+            with open(NOTIFY_STATE_FILE, encoding="utf-8") as f:
+                state = json.load(f)
+            latest_success = 0
+            counts: dict[str, int] = {}
+            cutoff = now - 600
+            for entry in state.values():
+                lr = entry.get("last_result", "")
+                la = entry.get("last_attempt_epoch", 0) or 0
+                if la >= cutoff:
+                    counts[lr] = counts.get(lr, 0) + 1
+                ls = entry.get("last_success_epoch", 0) or 0
+                if ls > latest_success:
+                    latest_success = ls
+            result["recent_results"] = counts
+            if latest_success:
+                result["last_success_ts"] = latest_success
+                result["last_success_age_s"] = int(now - latest_success)
+        except (json.JSONDecodeError, OSError):
+            pass
+
+    result.update(mail_signals.counts(_signal_agent_dirs(), RUNTIME_DIR, now))
+
+    # 配送本体は mail-watcher に統合。GUI launchd domain が使えない環境でも
+    # watcher 自身が持つ pidfile と command line を照合して実プロセスを判定する。
+    watcher_launchd = _launchctl_job_running(MAIL_WATCHER_LABEL)
+    watcher_systemd = _systemd_user_unit_running(f"{MAIL_WATCHER_LABEL}.service")
+    watcher_pidfile, watcher_pid = _pidfile_process_running(
+        MAIL_WATCHER_PIDFILE,
+        "watch_agent_mail_signals.sh",
+        MAIL_WATCHER_HEARTBEAT,
+    )
+    result["watcher_running"] = watcher_launchd or watcher_systemd or watcher_pidfile
+    if watcher_launchd:
+        result["watcher_mode"] = "launchd"
+    elif watcher_systemd:
+        result["watcher_mode"] = "systemd-user"
+    elif watcher_pidfile:
+        result["watcher_mode"] = "pidfile"
+        result["watcher_pid"] = watcher_pid
+    result["daemon_running"] = _launchctl_job_running(NOTIFY_DAEMON_LABEL)
+
+    age = result.get("last_success_age_s")
+    signals = result["actionable_signal_count"]
+    watcher = result["watcher_running"]
+    # red:    watcher 不在 / 生きている宛先・直近24時間の signal 大量滞留 (>50)
+    # session 不在が確認できた古い signal だけを分ける。測定失敗や headless は除外しない。
+    # yellow: watcher 生存だが pending signal が捌けていない (滞留 + 直近配送なし
+    #         = 配送が遅れている兆候)
+    # green:  それ以外。watcher 生存かつ (backlog 無し or 直近配送あり)。トラフィック
+    #         が無いだけの健全 idle も green とし、誤警報 (健全なのに yellow) を防ぐ。
+    if not watcher or signals > 50:
+        result["status"] = "red"
+    elif signals > 0 and (age is None or age > 120):
+        result["status"] = "yellow"
+    else:
+        result["status"] = "green"
+
+    _MAIL_HEALTH_CACHE.update(ts=now, data=result)
+    return result
+
+
+# --------------------------------------------------------------------------- #
+# HTTP
+# --------------------------------------------------------------------------- #
+def is_public_static(path):
+    if path == "/assets/deepseek.svg" and not _dsh_enabled():
+        return False
+    return path == '/' or path in THEME_ASSETS
+
+
+class Handler(BaseHTTPRequestHandler):
+    def parse_request(self):
+        if not super().parse_request():
+            return False
+        if not GLOBAL_MODE:
+            return True
+        # One rule for every verb and route, including future local operations.
+        # Only exact installed static GET/HEAD resources are public.
+        path = urlparse(self.path).path
+        if self.command in {'GET','HEAD'} and is_public_static(path):
+            return True
+        try:
+            try:
+                from dashboard.http_operator import Admission
+            except ModuleNotFoundError:
+                from http_operator import Admission
+            home = os.environ.get('AGENTSTACK_HOME', '')
+            Admission(home, f'http://{BIND_HOST}:{self.server.server_port}').http(self.headers, self.client_address[0])
+            return True
+        except Exception as exc:
+            self._global_failure(exc)
+            return False
+
+    def _global_failure(self, exc):
+        reason=str(exc)
+        if not re.fullmatch(r'[A-Z][A-Z0-9_]{0,95}',reason):reason='GLOBAL_BACKEND_UNAVAILABLE'
+        status=getattr(exc,'status',None) or ({'QUERY_INVALID':400,'CURSOR_INVALID':400,
+            'UI_VIEWPOINT_REQUIRED':400,'NAME_INVALID':400,'CLIENT_NAME_INVALID':400,
+            'TARGET_UNAVAILABLE':404,'MESSAGE_UNAVAILABLE':404,
+            **dict.fromkeys(('NAME_CONFLICT','OWNER_REQUIRED','REGISTRATION_PENDING_CONFLICT',
+                'REGISTRATION_OWNER_CONFLICT','EXISTING_IDENTITY_REQUIRED','EXISTING_CLIENT_REQUIRED',
+                'CLIENT_SELECTION_REQUIRED','CLIENT_ROOT_IS_CHILD','REGISTRATION_OWNERSHIP_VERIFIED_RETRY_REQUIRED'),409)}.get(reason,503))
+        self._send(status,json.dumps({'ok':False,'reason':reason}).encode(),'application/json; charset=utf-8')
+
+    def _serve_portrait(self, nm, hi):
+        fp = _portrait_file(nm, hi)
+        if not fp:
+            if not re.fullmatch(r"[A-Za-z][A-Za-z ._-]{0,23}", nm or ""):
+                self._send(404, b"no portrait", "text/plain")
+                return
+            img = _portrait_fallback(nm, hi)
+            self._send(200, img, "image/svg+xml")
+            return
+        try:
+            with open(fp, "rb") as f:
+                img = f.read()
+        except OSError:
+            self._send(404, b"missing", "text/plain")
+            return
+        self.send_response(200)
+        self.send_header("Content-Type", "image/png")
+        self.send_header("Content-Length", str(len(img)))
+        self.send_header("Cache-Control", "public, max-age=86400")
+        self.end_headers()
+        self.wfile.write(img)
+
+    def _global_get(self, path):
+        try:
+            try:
+                from dashboard.global_backend import Backend
+            except ModuleNotFoundError:
+                from global_backend import Backend
+            if path == '/api/version':
+                payload = {'name':'orrery-telemetry','version':_resolve_version(),'api':API_GENERATION,
+                    'runtime_mode':'global','capabilities':{'operator_http_admission':1,'ui_read':1,
+                    'global_spawn':1,'instruction_migration':1,'global_dashboard_ui':1,
+                    'global_runtime_observation':1,'operator_session':1}}
+            elif path == '/api/runtime-observations':
+                query=parse_qs(urlparse(self.path).query,keep_blank_values=True)
+                ids=(query.get('agent_ids') or [''])[0].split(',')
+                if (set(query) != {'agent_ids'} or len(query['agent_ids']) != 1
+                        or not 1 <= len(ids) <= 200
+                        or any(re.fullmatch(r'[1-9][0-9]{0,18}', x) is None or int(x)>2**63-1 for x in ids)
+                        or len(set(ids)) != len(ids)):
+                    raise ValueError('QUERY_INVALID')
+                payload=Backend(GLOBAL_SERVER_CONFIG).observe(list(map(int,ids)),_parse_runtime)
+            elif path == '/api/quotas':
+                payload=QUOTA_SERVICE.read_all()
+            elif path == '/portrait':
+                query=parse_qs(urlparse(self.path).query,keep_blank_values=True)
+                if set(query)-{'name','hi'} or any(len(x)!=1 for x in query.values()):
+                    raise ValueError('QUERY_INVALID')
+                name=(query.get('name') or [''])[0]
+                self._serve_portrait(name,(query.get('hi') or [''])[0] in ('1','true'));return
+            elif path == '/api/fs/dirs':
+                query=parse_qs(urlparse(self.path).query,keep_blank_values=True)
+                if set(query)-{'path'} or len(query.get('path',[]))>1:
+                    raise ValueError('QUERY_INVALID')
+                payload={'ok':True,'runtime_mode':'global',**spawn_directory_suggestions((query.get('path') or [''])[0])}
+            elif path == '/api/deliverables':
+                payload={'ok':True,'runtime_mode':'global','configured':bool(os.environ.get('AGENTSTACK_DELIVERABLE_ROOTS','').strip()),'items':_deliverables_index()}
+            else:
+                backend = Backend(GLOBAL_SERVER_CONFIG)
+                payload = backend.get(path,parse_qs(urlparse(self.path).query,keep_blank_values=True))
+            self._send(200,json.dumps(payload,ensure_ascii=False).encode(),'application/json; charset=utf-8')
+        except Exception as exc:
+            self._global_failure(exc)
+
+    def log_message(self, *a):  # サイレント
+        pass
+
+    def _send(self, code: int, body: bytes, ctype: str):
+        self.send_response(code)
+        self.send_header("Content-Type", ctype)
+        self.send_header("Content-Length", str(len(body)))
+        self.send_header("Cache-Control", "no-store")
+        self.end_headers()
+        if self.command != "HEAD":
+            self.wfile.write(body)
+
+    def _single_flight(self, key: tuple, compute) -> bytes | None:
+        """A shared display body, or None after answering 503 busy."""
+        try:
+            return _HTTP_SINGLE_FLIGHT.get(key, compute)
+        except _SingleFlightBusy:
+            body = b'{"error":"busy","retry":true}'
+            self.send_response(503)
+            self.send_header("Content-Type", "application/json; charset=utf-8")
+            self.send_header("Content-Length", str(len(body)))
+            self.send_header("Cache-Control", "no-store")
+            self.send_header("Retry-After", "1")
+            self.end_headers()
+            self.wfile.write(body)
+            return None
+
+    def do_HEAD(self):
+        if GLOBAL_MODE and is_public_static(urlparse(self.path).path):
+            self.do_GET()
+        else:self.send_error(501,'Unsupported method')
+
+    def do_GET(self):
+        path = urlparse(self.path).path
+        if GLOBAL_MODE and not is_public_static(path):
+            self._global_get(path)
+            return
+        if path == "/":
+            try:
+                with open(INDEX_HTML, "rb") as f:
+                    self._send(
+                        200,
+                        _global_dashboard_index(f.read()) if GLOBAL_MODE else _render_dashboard_index(f.read()),
+                        "text/html; charset=utf-8",
+                    )
+            except FileNotFoundError:
+                self._send(500, b"index.html missing", "text/plain")
+        elif path == "/assets/deepseek.svg" and not _dsh_enabled():
+            self._send(404, b"not found", "text/plain")
+        elif path in THEME_ASSETS:
+            asset_path, content_type = THEME_ASSETS[path]
+            try:
+                with open(asset_path, "rb") as file:
+                    self._send(200, file.read(), content_type)
+            except FileNotFoundError:
+                self._send(404, b"theme asset missing", "text/plain")
+        elif path == "/api/quotas":
+            # A cold read can start an authenticated provider process. Reject a
+            # cross-origin browser request before any provider refresh begins.
+            if not _same_origin_request(self):
+                self._send(403, b'{"error":"cross_origin_quota_request"}',
+                           "application/json; charset=utf-8")
+                return
+            body = json.dumps(QUOTA_SERVICE.read_all(), ensure_ascii=False,
+                              separators=(",", ":")).encode("utf-8")
+            self._send(200, body, "application/json; charset=utf-8")
+        elif path == "/api/version":
+            version = _resolve_version()
+            # "api" is the compatibility generation for programs using this
+            # API (ORRERY cockpit): raise it only when something they rely on
+            # is added or changes meaning; record it in a changelog.d fragment.
+            # Managed this way from 2 on; every earlier release reported 1.
+            self._send(200, json.dumps({"name": "orrery-telemetry", "version": version, "api": API_GENERATION}).encode(), "application/json; charset=utf-8")
+        elif path == "/api/spawn-names":
+            try:
+                self._send(200, json.dumps(spawn_names_payload()).encode(), "application/json; charset=utf-8")
+            except ValueError as e:
+                self._send(503, json.dumps({"ok": False, "error": str(e)}).encode(), "application/json; charset=utf-8")
+        elif path == "/api/name-status":
+            query = parse_qs(urlparse(self.path).query)
+            name = (query.get("name") or [""])[0]
+            self._send(200, json.dumps({"name": name, "status": _spawn_name_status(name)}).encode(), "application/json; charset=utf-8")
+        elif path == "/api/suggest-name":
+            query = parse_qs(urlparse(self.path).query)
+            scientist = (query.get("scientist") or [""])[0]
+            name = suggest_spawn_name(scientist)
+            payload = {"name": name} if name else {"error": "no available name found"}
+            self._send(200 if name else 409, json.dumps(payload).encode(), "application/json; charset=utf-8")
+        elif path == "/api/fs/dirs":
+            query = parse_qs(urlparse(self.path).query)
+            payload = spawn_directory_suggestions((query.get("path") or [""])[0])
+            self._send(200, json.dumps(payload).encode(), "application/json; charset=utf-8")
+        elif path == "/api/agents":
+            q = parse_qs(urlparse(self.path).query)
+            history_days = _parse_history_days((q.get("days") or [""])[0])
+            scope = (q.get("scope") or [""])[0]
+            # Every scope shares the one roster computation for this window;
+            # only the answer written from it differs.
+            answer = self._single_flight(("agents", history_days),
+                                         lambda: _AgentsAnswer(history_days))
+            if answer is not None:
+                self._send(200, answer.body(scope), "application/json; charset=utf-8")
+        elif path == "/api/spawn-status":
+            q = parse_qs(urlparse(self.path).query, keep_blank_values=True)
+            name = (q.get("name") or [""])[0]
+            status = ({"ok": False, "error": "attempt status is no longer supported; query by name",
+                       "error_code": "unsupported_attempt"} if "attempt_id" in q
+                      else spawn_launch_status(name) if name else spawn_launch_statuses())
+            self._send(
+                200 if status.get("ok") else 404,
+                json.dumps(status, ensure_ascii=False).encode(),
+                "application/json; charset=utf-8",
+            )
+        elif path == "/api/custom-portraits":
+            self._send(
+                200,
+                json.dumps(
+                    _custom_portrait_map(),
+                    ensure_ascii=False,
+                    separators=(",", ":"),
+                ).encode(),
+                "application/json; charset=utf-8",
+            )
+        elif path == "/api/graph":
+            q = parse_qs(urlparse(self.path).query)
+            show_all = (q.get("all") or ["0"])[0] in ("1", "true")
+            try:
+                days = float((q.get("days") or ["4"])[0])
+            except ValueError:
+                days = 4.0
+            # spawn_only=1: for callers that only need the parent/child
+            # lineage.  The ORRERY cockpit is one — it was pulling the full
+            # node+edge payload every 6s just to read `spawn` out of it.
+            spawn_only = (q.get("spawn_only") or ["0"])[0] in ("1", "true")
+            body = self._single_flight(
+                ("graph", days, show_all, spawn_only),
+                lambda: json.dumps(_graph_response(days, show_all, spawn_only),
+                                   ensure_ascii=False).encode(),
+            )
+            if body is not None:
+                self._send(
+                    200,
+                    body,
+                    "application/json; charset=utf-8",
+                )
+        elif path == "/api/history":
+            q = parse_qs(urlparse(self.path).query)
+            sess = (q.get("session") or [""])[0]
+            try:
+                lim = int((q.get("limit") or ["220"])[0])
+            except ValueError:
+                lim = 220
+            payload = history_payload(sess, lim)
+            self._send(
+                200 if payload.get("ok") else 400,
+                json.dumps(payload, ensure_ascii=False).encode(),
+                "application/json; charset=utf-8",
+            )
+        elif path == "/api/agent-history":
+            # Task E: 単一 agent の sparkline (?name=)
+            # Task G: 複数 agent union replay  (?names=A,B,C)
+            # Task G+: hours 省略時は events range に auto-fit
+            q = parse_qs(urlparse(self.path).query)
+            nm = (q.get("name") or [""])[0]
+            names_raw = (q.get("names") or [""])[0]
+            hrs_raw = (q.get("hours") or [""])[0]
+            if hrs_raw == "":
+                hrs = None
+            else:
+                try:
+                    hrs = int(hrs_raw)
+                except ValueError:
+                    hrs = 24
+            pane_raw = (q.get("include_pane_states") or [""])[0].lower()
+            include_pane = pane_raw in ("1", "true", "yes", "on")
+            if names_raw:
+                names_lst = [s.strip() for s in names_raw.split(",") if s.strip()]
+                payload = agent_history_payload(
+                    hours=hrs, names=names_lst,
+                    include_pane_states=include_pane,
+                )
+            else:
+                payload = agent_history_payload(
+                    name=nm, hours=hrs,
+                    include_pane_states=include_pane,
+                )
+            self._send(
+                200 if payload.get("ok") else 400,
+                json.dumps(payload, ensure_ascii=False).encode(),
+                "application/json; charset=utf-8",
+            )
+        elif path == "/api/edge-messages":
+            q = parse_qs(urlparse(self.path).query)
+            a = (q.get("a") or [""])[0]
+            b = (q.get("b") or [""])[0]
+            try:
+                lim = int((q.get("limit") or ["60"])[0])
+            except ValueError:
+                lim = 60
+            payload = edge_messages_payload(a, b, lim)
+            self._send(
+                200 if payload.get("ok") else 400,
+                json.dumps(payload, ensure_ascii=False).encode(),
+                "application/json; charset=utf-8",
+            )
+        elif path == "/api/messages-since":
+            q = parse_qs(urlparse(self.path).query)
+            try:
+                since = int((q.get("since") or ["0"])[0])
+            except ValueError:
+                since = 0
+            try:
+                lim = int((q.get("limit") or ["80"])[0])
+            except ValueError:
+                lim = 80
+            payload = messages_since_payload(since, lim)
+            self._send(
+                200,
+                json.dumps(payload, ensure_ascii=False).encode(),
+                "application/json; charset=utf-8",
+            )
+        elif path == "/api/annotations":
+            self._send(
+                200,
+                json.dumps({"ok": True, "annotations": _annotations()},
+                           ensure_ascii=False).encode(),
+                "application/json; charset=utf-8",
+            )
+        elif path == "/api/deliverables":
+            q = parse_qs(urlparse(self.path).query)
+            ag = (q.get("agent") or [""])[0]
+            items = _deliverables_index().get(ag, []) if ag else []
+            vault_name = os.path.basename(os.path.normpath(VAULT)) if VAULT else ""
+            self._send(
+                200,
+                json.dumps(
+                    {"ok": True, "agent": ag, "vault": vault_name, "items": items[:25]},
+                    ensure_ascii=False,
+                ).encode(),
+                "application/json; charset=utf-8",
+            )
+        elif path.startswith("/assets/"):
+            # 静的アセット配信。assets/ 直下の安全な拡張子のみ許可（path traversal 防止）。
+            fname = path[len("/assets/"):]
+            if "/" in fname or ".." in fname or not fname:
+                self._send(404, b"not found", "text/plain")
+                return
+            if not (fname.endswith(".svg") or fname.endswith(".png")):
+                self._send(404, b"not found", "text/plain")
+                return
+            fp = os.path.join(HERE, "assets", fname)
+            try:
+                with open(fp, "rb") as f:
+                    data = f.read()
+            except OSError:
+                self._send(404, b"missing", "text/plain")
+                return
+            ct = "image/svg+xml" if fname.endswith(".svg") else "image/png"
+            self.send_response(200)
+            self.send_header("Content-Type", ct)
+            self.send_header("Content-Length", str(len(data)))
+            self.send_header("Cache-Control", "public, max-age=86400")
+            self.end_headers()
+            self.wfile.write(data)
+        elif path == "/portrait":
+            q = parse_qs(urlparse(self.path).query)
+            nm = (q.get("name") or [""])[0]
+            hi = (q.get("hi") or ["0"])[0] in ("1", "true")
+            self._serve_portrait(nm, hi)
+        elif path == "/api/ptty":
+            q = parse_qs(urlparse(self.path).query)
+            sess = (q.get("session") or [""])[0]
+            payload = ttyd_ensure(sess)
+            self._send(
+                200 if payload.get("ok") else 400,
+                json.dumps(payload, ensure_ascii=False).encode(),
+                "application/json; charset=utf-8",
+            )
+        elif path == "/api/term":
+            q = parse_qs(urlparse(self.path).query)
+            sess = (q.get("session") or [""])[0]
+            try:
+                ln = int((q.get("lines") or ["500"])[0])
+            except ValueError:
+                ln = 500
+            payload = term_capture(sess, ln)
+            self._send(
+                200 if payload.get("ok") else 400,
+                json.dumps(payload, ensure_ascii=False).encode(),
+                "application/json; charset=utf-8",
+            )
+        elif path == "/api/mail-watcher-health":
+            payload = mail_watcher_health()
+            self._send(
+                200,
+                json.dumps(payload, ensure_ascii=False).encode(),
+                "application/json; charset=utf-8",
+            )
+        else:
+            self._send(404, b"not found", "text/plain")
+
+    def do_POST(self):
+        path = urlparse(self.path).path
+        if GLOBAL_MODE:
+            try:
+                try:
+                    from dashboard.global_backend import Backend, BackendError
+                except ModuleNotFoundError:
+                    from global_backend import Backend, BackendError
+                if self.headers.get_content_type()!='application/json':raise BackendError('JSON_REQUIRED',415)
+                lengths=self.headers.get_all('Content-Length',[])
+                if len(lengths)!=1 or not lengths[0].isascii() or not lengths[0].isdigit():raise BackendError('QUERY_INVALID',400)
+                length=int(lengths[0])
+                if not 0<length<=65536:raise BackendError('PAYLOAD_TOO_LARGE',413)
+                try:payload=json.loads(self.rfile.read(length))
+                except (json.JSONDecodeError,UnicodeDecodeError) as exc:
+                    raise BackendError('QUERY_INVALID',400) from exc
+                def cwd(value):
+                    if not os.path.isabs(value) or not os.path.isdir(value):raise BackendError('SPAWN_DIRECTORY_INVALID',400)
+                    resolved=os.path.realpath(value)
+                    if not any(_is_within_root(resolved,root) for root in _spawn_roots()):raise BackendError('SPAWN_DIRECTORY_OUTSIDE_ROOTS',400)
+                    return resolved
+                result=Backend(GLOBAL_SERVER_CONFIG).post(path,payload,cwd,_open_terminal_tmux)
+                self._send(200 if result.get('ok') else 409,json.dumps(result,ensure_ascii=False).encode(),'application/json; charset=utf-8')
+            except Exception as exc:
+                self._global_failure(exc)
+            return
+        if path not in ("/api/jump", "/api/kill", "/api/exit",
+                        "/api/annotate", "/api/spawn", "/api/reactivate",
+                        "/api/jserr"):
+            self._send(404, b"not found", "text/plain")
+            return
+
+        # All POST endpoints mutate local tmux/agent state.  Browsers must prove
+        # same-origin, while CLI clients remain usable by omitting both browser
+        # provenance headers.  Requiring JSON prevents simple-form CSRF.
+        content_type = self.headers.get_content_type().lower()
+        if content_type != "application/json":
+            self._send(
+                415,
+                json.dumps({"ok": False,
+                            "error": "Content-Type must be application/json"}).encode(),
+                "application/json; charset=utf-8",
+            )
+            return
+        origin = (self.headers.get("Origin") or "").strip()
+        fetch_site = (self.headers.get("Sec-Fetch-Site") or "").strip().lower()
+        if origin or fetch_site:
+            expected_origin = f"http://{self.headers.get('Host', '')}"
+            if ((origin and origin != expected_origin)
+                    or (fetch_site and fetch_site != "same-origin")):
+                self._send(
+                    403,
+                    json.dumps({"ok": False,
+                                "error": "cross-origin POST rejected"}).encode(),
+                    "application/json; charset=utf-8",
+                )
+                return
+        try:
+            n = int(self.headers.get("Content-Length", 0) or 0)
+        except ValueError:
+            self._send(
+                400,
+                json.dumps({"ok": False,
+                            "error": "invalid Content-Length"}).encode(),
+                "application/json; charset=utf-8",
+            )
+            return
+        raw = self.rfile.read(n) if n else b""
+        try:
+            body = json.loads(raw or b"{}")
+        except (TypeError, ValueError):
+            self._send(
+                400,
+                json.dumps({"ok": False, "error": "invalid JSON body"}).encode(),
+                "application/json; charset=utf-8",
+            )
+            return
+        if not isinstance(body, dict):
+            self._send(
+                400,
+                json.dumps({"ok": False,
+                            "error": "JSON body must be an object"}).encode(),
+                "application/json; charset=utf-8",
+            )
+            return
+        session = body.get("session", "")
+        if path == "/api/jump":
+            if body.get('runtime_mode') == 'global':
+                result = global_child_resume(body)
+            elif "open" in body and type(body["open"]) is not bool:
+                result = {"ok": False, "error": "open must be a boolean"}
+            else:
+                options = {key: body[key] for key in ("base", "tools") if key in body}
+                if "open" in body:
+                    options["open_terminal"] = body["open"]
+                result = do_jump(session, **options)
+        elif path == "/api/exit":
+            result = do_exit(session)
+        elif path == "/api/annotate":
+            # 役割ラベルの upsert/削除。name は session でも name でも受ける。
+            nm = body.get("name") or body.get("session") or ""
+            result = _write_annotation(
+                nm, body.get("role", ""), body.get("emoji", ""),
+                body.get("group", ""))
+        elif path == "/api/jserr":
+            result = _log_js_error(body)
+        elif path == "/api/spawn":
+            result = do_spawn(body)
+        elif path == "/api/reactivate":
+            result = do_reactivate(session)
+        else:
+            mode = body.get("mode", "both")
+            result = do_kill(session, mode)
+        self._send(
+            (202 if path == "/api/spawn" and result.get("managed") and result.get("ok")
+             else 200 if result.get("ok") else 409 if result.get("error_code") in ("profile_busy", "attempt_conflict") else 400),
+            json.dumps(result, ensure_ascii=False).encode(),
+            "application/json; charset=utf-8",
+        )
+
+
+# --------------------------------------------------------------------------- #
+# do_reactivate — 生きているのに retired にされた agent を受信可能に戻す。
+#
+# ORRERY Mail は 24 時間無活動の agent を毎時 retire する。終了した session に
+# は妥当な掃除だが、**生きたまま idle だった常駐 agent**（司令塔・監視役）も
+# 一緒に retire される。そして retired agent は送信と自分の inbox 読取は
+# 素通りし、**受信だけが黙って拒否される** ので、本人も人間も気づけない。
+# 他 agent のメールが bounce して初めて分かる。
+#
+# resume はこれを直せない。resume は「tmux が無い = 終了済み」を前提にした
+# 復元路で、生きた session に当てても attach するだけで再登録は走らない。
+# 直すには会話を捨てて再起動するしかなかった。
+#
+# ここは dashboard にしかできない仕事である。tmux が生きているかどうかを
+# 知っているのは ORRERY Mail ではなくこちら側だから。自動では戻さない:
+# 黙って直すのは、今日一日で 4 つの形で踏んだ失敗そのものなので。
+# --------------------------------------------------------------------------- #
+def _mail_web_url(path: str) -> str:
+    """ORRERY Mail の web API を、設定済み endpoint と同じ host:port で叩く。
+
+    以前は特定の localhost port を直書きしていた。既定ポートで動いている
+    限り正しく、それ以外では retire が黙って失敗する——「動いている環境では
+    気づけない」種類の前提で、今日直したものと同じ形である。MCP endpoint が
+    どこを指しているかは分かっているので、そこから導く。
+    """
+    base = MCP_HTTP_URL or "http://127.0.0.1:18765/mcp"
+    parts = urllib.parse.urlsplit(base)
+    return urllib.parse.urlunsplit((parts.scheme or "http", parts.netloc, path, "", ""))
+
+
+def do_reactivate(session: str) -> dict:
+    if not _valid(session):
+        return {"ok": False, "error": "invalid session name"}
+    if not _has_retired_at():
+        return {"ok": False,
+                "error": "this ORRERY Mail has no retired_at column; "
+                         "nothing can be retired on it"}
+    project_key = _project_key()
+    if not project_key:
+        return {"ok": False,
+                "error": "AGENTSTACK_PROJECT_KEY or AGENTSTACK_VAULT is not configured"}
+    if not _has_session(session):
+        return {"ok": False,
+                "error": f"agent '{session}' has no live tmux session; "
+                         "use resume to restore a finished one"}
+    con = None
+    try:
+        con = _db()
+        con.row_factory = sqlite3.Row
+        row = con.execute(
+            "SELECT a.id, a.retired_at FROM agents a "
+            "JOIN projects p ON a.project_id=p.id "
+            "WHERE a.name=? AND p.human_key=?",
+            (session, project_key),
+        ).fetchone()
+    except Exception as e:
+        return {"ok": False, "error": f"failed to read agent record: {e}"}
+    finally:
+        if con is not None:
+            con.close()
+    if row is None:
+        return {"ok": False, "error": f"agent '{session}' not found in ORRERY Mail"}
+    if not row["retired_at"]:
+        return {"ok": False, "error": f"agent '{session}' is not retired"}
+
+    # ORRERY Mail publishes `unretire_agent` as an MCP tool (loopback callers
+    # need no registration token). The former third-party mail UI's
+    # `/mail/api/unretire-agent` route does not exist on ORRERY Mail, so going
+    # through the web API returned 404 while the DB still said retired
+    # (2026-09-09, four live children of a Codex parent).
+    unretired = _mcp_call(
+        "unretire_agent",
+        {"project_key": project_key, "agent_name": session},
+        timeout=8,
+    )
+    if not unretired.get("ok"):
+        return {
+            "ok": False,
+            "error": f"unretire request failed: {unretired.get('error')}",
+        }
+    return {"ok": True, "session": session, "action": "reactivated"}
+
+
+def _start_supervisor_watchdog():
+    supervisor_fd_raw = os.environ.pop("AGENTSTACK_DASHBOARD_SUPERVISOR_FD", "")
+    if not supervisor_fd_raw:
+        return
+    try:
+        supervisor_fd = int(supervisor_fd_raw)
+    except ValueError:
+        return
+    if supervisor_fd < 0:
+        return
+
+    def _watch_supervisor():
+        try:
+            while os.read(supervisor_fd, 4096):
+                pass
+        except OSError:
+            pass
+        finally:
+            try:
+                os.close(supervisor_fd)
+            except OSError:
+                pass
+        os.kill(os.getpid(), signal.SIGTERM)
+
+    threading.Thread(target=_watch_supervisor, daemon=True).start()
+
+
+def _child_session_live(name: str, boot: float | None) -> bool | None:
+    """Is a session of this child running now? None when that cannot be told.
+
+    A tmux session of that name, or a live-session lease written since this
+    machine booted whose process is alive. A lease from before the boot is
+    ignored: its PID may belong to an unrelated process now.
+
+    Absence is read from the session list, not from has-session: the tmux
+    consumer refuses a has-session on a missing target (TMUX_TARGET_UNAVAILABLE)
+    instead of returning tmux's "can't find session", which read as "cannot
+    tell" and left every child a reboot stopped unresumable.
+    """
+    try:
+        # Under the lease lock: both calls together stay shorter than a lease
+        # writer waits (10 s).
+        listed = _tmux_run(['list-sessions', '-F', '#{session_name}'],
+                           capture_output=True, text=True, timeout=2)
+    except (OSError, RuntimeError, subprocess.SubprocessError):
+        return None
+    if listed.returncode == 0:
+        if name not in (listed.stdout or "").splitlines():
+            return _child_resume_module().live_lease(pathlib.Path(RUNTIME_DIR), name, boot=boot)
+        # Listed: a session of that name exists, and only admission can say
+        # whether it is this child's. Any refusal stays "cannot tell".
+        try:
+            done = _tmux_run(['has-session', '-t', f'={name}'], capture_output=True, text=True, timeout=2)
+        except (OSError, RuntimeError, subprocess.SubprocessError):
+            return None
+        return True if done.returncode == 0 else None
+    reason = (listed.stderr or "").lower()
+    # Only these mean "no such session". Any other failure, such as a server
+    # socket this user cannot open ("error connecting … (permission denied)"),
+    # says nothing about the session and must not be read as "gone".
+    gone = ("can't find session" in reason or "no server running" in reason
+            or ("error connecting" in reason and "no such file or directory" in reason))
+    if not gone:
+        return None
+    return _child_resume_module().live_lease(pathlib.Path(RUNTIME_DIR), name, boot=boot)
+
+
+def _recover_children_after_reboot() -> None:
+    """Children a reboot stopped mid-run become resumable (child_resume.recover_after_reboot)."""
+    module = _child_resume_module()
+    try:
+        retention = int(_env_text("AGENTSTACK_CHILD_RESUME_RETENTION_DAYS", "30"))
+    except ValueError:
+        return
+    boot = module.boot_time()
+    recovered = module.recover_after_reboot(
+        pathlib.Path(RUNTIME_DIR), retention_days=retention, boot=boot,
+        is_live=lambda name: _child_session_live(name, boot),
+    )
+    for name, outcome in recovered:
+        logging.info("child %s stopped by a reboot is resumable again (%s)", name, outcome)
+        _invalidate_resume_capability_cache(name)
+
+
+def _start_child_resume_maintenance() -> None:
+    """Purge expired private resume material while the dashboard is running.
+
+    The first pass, at start, also makes children that a reboot stopped
+    mid-run resumable again (see _recover_children_after_reboot).
+    """
+
+    def worker() -> None:
+        while True:
+            try:
+                _recover_children_after_reboot()
+            except Exception as exc:  # maintenance must not stop the dashboard
+                logging.warning("child resume recovery after reboot failed: %s", exc)
+            try:
+                removed = _child_resume_module().purge_expired(
+                    pathlib.Path(RUNTIME_DIR)
+                )
+                if removed:
+                    logging.info(
+                        "purged expired Codex child resume material (count=%d)",
+                        len(removed),
+                    )
+            except Exception as exc:  # maintenance must not stop the dashboard
+                logging.warning("child resume retention maintenance failed: %s", exc)
+            time.sleep(3600)
+
+    threading.Thread(
+        target=worker, name="child-resume-maintenance", daemon=True
+    ).start()
+
+
+JS_ERROR_LOG = os.path.join(HERE, "logs", "js-errors.log")
+
+
+def _log_js_error(body: dict) -> dict:
+    """Land a JS exception raised inside the UI, one JSON object per line.
+
+    The dashboard is often viewed inside a webview with no devtools (ORRERY),
+    where a thrown exception is invisible: it only shows up as "clicking that
+    does nothing".  This gives such a failure somewhere to land, so a user can
+    hand over one log line instead of a symptom.
+    """
+    try:
+        os.makedirs(os.path.dirname(JS_ERROR_LOG), exist_ok=True)
+        line = json.dumps(
+            {
+                "ts": time.strftime("%Y-%m-%dT%H:%M:%S"),
+                "where": str(body.get("where", ""))[:80],
+                "msg": str(body.get("msg", ""))[:500],
+                "src": str(body.get("src", ""))[:200],
+                "line": body.get("line"),
+                "col": body.get("col"),
+                "stack": str(body.get("stack", ""))[:1500],
+                "ua": str(body.get("ua", ""))[:120],
+            },
+            ensure_ascii=False,
+        )
+        with open(JS_ERROR_LOG, "a", encoding="utf-8") as fh:
+            fh.write(line + "\n")
+        return {"ok": True}
+    except Exception as e:  # noqa: BLE001
+        return {"ok": False, "error": f"{type(e).__name__}: {e}"}
+
+
+def main():
+    if GLOBAL_MODE:
+        # Isolation-only global backend starts no legacy maintenance, providers,
+        # ttyd cleanup or child processes. Request failures never fall back.
+        srv = ThreadingHTTPServer((BIND_HOST, PORT), Handler)
+        print(f'agent-dashboard global backend on http://{BIND_HOST}:{PORT}/',flush=True)
+        try:srv.serve_forever()
+        except KeyboardInterrupt:pass
+        finally:srv.server_close()
+        return
+    _start_supervisor_watchdog()
+    _start_child_resume_maintenance()
+    _start_provider_stall_monitor()
+
+    # 前回(SIGKILL 等で atexit 未実行)の野良 ttyd を掃除してから開始
+    try:
+        subprocess.run(
+            ["pkill", "-f", "ttyd -p .* tmux attach -t ="],
+            capture_output=True,
+        )
+    except FileNotFoundError:
+        # Optional cleanup must not prevent startup on hosts without pkill.
+        pass
+    threading.Thread(target=_ttyd_reaper, daemon=True).start()
+    # The picker's Claude default checks the claude a child runs; find it once
+    # here, where starting a login shell is allowed (requests may not).
+    threading.Thread(target=_bind_claude_child_cli_path, args=(HOOKS_DIR,), daemon=True).start()
+    srv = ThreadingHTTPServer((BIND_HOST, PORT), Handler)
+    print(f"agent-dashboard listening on http://{BIND_HOST}:{PORT}/")
+    try:
+        srv.serve_forever()
+    except KeyboardInterrupt:
+        pass
+    finally:
+        _stop_provider_stall_monitor()
+
+
+if __name__ == "__main__":
+    main()

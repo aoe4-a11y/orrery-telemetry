@@ -1,0 +1,11 @@
+{
+  "home": "/Users/huyuhutaru/.dev-storage-governor/examforge/20261022T063810Z-build-cache-e4007ade/rehearsal/rehearsal-home",
+  "mail_port": 60565,
+  "dashboard_port": 60566,
+  "seeded": 353,
+  "mode": "real isolated native Mail and dashboard; fake no-service Linux manager; scoped approvals skipped",
+  "installer_exit": 1,
+  "helper_processes_stopped": true,
+  "mail_port_closed": true,
+  "dashboard_port_closed": true
+}

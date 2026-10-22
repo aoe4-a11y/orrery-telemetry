@@ -198,7 +198,7 @@ class OrphanTests(unittest.TestCase):
     def test_existing_watcher_functions_byte_ast_unchanged(self):
         b=Path(__file__).parent
         def funcs(p):return {x.name:ast.dump(x) for x in ast.parse(p.read_text()).body if isinstance(x,ast.FunctionDef)}
-        old=funcs(b/'agentstack-seat-stall-watch.py.bak-20261021-orphan');new=funcs(b/'agentstack-seat-stall-watch.py')
+        old=funcs(b.parent/'docs/orrery-up-2/live-code/bin/agentstack-seat-stall-watch.py.bak-20261021-orphan');new=funcs(b/'agentstack-seat-stall-watch.py')
         for name in old:
             if name!='guarded_main':self.assertEqual(old[name],new[name],name)
 
