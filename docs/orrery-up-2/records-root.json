@@ -1,0 +1,8 @@
+{
+  "root": "/Users/huyuhutaru/.dev-storage-governor/examforge/20261022T084947Z-receipt-1639da14",
+  "retention_class": "compact-durable",
+  "retention_category": "record",
+  "internal_reason": "receipts",
+  "cloned_staged_files": 2,
+  "staged_copy_hash_mismatches": 0
+}
