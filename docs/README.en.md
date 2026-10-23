@@ -20,6 +20,7 @@ Overview: the cockpit is the screen for operating terminals; Telemetry is the da
 
 - [Dashboard](dashboard.en.md) — Reference for DECK/NETWORK, history, RESUME/EXIT, REPLAY, and details.
 - [Delegation and child agents](delegation.en.md) — ORRERY /delegate, differences from native children, and tool selection.
+- [Process protection during seat closure (Japanese)](reap-idle-seats.md) — Live peers, shared services, Simulator protection, and isolated tests.
 - [Launchers and identity](launchers.en.md) — agent-start, names, resume, /delegate and /log, and notification flow.
 - [Using Obsidian](obsidian.en.md) — Store logs, paper notes, and tasks in a vault and Daily Note.
 

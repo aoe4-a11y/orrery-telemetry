@@ -20,6 +20,7 @@ Telemetry 自体の操作は、header の `HELP MAP`（NETWORK では `SETTINGS`
 
 - [Dashboard](dashboard.md) — DECK/NETWORK、履歴、RESUME/EXIT、REPLAY と詳細の参照。
 - [委任と child agent](delegation.md) — ORRERY /delegate、組み込み子との違いと渡す道具の選択。
+- [席を閉じる際の process 保護](reap-idle-seats.md) — 他席・共有常駐・Simulator の保護と隔離試験。
 - [Launcher と identity](launchers.md) — agent-start、名前、resume、/delegate と /log、通知の流れ。
 - [Obsidian と一緒に使う](obsidian.md) — ログ・論文ノート・タスクを vault と Daily Note に置く。
 
