@@ -8,7 +8,7 @@
 - 同じ ps snapshot で、生きている全 tmux 席の帰属を照合する。
   他席にも帰属する PID は停止せず、PID・理由・相手席名を log と head 向け報告に残す。
 - SWBBuildService、XCBBuildService、CoreSimulatorService、launchd_sim、
-  SimulatorTrampoline、simdiskimaged と、それらの子孫は停止しない。
+  SimulatorTrampoline、simdiskimaged、Simulator、SimulatorBridge、SimLaunchHost と、それらの子孫は停止しない。
 - Simulator device path または SIMULATOR_UDID / DEVICE_NAME / ROOT 環境変数で
   識別した process とその子孫も保護する。この道具には device 専有を証明する機構が
   ないため、Simulator process を常に保護する。

@@ -52,7 +52,6 @@ CLOSED_REPORT=""
 # A heavy slot/ticket belongs to the seat by its owner file, or when its pid or an ancestor
 # of that pid belongs to the seat.
 REGISTRY_GLOBS="${REAP_REGISTRY_GLOBS:-$HOME/.dev-storage-governor/*/*/.dev-storage.json:/Volumes/DevSSD/DevStorageGovernor/artifacts/*/*/.dev-storage.json:/Volumes/DevSSD-Private/DevStorageGovernor/artifacts/*/*/.dev-storage.json}"
-pane_roots() { "$TMUX_BIN" list-panes -t "$1" -F '#{pane_pid}' 2>/dev/null; }
 # attribute SEAT -> broad work/heavy idle guards, rules, protected peers, narrow stop/remove-heavy rows.
 # OPS-REAP-SHARED-1 / M-079: all live seats share one ps snapshot; service/device protection
 # is independent of attribution. A protected pane descendant also forbids kill-session.
@@ -146,7 +145,7 @@ for entry in sorted(glob.glob(os.path.join(lock_root, "slot-*")) + glob.glob(os.
             heavy_pids.add(pid)
 # No reliable device-exclusive ownership exists here. Conservatively protect every
 # Simulator process (including reparented apps identified by device environment).
-service_re = re.compile(r"(^|[/\s.])(SWBBuildService|XCBBuildService|CoreSimulatorService|launchd_sim|SimulatorTrampoline|simdiskimaged)(?=$|[\s/])")
+service_re = re.compile(r"(^|[/\s.])(SWBBuildService|XCBBuildService|CoreSimulatorService|launchd_sim|SimulatorTrampoline|Simulator|SimulatorBridge|SimLaunchHost(?:-[A-Za-z0-9_]+)?|simdiskimaged)(?=$|[\s/])")
 device_re = re.compile(r"/CoreSimulator/Devices/|(^|\s)SIMULATOR_(?:UDID|DEVICE_NAME|ROOT)=")
 services = {pid for pid, command in argv.items() if service_re.search(command)}
 devices = {pid for pid, command in argv.items()

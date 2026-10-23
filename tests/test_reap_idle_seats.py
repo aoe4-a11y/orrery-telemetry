@@ -184,7 +184,8 @@ class ReaperTest(unittest.TestCase):
     def test_shared_services_and_their_descendants_are_preserved(self):
         names = ("SWBBuildService", "XCBBuildService",
                  "com.apple.CoreSimulator.CoreSimulatorService", "launchd_sim",
-                 "SimulatorTrampoline", "simdiskimaged")
+                 "SimulatorTrampoline", "simdiskimaged", "Simulator", "SimulatorBridge",
+                 "com.apple.CoreSimulator.SimLaunchHost-arm64")
         for i, name in enumerate(names):
             self.process(400+i*2, "/fixture/"+name)
             self.process(401+i*2, env="", ppid=400+i*2)
