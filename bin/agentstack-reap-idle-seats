@@ -53,15 +53,28 @@ CLOSED_REPORT=""
 # of that pid belongs to the seat.
 REGISTRY_GLOBS="${REAP_REGISTRY_GLOBS:-$HOME/.dev-storage-governor/*/*/.dev-storage.json:/Volumes/DevSSD/DevStorageGovernor/artifacts/*/*/.dev-storage.json:/Volumes/DevSSD-Private/DevStorageGovernor/artifacts/*/*/.dev-storage.json}"
 pane_roots() { "$TMUX_BIN" list-panes -t "$1" -F '#{pane_pid}' 2>/dev/null; }
-# attribute SEAT -> lines "work<TAB>pid<TAB>command" and "heavy<TAB>dir"
+# attribute SEAT -> broad work/heavy idle guards, rules, protected peers, narrow stop/remove-heavy rows.
+# OPS-REAP-SHARED-1 / M-079: all live seats share one ps snapshot; service/device protection
+# is independent of attribution. A protected pane descendant also forbids kill-session.
 attribute() {
-  python3 - "$1" "$LOCK_ROOT" "$RESIDENT_RE" "$REGISTRY_GLOBS" "$$" $(pane_roots "$1") <<'PY'
+  python3 - "$1" "$LOCK_ROOT" "$RESIDENT_RE" "$REGISTRY_GLOBS" "$$" "$TMUX_BIN" <<'PY'
 import glob, json, os, re, subprocess, sys
-seat, lock_root, resident_re, globs, me = sys.argv[1:6]
-panes = {int(x) for x in sys.argv[6:] if x.isdigit()}
+seat, lock_root, resident_re, globs, me, tmux = sys.argv[1:7]
+def tmux_lines(*args):
+    return subprocess.run([tmux, *args], capture_output=True, text=True, check=True).stdout.splitlines()
+# One process snapshot and all live seats: broad attribution stays the idle guard.
+live = set(tmux_lines("list-sessions", "-F", "#{session_name}"))
+if seat not in live:
+    raise SystemExit("attribution refused: target seat not live")
+panes_by_seat = {}
+for name in sorted(live):
+    values = tmux_lines("list-panes", "-t", name, "-F", "#{pane_pid}")
+    if not values or any(not value.isdigit() for value in values):
+        raise SystemExit("attribution refused: unreadable live pane")
+    panes_by_seat[name] = {int(value) for value in values}
 def ps(*fmt):
-    out = subprocess.run(["ps", "-axww", *fmt], capture_output=True, text=True, check=True).stdout
-    return out.splitlines()
+    return subprocess.run([os.environ.get("REAP_PS", "ps"), "-axww", *fmt],
+                          capture_output=True, text=True, check=True).stdout.splitlines()
 parent, argv = {}, {}
 for line in ps("-o", "pid=,ppid=,command="):
     fields = line.split(None, 2)
@@ -75,53 +88,100 @@ for line in ps("-E", "-o", "pid=,command="):
         pid = int(fields[0]); full = fields[1] if len(fields) > 1 else ""
         command = argv.get(pid, "")
         environ[pid] = full[len(command):] if full.startswith(command) else full
-roots = set()
+roots_by_seat = {}
 for pattern in globs.split(":"):
     for path in glob.glob(pattern):
         try:
-            if json.load(open(path)).get("owner") == seat:
-                roots.add(os.path.basename(os.path.dirname(path)))
+            with open(path) as handle:
+                owner = json.load(handle).get("owner")
+            roots_by_seat.setdefault(owner, set()).add(os.path.basename(os.path.dirname(path)))
         except (OSError, ValueError):
             continue
 def ancestors(pid):
     seen = []
-    while pid in parent and pid > 1 and len(seen) < 128:
+    while pid in parent and pid > 1 and pid not in seen and len(seen) < 128:
         pid = parent[pid]; seen.append(pid)
     return seen
+lineage = {pid: set(ancestors(pid)) for pid in argv}
 skip = {int(me)} | set(ancestors(int(me))) | {os.getpid()} | set(ancestors(os.getpid()))
-seeds = set()
-token = re.compile(r"(^|\s)AGENT_NAME=%s(\s|$)" % re.escape(seat))
-self_pid = os.getpid()
-skip |= {pid for pid in argv if self_pid in ancestors(pid)}  # this check's own ps children
-for pid, command in argv.items():
-    if pid in skip:
-        continue
-    if panes & set(ancestors(pid)):
-        seeds.add(pid)
-    elif token.search(environ.get(pid, "")):
-        seeds.add(pid)
-    elif roots and any(root in command or root in environ.get(pid, "") for root in roots):
-        seeds.add(pid)
-mine = set(seeds)
-for pid in argv:
-    if pid not in skip and mine & set(ancestors(pid)):
-        mine.add(pid)
-mine -= panes
-for pid in sorted(mine):
-    if re.search(resident_re, argv.get(pid, "")):
-        continue
-    print("work\t%d\t%s" % (pid, argv.get(pid, "")[:200]))
+skip |= {pid for pid in argv if os.getpid() in lineage[pid]}
+members, reasons = {}, {}
+for name, panes in panes_by_seat.items():
+    seeds, rules = set(), {}
+    token = re.compile(r"(^|\s)AGENT_NAME=%s(\s|$)" % re.escape(name))
+    roots = roots_by_seat.get(name, set())
+    for pid, command in argv.items():
+        if pid in skip:
+            continue
+        if panes & lineage[pid]:
+            seeds.add(pid); rules[pid] = "pane"
+        elif token.search(environ.get(pid, "")):
+            seeds.add(pid); rules[pid] = "AGENT_NAME"
+        elif roots and any(root in command or root in environ.get(pid, "") for root in roots):
+            seeds.add(pid); rules[pid] = "root"
+    mine = seeds | {pid for pid in argv if pid not in skip and seeds & lineage[pid]}
+    members[name] = mine - panes
+    reasons[name] = {pid: sorted({rules[p] for p in ({pid} | lineage[pid]) if p in rules})
+                     for pid in members[name]}
+mine = members[seat]
+work = {pid for pid in mine if not re.search(resident_re, argv.get(pid, ""))}
+heavy, heavy_pids, heavy_owners, heavy_peers = [], set(), {}, {}
 for entry in sorted(glob.glob(os.path.join(lock_root, "slot-*")) + glob.glob(os.path.join(lock_root, "waiting", "ticket-*"))):
     try:
-        owner = open(os.path.join(entry, "owner")).read().strip()
+        with open(os.path.join(entry, "owner")) as handle:
+            owner = handle.read().strip()
     except OSError:
         owner = ""
     try:
-        pid = int(open(os.path.join(entry, "pid")).read().strip())
+        with open(os.path.join(entry, "pid")) as handle:
+            pid = int(handle.read().strip())
     except (OSError, ValueError):
         pid = None
+    if pid is not None and owner in live:
+        heavy_peers.setdefault(pid, set()).add(owner)
     if owner == seat or (pid is not None and (pid in mine or mine & set(ancestors(pid)))):
-        print("heavy\t%s" % entry)
+        heavy.append(entry)
+        heavy_owners[entry] = (owner, pid)
+        if pid is not None:
+            heavy_pids.add(pid)
+# No reliable device-exclusive ownership exists here. Conservatively protect every
+# Simulator process (including reparented apps identified by device environment).
+service_re = re.compile(r"(^|[/\s.])(SWBBuildService|XCBBuildService|CoreSimulatorService|launchd_sim|SimulatorTrampoline|simdiskimaged)(?=$|[\s/])")
+device_re = re.compile(r"/CoreSimulator/Devices/|(^|\s)SIMULATOR_(?:UDID|DEVICE_NAME|ROOT)=")
+services = {pid for pid, command in argv.items() if service_re.search(command)}
+devices = {pid for pid, command in argv.items()
+           if device_re.search(command + " " + environ.get(pid, ""))}
+protected = {}
+# Also inspect resident helpers/panes: kill-session sends SIGHUP to pane descendants.
+candidates = mine | heavy_pids | panes_by_seat[seat]
+for pid in candidates:
+    peers = sorted(name for name in live - {seat} if pid in members[name] or pid in panes_by_seat[name] or name in heavy_peers.get(pid, set()))
+    why = []
+    if peers: why.append("other-live-seat")
+    if pid in services or services & lineage.get(pid, set()): why.append("shared-service")
+    if pid in devices or devices & lineage.get(pid, set()): why.append("simulator-device")
+    # Missing heavy PID identity cannot safely authorize a signal.
+    if pid not in argv: why.append("unknown-process")
+    if why:
+        protected[pid] = (why, peers)
+for pid in sorted(work):
+    # Never expose root names or private argv/environment in diagnostics or logs.
+    print("work\t%d\tattributed-process" % pid)
+    print("rule\t%d\t%s" % (pid, ",".join(reasons[seat].get(pid, []))))
+for entry in heavy:
+    print("heavy\t%s" % entry)
+for pid, (why, peers) in sorted(protected.items()):
+    print("protected\t%d\t%s\t%s" % (pid, ",".join(why), ",".join(peers) or "-"))
+    if pid in panes_by_seat[seat] or panes_by_seat[seat] & lineage.get(pid, set()):
+        print("close-blocked\t%d" % pid)
+for entry, (owner, pid) in heavy_owners.items():
+    if (not owner or owner == seat) and (pid is None or pid not in protected):
+        print("remove-heavy\t%s" % entry)
+    else:
+        print("protected-heavy\t%s" % os.path.basename(entry))
+for pid in sorted((work | heavy_pids) - protected.keys() - skip):
+    print("stop\t%d" % pid)
+
 PY
 }
 
@@ -159,7 +219,7 @@ notify_head() {  # one mail per run listing every closure (sender: head, as the 
   printf '%s' "$CLOSED_REPORT" | REAP_DB="$DB" REAP_NOTIFY_TO="$NOTIFY_TO" python3 -c '
 import datetime, os, sqlite3, sys
 body = "席の自動の片づけ（agentstack-reap-idle-seats）が次の席を閉じた。\n\n" + sys.stdin.read() + \
-       "\n閉じた席の作業 process・heavy の札と slot は一緒に止めて片づけた（OPS-3）。"
+       "\n専有を確認できた作業 process・heavy の札と slot だけを片づけた。共有・Simulator の process は保護した（OPS-REAP-SHARED-1）。"
 con = sqlite3.connect(os.environ["REAP_DB"], timeout=30); cur = con.cursor()
 to = os.environ["REAP_NOTIFY_TO"]
 row = cur.execute("select id from agents where name=?", (to,)).fetchone()
@@ -173,28 +233,41 @@ con.commit()
 ' || say "WARN notify to $NOTIFY_TO failed"
 }
 
+# REAP_KILL allows isolated tests to record signals; production uses the shell builtin.
+signal_pid() { if [ -n "${REAP_KILL:-}" ]; then "$REAP_KILL" "$@"; else kill "$@"; fi; }
+
 # ---- close ---------------------------------------------------------------------------------
 close_seat() {  # seat reason
-  local s="$1" why="$2" found work heavy stopped pid d label
+  local s="$1" why="$2" found work heavy stopped pid d label protected
   found="$(attribute "$s")" || { say "close $s refused: attribution failed"; return 1; }
-  work="$(printf '%s\n' "$found" | awk -F'\t' '$1=="work"{print $2"\t"$3}')"
-  heavy="$(printf '%s\n' "$found" | awk -F'\t' '$1=="heavy"{print $2}')"
+  work="$(printf '%s\n' "$found" | awk -F'\t' '$1=="stop"{print $2}')"
+  heavy="$(printf '%s\n' "$found" | awk -F'\t' '$1=="remove-heavy"{print $2}')"
+  protected="$(printf '%s\n' "$found" | awk -F'\t' '$1=="protected"{print "pid=" $2 " reasons=" $3 " peers=" $4}')"
+  if [ -n "$protected" ]; then
+    while IFS= read -r label; do say "preserved $s: $label"; done <<< "$protected"
+  fi
+  if printf '%s\n' "$found" | grep -q '^close-blocked'; then
+    say "close $s refused: protected process depends on pane; $protected"
+    CLOSED_REPORT="$CLOSED_REPORT- ${s} — close refused (protected pane dependency); preserved: $protected
+"
+    return 1
+  fi
   if [ "$DRY" = "--dry-run" ]; then say "would close $s: $why"; return 0; fi
   "$TMUX_BIN" kill-session -t "$s" 2>/dev/null || { say "close $s failed: kill-session"; return 1; }
   # The pane's own processes got SIGHUP; detached work (nohup, background terminals) did not.
   stopped=""
-  for pid in $(printf '%s\n' "$work" | cut -f1) $(for d in $heavy; do cat "$d/pid" 2>/dev/null; done); do
-    kill -TERM "$pid" 2>/dev/null && stopped="$stopped $pid"
+  for pid in $work; do
+    signal_pid -TERM "$pid" 2>/dev/null && stopped="$stopped $pid"
   done
   [ -z "$stopped" ] || sleep 2
-  for pid in $stopped; do kill -KILL "$pid" 2>/dev/null || true; done
+  for pid in $stopped; do signal_pid -KILL "$pid" 2>/dev/null || true; done
   for d in $heavy; do
     label="$(cat "$d/name" 2>/dev/null || echo '?')"
     rm -rf "${d:?}" && say "removed heavy entry $(basename "$d") ($label) of $s"
   done
-  rm -f "$STRIKE_DIR/$s"
-  say "closed $s: $why; stopped pids:${stopped:- none}; heavy entries: $(printf '%s\n' "$heavy" | grep -c . | tr -d ' ')"
-  CLOSED_REPORT="$CLOSED_REPORT- ${s} — ${why}（止めた process:${stopped:- なし}・heavy の札/slot: $(printf '%s\n' "$heavy" | grep -c . | tr -d ' ')）
+  rm -f "${STRIKE_DIR:?}/$s"
+  say "closed $s: $why; stopped pids:${stopped:- none}; preserved: ${protected:-none}; heavy entries: $(printf '%s\n' "$heavy" | grep -c . | tr -d ' ')"
+  CLOSED_REPORT="$CLOSED_REPORT- ${s} — ${why}（止めた process:${stopped:- なし}・保護: ${protected:-なし}・heavy の札/slot: $(printf '%s\n' "$heavy" | grep -c . | tr -d ' ')）
 "
 }
 
@@ -205,9 +278,10 @@ fi
 
 if [ -n "$FORCE_SEAT" ]; then
   "$TMUX_BIN" has-session -t "$FORCE_SEAT" 2>/dev/null || { echo "no such seat: $FORCE_SEAT" >&2; exit 1; }
-  close_seat "$FORCE_SEAT" "$FORCE_REASON (forced)"
+  close_result=0
+  close_seat "$FORCE_SEAT" "$FORCE_REASON (forced)" || close_result=$?
   notify_head
-  exit 0
+  exit "$close_result"
 fi
 
 [ -r "$PROTECT_FILE" ] || { say "ABORT protection list unreadable: $PROTECT_FILE"; exit 0; }
@@ -223,21 +297,21 @@ for s in $("$TMUX_BIN" list-sessions -F '#{session_name}' 2>/dev/null); do
   ls "$CHILD_ROOT/$s.codex-home"/sessions/*/*/*/rollout-*.jsonl >/dev/null 2>&1 || { say "keep $s: no rollout on disk"; continue; }
   pane=$("$TMUX_BIN" capture-pane -p -t "$s" 2>/dev/null) || { say "keep $s: pane capture failed"; continue; }
   tail8=$(printf '%s\n' "$pane" | grep -v '^\s*$' | tail -8)
-  printf '%s' "$tail8" | grep -qE 'Working \(|esc to interrupt' && { say "keep $s: working"; rm -f "$STRIKE_DIR/$s"; continue; }
+  printf '%s' "$tail8" | grep -qE 'Working \(|esc to interrupt' && { say "keep $s: working"; rm -f "${STRIKE_DIR:?}/$s"; continue; }
   printf '%s' "$tail8" | grep -q 'Ask Codex to do anything' || { say "keep $s: composer not visible (unknown state)"; continue; }
   # OPS-3: an idle composer is not a finished station.
   found="$(attribute "$s")" || { say "keep $s: attribution failed"; continue; }
   heavy="$(printf '%s\n' "$found" | awk -F'\t' '$1=="heavy"{print $2}')"
-  [ -z "$heavy" ] || { say "keep $s: holds heavy_job_lock $(printf '%s\n' "$heavy" | xargs -n1 basename | tr '\n' ' ')"; rm -f "$STRIKE_DIR/$s"; continue; }
+  [ -z "$heavy" ] || { say "keep $s: holds heavy_job_lock $(printf '%s\n' "$heavy" | xargs -n1 basename | tr '\n' ' ')"; rm -f "${STRIKE_DIR:?}/$s"; continue; }
   work="$(printf '%s\n' "$found" | awk -F'\t' '$1=="work"{print $2"\t"$3}')"
-  [ -z "$work" ] || { say "keep $s: live work process $(printf '%s\n' "$work" | head -3 | cut -c1-80 | tr '\t\n' ' |')"; rm -f "$STRIKE_DIR/$s"; continue; }
-  if last_mail_blocked "$s"; then say "keep $s: latest mail is [blocked]/untagged (station not finished)"; rm -f "$STRIKE_DIR/$s"; continue; fi
-  if station_unfinished "$s"; then say "keep $s: no [receipt] since its last assignment (station not finished)"; rm -f "$STRIKE_DIR/$s"; continue; fi
+  [ -z "$work" ] || { say "keep $s: live work process $(printf '%s\n' "$work" | head -3 | cut -c1-80 | tr '\t\n' ' |')"; rm -f "${STRIKE_DIR:?}/$s"; continue; }
+  if last_mail_blocked "$s"; then say "keep $s: latest mail is [blocked]/untagged (station not finished)"; rm -f "${STRIKE_DIR:?}/$s"; continue; fi
+  if station_unfinished "$s"; then say "keep $s: no [receipt] since its last assignment (station not finished)"; rm -f "${STRIKE_DIR:?}/$s"; continue; fi
   # 2026-09-20 (PinkTesla, R-058 ops): two strikes + recent-mail guard. A worker that just finished a turn
   # is often about to receive its parent's next instruction (S30-1 RosyHopper was closed twice mid-station).
   recent=$(sqlite3 "file:$DB?mode=ro" "select count(*) from messages m join message_recipients r on r.message_id=m.id
     join agents a on a.id=r.agent_id where a.name='$s' and r.kind='to' and m.created_ts >= datetime('now','-90 minutes')" 2>/dev/null) || recent=1
-  [ "${recent:-1}" -eq 0 ] || { say "keep $s: mail addressed to it in the last 90 min"; rm -f "$STRIKE_DIR/$s"; continue; }
+  [ "${recent:-1}" -eq 0 ] || { say "keep $s: mail addressed to it in the last 90 min"; rm -f "${STRIKE_DIR:?}/$s"; continue; }
   if [ ! -f "$STRIKE_DIR/$s" ]; then touch "$STRIKE_DIR/$s"; say "strike 1 $s: idle now, re-check next run"; continue; fi
   close_seat "$s" "idle managed child (2 strikes, no mail 90 min, no heavy ticket, no work process, last mail not [blocked]), rollout saved" && n=$((n+1))
 done
