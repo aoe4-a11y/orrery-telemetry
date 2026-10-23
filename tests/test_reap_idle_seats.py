@@ -211,6 +211,10 @@ class ReaperTest(unittest.TestCase):
         with sqlite3.connect(self.db) as con:
             report = con.execute("select body_md from messages").fetchone()[0]
         self.assertIn("close refused", report)
+        self.assertNotIn("次の席を閉じた", report)
+        with sqlite3.connect(self.db) as con:
+            subject = con.execute("select subject from messages").fetchone()[0]
+        self.assertIn("終了処理", subject)
         self.assertIn("peers=SeatB", report)
 
     def test_automatic_keep_guard_still_counts_protected_work(self):

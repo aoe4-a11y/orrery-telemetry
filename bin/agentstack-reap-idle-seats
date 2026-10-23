@@ -217,7 +217,7 @@ notify_head() {  # one mail per run listing every closure (sender: head, as the 
   [ "$DRY" = "--dry-run" ] && return 0
   printf '%s' "$CLOSED_REPORT" | REAP_DB="$DB" REAP_NOTIFY_TO="$NOTIFY_TO" python3 -c '
 import datetime, os, sqlite3, sys
-body = "席の自動の片づけ（agentstack-reap-idle-seats）が次の席を閉じた。\n\n" + sys.stdin.read() + \
+body = "席の自動の片づけ（agentstack-reap-idle-seats）が次の終了処理を記録した。\n\n" + sys.stdin.read() + \
        "\n専有を確認できた作業 process・heavy の札と slot だけを片づけた。共有・Simulator の process は保護した（OPS-REAP-SHARED-1）。"
 con = sqlite3.connect(os.environ["REAP_DB"], timeout=30); cur = con.cursor()
 to = os.environ["REAP_NOTIFY_TO"]
@@ -226,7 +226,7 @@ if not row: sys.exit("unknown agent " + to)
 now = datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%d %H:%M:%S.%f")
 n = body.count("\n- ")
 cur.execute("insert into messages(project_id, sender_id, thread_id, topic, subject, body_md, importance, ack_required, created_ts, attachments) values (1,?,NULL,NULL,?,?,\x27normal\x27,0,?,\x27[]\x27)",
-            (row[0], "[progress] 席の自動の片づけ: %d 席を閉じた" % n, body, now))
+            (row[0], "[progress] 席の自動の片づけ: %d 件の終了処理" % n, body, now))
 cur.execute("insert into message_recipients(message_id, agent_id, kind) values (?,?,\x27to\x27)", (cur.lastrowid, row[0]))
 con.commit()
 ' || say "WARN notify to $NOTIFY_TO failed"
