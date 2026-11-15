@@ -16,8 +16,12 @@ CANDIDATE = 'a' * 40
 
 
 @pytest.fixture
-def fixture_tree(tmp_path):
+def fixture_tree(tmp_path, monkeypatch):
     home = tmp_path / 'home'
+    for key in tuple(os.environ):
+        if key.startswith(('AGENTSTACK_', 'XDG_')) or key in ('CODEX_HOME', 'CLAUDE_CONFIG_DIR'):
+            monkeypatch.delenv(key, raising=False)
+    monkeypatch.setenv('HOME', str(home))
     stack = home / '.agentstack'
     (stack / 'bin').mkdir(parents=True)
     (stack / 'backups').mkdir()
