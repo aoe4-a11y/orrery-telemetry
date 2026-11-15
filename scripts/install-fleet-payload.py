@@ -182,7 +182,7 @@ def prepared_restart(dest):
     marker = 'WORKDIR="${5:-${AGENTSTACK_PROJECT_WORK_DIR:?workdir or configured project work directory required}}"'
     if text.count(marker) != 1:
         raise ValueError('restart template is invalid')
-    return template, text.replace(marker, 'WORKDIR="${5:-${AGENTSTACK_PROJECT_WORK_DIR:-' + selected + '}}"')
+    return template, text.replace(marker, 'WORKDIR="${5:-' + selected + '}"')
 
 
 def prepared_reaper(dest):

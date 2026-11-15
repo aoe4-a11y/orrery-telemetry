@@ -42,7 +42,7 @@ def test_rendered_restart_uses_previous_or_explicit_cwd(tmp_path, monkeypatch, e
     env = {'HOME': str(home), 'PATH': str(fake) + ':/usr/bin:/bin', 'TRACE': str(trace),
            'AGENTSTACK_HOME': str(stack), 'AGENTSTACK_RUNTIME_DIR': str(runtime),
            'AGENTSTACK_LIFECYCLE_HOOKS_DIR': str(hooks), 'AGENTSTACK_HOOKS_DIR': str(hooks),
-           'AGENTSTACK_PROJECT_KEY': str(home)}
+           'AGENTSTACK_PROJECT_KEY': str(home), 'AGENTSTACK_PROJECT_WORK_DIR': str(selected)}
     args = ['/bin/bash', str(old), 'Fixture', str(task), 'model', 'medium']
     if explicit: args.append(str(selected))
     result = subprocess.run(args, env=env, capture_output=True, text=True, timeout=10)
