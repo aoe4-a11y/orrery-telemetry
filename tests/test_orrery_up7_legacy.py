@@ -71,6 +71,7 @@ echo SunnyCurie
                 executable(fake/command,'#!/bin/sh\nexit 99\n')
             executable(fake/'tmux','#!/bin/bash\ntrace='+shlex.quote(str(trace))+'\n'+'''
 printf '%s\\n' "$*" >> "$trace"
+if [[ "$1" == new-session && ( -n "${SSL_CERT_FILE+x}" || -n "${CODEX_CA_CERTIFICATE+x}" ) ]]; then exit 93; fi
 case "$1" in capture-pane) printf 'gpt-6.1-sol medium · /fixture\\n? for shortcuts\\n› \\n';; display-message) printf 'fixture\\n';; esac
 exit 0
 ''')
@@ -80,7 +81,8 @@ exit 0
                  'AGENTSTACK_PROJECT_KEY':str(project),'PROJECT_KEY':str(project),'PARENT_AGENT':'ParentAgent',
                  'AGENTSTACK_MCP_URL':'http://127.0.0.1:1/mcp','AGENTSTACK_MAIL_HTTP_BEARER_MODE':'disabled',
                  'AGENTSTACK_MCP_PROXY':str(root/'missing'),'AGENTSTACK_TERMINAL':'none',
-                 'AGENTSTACK_CODEX_BIN':'/bin/true','AGENTSTACK_AUTO_OPEN_CHILD':'0'}
+                 'AGENTSTACK_CODEX_BIN':'/bin/true','AGENTSTACK_AUTO_OPEN_CHILD':'0',
+                 'SSL_CERT_FILE':'/fixture/synthetic-ca','CODEX_CA_CERTIFICATE':'/fixture/synthetic-ca'}
             run=subprocess.run(['/bin/bash',str(ROOT/'bin/agentstack-spawn-codex'),
                 'gpt-6.1-sol',str(task),str(project),'Synthetic task','high'],env=env,text=True,capture_output=True,timeout=45)
             self.assertEqual(run.returncode,0,run.stderr[-2000:])
@@ -108,6 +110,7 @@ exit 0
                 executable(fake/command,'#!/bin/sh\nexit 99\n')
             executable(fake/'tmux', '#!/bin/bash\ntrace='+shlex.quote(str(trace))+'\n'+'''
 printf '%s\\n' "$*" >> "$trace"
+if [[ "$1" == new-session && ( -n "${SSL_CERT_FILE+x}" || -n "${CODEX_CA_CERTIFICATE+x}" ) ]]; then exit 93; fi
 case "$1" in
   has-session) exit 1;;
   capture-pane) printf 'gpt-6.1-sol medium · /fixture\\n? for shortcuts\\n› \\n';;
@@ -121,7 +124,8 @@ exit 0
                  'AGENTSTACK_PROJECT_KEY':str(project),'PROJECT_KEY':str(project),'PARENT_AGENT':'ParentAgent',
                  'AGENTSTACK_MCP_URL':'http://127.0.0.1:1/mcp','AGENTSTACK_MAIL_HTTP_BEARER_MODE':'disabled',
                  'AGENTSTACK_MCP_PROXY':str(root/'missing'),'AGENTSTACK_TERMINAL':'none',
-                 'AGENTSTACK_CODEX_BIN':'/bin/true','AGENTSTACK_AUTO_OPEN_CHILD':'0'}
+                 'AGENTSTACK_CODEX_BIN':'/bin/true','AGENTSTACK_AUTO_OPEN_CHILD':'0',
+                 'SSL_CERT_FILE':'/fixture/synthetic-ca','CODEX_CA_CERTIFICATE':'/fixture/synthetic-ca'}
             run=subprocess.run(['/bin/bash',str(ROOT/'bin/agentstack-restart-seat'),'SunnyCurie',str(task),
                                 'gpt-6.1-sol','high',str(project)],env=env,text=True,capture_output=True,timeout=45)
             self.assertEqual(run.returncode,0,run.stderr[-2000:])
