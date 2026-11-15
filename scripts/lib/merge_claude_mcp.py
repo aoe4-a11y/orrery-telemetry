@@ -223,8 +223,15 @@ def write_result(path: pathlib.Path | None, result: dict[str, Any]) -> None:
     if path is None:
         return
     path.parent.mkdir(parents=True, exist_ok=True)
-    tmp = path.with_suffix(path.suffix + f".tmp.{os.getpid()}")
-    tmp.write_text(json.dumps(result, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    # A PID-derived name can collide with an unrelated older result. Create a
+    # fresh exclusive file rather than truncating anything already present.
+    fd, name = tempfile.mkstemp(prefix=f".{path.name}.", suffix=".tmp", dir=path.parent, text=True)
+    tmp = pathlib.Path(name)
+    with os.fdopen(fd, "w", encoding="utf-8") as handle:
+        json.dump(result, handle, indent=2, sort_keys=True)
+        handle.write("\n")
+        handle.flush()
+        os.fsync(handle.fileno())
     os.chmod(tmp, 0o600)
     os.replace(tmp, path)
 

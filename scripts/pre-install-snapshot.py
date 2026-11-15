@@ -121,7 +121,8 @@ def plan(home: Path, project: Path, candidate: str, worktree: Path) -> list[str]
     for name in ('annotations.json', 'claude-mcp-merge-result.json', 'dashboard-service.json',
                  'dashboard.legacy.log', 'dashboard.log', 'dashboard.pid', 'mail-watcher.log',
                  'managed_agents.txt', 'settings-installed-entries.json', 'settings-merge-result.json',
-                 'annotations.json.tmp', 'dashboard.log.tmp', 'dashboard.legacy.log.tmp'):
+                 'annotations.json.tmp', 'dashboard.log.tmp', 'dashboard.legacy.log.tmp',
+                 'settings-installed-entries.json.tmp', 'settings-merge-result.json.tmp'):
         paths.add('.agentstack/runtime/' + name)
     for legacy in (home / '.agentstack/runtime').glob('dashboard.legacy.*'):
         paths.add(relative(home, legacy))

@@ -134,6 +134,8 @@ def test_existing_installer_temporary_files_are_snapshotted(fixture_tree):
              home / 'Library/LaunchAgents/fixture.mail-watcher.plist.tmp',
              home / '.config/systemd/user/fixture.agentdashboard.service.tmp',
              home / '.agentstack/runtime/annotations.json.tmp',
+             home / '.agentstack/runtime/settings-merge-result.json.tmp',
+             home / '.agentstack/runtime/settings-installed-entries.json.tmp',
              home / '.agentstack/install-state.json.tmp']
     expected = {}
     for index, path in enumerate(paths):
