@@ -67,22 +67,23 @@ os.execv({tmux!r},[{tmux!r},*sys.argv[1:]])
             subprocess.run([tmux,'kill-server'],env=env,capture_output=True,timeout=10)
 
 
-def test_absent_signals_are_discarded_once_and_live_delivery_continues(watcher):
+def test_absent_signals_are_retained_until_fleet_seat_restarts(watcher):
     signal,run,runtime,failure,tmux=watcher
     paths=[signal('Absent',number) for number in range(1,25)]
     tmux('new-session','-d','-s','Living',"printf 'Claude\\n'; cat")
     live=signal('Living',100)
     first=run();state=json.loads((runtime/'notify-state.json').read_text())
-    assert all(not path.exists() for path in paths)
+    assert all(path.exists() for path in paths)
     assert not live.exists(),(state.get('Living:100'),first.stdout,first.stderr)
-    assert all(state[f'Absent:{number}']['terminal'] is True for number in range(1,25))
+    assert all(not state[f'Absent:{number}'].get('terminal') for number in range(1,25))
     assert state['Living:100']['last_result']=='success'
     assert first.stdout.count('Signal:')==25
-    # Even an old saved result without the terminal marker is consumed once.
-    old=signal('Absent',200);state['Absent:200']={'last_result':'session_not_found','last_attempt_epoch':0}
+    # Retry after the cooldown, when the same fleet identity is reopened.
+    for number in range(1,25): state[f'Absent:{number}']['last_attempt_epoch']=0
     (runtime/'notify-state.json').write_text(json.dumps(state))
-    assert run().stdout.count('Signal:')==1 and not old.exists()
-    assert 'Signal:' not in run().stdout
+    tmux('new-session','-d','-s','Absent',"printf 'Claude\\n'; cat")
+    run()
+    assert all(not path.exists() for path in paths)
     assert not list((runtime/'notify-locks').glob('*.lock'))
 
 
@@ -95,15 +96,15 @@ def test_uncertain_session_lookup_retains_signal_and_can_retry(watcher,mode):
     assert not state['Absent:1'].get('terminal')
     state['Absent:1']['last_attempt_epoch']=0
     (runtime/'notify-state.json').write_text(json.dumps(state));failure.unlink()
-    run();assert not path.exists()
+    run();assert path.exists()
 
 
 def test_new_legacy_message_is_not_blocked_by_a_previous_absent_result(watcher):
     signal,run,runtime,failure,tmux=watcher
-    path=signal('Absent',1,legacy=True);run();assert not path.exists()
-    path=signal('Absent',2,legacy=True);run();assert not path.exists()
+    path=signal('Absent',1,legacy=True);run();assert path.exists()
+    path=signal('Absent',2,legacy=True);run();assert path.exists()
     state=json.loads((runtime/'notify-state.json').read_text())
-    assert state['Absent:1']['terminal'] and state['Absent:2']['terminal']
+    assert not state['Absent:1'].get('terminal') and not state['Absent:2'].get('terminal')
 
 
 def test_headless_manifest_is_retained_when_its_helper_is_missing(watcher):
@@ -113,16 +114,6 @@ def test_headless_manifest_is_retained_when_its_helper_is_missing(watcher):
     run();state=json.loads((runtime/'notify-state.json').read_text())
     assert path.exists() and state['Absent:1']['last_result']=='headless_reply_failed'
     assert not state['Absent:1'].get('terminal')
-
-
-def test_refreshed_legacy_signal_is_preserved(tmp_path):
-    path=tmp_path/'legacy.signal';path.write_text('first')
-    st=path.stat();identity=f'{st.st_dev}:{st.st_ino}:{st.st_mtime_ns}:{st.st_size}'
-    path.write_text('a new notification')
-    script=function('discard_absent_signal')+'\ndiscard_absent_signal "$1" "$2"\n'
-    result=subprocess.run(['/bin/bash','-c',script,'fixture',str(path),identity],capture_output=True,text=True,timeout=10)
-    assert result.returncode==0,result.stderr
-    assert path.read_text()=='a new notification'
 
 
 def test_guard_file_count_is_bounded_and_leases_are_released(tmp_path):

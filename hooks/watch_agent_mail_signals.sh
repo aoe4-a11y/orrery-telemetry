@@ -213,24 +213,6 @@ print(f"{st.st_dev}:{st.st_ino}:{st.st_mtime_ns}:{st.st_size}")
 PY
 }
 
-discard_absent_signal() {
-    python3 - "$1" "$2" <<'PY'
-import os
-import stat
-import sys
-from pathlib import Path
-path = Path(sys.argv[1])
-try:
-    info = path.lstat()
-    identity = f"{info.st_dev}:{info.st_ino}:{info.st_mtime_ns}:{info.st_size}"
-    # A legacy dirty bit may have been refreshed while the worker ran.
-    if stat.S_ISREG(info.st_mode) and identity == sys.argv[2]:
-        path.unlink()
-except FileNotFoundError:
-    pass
-PY
-}
-
 state_should_attempt() {
     python3 - "$STATE_FILE" "$1" "$2" "$RETRY_COOLDOWN" <<'PY'
 import json, sys, time
@@ -244,7 +226,7 @@ except Exception:
 entry = data.get(compound)
 if not entry:
     sys.exit(0)
-if entry.get("last_result") == "success" or entry.get("terminal") is True:
+if entry.get("last_result") == "success":
     sys.exit(1)
 last_attempt = int(entry.get("last_attempt_epoch", 0) or 0)
 if int(time.time()) - last_attempt >= cooldown:
@@ -285,8 +267,7 @@ try:
     if result == "success":
         entry["last_success_epoch"] = now
         entry["last_success_ts"] = entry["last_attempt_ts"]
-    if result == "session_not_found":
-        entry["terminal"] = True
+    entry.pop("terminal", None)
     data[compound] = entry
     tmp = p.with_suffix(p.suffix + ".tmp")
     tmp.write_text(json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8")
@@ -752,7 +733,6 @@ deliver_worker() {
         return 0
     fi
     if ! printf '%s\n' "$sessions" | grep -Fxq -- "$session_name"; then
-        discard_absent_signal "$signal_file" "$signal_identity"
         state_mark_result "$agent_name" "$msg_key" "session_not_found" "watcher"
         release_delivery_lease "$agent_name" "$msg_key" "$lease_owner"
         if (( per_msg_file == 1 )) && [[ -n "$(find "$signal_file" -mmin +1440 2>/dev/null)" ]]; then
