@@ -83,6 +83,12 @@ def plan(home: Path, project: Path, candidate: str, worktree: Path) -> list[str]
     if not worktree.is_absolute():
         raise ValueError('absolute installer worktree required')
     installed = installed_settings(home)
+    # The installer treats even an empty explicit override as an explicit
+    # selection. Its target may lie outside the reviewed immutable tree.
+    for key in ('AGENTSTACK_MAIL_SERVICE_ENV', 'AGENTSTACK_MAIL_SERVICE_VENV',
+                'AGENTSTACK_MAIL_PACKAGE_SOURCE', 'AGENTSTACK_MAIL_CANDIDATE_ID'):
+        if key in os.environ:
+            raise ValueError('explicit mail deployment override requires a separate reviewed plan')
     for key, expected in (('AGENTSTACK_DASHBOARD_LOG', home / '.agentstack/runtime/dashboard.log'),
                           ('AGENTSTACK_MANAGED_AGENTS_FILE', home / '.agentstack/runtime/managed_agents.txt')):
         for value in (installed.get(key), os.environ.get(key)):
@@ -229,6 +235,11 @@ def plan(home: Path, project: Path, candidate: str, worktree: Path) -> list[str]
     env = state.get('env', {})
     if not isinstance(env, dict):
         raise ValueError('invalid recorded environment')
+    for key in ('AGENTSTACK_MAIL_DB', 'AGENTSTACK_MAIL_STATE_ROOT', 'AGENTSTACK_MCP_URL',
+                'AGENTSTACK_MAIL_LAUNCHD_LABEL', 'AGENTSTACK_LABEL_PREFIX'):
+        requested = os.environ.get(key)
+        if requested and requested != env.get(key):
+            raise ValueError('explicit runtime connection differs from saved installation')
     runtime_defaults = {'AGENTSTACK_DASHBOARD_LOG': str(home / '.agentstack/runtime/dashboard.log'),
                         'AGENTSTACK_MANAGED_AGENTS_FILE': str(home / '.agentstack/runtime/managed_agents.txt')}
     for key, expected in runtime_defaults.items():

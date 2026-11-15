@@ -148,6 +148,26 @@ def test_nondefault_runtime_destination_fails_closed(fixture_tree, key, source):
     assert not destination.exists()
 
 
+@pytest.mark.parametrize('key', ['AGENTSTACK_MAIL_SERVICE_ENV', 'AGENTSTACK_MAIL_SERVICE_VENV',
+                                 'AGENTSTACK_MAIL_PACKAGE_SOURCE', 'AGENTSTACK_MAIL_CANDIDATE_ID'])
+@pytest.mark.parametrize('value', ['', '/fixture/elsewhere'])
+def test_explicit_mail_deployment_destination_fails_closed(fixture_tree, key, value):
+    home, project, destination = fixture_tree
+    result = run_pre(home, project, destination, {key: value})
+    assert result.returncode != 0
+    assert not destination.exists()
+
+
+@pytest.mark.parametrize('key', ['AGENTSTACK_MAIL_DB', 'AGENTSTACK_MAIL_STATE_ROOT',
+                                 'AGENTSTACK_MCP_URL', 'AGENTSTACK_MAIL_LAUNCHD_LABEL',
+                                 'AGENTSTACK_LABEL_PREFIX'])
+def test_changed_live_connection_fails_closed(fixture_tree, key):
+    home, project, destination = fixture_tree
+    result = run_pre(home, project, destination, {key: '/fixture/elsewhere'})
+    assert result.returncode != 0
+    assert not destination.exists()
+
+
 @pytest.mark.parametrize('key,name', [('AGENTSTACK_DASHBOARD_LOG', 'dashboard.log'),
                                        ('AGENTSTACK_MANAGED_AGENTS_FILE', 'managed_agents.txt')])
 def test_default_runtime_destination_is_accepted(fixture_tree, key, name):
