@@ -53,17 +53,29 @@ fi
 printf 'reviewed source commit: %s\n' "$revision"
 backup_parent="$HOME/.agentstack/backups"
 [[ -d "$backup_parent" && ! -L "$backup_parent" ]] || { echo 'approved backup parent unavailable' >&2; exit 1; }
+plan_file="$backup_parent/orrery-up-6-plan-$(date -u '+%Y%m%dT%H%M%SZ').json"
+python3 "$worktree/scripts/pre-install-snapshot.py" --home "$HOME" \
+  --project "$AGENTSTACK_PROJECT_KEY" --candidate "$revision" --worktree "$worktree" \
+  --plan --plan-output "$plan_file" >/dev/null || {
+  echo 'snapshot plan failed; installer was not started' >&2; exit 1;
+}
+printf 'private snapshot plan: ~/.agentstack/backups/%s\n' "${plan_file##*/}"
 snapshot="$backup_parent/orrery-up-6-$(date -u '+%Y%m%dT%H%M%SZ')"
 result_file="$root/pre-install-snapshot-$(date -u '+%Y%m%dT%H%M%SZ').json"
 ( set -o noclobber; umask 077; python3 "$worktree/scripts/pre-install-snapshot.py" --home "$HOME" \
     --project "$AGENTSTACK_PROJECT_KEY" --candidate "$revision" --worktree "$worktree" --destination "$snapshot" > "$result_file" ) || {
   echo 'snapshot did not verify; installer was not started' >&2; exit 1;
 }
-manifest_sha="$(python3 - "$result_file" "$snapshot/manifest.json" <<'PYVERIFY'
+manifest_sha="$(python3 - "$result_file" "$snapshot/manifest.json" "$plan_file" <<'PYVERIFY'
 import hashlib, json, pathlib, re, sys
 result = json.loads(pathlib.Path(sys.argv[1]).read_text())
 sha = result['manifest_sha256']
-if not re.fullmatch(r'[0-9a-f]{64}', sha) or hashlib.sha256(pathlib.Path(sys.argv[2]).read_bytes()).hexdigest() != sha:
+raw = pathlib.Path(sys.argv[2]).read_bytes()
+if not re.fullmatch(r'[0-9a-f]{64}', sha) or hashlib.sha256(raw).hexdigest() != sha:
+    raise SystemExit(1)
+planned = json.loads(pathlib.Path(sys.argv[3]).read_text())
+recorded = json.loads(raw)
+if [row['path'] for row in planned] != [row['path'] for row in recorded]:
     raise SystemExit(1)
 print(sha)
 PYVERIFY

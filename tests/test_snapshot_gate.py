@@ -11,13 +11,16 @@ ROOT = Path(__file__).resolve().parents[1]
 ENTRY = ROOT / 'scripts/run-mail-fetch-upgrade-from-ref.sh'
 
 
-@pytest.mark.parametrize('failure_stage', ['snapshot', 'verify', 'dirty', 'none'])
+@pytest.mark.parametrize('failure_stage', ['plan', 'plan-mismatch', 'snapshot', 'verify', 'dirty', 'none'])
 def test_snapshot_gate_controls_installer(tmp_path, failure_stage):
     repo = tmp_path / 'repo'
     scripts = repo / 'scripts'
     scripts.mkdir(parents=True)
     (scripts / 'run-mail-fetch-upgrade-from-ref.sh').write_bytes(ENTRY.read_bytes())
     (scripts / 'pre-install-snapshot.py').write_text('''import hashlib,json,os,pathlib,sys
+if '--plan' in sys.argv:
+    if os.environ.get('TEST_FAILURE_STAGE') == 'plan': raise SystemExit(1)
+    pathlib.Path(sys.argv[-1]).write_text('[{\"path\":\"fixture\"}]' if os.environ.get('TEST_FAILURE_STAGE') == 'plan-mismatch' else '[]');raise SystemExit(0)
 if '--verify-manifest-sha' in sys.argv:
     if os.environ.get('TEST_FAILURE_STAGE') == 'dirty':
         (pathlib.Path(os.environ['TEST_REPO'])/'scripts/install.sh').write_text('dirty fixture')
