@@ -53,6 +53,7 @@ if [[ ! -d "$worktree" ]]; then
   agentstack-station-materials worktree --source "$AGENTSTACK_UPGRADE_REPO" --destination "$worktree" --branch upgrade/orrery-up-6-owner-20261115 --revision "$revision" --receipt "$root/worktree.json"
 fi
 [[ "$(git -C "$worktree" rev-parse HEAD)" == "$revision" && -z "$(git -C "$worktree" status --porcelain)" ]] || { echo 'owner worktree differs; preserving it and stopping' >&2; exit 1; }
+python3 "$worktree/scripts/pre-install-watcher-guard.py" || { echo 'watcher guard failed; Mail was not stopped' >&2; exit 1; }
 printf 'reviewed source commit: %s\n' "$revision"
 backup_parent="$HOME/.agentstack/backups"
 [[ -d "$backup_parent" && ! -L "$backup_parent" ]] || { echo 'approved backup parent unavailable' >&2; exit 1; }
@@ -145,6 +146,7 @@ result=json.load(open(sys.argv[1]))
 print('pre-install Mail stop until old listener healthy, seconds:',result['preinstall_outage_seconds'])
 PYOUTAGE
 timing_file="$root/installer-switch-$(date -u '+%Y%m%dT%H%M%SZ').seconds"
+python3 "$worktree/scripts/pre-install-watcher-guard.py" || { echo 'watcher guard failed; installer was not started' >&2; exit 1; }
 ( set -o noclobber; umask 077; : > "$timing_file" ) || { echo 'switch timing file unavailable; installer was not started' >&2; exit 1; }
 install_rc=0
 (

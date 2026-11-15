@@ -36,6 +36,8 @@ name=pathlib.Path(args[0]).name
 def arg(name): return pathlib.Path(args[args.index(name)+1])
 def trace(event):
     with open(os.environ['TEST_TRACE'],'a') as f:f.write(event+'\\n')
+if name=='pre-install-watcher-guard.py':
+    trace('watcher-guard');sys.exit(0)
 if name=='pre-install-snapshot.py':
     if '--plan-output' in args:
         plan=arg('--plan-output');trace('final-plan' if '-final-plan-' in plan.name else 'pre-plan');plan.write_text('[]\\n')
@@ -69,14 +71,14 @@ os.execv('/usr/bin/python3',['/usr/bin/python3',*args])
             return result.returncode,actions,result.stderr
     def test_cycle_success_hands_off_to_update(self):
         code,actions,err=self.run_entry(False)
-        self.assertEqual(code,0,err);self.assertEqual(actions,['pre-plan','pre-snapshot','pre-verify','cycle',
-            'final-plan','final-snapshot','final-verify','update'])
+        self.assertEqual(code,0,err);self.assertEqual(actions,['watcher-guard','pre-plan','pre-snapshot','pre-verify','cycle',
+            'final-plan','final-snapshot','final-verify','watcher-guard','update'])
     def test_cycle_failure_never_starts_installer(self):
         code,actions,_=self.run_entry(True)
-        self.assertNotEqual(code,0);self.assertEqual(actions,['pre-plan','pre-snapshot','pre-verify','cycle'])
+        self.assertNotEqual(code,0);self.assertEqual(actions,['watcher-guard','pre-plan','pre-snapshot','pre-verify','cycle'])
     def test_final_snapshot_failure_never_starts_installer(self):
         code,actions,_=self.run_entry(False,True)
-        self.assertNotEqual(code,0);self.assertEqual(actions,['pre-plan','pre-snapshot','pre-verify','cycle',
+        self.assertNotEqual(code,0);self.assertEqual(actions,['watcher-guard','pre-plan','pre-snapshot','pre-verify','cycle',
             'final-plan','final-snapshot'])
 
 if __name__=='__main__':unittest.main()
