@@ -61,6 +61,14 @@ def plan(home: Path, project: Path, candidate: str, worktree: Path) -> list[str]
         value = os.environ.get(key)
         if value and Path(value) != expected:
             raise ValueError('non-default configuration root requires a separate reviewed plan')
+    # A retained enabled provider can rebuild managed runtimes, including
+    # dependency trees that this snapshot deliberately must not traverse.
+    # Do not open provider configuration; require a separately reviewed plan
+    # whenever one exists, even if it might be disabled.
+    for name in ('dsh-provider.json', 'hermes-provider.json'):
+        setting = home / '.agentstack/dashboard' / name
+        if setting.exists() or setting.is_symlink():
+            raise ValueError('managed harness configuration requires a separate reviewed plan')
     paths = {
         '.agentstack/VERSION', '.agentstack/env.sh', '.agentstack/env.sh.tmp',
         '.agentstack/install-state.json', '.agentstack/install-state.json.tmp',
@@ -68,7 +76,7 @@ def plan(home: Path, project: Path, candidate: str, worktree: Path) -> list[str]
         '.agentstack/dashboard', '.agentstack/skills', '.agentstack/codex',
         '.agentstack/claude', '.agentstack/config', '.agentstack/templates',
         '.agentstack/scripts', '.agentstack/connections', '.agentstack/profiles',
-        '.agentstack/parked-launchd',
+        '.agentstack/parked-launchd', '.agentstack/examples/native-harnesses',
         '.agentstack/integrations/codex_app/plugin', '.agentstack/integrations/codex_app/src',
         '.agentstack/integrations/codex_app/schemas', f'.agentstack/{RELEASE}',
         '.agentstack/mail-service/renders', '.agentstack/mail-service/runtime',

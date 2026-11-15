@@ -150,6 +150,25 @@ def test_existing_installer_temporary_files_are_snapshotted(fixture_tree):
         assert hashlib.sha256((destination / 'files' / path).read_bytes()).hexdigest() == sha
 
 
+def test_existing_examples_are_snapshotted(fixture_tree):
+    home, project, destination = fixture_tree
+    example = home / '.agentstack/examples/native-harnesses/synthetic.txt'
+    example.parent.mkdir(parents=True); example.write_bytes(b'example fixture')
+    result = run_pre(home, project, destination)
+    assert result.returncode == 0, result.stderr
+    assert (destination / 'files/.agentstack/examples/native-harnesses/synthetic.txt').read_bytes() == b'example fixture'
+
+
+def test_managed_harness_configuration_stops_before_snapshot(fixture_tree):
+    home, project, destination = fixture_tree
+    setting = home / '.agentstack/dashboard/dsh-provider.json'
+    setting.parent.mkdir(parents=True); setting.write_text('not-json-and-must-not-be-read')
+    result = run_pre(home, project, destination)
+    assert result.returncode != 0
+    assert not destination.exists()
+    assert setting.read_text() == 'not-json-and-must-not-be-read'
+
+
 def test_wrong_manifest_digest_refuses_before_restore(fixture_tree):
     home, project, destination = fixture_tree
     pre = run_pre(home, project, destination)
