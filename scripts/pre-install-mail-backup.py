@@ -6,7 +6,9 @@ import importlib.util
 import json
 import os
 from pathlib import Path
+import re
 import shutil
+import stat
 import subprocess
 import sys
 
@@ -46,6 +48,53 @@ def idle(paths: list[Path]) -> None:
 
 def components(database: Path) -> list[Path]:
     return [database, Path(str(database) + '-wal'), Path(str(database) + '-shm')]
+
+
+def capture_watcher(home: Path, snapshot: Path) -> str:
+    """Capture a stable synthetic or stopped-Mail-time view, without signals."""
+    roots = ['.agentstack/runtime/notify-state.json',
+             '.agentstack/runtime/notify-state.json.lock',
+             '.agentstack/runtime/notify-locks', '.agentstack/runtime/mail-watcher.lock']
+    paths = snapshot_tool.collect(home, roots)
+    target = snapshot / 'watcher-state'
+    target.mkdir(mode=0o700)
+    rows = []
+    for rel in paths:
+        if re.search(r'token|credential|secret|password', rel, re.I):
+            raise ValueError('watcher path requires separate review')
+        source, saved = home / rel, target / 'files' / rel
+        try:
+            st = source.lstat()
+        except FileNotFoundError:
+            rows.append({'path': rel, 'sha256': None, 'bytes': 0}); continue
+        if stat.S_ISDIR(st.st_mode):
+            saved.mkdir(parents=True, exist_ok=True, mode=0o700)
+            rows.append({'path': rel, 'sha256': None, 'bytes': 0}); continue
+        if not stat.S_ISREG(st.st_mode) or st.st_nlink != 1 or st.st_dev != snapshot.stat().st_dev:
+            raise ValueError('watcher state is not a same-volume regular file')
+        digest = snapshot_tool.digest(source)
+        snapshot_tool.clone(source, saved)
+        if snapshot_tool.digest(saved) != digest or snapshot_tool.digest(source) != digest:
+            raise ValueError('watcher state changed during clone')
+        rows.append({'path': rel, 'sha256': digest[0], 'bytes': digest[1]})
+    if snapshot_tool.collect(home, roots) != paths:
+        raise ValueError('watcher state paths changed during clone')
+    for row in rows:
+        source = home / row['path']
+        saved = target / 'files' / row['path']
+        if row['sha256'] is not None:
+            if snapshot_tool.digest(source) != (row['sha256'], row['bytes']):
+                raise ValueError('watcher state changed during verification')
+        elif saved.is_dir():
+            if source.is_symlink() or not source.is_dir(): raise ValueError('watcher directory changed')
+        elif source.exists() or source.is_symlink():
+            raise ValueError('watcher state appeared during verification')
+    manifest = target / 'manifest.json'
+    fd = os.open(manifest, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+    with os.fdopen(fd, 'w') as f:
+        json.dump(rows, f, ensure_ascii=True, separators=(',', ':')); f.write('\n')
+        f.flush(); os.fsync(f.fileno())
+    return snapshot_tool.digest(manifest)[0]
 
 
 def capture(home: Path, snapshot: Path, database: Path) -> dict:
@@ -94,7 +143,9 @@ def capture(home: Path, snapshot: Path, database: Path) -> dict:
     with os.fdopen(fd, 'w') as f:
         json.dump(manifest, f, ensure_ascii=True, sort_keys=True, separators=(',', ':')); f.write('\n')
         f.flush(); os.fsync(f.fileno())
+    watcher_sha = capture_watcher(home, snapshot)
     return {'mail_manifest_sha256': snapshot_tool.digest(manifest_path)[0],
+            'watcher_manifest_sha256': watcher_sha,
             'components_present': sum(row['present'] for row in rows)}
 
 

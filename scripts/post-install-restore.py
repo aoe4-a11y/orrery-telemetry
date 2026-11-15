@@ -21,8 +21,12 @@ spec.loader.exec_module(snapshot_tool)
 def restore(home: Path, snapshot: Path, manifest_sha256: str) -> dict:
     snapshot_tool.relative(home, snapshot)
     snapshot_tool.assert_safe_parents(home, snapshot_tool.relative(home, snapshot))
-    if snapshot.parent != home / '.agentstack/backups' or not snapshot.name.startswith('orrery-up-6-'):
+    owner = snapshot.parent if snapshot.name == 'watcher-state' else snapshot
+    if owner.parent != home / '.agentstack/backups' or not owner.name.startswith('orrery-up-6-'):
         raise ValueError('snapshot is outside the approved backup directory')
+    if owner != snapshot and (owner.is_symlink() or not owner.is_dir() or
+                              owner.stat().st_uid != os.getuid() or owner.stat().st_mode & 0o077):
+        raise ValueError('parent snapshot is not private')
     if snapshot.is_symlink() or not snapshot.is_dir():
         raise ValueError('snapshot is unavailable')
     metadata = snapshot.stat()
@@ -56,6 +60,8 @@ def restore(home: Path, snapshot: Path, manifest_sha256: str) -> dict:
         if sha is None:
             if size != 0 or (source.exists() and not source.is_dir()) or source.is_symlink():
                 raise ValueError('invalid directory or absent entry')
+            if owner != snapshot and not source.exists() and (target.exists() or target.is_symlink()):
+                raise ValueError('previously absent watcher path requires separate review')
             if source.is_dir() and (target.is_symlink() or (target.exists() and not target.is_dir())):
                 raise ValueError('directory destination is incompatible')
         else:

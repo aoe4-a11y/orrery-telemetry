@@ -94,12 +94,29 @@ mail_result="$root/pre-install-mail-backup-$(date -u '+%Y%m%dT%H%M%SZ').json"
     --home "$HOME" --snapshot "$snapshot" --worktree "$worktree" > "$mail_result" ) || {
   echo 'pre-install Mail stop/clone/restart gate failed; installer was not started' >&2; exit 1;
 }
-mail_manifest_sha="$(python3 - "$mail_result" "$snapshot/mail-database/manifest.json" <<'PYMAIL'
+mail_manifest_sha="$(python3 - "$mail_result" "$snapshot/mail-database/manifest.json" "$snapshot/watcher-state" <<'PYMAIL'
 import hashlib, json, pathlib, re, sys
 result = json.loads(pathlib.Path(sys.argv[1]).read_text())
 sha = result['mail_manifest_sha256']
 if not re.fullmatch(r'[0-9a-f]{64}', sha) or hashlib.sha256(pathlib.Path(sys.argv[2]).read_bytes()).hexdigest() != sha:
     raise SystemExit(1)
+watcher = pathlib.Path(sys.argv[3])
+raw = (watcher / 'manifest.json').read_bytes()
+expected = result['watcher_manifest_sha256']
+if not re.fullmatch(r'[0-9a-f]{64}', expected) or hashlib.sha256(raw).hexdigest() != expected:
+    raise SystemExit(1)
+for row in json.loads(raw):
+    path = pathlib.PurePosixPath(row['path'])
+    if path.is_absolute() or '..' in path.parts or path.parts[:2] != ('.agentstack', 'runtime'):
+        raise SystemExit(1)
+    if set(row) != {'path', 'sha256', 'bytes'}:
+        raise SystemExit(1)
+    if row['sha256'] is not None:
+        saved = watcher / 'files' / path
+        if saved.is_symlink() or not saved.is_file() or hashlib.sha256(saved.read_bytes()).hexdigest() != row['sha256'] or saved.stat().st_size != row['bytes']:
+            raise SystemExit(1)
+    elif row['bytes'] != 0:
+        raise SystemExit(1)
 print(sha)
 PYMAIL
 )" || { echo 'Mail backup manifest verification failed; installer was not started' >&2; exit 1; }

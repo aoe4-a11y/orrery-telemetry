@@ -59,7 +59,9 @@ def installed_settings(home: Path) -> dict[str, str]:
     wanted = {'AGENTSTACK_LABEL_PREFIX', 'AGENTSTACK_MAIL_DB', 'AGENTSTACK_MAIL_STATE_ROOT',
               'AGENTSTACK_MAIL_DIR', 'AGENTSTACK_MCP_URL', 'AGENTSTACK_MAIL_LAUNCHD_LABEL',
               'AGENTSTACK_DASHBOARD_LOG', 'AGENTSTACK_MANAGED_AGENTS_FILE',
-              'AGENTSTACK_DASHBOARD_LOG_BACKUPS', 'AGENTSTACK_DASHBOARD_RUN_STATE'}
+              'AGENTSTACK_DASHBOARD_LOG_BACKUPS', 'AGENTSTACK_DASHBOARD_RUN_STATE',
+              'AGENTSTACK_RUNTIME_DIR', 'AGENTSTACK_MAIL_WATCHER_LOCK_DIR',
+              'AGENTSTACK_MAIL_WATCHER_PIDFILE', 'AGENTSTACK_MAIL_WATCHER_HEARTBEAT'}
     values = {}
     for line in path.read_text(encoding='utf-8').splitlines():
         match = re.match(r'^\s*export\s+([A-Z0-9_]+)=(.*)$', line)
@@ -84,6 +86,15 @@ def plan(home: Path, project: Path, candidate: str, worktree: Path) -> list[str]
     if not worktree.is_absolute():
         raise ValueError('absolute installer worktree required')
     installed = installed_settings(home)
+    for key, expected in (
+        ('AGENTSTACK_RUNTIME_DIR', home / '.agentstack/runtime'),
+        ('AGENTSTACK_MAIL_WATCHER_LOCK_DIR', home / '.agentstack/runtime/mail-watcher.lock'),
+        ('AGENTSTACK_MAIL_WATCHER_PIDFILE', home / '.agentstack/runtime/mail-watcher.lock/watcher.pid'),
+        ('AGENTSTACK_MAIL_WATCHER_HEARTBEAT', home / '.agentstack/runtime/mail-watcher.lock/heartbeat'),
+    ):
+        for value in (installed.get(key), os.environ.get(key)):
+            if value and Path(value) != expected:
+                raise ValueError('non-default watcher destination requires a separate reviewed plan')
     # The installer treats even an empty explicit override as an explicit
     # selection. Its target may lie outside the reviewed immutable tree.
     for key in ('AGENTSTACK_MAIL_SERVICE_ENV', 'AGENTSTACK_MAIL_SERVICE_VENV',
@@ -258,6 +269,14 @@ def plan(home: Path, project: Path, candidate: str, worktree: Path) -> list[str]
     env = state.get('env', {})
     if not isinstance(env, dict):
         raise ValueError('invalid recorded environment')
+    for key, expected in (
+        ('AGENTSTACK_MAIL_WATCHER_LOCK_DIR', home / '.agentstack/runtime/mail-watcher.lock'),
+        ('AGENTSTACK_MAIL_WATCHER_PIDFILE', home / '.agentstack/runtime/mail-watcher.lock/watcher.pid'),
+        ('AGENTSTACK_MAIL_WATCHER_HEARTBEAT', home / '.agentstack/runtime/mail-watcher.lock/heartbeat'),
+    ):
+        value = env.get(key)
+        if value and (not isinstance(value, str) or Path(value) != expected):
+            raise ValueError('non-default recorded watcher destination requires a separate reviewed plan')
     for key in ('AGENTSTACK_MAIL_DB', 'AGENTSTACK_MAIL_STATE_ROOT', 'AGENTSTACK_MCP_URL',
                 'AGENTSTACK_MAIL_LAUNCHD_LABEL', 'AGENTSTACK_LABEL_PREFIX'):
         requested = os.environ.get(key)
