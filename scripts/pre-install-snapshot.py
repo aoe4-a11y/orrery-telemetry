@@ -58,7 +58,8 @@ def installed_settings(home: Path) -> dict[str, str]:
         return {}
     wanted = {'AGENTSTACK_LABEL_PREFIX', 'AGENTSTACK_MAIL_DB', 'AGENTSTACK_MAIL_STATE_ROOT',
               'AGENTSTACK_MAIL_DIR', 'AGENTSTACK_MCP_URL', 'AGENTSTACK_MAIL_LAUNCHD_LABEL',
-              'AGENTSTACK_DASHBOARD_LOG', 'AGENTSTACK_MANAGED_AGENTS_FILE'}
+              'AGENTSTACK_DASHBOARD_LOG', 'AGENTSTACK_MANAGED_AGENTS_FILE',
+              'AGENTSTACK_DASHBOARD_LOG_BACKUPS', 'AGENTSTACK_DASHBOARD_RUN_STATE'}
     values = {}
     for line in path.read_text(encoding='utf-8').splitlines():
         match = re.match(r'^\s*export\s+([A-Z0-9_]+)=(.*)$', line)
@@ -90,7 +91,8 @@ def plan(home: Path, project: Path, candidate: str, worktree: Path) -> list[str]
         if key in os.environ:
             raise ValueError('explicit mail deployment override requires a separate reviewed plan')
     for key, expected in (('AGENTSTACK_DASHBOARD_LOG', home / '.agentstack/runtime/dashboard.log'),
-                          ('AGENTSTACK_MANAGED_AGENTS_FILE', home / '.agentstack/runtime/managed_agents.txt')):
+                          ('AGENTSTACK_MANAGED_AGENTS_FILE', home / '.agentstack/runtime/managed_agents.txt'),
+                          ('AGENTSTACK_DASHBOARD_RUN_STATE', home / '.agentstack/runtime/dashboard-service.json')):
         for value in (installed.get(key), os.environ.get(key)):
             if value and Path(value) != expected:
                 raise ValueError('non-default runtime destination requires a separate reviewed plan')
@@ -173,6 +175,27 @@ def plan(home: Path, project: Path, candidate: str, worktree: Path) -> list[str]
         paths.add('.agentstack/runtime/' + name)
     for legacy in (home / '.agentstack/runtime').glob('dashboard.legacy.*'):
         paths.add(relative(home, legacy))
+    # service_runner can rotate logs as soon as the installer starts it.
+    raw_backups = os.environ.get('AGENTSTACK_DASHBOARD_LOG_BACKUPS') or installed.get('AGENTSTACK_DASHBOARD_LOG_BACKUPS') or '3'
+    try:
+        backups = int(raw_backups)
+    except ValueError:
+        backups = 3
+    if backups < 1:
+        backups = 3
+    if backups > 1000:
+        raise ValueError('dashboard log rotation requires a separate reviewed plan')
+    for number in range(1, backups + 1):
+        paths.add(f'.agentstack/runtime/dashboard.log.{number}')
+    for rotated in (home / '.agentstack/runtime').glob('dashboard.log.*'):
+        paths.add(relative(home, rotated))
+    legacy_number = 1
+    while (home / f'.agentstack/runtime/dashboard.legacy.{legacy_number}.log').exists():
+        legacy_number += 1
+        if legacy_number > 10000:
+            raise ValueError('dashboard legacy log migration needs a separate reviewed plan')
+    paths.update((f'.agentstack/runtime/dashboard.legacy.{legacy_number}.log',
+                  f'.agentstack/runtime/dashboard.legacy.{legacy_number}.log.tmp'))
     addons = json.loads((ROOT / 'fleet/addon-paths.json').read_text())
     for name in addons:
         if name.startswith('fleet/runtime/'):
@@ -241,9 +264,11 @@ def plan(home: Path, project: Path, candidate: str, worktree: Path) -> list[str]
         if requested and requested != env.get(key):
             raise ValueError('explicit runtime connection differs from saved installation')
     runtime_defaults = {'AGENTSTACK_DASHBOARD_LOG': str(home / '.agentstack/runtime/dashboard.log'),
-                        'AGENTSTACK_MANAGED_AGENTS_FILE': str(home / '.agentstack/runtime/managed_agents.txt')}
+                        'AGENTSTACK_MANAGED_AGENTS_FILE': str(home / '.agentstack/runtime/managed_agents.txt'),
+                        'AGENTSTACK_DASHBOARD_RUN_STATE': str(home / '.agentstack/runtime/dashboard-service.json'),
+                        'AGENTSTACK_DASHBOARD_LOG_BACKUPS': '3'}
     for key, expected in runtime_defaults.items():
-        if env.get(key) and env[key] != expected:
+        if key != 'AGENTSTACK_DASHBOARD_LOG_BACKUPS' and env.get(key) and env[key] != expected:
             raise ValueError('non-default saved runtime destination requires a separate reviewed plan')
     for key, value in installed.items():
         saved = env.get(key) or runtime_defaults.get(key, '')
@@ -253,7 +278,8 @@ def plan(home: Path, project: Path, candidate: str, worktree: Path) -> list[str]
                 'AGENTSTACK_MAIL_STATE_ROOT': str(home / '.agentstack/mail'),
                 'AGENTSTACK_MAIL_DIR': str(home / '.agentstack/mail-service'),
                 'AGENTSTACK_MCP_URL': 'http://127.0.0.1:18765/mcp',
-                'AGENTSTACK_MAIL_LAUNCHD_LABEL': ''}
+                'AGENTSTACK_MAIL_LAUNCHD_LABEL': '',
+                'AGENTSTACK_DASHBOARD_LOG_BACKUPS': '3'}
     defaults['AGENTSTACK_MAIL_DB'] = str(Path(env.get('AGENTSTACK_MAIL_STATE_ROOT') or defaults['AGENTSTACK_MAIL_STATE_ROOT']) / 'storage.sqlite3')
     for key, default in defaults.items():
         saved = env.get(key)

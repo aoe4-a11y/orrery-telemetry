@@ -133,7 +133,8 @@ def test_private_plan_lists_actual_paths_without_file_contents(fixture_tree):
     assert not destination.exists()
 
 
-@pytest.mark.parametrize('key', ['AGENTSTACK_DASHBOARD_LOG', 'AGENTSTACK_MANAGED_AGENTS_FILE'])
+@pytest.mark.parametrize('key', ['AGENTSTACK_DASHBOARD_LOG', 'AGENTSTACK_MANAGED_AGENTS_FILE',
+                                 'AGENTSTACK_DASHBOARD_RUN_STATE'])
 @pytest.mark.parametrize('source', ['installed', 'ambient'])
 def test_nondefault_runtime_destination_fails_closed(fixture_tree, key, source):
     home, project, destination = fixture_tree
@@ -198,6 +199,19 @@ def test_existing_installer_temporary_files_are_snapshotted(fixture_tree):
     for path, sha in expected.items():
         assert rows[path]['sha256'] == sha
         assert hashlib.sha256((destination / 'files' / path).read_bytes()).hexdigest() == sha
+
+
+def test_dashboard_rotation_and_next_migration_destination_are_snapshotted(fixture_tree):
+    home, project, destination = fixture_tree
+    runtime = home / '.agentstack/runtime'; runtime.mkdir()
+    old = runtime / 'dashboard.log.4'; old.write_bytes(b'synthetic old rotation')
+    (runtime / 'dashboard.legacy.1.log').write_bytes(b'synthetic legacy')
+    result = run_pre(home, project, destination, {'AGENTSTACK_DASHBOARD_LOG_BACKUPS': '5'})
+    assert result.returncode == 0, result.stderr
+    rows = {row['path'] for row in json.loads((destination / 'manifest.json').read_text())}
+    assert '.agentstack/runtime/dashboard.log.5' in rows
+    assert '.agentstack/runtime/dashboard.legacy.2.log.tmp' in rows
+    assert (destination / 'files/.agentstack/runtime/dashboard.log.4').read_bytes() == old.read_bytes()
 
 
 def test_existing_examples_are_snapshotted(fixture_tree):
