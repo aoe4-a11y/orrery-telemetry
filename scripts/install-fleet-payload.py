@@ -8,9 +8,55 @@ import os
 import re
 from pathlib import Path
 import shutil
+import subprocess
 
 ROOT=Path(__file__).resolve().parents[1]
 RELEASE='releases/seat-lifecycle/ee5880e3e23606e0f3252cbeed211868102f4595'
+
+def validate_codex_integration(dest):
+    """Refuse to replace live integration data without a verified source copy."""
+    live = dest / 'integrations/codex_app'
+    source = ROOT / 'integrations/codex_app'
+    old_ref = '7954a29646c032ba1c6bbd57e813121f466c8d89'
+    sensitive = re.compile(r'token|credential|secret|password|private.?key|\.pem|\.key', re.I)
+    for section in ('plugin', 'src', 'schemas'):
+        directory = live / section
+        if directory.is_symlink():
+            raise ValueError('integration payload contains a symlink')
+        if not directory.exists():
+            continue
+        if not directory.is_dir():
+            raise ValueError('integration payload directory is not a directory')
+        for current in directory.rglob('*'):
+            relative = current.relative_to(live)
+            if current.is_symlink():
+                raise ValueError('integration payload contains a symlink')
+            if '__pycache__' in relative.parts or current.is_dir():
+                continue
+            if not current.is_file() or sensitive.search(str(relative)):
+                raise ValueError('integration payload has an unreviewed file')
+            candidate = source / relative
+            if section == 'schemas':
+                if current.suffix == '.json' and candidate.is_file():
+                    before = json.loads(current.read_text())
+                    after = json.loads(candidate.read_text())
+                    if not isinstance(before, dict) or not isinstance(after, dict):
+                        raise ValueError('integration schema is not an object')
+                    before.pop('title', None)
+                    after.pop('title', None)
+                    if before != after:
+                        raise ValueError('existing integration schema differs; preserve and review')
+                continue
+            if candidate.is_file() and current.read_bytes() == candidate.read_bytes():
+                continue
+            old_path = 'integrations/codex_app/' + str(relative)
+            result = subprocess.run(['git', '-C', str(ROOT), 'rev-parse', f'{old_ref}:{old_path}'],
+                                    capture_output=True, text=True)
+            if result.returncode != 0:
+                raise ValueError('integration payload has no verified old source copy')
+            live_oid = subprocess.run(['git', 'hash-object', str(current)], capture_output=True, text=True)
+            if live_oid.returncode != 0 or live_oid.stdout.strip() != result.stdout.strip():
+                raise ValueError('integration payload differs from its verified source copies')
 
 def record_manifest(dest, records):
     manifest=dest/"install-state.json"
@@ -376,6 +422,7 @@ if __name__=='__main__':
     ap=argparse.ArgumentParser();ap.add_argument('--install-dir',type=Path,required=True);ap.add_argument('--record-only',action='store_true');ap.add_argument('--validate-only',action='store_true');a=ap.parse_args()
     if not a.install_dir.is_absolute():ap.error('absolute install-dir required')
     if a.validate_only:
+        validate_codex_integration(a.install_dir)
         prepared_release(a.install_dir)
         prepared_station(a.install_dir)
         prepared_head_accept(a.install_dir)

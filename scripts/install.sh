@@ -2597,17 +2597,33 @@ install_child_mcp_proxy() {
     return 0
   fi
   "${PYTHON_BIN:-python3}" - "$source_dir" "$dest_dir" <<'PY'
+import os
 import pathlib
+import runpy
 import shutil
 import sys
 
 source, dest = (pathlib.Path(p) for p in sys.argv[1:3])
+fleet = os.environ.get("AGENTSTACK_FLEET_COMPAT") == "1"
+if fleet:
+    helper = source.parents[1] / "scripts/install-fleet-payload.py"
+    runpy.run_path(str(helper))["validate_codex_integration"](dest.parents[1])
 ignore = shutil.ignore_patterns("__pycache__", "*.pyc", "*.pyo")
 for name in ("plugin", "src", "schemas"):
     src = source / name
     if not src.is_dir():
         continue
     dst = dest / name
+    if fleet and name == "schemas" and dst.is_dir():
+        # Existing schema files may be unique; keep them after compatibility validation.
+        for item in src.rglob("*"):
+            target = dst / item.relative_to(src)
+            if item.is_dir():
+                target.mkdir(parents=True, exist_ok=True)
+            elif item.is_file() and not target.exists() and not target.is_symlink():
+                target.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copy2(item, target)
+        continue
     if dst.exists():
         shutil.rmtree(dst)
     dst.parent.mkdir(parents=True, exist_ok=True)
@@ -3794,15 +3810,13 @@ elif command == "schema-kept":
     added += sorted(set(after_all["objects"]) - set(before_all["objects"]))
     print("schema additions: " + (", ".join(added) if added else "none"))
 elif command == "backup":
-    live, directory, stem, keep = args
+    live, directory, stem = args
     directory = pathlib.Path(directory)
     directory.mkdir(parents=True, exist_ok=True)
     directory.chmod(0o700)
     target = directory / f"storage-{time.strftime('%Y%m%dT%H%M%SZ', time.gmtime())}-before-{stem}.sqlite3"
+    # Preserve existing backups until each has an independently verified copy.
     backup(live, target)
-    kept = sorted(directory.glob("storage-*-before-*.sqlite3"))
-    for old in kept[:-int(keep)]:
-        old.unlink()
     print(target)
 else:
     raise SystemExit(f"unknown helper command {command}")
@@ -4099,7 +4113,7 @@ update_native_mail() {
     mail_update_use OLD
     return
   fi
-  if ! backup="$(mail_update_helper backup "$MAIL_DB" "$NATIVE_MAIL_SERVICE_ROOT/backups" "$NATIVE_MAIL_SOURCE_ID" "${AGENTSTACK_MAIL_UPDATE_BACKUPS:-3}")"; then
+  if ! backup="$(mail_update_helper backup "$MAIL_DB" "$NATIVE_MAIL_SERVICE_ROOT/backups" "$NATIVE_MAIL_SOURCE_ID")"; then
     MAIL_UPDATE_RESULT="not-switched"
     MAIL_RESULT_CODE=backup_failed
     MAIL_UPDATE_REASON="could not back up $MAIL_DB"

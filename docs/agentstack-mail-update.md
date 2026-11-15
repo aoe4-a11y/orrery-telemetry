@@ -133,7 +133,7 @@ render・git だけを読み、project key がなくても、何が起きても 
    SIGTERM で止めても、scratch の server を止めて snapshot を消してから終わり
    ます（終了 status 130。稼働中の Mail は止めていない）。
 3. **database を backup する。** `mail-service/backups/storage-<UTC>-before-<commit>.sqlite3`
-   （mode 600）。直近 3 個を残します（`AGENTSTACK_MAIL_UPDATE_BACKUPS`）。
+   （mode 600）。既存 backup は自動削除しません。保存整理は写しと照合を済ませてから行います。
    自動で戻すのは build だけで、database は戻しません。backup は、新しい build
    が data を壊したと分かったときに人が判断して使うためのものです。
 4. **切り替える。** `agentstack-mailctl stop` で前の runner を止め（stop marker が

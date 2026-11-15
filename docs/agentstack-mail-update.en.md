@@ -151,8 +151,7 @@ steps 1 to 4.
    deletes the snapshot before exiting (status 130; the running Mail was never
    stopped).
 3. **Back up the database** to
-   `mail-service/backups/storage-<UTC>-before-<commit>.sqlite3` (mode 600); the
-   three most recent are kept (`AGENTSTACK_MAIL_UPDATE_BACKUPS`). Only the build
+   `mail-service/backups/storage-<UTC>-before-<commit>.sqlite3` (mode 600); existing backups are not deleted automatically; cleanup requires a verified copy. Only the build
    is rolled back automatically, never the database. The backup is for a person
    to use if the new build turns out to have damaged data.
 4. **Switch.** `agentstack-mailctl stop` stops the previous runner (its stop
