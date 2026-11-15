@@ -10,11 +10,18 @@ server = fixture_server
 ROOT = Path(__file__).resolve().parents[1]
 
 
+def seed_restart(stack):
+    work = stack / 'fixture-workdir'
+    work.mkdir()
+    (stack / 'bin/agentstack-restart-seat').write_text('WORKDIR="${5:-' + str(work) + '}"\n')
+
+
 def test_generated_cleanup_refuses_missing_global_library(server, monkeypatch):
     parent = client(server)
     stack = parent.isolation / "agentstack"
     station = stack / "bin/agentstack-station-materials"
     station.parent.mkdir(parents=True)
+    seed_restart(stack)
     station.write_text('from pathlib import Path\nPROJECT_ALIASES = {}\nPRIVATE_ROOT = Path("/fixture/private")\n')
     (stack / "bin/head-accept").write_text('from pathlib import Path\nHOME = Path("/fixture")\nBASES = [Path("/fixture/receipts"), HOME / ".storage"]\n')
     (stack / "bin/agentstack-reap-idle-seats").write_text('REGISTRY_GLOBS="${REAP_REGISTRY_GLOBS:-$HOME/fixture/*}"\n')
@@ -51,6 +58,7 @@ def test_generated_cleanup_keeps_other_live_session(server, monkeypatch):
     stack = initial.isolation / "agentstack"
     station = stack / "bin/agentstack-station-materials"
     station.parent.mkdir(parents=True)
+    seed_restart(stack)
     station.write_text('from pathlib import Path\nPROJECT_ALIASES = {}\nPRIVATE_ROOT = Path("/fixture/private")\n')
     (stack / "bin/head-accept").write_text('from pathlib import Path\nHOME = Path("/fixture")\nBASES = [Path("/fixture/receipts"), HOME / ".storage"]\n')
     (stack / "bin/agentstack-reap-idle-seats").write_text('REGISTRY_GLOBS="${REAP_REGISTRY_GLOBS:-$HOME/fixture/*}"\n')
@@ -98,6 +106,7 @@ def test_generated_spawn_refuses_missing_global_library(server, monkeypatch):
     stack = parent.isolation / "agentstack"
     station = stack / "bin/agentstack-station-materials"
     station.parent.mkdir(parents=True)
+    seed_restart(stack)
     station.write_text('from pathlib import Path\nPROJECT_ALIASES = {}\nPRIVATE_ROOT = Path("/fixture/private")\n')
     (stack / "bin/head-accept").write_text('from pathlib import Path\nHOME = Path("/fixture")\nBASES = [Path("/fixture/receipts"), HOME / ".storage"]\n')
     (stack / "bin/agentstack-reap-idle-seats").write_text('REGISTRY_GLOBS="${REAP_REGISTRY_GLOBS:-$HOME/fixture/*}"\n')
@@ -133,6 +142,7 @@ def test_generated_spawn_uses_global_prepare_without_launch(server, monkeypatch)
     stack = initial.isolation / "agentstack"
     station = stack / "bin/agentstack-station-materials"
     station.parent.mkdir(parents=True)
+    seed_restart(stack)
     station.write_text('from pathlib import Path\nPROJECT_ALIASES = {}\nPRIVATE_ROOT = Path("/fixture/private")\n')
     (stack / "bin/head-accept").write_text('from pathlib import Path\nHOME = Path("/fixture")\nBASES = [Path("/fixture/receipts"), HOME / ".storage"]\n')
     (stack / "bin/agentstack-reap-idle-seats").write_text('REGISTRY_GLOBS="${REAP_REGISTRY_GLOBS:-$HOME/fixture/*}"\n')
@@ -170,6 +180,7 @@ def test_generated_release_links_target_installed_hooks(tmp_path, monkeypatch):
     import os
     stack = tmp_path / "agentstack"
     (stack / "bin").mkdir(parents=True)
+    seed_restart(stack)
     (stack / "bin/agentstack-station-materials").write_text('from pathlib import Path\nPROJECT_ALIASES = {}\nPRIVATE_ROOT = Path("/fixture/private")\n')
     (stack / "bin/head-accept").write_text('from pathlib import Path\nHOME = Path("/fixture")\nBASES = [Path("/fixture/receipts"), HOME / ".storage"]\n')
     (stack / "bin/agentstack-reap-idle-seats").write_text('REGISTRY_GLOBS="${REAP_REGISTRY_GLOBS:-$HOME/fixture/*}"\n')
@@ -197,17 +208,20 @@ def test_generated_release_links_target_installed_hooks(tmp_path, monkeypatch):
 
 
 @pytest.mark.parametrize("missing", [
-    "bin/agentstack-station-materials", "bin/head-accept", "bin/agentstack-reap-idle-seats",
+    "bin/agentstack-station-materials", "bin/head-accept", "bin/agentstack-reap-idle-seats", "bin/agentstack-restart-seat",
     "bin/agentstack-doctor", "bin/agentstack-tmux-server-migrate", "bin/agentstack_unstick_seats.py", "bin/agentstack_stallself.py", "bin/agentstack_jobend.py",
     "bin/codex-session-restore", "runtime/head-evidence-export.py",
 ])
 def test_missing_existing_configuration_stops_before_writes(tmp_path, monkeypatch, missing):
     stack = tmp_path / "agentstack"
     stack.mkdir()
+    work = stack / 'fixture-workdir'
+    work.mkdir()
     fixtures = {
         "bin/agentstack-station-materials": 'from pathlib import Path\nPROJECT_ALIASES = {}\nPRIVATE_ROOT = Path("/fixture/private")\n',
         "bin/head-accept": 'from pathlib import Path\nHOME = Path("/fixture")\nBASES = [Path("/fixture/receipts"), HOME / ".storage"]\n',
         "bin/agentstack-reap-idle-seats": 'REGISTRY_GLOBS="${REAP_REGISTRY_GLOBS:-$HOME/fixture/*}"\n',
+        "bin/agentstack-restart-seat": 'WORKDIR="${5:-' + str(work) + '}"\n',
         "bin/agentstack-doctor": "tmux run-shell 'ls /fixture/probe >/dev/null'\n",
         "bin/agentstack-tmux-server-migrate": "tmux run-shell 'ls /fixture/probe >/dev/null'\n",
         "bin/agentstack_unstick_seats.py": "if data.get('project_key') != '/fixture/project': pass\n",

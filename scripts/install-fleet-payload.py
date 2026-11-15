@@ -161,6 +161,30 @@ def prepared_head_accept(dest):
     return template, rendered
 
 
+def prepared_restart(dest):
+    previous = dest / 'bin/agentstack-restart-seat'
+    if previous.is_symlink() or not previous.is_file():
+        raise ValueError('installed restart configuration unavailable')
+    old = previous.read_text(encoding='utf-8')
+    # Accept only an absolute literal or a literal below $HOME, not shell code.
+    value = r'(\$HOME/[A-Za-z0-9_./-]+|/[A-Za-z0-9_./-]+)'
+    patterns = (r'^WORKDIR="\$\{5:-' + value + r'\}"$',
+                r'^WORKDIR="\$\{5:-\$\{AGENTSTACK_PROJECT_WORK_DIR:-' + value + r'\}\}"$')
+    matches = [m for pattern in patterns for m in re.findall(pattern, old, re.M)]
+    if len(matches) != 1:
+        raise ValueError('installed restart configuration is missing or ambiguous')
+    selected = matches[0]
+    resolved = Path(os.environ['HOME']) / selected.removeprefix('$HOME/') if selected.startswith('$HOME/') else Path(selected)
+    if not resolved.is_dir():
+        raise ValueError('installed restart workdir is unavailable')
+    template = ROOT / 'fleet/bin/agentstack-restart-seat'
+    text = template.read_text(encoding='utf-8')
+    marker = 'WORKDIR="${5:-${AGENTSTACK_PROJECT_WORK_DIR:?workdir or configured project work directory required}}"'
+    if text.count(marker) != 1:
+        raise ValueError('restart template is invalid')
+    return template, text.replace(marker, 'WORKDIR="${5:-${AGENTSTACK_PROJECT_WORK_DIR:-' + selected + '}}"')
+
+
 def prepared_reaper(dest):
     previous = dest / 'bin/agentstack-reap-idle-seats'
     if previous.is_symlink() or not previous.is_file():
@@ -331,6 +355,7 @@ def install(dest):
     station_template, station_rendered = prepared_station(dest)
     head_template, head_rendered = prepared_head_accept(dest)
     reaper_template, reaper_rendered = prepared_reaper(dest)
+    restart_template, restart_rendered = prepared_restart(dest)
     doctor_template, doctor_rendered = prepared_doctor(dest)
     tmux_template, tmux_rendered = prepared_tmux_status(dest)
     unstick_template, unstick_rendered = prepared_unstick(dest)
@@ -350,6 +375,8 @@ def install(dest):
             target.write_text(head_rendered, encoding='utf-8');shutil.copymode(source,target)
         elif source == reaper_template:
             target.write_text(reaper_rendered, encoding='utf-8');shutil.copymode(source,target)
+        elif source == restart_template:
+            target.write_text(restart_rendered, encoding='utf-8');shutil.copymode(source,target)
         elif source in mail_projects:
             target.write_text(mail_projects[source], encoding='utf-8');shutil.copymode(source,target)
         elif source == doctor_template:
@@ -427,6 +454,7 @@ if __name__=='__main__':
         prepared_station(a.install_dir)
         prepared_head_accept(a.install_dir)
         prepared_reaper(a.install_dir)
+        prepared_restart(a.install_dir)
         prepared_doctor(a.install_dir)
         prepared_tmux_status(a.install_dir)
         prepared_unstick(a.install_dir)

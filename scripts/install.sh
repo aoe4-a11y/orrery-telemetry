@@ -2737,7 +2737,10 @@ install_payload() {
     if [[ "${AGENTSTACK_FLEET_COMPAT:-0}" != 1 ]]; then
       cp "$REPO_ROOT/bin/agentstack-reap-idle-seats" "$INSTALL_DIR/bin/agentstack-reap-idle-seats"
     fi
-    cp "$REPO_ROOT/bin/agentstack-restart-seat" "$INSTALL_DIR/bin/agentstack-restart-seat"
+    # Fleet rendering must read the prior wrapper before replacing it.
+    if [[ "${AGENTSTACK_FLEET_COMPAT:-0}" != 1 ]]; then
+      cp "$REPO_ROOT/bin/agentstack-restart-seat" "$INSTALL_DIR/bin/agentstack-restart-seat"
+    fi
     cp "$REPO_ROOT/bin/agentstack-rule-mirror-check" "$INSTALL_DIR/bin/agentstack-rule-mirror-check"
     cp "$REPO_ROOT/bin/agentstack-seat-cost.py" "$INSTALL_DIR/bin/agentstack-seat-cost.py"
     cp "$REPO_ROOT/bin/agentstack-seat-stall-watch.py" "$INSTALL_DIR/bin/agentstack-seat-stall-watch.py"
