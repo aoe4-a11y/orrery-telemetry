@@ -7,7 +7,7 @@ _CTX_CODEX_USED_RE = re.compile(r"Context\s+(\d+)%\s*used", re.IGNORECASE)
 # Native Codex 0.163.0 displays a model/effort row, optionally followed by cwd.
 # Match complete rows; an unfamiliar effort or continuation is not evidence.
 _CODEX_MODEL_FOOTER_RE = re.compile(
-    r"gpt-\S+\s+(?:default|low|medium|high|xhigh|max|ultra)(?:\s+·\s+\S[^\n]*)?",
+    r"gpt-\S+(?:\s+(?:sol|terra|luna|astra))?\s+(?:default|low|medium|high|xhigh|max|ultra)(?:\s+·\s+\S[^\n]*)?",
     re.IGNORECASE)
 _CODEX_WARNING_FOOTER_RE = re.compile(r"⚠\s+\d+\s+warnings?\s+·\s+f2 to view")
 _CODEX_SHORTCUT_FOOTER_RE = re.compile(
@@ -31,6 +31,13 @@ _ASK_YN_RE = re.compile(r"\?\s*[\[(]y/n[\])]", re.IGNORECASE)
 _ASK_CODEX_RE = re.compile(
     r"Press\s+enter\s+to\s+confirm\s+or\s+esc\s+to\s+cancel", re.IGNORECASE)
 _QUESTION_RE = re.compile(r"Enter to select.{0,80}Esc to cancel")
+
+# Codex composer footer: "gpt-5.6-terra medium · ~/dir" and, since the model
+# catalog named it so (2026-11), "GPT-6.1 Terra medium · ~/dir" — the display
+# name may hold one space-separated catalog tier word (only those, so prose
+# like "gpt-5.6 is high ·" stays prose). Shared by every footer reader.
+_CODEX_FOOTER_MODEL = r"gpt-\S+(?:\s+(?:sol|terra|luna|astra))?"
+_CODEX_FOOTER_EFFORT = r"(?:low|medium|high|xhigh|max|ultra)"
 
 _ANSI = re.compile(r"\x1b\[[0-?]*[ -/]*[@-~]")
 _STALL_WORK = re.compile(r"(?im)^\s*[•▌●]\s*(?:Working|Thinking)\b[^\n]*\([^\n]*(?:\d+\s*s|esc to interrupt)")

@@ -148,7 +148,10 @@ ags_pick_adjective_scientist_name() {
   # The predecessor preserved this spelling as the durable identity.
   # Some local patched deployments coerce it to AdjectiveScientist instead;
   # callers must always adopt register_agent's returned name after registering.
-  printf '%s-%s\n' "$adjective" "$scientist"
+  # 2026-09-20 (PinkTesla): this ORRERY Mail deployment rejects hyphenated names
+  # (register_agent error for Violet-Goodall / Plum-Somerville, whois suggests
+  # PlumSomerville). Every live seat is AdjectiveScientist, so emit that form.
+  printf '%s%s\n' "$adjective" "$scientist"
 }
 
 ags_has_scientist_suffix() {

@@ -30,6 +30,9 @@ fi
 AGS_RUNTIME_CLIENT="$BIN_DIR/lib/runtime_client.py"
 . "$BIN_DIR/lib/global-client-loader.sh" || exit 2
 ags_load_env "$@"
+
+# FLEET-MEM-1 / R-183: refuse before registration, state changes or process launch.
+"${AGENTSTACK_HOME:-$HOME/.agentstack}/bin/agentstack-memory-budget" admit || exit $?
 ags_client_select "$@" && _ags_selected_rc=0 || _ags_selected_rc=$?
 [[ "$_ags_selected_rc" == 0 || "$_ags_selected_rc" == 125 ]] || exit "$_ags_selected_rc"
 if [[ "$_ags_selected_rc" == 0 ]]; then

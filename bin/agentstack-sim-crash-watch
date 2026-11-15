@@ -1,0 +1,199 @@
+#!/usr/bin/env python3
+"""M-118: inspect local Simulator crash reports; one notice per short episode.
+
+Called by the existing memory guard, never a resident watcher. No signals, GUI,
+device commands, mailbox access, or raw crash text in output/state/notices.
+"""
+import fcntl
+import hashlib
+import json
+import os
+from pathlib import Path
+import re
+import sys
+import time
+from datetime import datetime, timezone
+
+WINDOW = 300  # two crashes in five minutes; five quiet minutes end an episode
+BUNDLE = re.compile(r'[A-Za-z0-9_-]+(?:\.[A-Za-z0-9_-]+)+')
+SYMBOL = re.compile(r'[A-Za-z0-9_.$:+<>,(){}\[\] *&?~!=|^@-]{1,240}')
+
+
+def timestamp(text):
+    # Apple emits both ISO timestamps and "YYYY-MM-DD HH:MM:SS.fraction +0900".
+    text = str(text).strip()
+    text = re.sub(r' ([+-]\d{4})$', r'\1', text)
+    dt = datetime.fromisoformat(text.replace('Z', '+00:00'))
+    if dt.tzinfo is None:
+        raise ValueError('timezone missing')
+    return dt.timestamp()
+
+
+def clean_symbol(value):
+    return value if isinstance(value, str) and SYMBOL.fullmatch(value) else 'unknown'
+
+
+def clean_exception(value):
+    if isinstance(value, str):
+        match = re.fullmatch(r'(EXC_[A-Z0-9_]+)(?: \(SIG[A-Z0-9]+\))?', value)
+        if match:
+            return match[1]
+    return 'unknown'
+
+
+def parse_report(path):
+    # Parsing is local-only. Whitelist the fields before returning anything.
+    if path.stat().st_size > 32 * 1024**2:
+        return None
+    raw = path.read_text(encoding='utf-8')
+    if path.suffix == '.ips':
+        decoder = json.JSONDecoder()
+        header, end = decoder.raw_decode(raw.lstrip())
+        rest = raw.lstrip()[end:].strip()
+        body = json.loads(rest) if rest else header
+        if '/CoreSimulator/Devices/' not in body.get('procPath', ''):
+            return None
+        bundle = body.get('bundleInfo', {}).get('CFBundleIdentifier') or header.get('bundleID')
+        at = timestamp(body.get('captureTime') or header.get('timestamp'))
+        exception = clean_exception(body.get('exception', {}).get('type'))
+        threads = body.get('threads', [])
+        fault = body.get('faultingThread')
+        thread = (threads[fault] if type(fault) is int and 0 <= fault < len(threads)
+                  else next((row for row in threads if row.get('triggered') is True), {}))
+        frames = thread.get('frames', [])
+        # A real ips can start with unsymbolicated frames. Report the first
+        # available symbol on the faulting thread, without exporting offsets.
+        symbol = next((clean_symbol(frame['symbol']) for frame in frames if 'symbol' in frame), 'unknown')
+        incident = body.get('incident') or header.get('incident_id')
+    else:
+        def field(label):
+            match = re.search(r'^' + re.escape(label) + r':\s*(.*)$', raw, re.M)
+            return match[1].strip() if match else ''
+        if '/CoreSimulator/Devices/' not in field('Path'):
+            return None
+        bundle = field('Identifier')
+        at = timestamp(field('Date/Time'))
+        exception = clean_exception(field('Exception Type'))
+        thread = re.search(r'^Thread \d+ Crashed[^\n]*:\s*\n([^\n]*)', raw, re.M)
+        frame = re.match(r'\s*0\s+\S+\s+0x[0-9a-fA-F]+\s+(.+?)(?: \+ \d+)?\s*$', thread[1]) if thread else None
+        symbol = clean_symbol(frame[1]) if frame else 'unknown'
+        incident = field('Incident Identifier')
+    if not isinstance(bundle, str) or len(bundle) > 255 or not BUNDLE.fullmatch(bundle):
+        return None
+    # Deduplicate incident copies without persisting incident UUIDs or raw paths.
+    identity = hashlib.sha256(str(incident or raw).encode()).hexdigest()
+    return dict(identity=identity, bundle_id=bundle, at=at, exception=exception, first_symbol=symbol)
+
+
+def owner_for(bundle, owners):
+    found = []
+    for name in owners:
+        if not re.fullmatch(r'[A-Z][a-z]+[A-Z][a-z]+', name):
+            continue
+        words = re.findall(r'[A-Z][a-z]+', name)
+        pattern = r'(?<![a-z0-9])' + r'[._-]?'.join(re.escape(x.lower()) for x in words) + r'(?![a-z0-9])'
+        if re.search(pattern, bundle.lower()):
+            found.append(name)
+    return found[0] if len(found) == 1 else None
+
+
+def save(path, state):
+    temporary = path.with_name(path.name + '.' + str(os.getpid()) + '.tmp')
+    temporary.write_text(json.dumps(state, sort_keys=True) + '\n')
+    os.replace(temporary, path)
+
+
+def notify(recipient, fields):
+    # The already-installed operations sender owns its credential handling.
+    # No token is read here and no new identity/transport is constructed.
+    sys.path.insert(0, str(Path(__file__).resolve().parent))
+    from agentstack_stallself import send_server, sent_id
+    result = send_server(dict(seat=recipient, subject='[blocked] M-118 Simulator app crash episode',
+                              body_md=json.dumps(fields, ensure_ascii=False, sort_keys=True)))
+    if sent_id(result) is None:
+        raise RuntimeError('crash notice unconfirmed')
+
+
+def scan(runtime, reports, now=None, sender=notify, owners=None):
+    now = time.time() if now is None else now
+    runtime.mkdir(parents=True, exist_ok=True)
+    path = runtime/'sim-crash-state.json'
+    stats = dict(parsed=0, accepted=0, attempted=0, confirmed=0, unavailable=0)
+    with (runtime/'sim-crash.lock').open('a') as lock:
+        fcntl.flock(lock, fcntl.LOCK_EX)
+        # Corrupt state fails closed: do not forget a delivery and duplicate it.
+        state = json.loads(path.read_text()) if path.exists() else dict(seen={}, episodes={})
+        seen, episodes = state['seen'], state['episodes']
+        if owners is None:
+            children = runtime/'child-agents'
+            owners = [p.name.removesuffix('.codex-home') for p in children.iterdir()
+                      if p.name.endswith('.codex-home')] if children.is_dir() else []
+        records = []
+        for report in reports.iterdir():
+            if report.suffix not in ('.ips', '.crash') or report.is_symlink() or not report.is_file():
+                continue
+            try:
+                if report.stat().st_mtime < now - WINDOW * 2:
+                    continue
+                row = parse_report(report)
+                stats['parsed'] += 1
+                if row and now - WINDOW <= row['at'] <= now + 30:
+                    records.append(row)
+            except (OSError, ValueError, TypeError, KeyError, IndexError, AttributeError):
+                stats['unavailable'] += 1
+        for row in sorted(records, key=lambda r: (r['at'], r['identity'])):
+            identity, bundle, at = row['identity'], row['bundle_id'], row['at']
+            if identity in seen:
+                continue
+            seen[identity] = at
+            stats['accepted'] += 1
+            episode = episodes.get(bundle)
+            if episode is None or at - episode['last_at'] > WINDOW:
+                episode = dict(last_at=at, count=0, times=[], delivery={})
+                episodes[bundle] = episode
+            episode['last_at'] = max(at, episode['last_at'])
+            episode['count'] += 1
+            # Two times demonstrate the triggering pair; later crashes are deduped.
+            if len(episode['times']) < 2:
+                episode['times'].append(datetime.fromtimestamp(at, timezone.utc).isoformat())
+            if episode['count'] < 2 or episode['delivery']:
+                continue
+            fields = dict(bundle_id=bundle, count=episode['count'], times=episode['times'][:],
+                          exception=row['exception'], first_symbol=row['first_symbol'])
+            owner = owner_for(bundle, owners)
+            recipients = ['ProudTuring'] + ([owner] if owner and owner != 'ProudTuring' else [])
+            # Claim all recipients before delivery. Lost acknowledgements never
+            # generate a second notice on the next scheduled guard invocation.
+            episode['delivery'] = {recipient:'attempting' for recipient in recipients}
+            save(path, state)
+            for recipient in recipients:
+                stats['attempted'] += 1
+                try:
+                    sender(recipient, fields)
+                    episode['delivery'][recipient] = 'confirmed'
+                    stats['confirmed'] += 1
+                except Exception:
+                    episode['delivery'][recipient] = 'unknown; inspect formal Mail delivery'
+                save(path, state)
+        # Bounded state; old reports cannot re-enter the five-minute scan window.
+        state['seen'] = {key:at for key,at in seen.items() if at >= now - WINDOW * 2}
+        state['episodes'] = {key:row for key,row in episodes.items() if row['last_at'] >= now - WINDOW * 2}
+        save(path, state)
+    return stats
+
+
+def main():
+    runtime = Path(os.environ.get('AGENTSTACK_RUNTIME_DIR', str(Path.home()/'.agentstack/runtime')))
+    reports = Path.home()/'Library/Logs/DiagnosticReports'
+    try:
+        stats = scan(runtime, reports)
+        if '--summary' in sys.argv[1:]:
+            print(json.dumps(stats, sort_keys=True))
+        return 0
+    except Exception:
+        print('Simulator crash inspection unavailable; no raw diagnostics emitted', file=sys.stderr)
+        return 75
+
+
+if __name__ == '__main__':
+    raise SystemExit(main())

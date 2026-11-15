@@ -110,6 +110,7 @@ agentstack_audit_unmanaged() {
     AGENTSTACK_AUDIT_MAX_BYTES="${AGENTSTACK_AUDIT_MAX_BYTES:-2097152}" \
     python3 - <<'AUDITPY' 2>/dev/null || true
 import fcntl
+import uuid
 import json
 import os
 import pathlib
@@ -142,8 +143,15 @@ with open(lock_path, "a+") as lock:
             oversized = log.stat().st_size > limit
         except OSError:
             oversized = False
-        if oversized:
-            os.replace(log, log.with_suffix(log.suffix + ".1"))
+        # R-129/43269: at most seven local backup generations; never overwrite .1.
+        # If full, keep appending to the current file. Head must archive+verify
+        # older generations before freeing a slot; identity decisions are unchanged.
+        generations = list(log.parent.glob(log.name + ".generation-*"))
+        if log.with_suffix(log.suffix + ".1").exists():
+            generations.append(log.with_suffix(log.suffix + ".1"))
+        if oversized and len(generations) < 7:
+            archived = log.with_name(log.name + ".generation-" + time.strftime("%Y%m%dT%H%M%SZ", time.gmtime()) + "." + uuid.uuid4().hex)
+            os.replace(log, archived)
         with open(log, "a", encoding="utf-8") as handle:
             handle.write(json.dumps(record, ensure_ascii=False) + "\n")
     finally:

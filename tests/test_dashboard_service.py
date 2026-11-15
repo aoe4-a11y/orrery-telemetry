@@ -92,7 +92,7 @@ def _runner_env(tmp_path: pathlib.Path) -> dict[str, str]:
 def _isolated_installer_repo(tmp_path: pathlib.Path) -> pathlib.Path:
     repo = tmp_path / "installer-repo"
     repo.mkdir()
-    for directory in ("bin", "dashboard", "scripts", "hooks", "examples"):
+    for directory in ("bin", "dashboard", "scripts", "hooks", "config", "examples"):
         shutil.copytree(ROOT / directory, repo / directory)
     shutil.copy2(ROOT / "VERSION", repo / "VERSION")
     for name in RUNTIME_CONTRACT_SOURCES:
@@ -640,8 +640,9 @@ exit 0
             env=env,
             text=True,
             capture_output=True,
-            check=True,
+            check=False,
         )
+        assert result.returncode == 0, result.stdout + result.stderr
         assert old_process.wait(timeout=5) == -signal.SIGTERM
         _wait_for_marker(port, "new-launchd")
         new_pid = int(new_pidfile.read_text(encoding="utf-8").strip())
@@ -798,8 +799,9 @@ exit 0
             env=env,
             text=True,
             capture_output=True,
-            check=True,
+            check=False,
         )
+        assert second.returncode == 0, second.stdout + second.stderr
         new_pid = int(pidfile.read_text(encoding="utf-8").strip())
         assert new_pid != old_pid
         _wait_for_pid_exit(old_pid)
@@ -1185,8 +1187,9 @@ exit 0
             env=env,
             text=True,
             capture_output=True,
-            check=True,
+            check=False,
         )
+        assert result.returncode == 0, result.stdout + result.stderr
         assert "service mode: supervised-background" in status.stdout
         assert "http 200" in status.stdout
 

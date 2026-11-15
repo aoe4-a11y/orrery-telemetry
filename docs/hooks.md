@@ -4,14 +4,14 @@
 
 [前: 委任と child agent](delegation.md) · [README に戻る](../README.md) · [次: Codex App 統合](codex-app.md)
 
-`hooks/` には、Claude Code の lifecycle event から自動実行される hook と、launcher・dashboard・skill が明示的に呼ぶ運用 helper、event hook が source / 起動する内部 library・worker が同居しています。Claude Code event hook は9件です。
+`hooks/` には、Claude Code の lifecycle event から自動実行される hook と、launcher・dashboard・skill が明示的に呼ぶ運用 helper、event hook が source / 起動する内部 library・worker が同居しています。Claude Code event hook は11件です。
 
 [`hooks/settings.template.json`](../hooks/settings.template.json) は event と command の対応を定義し、[`hooks/README.md`](../hooks/README.md) は settings merge の安全方針を定義します。この文書は、実際にいつ起動し、何を保証するかを説明する利用者向け reference です。
 
 
 停止した子の道具を変更する `agentstack-resume` は `/api/jump` を呼びます。`child_resume.py` が変更世代と生成設定の復元を管理します。[道具変更](delegation.md#停止した子の道具を変更して-resume-する)を参照してください。
 
-## Claude Code event hook（9件）
+## Claude Code event hook（11件）
 
 installer が `settings.template.json` を `~/.claude/settings.json` へ merge すると、次の event で自動実行されます。
 
@@ -25,6 +25,8 @@ installer が `settings.template.json` を `~/.claude/settings.json` へ merge �
 | `PreToolUse` / reservation tools | [`invalidate-release-debounce.sh`](../hooks/invalidate-release-debounce.sh) | file reservation の取得・renew 直前 | 同じ agent/path に対する古い release worker の token を無効化し、新しい reservation が直後に消される競合を防止 |
 | `PostToolUse` / `Edit|Write` | [`release-file-reservation.sh`](../hooks/release-file-reservation.sh) | 成功した file edit の直後 | 既定90秒の grace 後に、guard と同じ project・identity・相対/絶対 path で reservation を release |
 | `PostToolUse` / `register_agent` | [`mark-agent-registered.sh`](../hooks/mark-agent-registered.sh) | `mcp__orrery-mail__register_agent` または互換 tool の応答直後 | 応答を検証し、明示した要求名との完全一致後だけ session flag、session index、pane / tmux metadata を更新 |
+| `PreToolUse` / `PostToolUse` / `send_message` | [`head-send-lint.py`](../hooks/head-send-lint.py) | head送信の前後 | R-068: 数字の基盤、裁定ID、殿引用をconfigの条件で検査。warn期限後は送信前にblock |
+| `PostToolUse` / `Workflow` | [`usage-throttle-warn.py`](../hooks/usage-throttle-warn.py) | headのWorkflow直後 | R-068: 週次usageが60%以上なら監査・振り返りWorkflowの停止を警告 |
 | `SessionEnd` | [`release-all-reservations.sh`](../hooks/release-all-reservations.sh) | Claude session 終了時 | 現在 identity の全 file reservation を release。identity 自体は retire しない |
 
 `Edit` / `Write` では2つの PreToolUse hook がともに走ります。登録済みでも reservation がなければ書けず、reservation があっても未登録 session なら書けません。成功後だけ PostToolUse release が arm され、失敗・block・protected root 外では何もしません。
@@ -180,7 +182,11 @@ dangerous command pattern の検査は `AGENTSTACK_MONITOR_DANGER_CHECK=1` の�
 
 guard方式の変更を反映する更新では、旧watcherと配送workerを通常の管理元で停止してから新しいwatcherを起動します。古いguardは自動削除しません。片付ける場合も、旧workerが動いたままlockを削除しないでください。
 
-配送先は agent 名と完全一致する tmux session だけです。bare shell や無関係 session を避け、通知 text を literal send した後、submit を別 call の `C-m` で送ります。tmux call は timeout 付き worker に分離し、server stall が watcher 全体を止めないようにします。
+配送先は agent 名と完全一致する tmux session だけです。bare shell や無関係 session を避け、通知 text を literal send した後、submit を別 call の `C-m` で送ります。同じ pane の注入は直列化し、最後の入力欄に同じ便が残る場合だけ一度 `Enter` で再送信します。なお残る便は成功扱いにせず signal を保持し、再走査では本文を追加せず送信を再試行します。受理済みの「次の tool call 後に送信」queue は触りません。tmux call は timeout 付き worker に分離し、server stall が watcher 全体を止めないようにします。
+
+通知は `message_id` を持ちます。preview は切り詰めを明記し、`fetch_inbox(message_id=ID, include_bodies=true)` で宛先として受け取った便だけを全文取得できます。proxy が `body_truncated=true` を返す場合は `body_md` の断片を順に連結し、`body_next_offset` を次の `body_offset` に渡し、null で完了します。古い便の取得に `since_ts` や `urgent_only` を併用しません。`agentstack-await-reply --message-id ID` は古い便の指定取得、`--after-id ID` はそのIDより新しい返信の待機で、同時指定は不可です。tool エラーは reply timeout と区別して exit 1 になります。
+
+`--embed-task` は登録と起動時のtask fetchだけを省きます。起動後の便は通常どおり取得・確認し、必要なら ack します。
 
 ## Codex との違い
 

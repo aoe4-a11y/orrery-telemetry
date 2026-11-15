@@ -1,0 +1,153 @@
+#!/usr/bin/python3
+"""Validated owner-step ledger and derived pending reader; Python 3.9 stdlib.
+
+put reads one JSON object from stdin (or --input). render repairs the reader.
+check checks the schema and exact reader bytes. Never edits another config.
+"""
+import argparse
+import datetime as dt
+import fcntl
+import json
+import os
+from pathlib import Path
+import re
+import sys
+import tempfile
+
+OPEN = {'pending', 'needs_review'}
+STATES = OPEN | {'done', 'withdrawn', 'superseded'}
+PRESENCE = {'Mac の前', 'iPad の画面を見ている', '出先のスマホ', '物理'}
+REQUIRED = {'id', 'created_at', 'origin', 'title', 'presence', 'blocks', 'deadline', 'cannot_head', 'evidence', 'status', 'done_evidence'}
+
+
+def timestamp(value):
+    if not isinstance(value, str):
+        raise ValueError('timestamp must be an ISO string')
+    parsed = dt.datetime.fromisoformat(value.replace('Z', '+00:00'))
+    if parsed.tzinfo is None:
+        raise ValueError('timestamp requires timezone')
+    return parsed
+
+
+def nonempty(value, field):
+    if not isinstance(value, str) or not value.strip():
+        raise ValueError(field + ' must not be empty')
+
+
+def measurement(value, field, fresh=False, success=False):
+    if not isinstance(value, dict):
+        raise ValueError(field + ' requires command, observed_at, exit, reference')
+    for key in ('command', 'reference'):
+        nonempty(value.get(key), field + '.' + key)
+    if type(value.get('exit')) is not int:
+        raise ValueError(field + '.exit must be an integer')
+    if success and value['exit'] != 0:
+        raise ValueError('done evidence must have exit 0')
+    observed = timestamp(value.get('observed_at'))
+    if fresh:
+        age = (dt.datetime.now(dt.timezone.utc) - observed).total_seconds()
+        if not -60 <= age <= 900:
+            raise ValueError(field + ' observation must be within 15 minutes')
+    if re.search('と思われる|見込み|推測のみ', value['command'] + value['reference']):
+        raise ValueError(field + ' must refer to an observation, not speculation')
+
+
+def validate(row, fresh=False):
+    if not isinstance(row, dict) or REQUIRED - set(row):
+        raise ValueError('missing required fields: ' + ','.join(sorted(REQUIRED - set(row or {}))))
+    for key in ('id', 'origin', 'title', 'cannot_head'):
+        nonempty(row[key], key)
+    if '\n' in row['id'] or '\r' in row['id']:
+        raise ValueError('id must be one line')
+    timestamp(row['created_at'])
+    if row['deadline'] is not None:
+        timestamp(row['deadline'])
+    if row['presence'] not in PRESENCE or row['status'] not in STATES:
+        raise ValueError('invalid presence or status')
+    if not isinstance(row['blocks'], list) or not all(isinstance(x, str) and x.strip() for x in row['blocks']):
+        raise ValueError('blocks must be a list of nonempty strings; [] means no current lane asserted')
+    measurement(row['evidence'], 'evidence', fresh=fresh)
+    if row['status'] == 'done':
+        measurement(row['done_evidence'], 'done_evidence', success=True)
+    elif row['done_evidence'] is not None:
+        raise ValueError('only done rows may have done_evidence')
+    return row
+
+
+def read_ledger(path):
+    rows = []
+    if path.exists():
+        for line in path.read_text().splitlines():
+            if not line.strip():
+                raise ValueError('blank ledger line')
+            rows.append(validate(json.loads(line)))
+    if len({row['id'] for row in rows}) != len(rows):
+        raise ValueError('duplicate ledger id')
+    return rows
+
+
+def readable(rows):
+    opened = [row for row in rows if row['status'] in OPEN]
+    lines = ['# owner-steps.jsonl から生成。直接編集しない。',
+             '# 未済: %d 件（要再確認を含む）。要再確認は現在の依頼ではない。' % len(opened)]
+    for row in opened:
+        title = ' '.join(row['title'].split())
+        lines.append('- [%s] %s | %s | 在席=%s | 期限=%s | 止める列=%s' %
+                     (row['id'], row['status'], title, row['presence'], row['deadline'] or '未設定', ','.join(row['blocks']) or '現在の列は未確認'))
+    return '\n'.join(lines) + '\n'
+
+
+def atomic_write(path, text):
+    path.parent.mkdir(parents=True, exist_ok=True)
+    fd, temporary = tempfile.mkstemp(prefix='.' + path.name + '.', dir=str(path.parent))
+    try:
+        with os.fdopen(fd, 'w') as stream:
+            stream.write(text)
+            stream.flush()
+            os.fsync(stream.fileno())
+        os.replace(temporary, path)
+    finally:
+        if os.path.exists(temporary):
+            os.unlink(temporary)
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('--ledger', type=Path, default=Path.home() / '.agentstack/runtime/owner-steps.jsonl')
+    parser.add_argument('--readable', type=Path)
+    parser.add_argument('--input', type=Path)
+    parser.add_argument('action', choices=('put', 'render', 'check'))
+    args = parser.parse_args()
+    view = args.readable or args.ledger.with_name('owner-pending.txt')
+    try:
+        if args.ledger.resolve() == view.resolve():
+            raise ValueError('ledger and reader must be different paths')
+        # Validate before creating even a lock file on rejected input.
+        row = validate(json.loads(args.input.read_text() if args.input else sys.stdin.read()), fresh=True) if args.action == 'put' else None
+        args.ledger.parent.mkdir(parents=True, exist_ok=True)
+        with args.ledger.with_suffix(args.ledger.suffix + '.lock').open('a') as lock:
+            fcntl.flock(lock, fcntl.LOCK_EX)
+            rows = read_ledger(args.ledger)
+            if row is not None:
+                old = next((x for x in rows if x['id'] == row['id']), None)
+                if old and row['created_at'] != old['created_at']:
+                    raise ValueError('created_at is immutable')
+                rows = [row if x['id'] == row['id'] else x for x in rows]
+                if old is None:
+                    rows.append(row)
+                atomic_write(args.ledger, ''.join(json.dumps(x, ensure_ascii=False, sort_keys=True) + '\n' for x in rows))
+            expected = readable(rows)
+            if args.action == 'check':
+                if not view.exists() or view.read_text() != expected:
+                    raise ValueError('reader differs; run render')
+            else:
+                atomic_write(view, expected)
+            print(json.dumps({'rows': len(rows), 'pending': sum(x['status'] in OPEN for x in rows), 'reader_rows': expected.count('\n- ['), 'action': args.action}, ensure_ascii=False))
+        return 0
+    except (OSError, ValueError, TypeError, KeyError) as exc:
+        print('owner-step rejected: ' + str(exc), file=sys.stderr)
+        return 2
+
+
+if __name__ == '__main__':
+    sys.exit(main())

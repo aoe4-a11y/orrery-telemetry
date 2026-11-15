@@ -561,13 +561,50 @@ ags_load_registration_token() {
 }
 
 ags_store_registration_token() {
-  local agent_name="$1" registration_token="$2" runtime_dir token_file
+  local agent_name="$1" registration_token="$2" runtime_dir token_file lifecycle_hooks
   [[ -n "$agent_name" && -n "$registration_token" ]] || return 0
   runtime_dir="$(ags_registration_runtime_dir)"
   token_file="$(ags_registration_token_file "$agent_name")" || return 1
-  mkdir -p "$runtime_dir" || return 1
-  ( umask 077 && printf '%s' "$registration_token" > "$token_file" ) || return 1
-  chmod 600 "$token_file" 2>/dev/null || true
+  lifecycle_hooks="${AGENTSTACK_LIFECYCLE_HOOKS_DIR:-${AGENTSTACK_HOOKS_DIR:-$(dirname "${BASH_SOURCE[0]}")/../../hooks}}"
+  printf '%s' "$registration_token" | python3 -c '
+import os, pathlib, stat, sys, tempfile
+sys.path.insert(0, str(pathlib.Path(sys.argv[3]).resolve()))
+from seat_lifecycle import Seat
+seat = Seat(sys.argv[1], sys.argv[2])
+payload = sys.stdin.buffer.read(4097)
+if not payload or len(payload) > 4096:
+    raise ValueError("invalid registration token size")
+with seat.locked():
+    path = seat.paths()["token"]
+    try:
+        existing = os.open(path, os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0))
+    except FileNotFoundError:
+        identity = None
+    else:
+        with os.fdopen(existing, "rb") as stream:
+            identity = os.fstat(stream.fileno())
+            if not stat.S_ISREG(identity.st_mode) or identity.st_uid != os.getuid():
+                raise ValueError("canonical token is not an owned regular file")
+            if stream.read(4097) == payload:
+                os.fchmod(stream.fileno(), 0o600)
+                raise SystemExit(0)
+    fd, temporary = tempfile.mkstemp(prefix=".registration-token-", dir=seat.root)
+    try:
+        with os.fdopen(fd, "wb") as stream:
+            os.fchmod(stream.fileno(), 0o600)
+            stream.write(payload); stream.flush(); os.fsync(stream.fileno())
+        if identity is not None:
+            now = path.lstat()
+            if (now.st_dev, now.st_ino) != (identity.st_dev, identity.st_ino):
+                raise ValueError("canonical token changed during registration")
+            seat.invalidate()
+            os.replace(temporary, path)
+        else:
+            # Atomic publication cannot overwrite a late creator.
+            os.link(temporary, path)
+    finally:
+        pathlib.Path(temporary).unlink(missing_ok=True)
+' "$runtime_dir" "$agent_name" "$lifecycle_hooks"
 }
 
 # Record that ORRERY Mail granted a different identity than the one requested.
@@ -992,8 +1029,35 @@ ags_start_mail_watcher() {
 ags_record_managed_agent() {
   local managed_file="$1" agent_name="$2"
   [[ -n "$managed_file" && -n "$agent_name" ]] || return 0
-  mkdir -p "$(dirname "$managed_file")" 2>/dev/null || true
-  grep -qxF "$agent_name" "$managed_file" 2>/dev/null || echo "$agent_name" >> "$managed_file"
+  # Cooperate with lifecycle cleanup's atomic replacement of this list.
+  # Opening the append fd before taking this lock could target an old inode.
+  python3 - "$managed_file" "$agent_name" <<'PY'
+import fcntl
+import os
+from pathlib import Path
+import stat
+import sys
+
+path, name = Path(sys.argv[1]), sys.argv[2]
+path.parent.mkdir(parents=True, exist_ok=True)
+flags = os.O_RDWR | os.O_CREAT | getattr(os, "O_NOFOLLOW", 0)
+lock = os.open(str(path) + ".lock", flags, 0o600)
+try:
+    if not stat.S_ISREG(os.fstat(lock).st_mode):
+        raise ValueError("invalid managed-list lock")
+    fcntl.flock(lock, fcntl.LOCK_EX)
+    if path.is_symlink():
+        raise ValueError("managed list is a symlink")
+    lines = path.read_text().splitlines() if path.exists() else []
+    if name not in lines:
+        fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_APPEND | getattr(os, "O_NOFOLLOW", 0), 0o600)
+        with os.fdopen(fd, "w") as stream:
+            stream.write(name + "\n")
+            stream.flush()
+            os.fsync(stream.fileno())
+finally:
+    os.close(lock)
+PY
 }
 
 # --- macOS TCC (privacy-protected folder) access guard ------------------------

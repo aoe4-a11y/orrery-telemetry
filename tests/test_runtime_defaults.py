@@ -762,6 +762,7 @@ def test_isolated_installer_migrates_annotations_and_matches_manifest_sample(tmp
         "tmux": "#!/bin/sh\nexit 0\n",
         "uname": "#!/bin/sh\necho Linux\n",
         "uv": "#!/bin/sh\nexit 0\n",
+        "codex": "#!/bin/sh\nexit 0\n",
     }.items():
         command = fake_bin / name
         command.write_text(body, encoding="utf-8")
@@ -1119,9 +1120,14 @@ def test_isolated_installer_migrates_annotations_and_matches_manifest_sample(tmp
     } <= remaining
     assert all(
         path.split("/", 1)[0]
-        in {"runtime", "mail", "mail-service", "profiles", "connections"}
+        in {"runtime", "mail", "mail-service", "profiles", "connections", "config"}
         for path in remaining
     )
+    # R068 defaults become owner-controlled after first install. Core uninstall
+    # must retain their exact content while removing its owned executables.
+    assert (install_dir / "config" / "head-send-lint.json").read_bytes() == (
+        ROOT / "config" / "head-send-lint.json"
+    ).read_bytes()
     assert not (install_dir / "VERSION").exists()
     assert not (install_dir / "integrations").exists()
     assert not (home / ".claude" / "skills" / "delegate").exists()

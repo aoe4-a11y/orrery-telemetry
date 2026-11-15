@@ -1,0 +1,7 @@
+#!/bin/bash
+# 殿の画面に Simulator の窓を出さない。走行は止めない。
+# 2026-09-10: head が 2 度、窓で殿の画面を占領した。規律ではなく仕掛けで止める。
+# 消すのではなく【隠す】ので、実行中の UI テストは死なない。
+if pgrep -x Simulator >/dev/null 2>&1; then
+  osascript -e 'tell application "System Events" to set visible of process "Simulator" to false' >/dev/null 2>&1
+fi

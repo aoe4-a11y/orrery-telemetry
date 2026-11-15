@@ -1,5 +1,7 @@
 # ORRERY Telemetry
 
+この fork の fleet 更新は `scripts/run-mail-fetch-upgrade-from-ref.sh` の preview を確認し、所有者が対話実行します。
+
 [English](README.en.md)
 
 Claude Code・Codex・DeepSeek・Local LLMのagentが直接話し、仕事を分担し、結果を確かめ合う。その働きとMailの往復を一枚の画面で見渡せるのがORRERY Telemetryです。Claude CodeとCodexは各CLI、DeepSeekとLocal LLMはdshまたはHermesを使います。使いたい系統を選んで準備でき、DeepSeek・LocalのためにClaude CodeやCodexを先に入れる必要はありません。ターミナルも同じ画面で使う[ORRERY cockpit](https://github.com/gyroid-eth/orrery)と組み合わせて使えます。

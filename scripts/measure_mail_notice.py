@@ -28,11 +28,11 @@ PROGRAM = 'mail-notice-measure'
 PHASES = ('warmup', 'normal', 'burst', 'recovery')
 NAME = re.compile(r'[A-Za-z][A-Za-z0-9-]{0,127}')
 NONCE = r'notice-probe/([0-9a-f-]{36})/(warmup|normal|burst|recovery)/([1-9][0-9]*)'
-NOTICE = re.compile(r'ORRERY Mail notification: message from ([A-Za-z][A-Za-z0-9-]*) '
+NOTICE = re.compile(r'(?:ORRERY Mail|AgentStack mail) notification: (?:message_id=[1-9][0-9]*; )?message from ([A-Za-z][A-Za-z0-9-]*) '
                     r'\[(low|normal|high|urgent)\]: (' + NONCE + r')\. Body ')
 BEGIN, END = b'\x1b[200~', b'\x1b[201~'
 SCHEMA = 1
-BASELINE_WATCHER_SHA256 = 'bc3f55df03c4a947cf267e2b224256315e3cb2e12dffbfcc6050ac50452cd103'
+BASELINE_WATCHER_SHA256 = 'daee6e0e7591f308919b1384cdcaaa91811b591f3449e6fdb62fbad1f34857a5'
 
 
 class MeasurementError(ValueError):
@@ -103,6 +103,7 @@ class PasteParser:
         self.buffer = bytearray()
         self.pasted = bytearray()
         self.pending = []
+        self.literal = bytearray()
         self.inside = False
         self.errors = 0
 
@@ -125,11 +126,12 @@ class PasteParser:
             if self.inside:
                 self.pasted.append(byte)
             elif byte == 13:
-                if self.pending:
-                    submitted.append(b''.join(self.pending))
+                if self.pending or self.literal:
+                    submitted.append(b''.join(self.pending) + bytes(self.literal))
                     self.pending.clear()
+                    self.literal.clear()
             else:
-                self.errors += 1
+                self.literal.append(byte)
         return submitted
 
 

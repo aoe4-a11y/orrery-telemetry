@@ -44,7 +44,7 @@ BUNDLED_OVERFLOW = ("gpt-5.6-sol", "gpt-5.6-luna", "gpt-5.5")
 ALIASES = {"sol": DEFAULT_MODEL, "luna": "gpt-6-luna",
            "astra": "gpt-6-astra", "terra": "gpt-5.6-terra"}
 EFFORTS = ("none", "minimal", "low", "medium", "high", "xhigh", "max", "ultra")
-DEFAULT_EFFORT = "xhigh"
+DEFAULT_EFFORT = os.environ.get("AGENTSTACK_CODEX_EFFORT_DEFAULT", "medium")  # R-062
 MODEL_RE = re.compile(r"gpt-[a-z0-9]+(?:[._-][a-z0-9]+)*")
 MAX_BYTES = 2 * 1024 * 1024
 MAX_MODELS = 256
@@ -492,6 +492,15 @@ def candidate_models() -> tuple[str, ...]:
     return tuple(dict.fromkeys((*DEFAULT_MODELS, *sorted(discover_models()))))
 
 
+def _fleet_effort_default(policy: EffortPolicy | None) -> str:
+    if policy is None:
+        return ""
+    if policy.default not in ("xhigh", "max", "ultra") or os.environ.get("AGENTSTACK_ALLOW_XHIGH") == "1":
+        return policy.default
+    return "medium" if "medium" in policy.supported else next(
+        (level for level in policy.supported if level not in ("xhigh", "max", "ultra")), "")
+
+
 def resolve_effort(model: str, raw: str = "", catalog: ModelCatalog | None = None) -> str:
     """Unknown metadata leaves an omitted effort to Codex; never guesses a tier."""
     model = normalize_model(model, catalog=catalog)
@@ -504,9 +513,11 @@ def resolve_effort(model: str, raw: str = "", catalog: ModelCatalog | None = Non
         raise ValueError(catalog.error)
     policy = catalog.efforts.get(model)
     if not effort:
-        effort = _default_setting("AGENTSTACK_CODEX_DEFAULT_EFFORT").strip().lower()
-        if not effort:
-            return policy.default if policy else ""
+        effort = _default_setting("AGENTSTACK_CODEX_DEFAULT_EFFORT").strip().lower() or _fleet_effort_default(policy)
+    if effort in ("xhigh", "max", "ultra") and os.environ.get("AGENTSTACK_ALLOW_XHIGH") != "1":
+        raise ValueError("reasoning effort disabled by R-062; set AGENTSTACK_ALLOW_XHIGH=1 only with a head ruling")
+    if not effort:
+        return ""
     if effort not in EFFORTS:
         raise ValueError("unknown Codex reasoning effort")
     # Explicit effort remains the operator choice; Codex validates it at launch.
@@ -517,6 +528,8 @@ def provider_catalog() -> dict:
     catalog = resolve_catalog()
     configured_effort = _default_setting("AGENTSTACK_CODEX_DEFAULT_EFFORT").strip().lower()
     effort_error = "invalid AGENTSTACK_CODEX_DEFAULT_EFFORT" if configured_effort and configured_effort not in EFFORTS else ""
+    def permitted(level):
+        return level not in ("xhigh", "max", "ultra") or os.environ.get("AGENTSTACK_ALLOW_XHIGH") == "1"
     return {
         "id": "codex", "label": "Codex", "program": "codex-cli",
         "models": list(catalog.models), "default_model": "" if catalog.error and "AGENTSTACK_CODEX_DEFAULT_MODEL" in catalog.error else catalog.default_model,
@@ -525,9 +538,9 @@ def provider_catalog() -> dict:
         "default_effort_error": effort_error,
         "model_note": catalog.note,
         "overflow_models": list(catalog.overflow),
-        "efforts": list(_STANDARD), "effort_default": configured_effort or DEFAULT_EFFORT,
-        "model_efforts": {model: list(catalog.efforts[model].supported) if model in catalog.efforts else [] for model in catalog.models},
-        "model_effort_defaults": {model: configured_effort or (catalog.efforts[model].default if model in catalog.efforts else "") for model in catalog.models},
+        "efforts": [level for level in _STANDARD if permitted(level)], "effort_default": configured_effort or DEFAULT_EFFORT,
+        "model_efforts": {model: [level for level in catalog.efforts[model].supported if permitted(level)] if model in catalog.efforts else [] for model in catalog.models},
+        "model_effort_defaults": {model: configured_effort if configured_effort and permitted(configured_effort) else _fleet_effort_default(catalog.efforts.get(model)) for model in catalog.models},
     }
 
 

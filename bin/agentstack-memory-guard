@@ -1,0 +1,11 @@
+#!/bin/bash
+# R-183 / M-117: advisory only. No signals, simctl, pane control or mailbox reads.
+# Existing launchd job calls this every 10 seconds.
+set -euo pipefail
+guard_result=0
+"${AGENTSTACK_HOME:-$HOME/.agentstack}/bin/agentstack-memory-budget" guard || guard_result=$?
+# M-118 runs even if memory measurement failed. Reuse this existing 10s job.
+crash_result=0
+"${AGENTSTACK_HOME:-$HOME/.agentstack}/bin/agentstack-sim-crash-watch" || crash_result=$?
+[ "$guard_result" -ne 0 ] || guard_result="$crash_result"
+exit "$guard_result"

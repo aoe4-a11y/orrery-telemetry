@@ -1,0 +1,3 @@
+• Working (4h 03m 07s • esc to interrupt) · 2 background terminals running · /ps to view · /stop to close
+› Ask Codex to do anything
+gpt-6.1-sol high · /fixture

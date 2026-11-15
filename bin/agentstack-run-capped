@@ -1,0 +1,173 @@
+#!/usr/bin/env python3
+"""Run one job in its own process group; measure per-process macOS footprint.
+
+Always print a final summary to stderr; a cap breach also prints one warning line.
+"""
+import argparse
+import ctypes
+import errno
+import json
+import math
+import os
+from pathlib import Path
+import re
+import signal
+import subprocess
+import sys
+import time
+
+MIB = 1024 ** 2
+INTERVAL = 2.0
+KILL_WAIT_SECONDS = 30.0
+
+class RusageV2(ctypes.Structure):
+    _fields_ = [("uuid", ctypes.c_ubyte * 16)] + [(name, ctypes.c_uint64) for name in ("user", "system", "pkg", "interrupt", "pageins", "wired", "resident", "phys_footprint", "start", "end", "child_user", "child_system", "child_pkg", "child_interrupt", "child_pageins", "child_elapsed", "read", "written")]
+
+libproc = ctypes.CDLL("/usr/lib/libproc.dylib", use_errno=True)
+libproc.proc_pid_rusage.argtypes = (ctypes.c_int, ctypes.c_int, ctypes.c_void_p)
+libproc.proc_pid_rusage.restype = ctypes.c_int
+
+
+def output(args):
+    return subprocess.run(args, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
+                          text=True, check=True, timeout=15, env=dict(os.environ, LC_ALL='C')).stdout
+
+
+def memory(value):
+    m = re.fullmatch(r'(\d+(?:\.\d+)?)([BKMGT]?)[+-]?', value)
+    if not m:
+        raise ValueError('unreadable memory')
+    return float(m[1]) * {'': 1/MIB, 'B': 1/MIB, 'K': 1/1024,
+                          'M': 1, 'G': 1024, 'T': 1024**2}[m[2]]
+
+
+def census(pgid):
+    values = {}
+    for line in output(['/bin/ps', '-axo', 'pid=,pgid=,comm=']).splitlines():
+        row = line.strip().split(None, 2)
+        if len(row) != 3 or int(row[1]) != pgid:
+            continue
+        pid = int(row[0])
+        usage = RusageV2()
+        if libproc.proc_pid_rusage(pid, 2, ctypes.byref(usage)):
+            error = ctypes.get_errno()
+            if error == errno.ESRCH:
+                continue
+            raise OSError(error, 'process footprint unavailable')
+        values[pid] = (safe_name(Path(row[2]).name), usage.phys_footprint / MIB)
+    return values
+
+
+def live_group(pgid):
+    # A zombie leader is reaped before checking its group. Never use killpg(0).
+    rows = output(['/bin/ps', '-axo', 'pgid=,stat=']).splitlines()
+    return sum(1 for line in rows if len(row := line.split()) == 2
+               and row[0] == str(pgid) and not row[1].startswith('Z'))
+
+
+def wait_for_group(job, timeout):
+    deadline = time.monotonic() + timeout
+    while True:
+        job.poll()
+        remaining = live_group(job.pid)
+        if not remaining or time.monotonic() >= deadline:
+            return remaining
+        time.sleep(min(.1, max(0, deadline - time.monotonic())))
+
+
+def safe_name(value):
+    # No free-form strings, path separators, controls, or command arguments in records.
+    return re.sub(r'[^A-Za-z0-9_.-]', '_', value)[:80] or 'job'
+
+
+def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--max-gb', type=float)
+    parser.add_argument('--name', default='job')
+    parser.add_argument('--sample-dir', default='.')
+    parser.add_argument('command', nargs=argparse.REMAINDER)
+    args = parser.parse_args()
+    cmd = args.command
+    if cmd and cmd[0] == '--': cmd = cmd[1:]
+    if not cmd: parser.error('command required after --')
+    try:
+        limit = args.max_gb if args.max_gb is not None else float(os.environ['AGENTSTACK_JOB_MAX_GB']) if 'AGENTSTACK_JOB_MAX_GB' in os.environ else int(output(['/usr/sbin/sysctl', '-n', 'hw.memsize']).strip()) / 1024**3 * .30
+        if not math.isfinite(limit) or limit <= 0: raise ValueError()
+    except (ValueError, subprocess.SubprocessError):
+        parser.error('invalid or unavailable memory limit')
+    name = safe_name(args.name)
+    started = time.monotonic()
+    try:
+        job = subprocess.Popen(cmd, start_new_session=True)
+    except OSError:
+        print('agentstack-run-capped: command could not be started', file=sys.stderr)
+        return 127
+    peak = 0.0
+    exceeded = None
+    measurement_failed = False
+    # Forward interactive termination to this job, never the caller's group.
+    def forward(sig, _frame):
+        try: os.killpg(job.pid, sig)
+        except ProcessLookupError: pass
+    for sig in (signal.SIGINT, signal.SIGTERM, signal.SIGHUP): signal.signal(sig, forward)
+    while job.poll() is None:
+        try:
+            sample = census(job.pid)
+            for pid, (process, mb) in sample.items():
+                peak = max(peak, mb)
+                if mb > limit * 1024 and (exceeded is None or mb > exceeded[2]):
+                    exceeded = (pid, process, mb)
+        except (OSError, ValueError, subprocess.SubprocessError):
+            measurement_failed = True
+        if exceeded:
+            pid, process, mb = exceeded
+            sample_status = 'sample 取れず'
+            growth = 'unknown'
+            sample_path = Path(args.sample_dir) / f'run-capped-{name}-{pid}.sample.txt'
+            try:
+                fd = os.open(sample_path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+                os.close(fd)
+                result = subprocess.run(['/usr/bin/sample', str(pid), '3', '-file', str(sample_path)],
+                                        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=6)
+                if result.returncode == 0 and sample_path.stat().st_size:
+                    sample_status = 'sample 取得'
+            except (OSError, subprocess.SubprocessError):
+                pass
+            try:
+                after = census(job.pid).get(pid)
+                if after:
+                    growth = f'{after[1]-mb:+.1f}MiB'
+                    peak = max(peak, after[1])
+            except (OSError, ValueError, subprocess.SubprocessError):
+                measurement_failed = True
+            try: os.killpg(job.pid, signal.SIGTERM)
+            except ProcessLookupError: pass
+            # The leader may already be gone; inspect all non-zombie members.
+            remaining = wait_for_group(job, 10)
+            if remaining:
+                try: os.killpg(job.pid, signal.SIGKILL)
+                except ProcessLookupError: pass
+                remaining = wait_for_group(job, KILL_WAIT_SECONDS)
+            print(f'agentstack-run-capped: {name} pid={pid} process={process} peak={peak:.1f}MiB limit={limit*1024:.1f}MiB {sample_status} sample増加={growth} 残り {remaining}; 全体を流し直さず、file ごとに分けて測る（M-120）', file=sys.stderr, flush=True)
+            break
+        if job.poll() is None:
+            try: job.wait(timeout=INTERVAL)
+            except subprocess.TimeoutExpired: pass
+    raw_rc = 86 if exceeded else job.returncode
+    rc = 128 + (-raw_rc) if raw_rc < 0 else raw_rc
+    elapsed = time.monotonic() - started
+    record = dict(name=name, peak_mib=round(peak, 1), seconds=round(elapsed, 2), exit=rc, measurement='incomplete' if measurement_failed else 'sampled')
+    print('agentstack-run-capped: ' + ' '.join(f'{k}={v}' for k, v in record.items()), file=sys.stderr)
+    try:
+        path = Path.home()/'.agentstack/runtime/job-peaks.jsonl'
+        with path.open('a') as f: f.write(json.dumps(record, ensure_ascii=True, separators=(',', ':')) + '\n')
+    except OSError:
+        print('agentstack-run-capped: peak record unavailable', file=sys.stderr)
+    if raw_rc < 0:
+        signum = -raw_rc
+        signal.signal(signum, signal.SIG_DFL)
+        os.kill(os.getpid(), signum)
+    return rc
+
+if __name__ == '__main__':
+    raise SystemExit(main())

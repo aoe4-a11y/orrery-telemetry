@@ -1,0 +1,23 @@
+{
+  "extension_version": 1,
+  "reason": "Recipient-scoped exact message retrieval; legacy schema fields and required arguments remain frozen.",
+  "tools": {
+    "fetch_inbox": {
+      "inputSchema": {
+        "properties": {
+          "message_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
+          }
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,20 @@
+#!/bin/bash
+# owner-sheet-health: GET each owner-sheet server; restart the one that fails (head の巡回で 1 回呼ぶ・P-017 #6 追記)
+set -u
+R=~/.agentstack/runtime
+check() { # name port html out
+  local name=$1 port=$2 html=$3 out=$4
+  if python3 - "$port" <<'PY' 2>/dev/null; then echo "$name ok"; return; fi
+import sys,urllib.request,socket
+socket.setdefaulttimeout(15)
+r=urllib.request.urlopen(f"http://127.0.0.1:{sys.argv[1]}/"); sys.exit(0 if r.status==200 and len(r.read())>1000 else 1)
+PY
+  local pid; pid=$(cat "$R/owner-sheet-server-$name.pid" 2>/dev/null)
+  [ -n "${pid:-}" ] && kill "$pid" 2>/dev/null; sleep 1
+  nohup python3 -u ~/.agentstack/bin/owner-sheet-server.py --html "$html" --out "$out" --port "$port" >> "$(dirname "$html")/server.log" 2>&1 &
+  echo $! > "$R/owner-sheet-server-$name.pid"; sleep 2
+  echo "$name RESTARTED pid $(cat "$R/owner-sheet-server-$name.pid") ($(date '+%F %T'))"
+}
+P=/Volumes/DevSSD-Private/owner-sheets
+check d1 8935 "$P/D-1-20260921/d1-owner-page.html" "$P/D-1-20260921/scores.json"
+check r37 8936 "$P/R-37-20260923/r37-page.html" "$P/R-37-20260923/scores.json"

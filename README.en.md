@@ -1,5 +1,7 @@
 # ORRERY Telemetry
 
+For this fork, review the fleet upgrade preview in `scripts/run-mail-fetch-upgrade-from-ref.sh`; the owner runs the install interactively.
+
 [日本語](README.md)
 
 Claude Code, Codex, DeepSeek and Local LLM agents can talk directly, divide the work and check each other's results. ORRERY Telemetry shows their work and Mail round trips on one screen. Claude Code and Codex use their own CLIs; DeepSeek and Local LLMs use dsh or Hermes. Choose which to prepare: you do not need to install Claude Code or Codex before using DeepSeek or Local models. Pair Telemetry with [ORRERY cockpit](https://github.com/gyroid-eth/orrery) to use their terminals in the same workspace.

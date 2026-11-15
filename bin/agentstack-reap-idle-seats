@@ -1,0 +1,345 @@
+#!/bin/bash
+# Close finished Codex child seats (owner ruling 2026-08-12: no idle RAM occupation).
+# Installed copy: ~/.agentstack/bin/agentstack-reap-idle-seats (launchd every 600 s).
+# Repository copy: tools/agentstack/agentstack-reap-idle-seats (tests: scripts/test_reap_idle_seats.sh).
+# FAIL-CLOSED (rewritten 2026-09-08 after ops review of the fail-open v1):
+#   - only sessions that have a managed child CODEX_HOME are candidates
+#   - any failure to read the mail DB, protection list, or a pane => abort/skip, never kill
+#   - a candidate must have a rollout file on disk (evidence lives on disk, not in the pane)
+#   - every closure is logged individually with a reason
+# OPS-3 (2026-10-04) / OPS-3b (2026-10-05): seats that were only waiting on the heavy guard were closed, and a closed
+# seat's wait ticket stayed at the queue head with no owner (HardyMendeleev stalled 4.5 h).
+#   - keep a seat whose process tree holds a heavy_job_lock slot or wait ticket
+#   - keep a seat with any live work process under its pane (launches, watchers, sleeps);
+#     only the agent itself and its resident helpers (MCP servers, REPL) may remain
+#   - R-183: [blocked], untagged and unfinished mail do not retain idle RAM indefinitely
+#   - closing (also `--close SEAT REASON`) stops the seat's work processes and removes its
+#     tickets and slots, then reports every closure to the head by mail
+#
+# usage: agentstack-reap-idle-seats [--dry-run]
+#        agentstack-reap-idle-seats --close SEAT "REASON"     (forced close with full cleanup)
+#        agentstack-reap-idle-seats --attribute SEAT           (read-only: the seat's work and heavy entries)
+set -u
+DB="${REAP_DB:-$HOME/.agentstack/mail/storage.sqlite3}"
+PROTECT_FILE="${REAP_PROTECT_FILE:-$HOME/.agentstack/runtime/protected-seats.txt}"
+CHILD_ROOT="${REAP_CHILD_ROOT:-$HOME/.agentstack/runtime/child-agents}"
+LOG="${REAP_LOG:-$HOME/.agentstack/runtime/reap-seats.log}"
+STRIKE_DIR="${REAP_STRIKE_DIR:-$HOME/.agentstack/runtime/reap-strikes}"; mkdir -p "$STRIKE_DIR"
+TMUX_BIN="${REAP_TMUX:-tmux}"
+NOTIFY_TO="${REAP_NOTIFY_TO:-ProudTuring}"
+user_tmp="${TMPDIR:-$(getconf DARWIN_USER_TEMP_DIR 2>/dev/null || echo /tmp)}"
+LOCK_ROOT="${REAP_HEAVY_LOCK_ROOT:-${user_tmp%/}/examforge-heavy-slots}"
+# Resident helpers an idle agent keeps under its pane. Anything else is the seat's own work.
+RESIDENT_RE="${REAP_RESIDENT_RE:-(^|/)(codex|claude)( |$)|@openai/codex|/bin/codex-[a-z-]+|mcp_server\.py|/mcp/server\.mjs|node_repl|(^| )caffeinate( |$)}"
+IDLE_SECONDS="${REAP_IDLE_SECONDS:-180}"
+[[ "$IDLE_SECONDS" =~ ^[0-9]+$ ]] && [ "$IDLE_SECONDS" -gt 0 ] || { echo "invalid REAP_IDLE_SECONDS" >&2; exit 2; }
+DRY=""; FORCE_SEAT=""; FORCE_REASON=""; ATTRIBUTE_SEAT=""
+case "${1:-}" in
+  --dry-run) DRY="--dry-run" ;;
+  --attribute) ATTRIBUTE_SEAT="${2:-}" ;;
+  --close) FORCE_SEAT="${2:-}"; FORCE_REASON="${3:-forced close}"
+           [ -n "$FORCE_SEAT" ] || { echo "usage: $0 --close SEAT REASON" >&2; exit 2; } ;;
+esac
+ts() { date '+%F %T'; }
+# launchd sends stdout to the same log; write once.
+say() { if [ "$DRY" = "--dry-run" ] || [ -t 1 ]; then echo "$(ts) $*"; fi
+        [ "$DRY" = "--dry-run" ] || echo "$(ts) $*" >> "$LOG"; }
+CLOSED_REPORT=""
+
+# ---- seat attribution -------------------------------------------------------------------
+# OPS-3b (2026-10-05): MellowFeynman was closed while its resume helpers (nohup'd python,
+# reparented away from the pane) and two old-format heavy tickets (no owner file) were alive.
+# A process belongs to the seat when it is under the seat's pane, carries AGENT_NAME=<seat>,
+# or names one of the seat's storage-governor roots in its argv/env; their descendants too.
+# A heavy slot/ticket belongs to the seat by its owner file, or when its pid or an ancestor
+# of that pid belongs to the seat.
+REGISTRY_GLOBS="${REAP_REGISTRY_GLOBS:?registry paths must be configured}" # __FLEET_REAPER_REGISTRY_ASSIGNMENT__
+# attribute SEAT -> broad work/heavy idle guards, rules, protected peers, narrow stop/remove-heavy rows.
+# OPS-REAP-SHARED-1 / M-079: all live seats share one ps snapshot; service/device protection
+# is independent of attribution. A protected pane descendant also forbids kill-session.
+attribute() {
+  python3 - "$1" "$LOCK_ROOT" "$RESIDENT_RE" "$REGISTRY_GLOBS" "$$" "$TMUX_BIN" <<'PY'
+import glob, json, os, re, shlex, subprocess, sys
+seat, lock_root, resident_re, globs, me, tmux = sys.argv[1:7]
+def tmux_lines(*args):
+    return subprocess.run([tmux, *args], capture_output=True, text=True, check=True).stdout.splitlines()
+# One process snapshot and all live seats: broad attribution stays the idle guard.
+live = set(tmux_lines("list-sessions", "-F", "#{session_name}"))
+if seat not in live:
+    raise SystemExit("attribution refused: target seat not live")
+panes_by_seat = {}
+for name in sorted(live):
+    values = tmux_lines("list-panes", "-t", name, "-F", "#{pane_pid}")
+    if not values or any(not value.isdigit() for value in values):
+        raise SystemExit("attribution refused: unreadable live pane")
+    panes_by_seat[name] = {int(value) for value in values}
+def ps(*fmt):
+    return subprocess.run([os.environ.get("REAP_PS", "ps"), "-axww", *fmt],
+                          capture_output=True, text=True, check=True).stdout.splitlines()
+parent, argv = {}, {}
+for line in ps("-o", "pid=,ppid=,command="):
+    fields = line.split(None, 2)
+    if len(fields) >= 2 and fields[0].isdigit():
+        parent[int(fields[0])] = int(fields[1])
+        argv[int(fields[0])] = fields[2] if len(fields) == 3 else ""
+environ = {}
+for line in ps("-E", "-o", "pid=,command="):
+    fields = line.split(None, 1)
+    if fields and fields[0].isdigit():
+        pid = int(fields[0]); full = fields[1] if len(fields) > 1 else ""
+        command = argv.get(pid, "")
+        environ[pid] = full[len(command):] if full.startswith(command) else full
+roots_by_seat = {}
+for pattern in globs.split(":"):
+    for path in glob.glob(pattern):
+        try:
+            with open(path) as handle:
+                owner = json.load(handle).get("owner")
+            roots_by_seat.setdefault(owner, set()).add(os.path.basename(os.path.dirname(path)))
+        except (OSError, ValueError):
+            continue
+def ancestors(pid):
+    seen = []
+    while pid in parent and pid > 1 and pid not in seen and len(seen) < 128:
+        pid = parent[pid]; seen.append(pid)
+    return seen
+lineage = {pid: set(ancestors(pid)) for pid in argv}
+skip = {int(me)} | set(ancestors(int(me))) | {os.getpid()} | set(ancestors(os.getpid()))
+skip |= {pid for pid in argv if os.getpid() in lineage[pid]}
+members, reasons = {}, {}
+for name, panes in panes_by_seat.items():
+    seeds, rules = set(), {}
+    token = re.compile(r"(^|\s)AGENT_NAME=%s(\s|$)" % re.escape(name))
+    roots = roots_by_seat.get(name, set())
+    for pid, command in argv.items():
+        if pid in skip:
+            continue
+        if panes & lineage[pid]:
+            seeds.add(pid); rules[pid] = "pane"
+        elif token.search(environ.get(pid, "")):
+            seeds.add(pid); rules[pid] = "AGENT_NAME"
+        elif roots and any(root in command or root in environ.get(pid, "") for root in roots):
+            seeds.add(pid); rules[pid] = "root"
+    mine = seeds | {pid for pid in argv if pid not in skip and seeds & lineage[pid]}
+    members[name] = mine - panes
+    reasons[name] = {pid: sorted({rules[p] for p in ({pid} | lineage[pid]) if p in rules})
+                     for pid in members[name]}
+mine = members[seat]
+work = {pid for pid in mine if not re.search(resident_re, argv.get(pid, ""))}
+# JF1: only the pane's first interactive agent is resident. A second Codex,
+# including `codex exec`, is work even if RESIDENT_RE matches its executable.
+# Keep node launch shims resident, but never classify every native CLI as idle.
+agent_pids = set()
+exec_workers = set()
+for pid in mine:
+    try:
+        words = shlex.split(argv.get(pid, ""))
+    except ValueError:
+        work.add(pid)
+        continue
+    if words and os.path.basename(words[0]) in ("codex", "claude"):
+        agent_pids.add(pid)
+        if "exec" in words[1:]:
+            exec_workers.add(pid)
+primary = set()
+for pane_pid in panes_by_seat[seat]:
+    under = [pid for pid in agent_pids - exec_workers if pane_pid in lineage[pid]]
+    if under:
+        primary.add(min(under, key=lambda pid: (len(lineage[pid]), pid)))
+work |= agent_pids - primary
+heavy, heavy_pids, heavy_owners, heavy_peers = [], set(), {}, {}
+for entry in sorted(glob.glob(os.path.join(lock_root, "slot-*")) + glob.glob(os.path.join(lock_root, "waiting", "ticket-*"))):
+    try:
+        with open(os.path.join(entry, "owner")) as handle:
+            owner = handle.read().strip()
+    except OSError:
+        owner = ""
+    try:
+        with open(os.path.join(entry, "pid")) as handle:
+            pid = int(handle.read().strip())
+    except (OSError, ValueError):
+        pid = None
+    if pid is not None and owner in live:
+        heavy_peers.setdefault(pid, set()).add(owner)
+    if owner == seat or (pid is not None and (pid in mine or mine & set(ancestors(pid)))):
+        heavy.append(entry)
+        heavy_owners[entry] = (owner, pid)
+        if pid is not None:
+            heavy_pids.add(pid)
+# No reliable device-exclusive ownership exists here. Conservatively protect every
+# Simulator process (including reparented apps identified by device environment).
+service_re = re.compile(r"(^|[/\s.])(SWBBuildService|XCBBuildService|CoreSimulatorService|launchd_sim|SimulatorTrampoline|Simulator|SimulatorBridge|SimLaunchHost(?:-[A-Za-z0-9_]+)?|simdiskimaged)(?=$|[\s/])")
+device_re = re.compile(r"/CoreSimulator/Devices/|(^|\s)SIMULATOR_(?:UDID|DEVICE_NAME|ROOT)=")
+services = {pid for pid, command in argv.items() if service_re.search(command)}
+devices = {pid for pid, command in argv.items()
+           if device_re.search(command + " " + environ.get(pid, ""))}
+protected = {}
+# Also inspect resident helpers/panes: kill-session sends SIGHUP to pane descendants.
+candidates = mine | heavy_pids | panes_by_seat[seat]
+for pid in candidates:
+    peers = sorted(name for name in live - {seat} if pid in members[name] or pid in panes_by_seat[name] or name in heavy_peers.get(pid, set()))
+    why = []
+    if peers: why.append("other-live-seat")
+    if pid in services or services & lineage.get(pid, set()): why.append("shared-service")
+    if pid in devices or devices & lineage.get(pid, set()): why.append("simulator-device")
+    # Missing heavy PID identity cannot safely authorize a signal.
+    if pid not in argv: why.append("unknown-process")
+    if why:
+        protected[pid] = (why, peers)
+for pid in sorted(work):
+    # Never expose root names or private argv/environment in diagnostics or logs.
+    print("work\t%d\tattributed-process" % pid)
+    print("rule\t%d\t%s" % (pid, ",".join(reasons[seat].get(pid, []))))
+for entry in heavy:
+    print("heavy\t%s" % entry)
+for pid, (why, peers) in sorted(protected.items()):
+    print("protected\t%d\t%s\t%s" % (pid, ",".join(why), ",".join(peers) or "-"))
+    if pid in panes_by_seat[seat] or panes_by_seat[seat] & lineage.get(pid, set()):
+        print("close-blocked\t%d" % pid)
+for entry, (owner, pid) in heavy_owners.items():
+    if (not owner or owner == seat) and (pid is None or pid not in protected):
+        print("remove-heavy\t%s" % entry)
+    else:
+        print("protected-heavy\t%s" % os.path.basename(entry))
+for pid in sorted((work | heavy_pids) - protected.keys() - skip):
+    print("stop\t%d" % pid)
+
+PY
+}
+
+# ---- mail ----------------------------------------------------------------------------------
+# R-183: latest sent/received mail starts a short quiet period, regardless of tag.
+# Unread instructions remain in Mail for restart; they do not pin an idle process forever.
+mail_quiet() {
+  local recent
+  recent=$(sqlite3 "file:$DB?mode=ro" "select count(*) from messages m
+    where m.created_ts >= datetime('now','-$IDLE_SECONDS seconds') and
+    (m.sender_id in (select id from agents where name='$1') or m.id in
+      (select r.message_id from message_recipients r join agents a on a.id=r.agent_id
+       where a.name='$1' and r.kind='to'))" 2>/dev/null) || return 1
+  [ "${recent:-1}" -eq 0 ]
+}
+
+notify_head() {  # one mail per run listing every closure (sender: head, as the supervisor heartbeat)
+  [ -n "$CLOSED_REPORT" ] || return 0
+  [ "$DRY" = "--dry-run" ] && return 0
+  printf '%s' "$CLOSED_REPORT" | python3 -c '
+import sys
+from pathlib import Path
+sys.path.insert(0, str(Path.home()/".agentstack/bin"))
+from agentstack_stallself import send_server, sent_id
+response = send_server(dict(seat=sys.argv[1], subject="[progress] R-183 idle seats closed",
+    body_md=sys.stdin.read()+"\nRollout/worktree は保持。共有・Simulator process は保護。restart-seat で再開。"))
+if sent_id(response) is None: raise SystemExit(1)
+' "$NOTIFY_TO" || say "WARN formal notice to $NOTIFY_TO failed"
+
+}
+
+# REAP_KILL allows isolated tests to record signals; production uses the shell builtin.
+signal_pid() { if [ -n "${REAP_KILL:-}" ]; then "$REAP_KILL" "$@"; else kill "$@"; fi; }
+
+# ---- close ---------------------------------------------------------------------------------
+close_seat() {  # seat reason [normal|forced] [observed pane digest]
+  local s="$1" why="$2" mode="${3:-normal}" expected="${4:-}" found work heavy stopped pid d label protected final_pane final_digest
+  found="$(attribute "$s")" || { say "close $s refused: attribution failed"; return 1; }
+  if [ "$mode" != forced ]; then
+    # Final observations authorize ordinary collection, never termination of work.
+    # --close retains its explicit forced semantics and the M-079 checks below.
+    [ -r "$PROTECT_FILE" ] || { say "close $s refused: protection list unreadable"; return 1; }
+    grep -qx "$s" "$PROTECT_FILE" && { say "close $s refused: protected seat"; return 1; }
+    if printf '%s\n' "$found" | grep -qE '^(work|heavy)[[:space:]]'; then
+      say "close $s refused: work/heavy found at final check"; return 1
+    fi
+    mail_quiet "$s" || { say "close $s refused: recent mail or query unavailable"; return 1; }
+    final_pane=$("$TMUX_BIN" capture-pane -p -t "$s" 2>/dev/null) || { say "close $s refused: final pane unavailable"; return 1; }
+    printf '%s' "$final_pane" | grep -qE 'Working \(|esc to interrupt' && { say "close $s refused: final pane working"; return 1; }
+    final_digest=$(printf '%s' "$final_pane" | shasum -a 256 | awk '{print $1}')
+    [ -n "$expected" ] && [ "$final_digest" = "$expected" ] || { say "close $s refused: pane changed"; return 1; }
+  fi
+  work="$(printf '%s\n' "$found" | awk -F'\t' '$1=="stop"{print $2}')"
+  heavy="$(printf '%s\n' "$found" | awk -F'\t' '$1=="remove-heavy"{print $2}')"
+  protected="$(printf '%s\n' "$found" | awk -F'\t' '$1=="protected"{print "pid=" $2 " reasons=" $3 " peers=" $4}')"
+  if [ -n "$protected" ]; then
+    while IFS= read -r label; do say "preserved $s: $label"; done <<< "$protected"
+  fi
+  if printf '%s\n' "$found" | grep -q '^close-blocked'; then
+    say "close $s refused: protected process depends on pane; $protected"
+    CLOSED_REPORT="$CLOSED_REPORT- ${s} — close refused (protected pane dependency); preserved: $protected
+"
+    return 1
+  fi
+  if [ "$DRY" = "--dry-run" ]; then say "would close $s: $why"; return 0; fi
+  "$TMUX_BIN" kill-session -t "$s" 2>/dev/null || { say "close $s failed: kill-session"; return 1; }
+  # The pane's own processes got SIGHUP; detached work (nohup, background terminals) did not.
+  stopped=""
+  for pid in $work; do
+    signal_pid -TERM "$pid" 2>/dev/null && stopped="$stopped $pid"
+  done
+  [ -z "$stopped" ] || sleep 2
+  for pid in $stopped; do signal_pid -KILL "$pid" 2>/dev/null || true; done
+  for d in $heavy; do
+    label="$(cat "$d/name" 2>/dev/null || echo '?')"
+    rm -rf "${d:?}" && say "removed heavy entry $(basename "$d") ($label) of $s"
+  done
+  rm -f "${STRIKE_DIR:?}/$s"
+  say "closed $s: $why; stopped pids:${stopped:- none}; preserved: ${protected:-none}; heavy entries: $(printf '%s\n' "$heavy" | grep -c . | tr -d ' ')"
+  CLOSED_REPORT="$CLOSED_REPORT- ${s} — ${why}（止めた process:${stopped:- なし}・保護: ${protected:-なし}・heavy の札/slot: $(printf '%s\n' "$heavy" | grep -c . | tr -d ' ')）
+"
+}
+
+if [ -n "$ATTRIBUTE_SEAT" ]; then  # read-only: what would keep this seat open
+  attribute "$ATTRIBUTE_SEAT"
+  exit $?
+fi
+
+if [ -n "$FORCE_SEAT" ]; then
+  "$TMUX_BIN" has-session -t "$FORCE_SEAT" 2>/dev/null || { echo "no such seat: $FORCE_SEAT" >&2; exit 1; }
+  close_result=0
+  close_seat "$FORCE_SEAT" "$FORCE_REASON (forced)" forced || close_result=$?
+  notify_head
+  exit "$close_result"
+fi
+
+[ -r "$PROTECT_FILE" ] || { say "ABORT protection list unreadable: $PROTECT_FILE"; exit 0; }
+[ -r "$DB" ] || { say "ABORT mail DB unreadable"; exit 0; }
+
+n=0
+for s in $("$TMUX_BIN" list-sessions -F '#{session_name}' 2>/dev/null); do
+  grep -qx "$s" "$PROTECT_FILE" && continue
+  [ -d "$CHILD_ROOT/$s.codex-home" ] || { say "keep $s: not a managed child"; continue; }
+  ls "$CHILD_ROOT/$s.codex-home"/sessions/*/*/*/rollout-*.jsonl >/dev/null 2>&1 || { say "keep $s: no rollout on disk"; continue; }
+  pane=$("$TMUX_BIN" capture-pane -p -t "$s" 2>/dev/null) || { say "keep $s: pane capture failed"; continue; }
+  tail8=$(printf '%s\n' "$pane" | grep -v '^\s*$' | tail -8)
+  printf '%s' "$pane" | grep -qE 'Working \(|esc to interrupt' && { say "keep $s: working"; [ "$DRY" = "--dry-run" ] || rm -f "${STRIKE_DIR:?}/$s"; continue; }
+  printf '%s' "$tail8" | grep -q 'Ask Codex to do anything' || { say "keep $s: composer not visible (unknown state)"; continue; }
+  # OPS-3: an idle composer is not a finished station.
+  found="$(attribute "$s")" || { say "keep $s: attribution failed"; continue; }
+  heavy="$(printf '%s\n' "$found" | awk -F'\t' '$1=="heavy"{print $2}')"
+  [ -z "$heavy" ] || { say "keep $s: holds heavy_job_lock $(printf '%s\n' "$heavy" | xargs -n1 basename | tr '\n' ' ')"; [ "$DRY" = "--dry-run" ] || rm -f "${STRIKE_DIR:?}/$s"; continue; }
+  work="$(printf '%s\n' "$found" | awk -F'\t' '$1=="work"{print $2"\t"$3}')"
+  [ -z "$work" ] || { say "keep $s: live work process $(printf '%s\n' "$work" | head -3 | cut -c1-80 | tr '\t\n' ' |')"; [ "$DRY" = "--dry-run" ] || rm -f "${STRIKE_DIR:?}/$s"; continue; }
+  mail_quiet "$s" || { say "keep $s: recent mail or mail query unavailable"; [ "$DRY" = "--dry-run" ] || rm -f "${STRIKE_DIR:?}/$s"; continue; }
+  # Two identical idle panes separated by 180 seconds. CODEX_HOME/sessions may
+  # be shared by symlink, so another seat's rollout mtime cannot be an idle clock.
+  pane_digest=$(printf '%s' "$pane" | shasum -a 256 | awk '{print $1}')
+  previous=$(cat "$STRIKE_DIR/$s" 2>/dev/null || true)
+  if [ "$previous" != "$pane_digest" ]; then
+    [ "$DRY" = "--dry-run" ] || printf '%s\n' "$pane_digest" > "$STRIKE_DIR/$s"
+    say "strike 1 $s: idle composer, re-check after ${IDLE_SECONDS}s"; continue
+  fi
+  stable=$(python3 - "$STRIKE_DIR/$s" "$IDLE_SECONDS" <<'PYIDLE'
+import os, sys, time
+try:
+    print('yes' if time.time()-os.stat(sys.argv[1]).st_mtime >= int(sys.argv[2]) else 'no')
+except (OSError, ValueError):
+    print('no')
+PYIDLE
+  )
+  [ "$stable" = yes ] || { say "keep $s: idle quiet period < ${IDLE_SECONDS}s"; continue; }
+  close_seat "$s" "R-183 idle >=${IDLE_SECONDS}s, 2 observations, no recent mail/work/heavy, rollout retained" normal "$pane_digest" && n=$((n+1))
+
+done
+# clear strikes for sessions that no longer exist or were seen working
+for f in "$STRIKE_DIR"/*; do [ -e "$f" ] || continue; b=$(basename "$f"); "$TMUX_BIN" has-session -t "$b" 2>/dev/null || { [ "$DRY" = "--dry-run" ] || rm -f "$f"; }; done
+notify_head
+say "done closed=$n remaining=$("$TMUX_BIN" list-sessions 2>/dev/null | wc -l | tr -d ' ')"

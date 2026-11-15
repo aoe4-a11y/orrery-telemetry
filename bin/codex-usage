@@ -1,0 +1,186 @@
+#!/usr/bin/env python3
+"""Read local rollout rate-limit snapshots; never contact Codex or alter state.
+
+R-093 / M-059: group by window_minutes (weekly can be primary). Latest rollout
+is selected by its filename timestamp, not mtime. Latest valid snapshot in that
+rollout wins, so a reset from 98% to 0% replaces the old value. Raw maxima across
+homes are retained for audit; alerts use only fresh, unexpired snapshots.
+"""
+import argparse
+import gzip
+import json
+import math
+import re
+import sys
+from datetime import datetime, timezone
+from pathlib import Path
+
+
+def epoch(value):
+    if isinstance(value, str):
+        return datetime.fromisoformat(value.replace("Z", "+00:00")).timestamp()
+    if isinstance(value, (int, float)) and not isinstance(value, bool) and math.isfinite(value):
+        return float(value)
+    raise ValueError("invalid timestamp")
+
+
+def iso(value):
+    return datetime.fromtimestamp(value, timezone.utc).isoformat().replace("+00:00", "Z")
+
+
+def reverse_lines(path):
+    if path.name.endswith(".gz"):
+        with gzip.open(path, "rb") as stream:
+            yield from reversed(stream.read().splitlines())
+        return
+    with path.open("rb") as stream:
+        stream.seek(0, 2)
+        position = stream.tell()
+        suffix = b""
+        while position:
+            count = min(position, 65536)
+            position -= count
+            stream.seek(position)
+            parts = (stream.read(count) + suffix).split(b"\n")
+            suffix = parts.pop(0)
+            yield from reversed(parts)
+        if suffix:
+            yield suffix
+
+
+def latest_rollout(root):
+    # Session filename prefix is an ISO creation timestamp. Ignore unrelated JSON.
+    pattern = re.compile(r"^rollout-\d{4}-\d\d-\d\dT\d\d-\d\d-\d\d-.*\.jsonl(?:\.gz)?$")
+    return max((p for p in root.rglob("rollout-*.jsonl*") if pattern.match(p.name)),
+               key=lambda p: (p.name.removesuffix(".gz"), str(p)), default=None)
+
+
+def snapshot(path):
+    for line in reverse_lines(path):
+        if b'"rate_limits"' not in line:
+            continue
+        try:
+            item = json.loads(line)
+            payload = item.get("payload")
+            if item.get("type") != "event_msg" or not isinstance(payload, dict) or payload.get("type") != "token_count":
+                continue
+            limits = payload.get("rate_limits")
+            if not isinstance(limits, dict):
+                continue
+            timestamp = epoch(item["timestamp"])
+            windows = []
+            for slot in ("primary", "secondary"):
+                window = limits.get(slot)
+                if not isinstance(window, dict):
+                    continue
+                used, minutes = window.get("used_percent"), window.get("window_minutes")
+                if isinstance(used, bool) or not isinstance(used, (int, float)) or not math.isfinite(used) or not 0 <= used <= 100:
+                    continue
+                if isinstance(minutes, bool) or not isinstance(minutes, int) or minutes <= 0:
+                    continue
+                reset = window.get("resets_at")
+                if reset is not None:
+                    try:
+                        reset = epoch(reset)
+                    except (ValueError, TypeError, OverflowError):
+                        reset = None
+                windows.append({"window_minutes": minutes, "used_percent": float(used),
+                                "observed_at": iso(timestamp), "timestamp": timestamp,
+                                "resets_at": iso(reset) if reset is not None else None,
+                                "reset_epoch": reset})
+            return windows  # Latest snapshot with no windows means unknown, not 0%.
+        except (ValueError, KeyError, TypeError, AttributeError, OverflowError):
+            continue  # Partial append or malformed event; do not emit its contents.
+    return []
+
+
+def collect(home, child_root, now, max_age):
+    roots = [("main", home / "sessions")]
+    if child_root.exists():
+        roots += [(p.name.removesuffix(".codex-home"), p / "sessions")
+                  for p in sorted(child_root.glob("*.codex-home"))]
+    latest_cache, snapshots = {}, {}
+    values, unknown, errors = [], 0, 0
+    for seat, root in roots:
+        try:
+            resolved = root.resolve()
+            if resolved not in latest_cache:
+                latest_cache[resolved] = latest_rollout(resolved)
+            path = latest_cache[resolved]
+            if path is None:
+                unknown += 1
+                continue
+            identity = path.resolve()
+            if identity not in snapshots:
+                snapshots[identity] = snapshot(identity)
+            windows = snapshots[identity]
+            if not windows:
+                unknown += 1
+            for window in windows:
+                row = dict(window, seat=seat, rollout=str(path))
+                row["age_seconds"] = round(now - row.pop("timestamp"), 3)
+                reset = row.pop("reset_epoch")
+                row["fresh"] = 0 <= row["age_seconds"] <= max_age
+                row["unexpired"] = reset is None or reset > now
+                values.append(row)
+        except (OSError, EOFError, ValueError, OverflowError):
+            errors += 1
+            unknown += 1
+    output = []
+    for minutes in sorted({300, 10080, *(v["window_minutes"] for v in values)}):
+        rows = [v for v in values if v["window_minutes"] == minutes]
+        fresh = [v for v in rows if v["fresh"] and v["unexpired"]]
+        key = lambda v: (v["used_percent"], v["observed_at"], v["seat"])
+        output.append({"window_minutes": minutes, "label": {300: "5h", 10080: "week"}.get(minutes, f"{minutes}m"),
+                       "max": max(rows, key=key) if rows else None,
+                       "fresh_max": max(fresh, key=key) if fresh else None,
+                       "samples": len(rows), "fresh_samples": len(fresh)})
+    return {"checked_at": iso(now), "homes": len(roots), "unknown_homes": unknown,
+            "read_errors": errors, "max_age_seconds": max_age, "windows": output}
+
+
+def describe(row):
+    if row is None:
+        return "未測定"
+    state = "fresh" if row["fresh"] and row["unexpired"] else "stale-or-expired"
+    return (f"used={row['used_percent']:g}% remaining={100-row['used_percent']:g}% "
+            f"at={row['observed_at']} resets_at={row['resets_at'] or 'unknown'} "
+            f"age_s={row['age_seconds']:g} state={state} seat={row['seat']}")
+
+
+def main(argv=None):
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--codex-home", type=Path, default=Path.home() / ".codex")
+    parser.add_argument("--child-root", type=Path, default=Path.home() / ".agentstack/runtime/child-agents")
+    parser.add_argument("--max-age-seconds", type=float, default=900)
+    parser.add_argument("--now", help="ISO UTC timestamp or Unix seconds (fixture testing)")
+    parser.add_argument("--json", action="store_true")
+    parser.add_argument("--warn-above", type=float, help="Emit one line only when a fresh used_percent exceeds this value")
+    args = parser.parse_args(argv)
+    if not math.isfinite(args.max_age_seconds) or args.max_age_seconds < 0:
+        parser.error("--max-age-seconds must be finite and nonnegative")
+    if args.warn_above is not None and (not math.isfinite(args.warn_above) or not 0 <= args.warn_above <= 100):
+        parser.error("--warn-above must be in [0,100]")
+    try:
+        now = epoch(args.now) if args.now and not args.now.replace('.', '', 1).isdigit() else float(args.now) if args.now else datetime.now(timezone.utc).timestamp()
+        report = collect(args.codex_home, args.child_root, now, args.max_age_seconds)
+    except (ValueError, OverflowError):
+        parser.error("invalid --now")
+    if args.json:
+        print(json.dumps(report, ensure_ascii=False, allow_nan=False))
+    elif args.warn_above is not None:
+        hits = [f"{w['label']} {describe(w['fresh_max'])}" for w in report["windows"]
+                if w["fresh_max"] and w["fresh_max"]["used_percent"] > args.warn_above]
+        if hits:
+            print("CODEX-USAGE-WARN " + " | ".join(hits))
+    else:
+        for window in report["windows"]:
+            print(f"CODEX-USAGE {window['label']} max[{describe(window['max'])}] "
+                  f"fresh_max[{describe(window['fresh_max'])}] samples={window['samples']} "
+                  f"fresh_samples={window['fresh_samples']} homes={report['homes']} "
+                  f"unknown_homes={report['unknown_homes']} read_errors={report['read_errors']}")
+    return 2 if report["read_errors"] else 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

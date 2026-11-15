@@ -1,0 +1,18 @@
+#!/usr/bin/env bash
+# P-016 status only. M-018 prohibits killing the shared tmux server.
+set -euo pipefail
+if [[ "${1:-}" != --status || $# != 1 ]]; then
+  echo 'usage: agentstack-tmux-server-migrate --status (migration is disabled by M-018)' >&2
+  exit 2
+fi
+AGENTSTACK_TCC_PROBE_DIR="${AGENTSTACK_TCC_PROBE_DIR:-}" # __FLEET_TMUX_PROBE_ASSIGNMENT__
+LABEL="org.agentstack.tmux-server"
+printf 'sessions: %s\n' "$(tmux list-sessions -F '#S' 2>/dev/null | tr '\n' ' ')"
+if ps -axo command | grep -Eq '[t]mux (new-session|-D)'; then echo 'server: present'; else echo 'server: not observed'; fi
+printf 'launchd: %s\n' "$(launchctl print "gui/$(id -u)/$LABEL" >/dev/null 2>&1 && echo loaded || echo not-loaded)"
+if [[ -z "$AGENTSTACK_TCC_PROBE_DIR" ]]; then
+  echo 'probe: not configured'
+else
+  probe="$(tmux run-shell "ls $(printf %q "$AGENTSTACK_TCC_PROBE_DIR") >/dev/null 2>&1 && echo tcc-ok || echo tcc-denied" 2>/dev/null | tr -d '[:space:]')"
+  printf 'probe: %s\n' "$probe"
+fi

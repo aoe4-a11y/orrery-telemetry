@@ -14,6 +14,15 @@ from test_global_child_client import api, client, shell, server as fixture_serve
 server = fixture_server
 
 
+@pytest.fixture
+def permitted_memory_home(tmp_path):
+    gate = tmp_path / "agentstack/bin/agentstack-memory-budget"
+    gate.parent.mkdir(parents=True)
+    gate.write_text("#!/bin/sh\nexit 0\n")
+    gate.chmod(0o755)
+    return gate.parent.parent
+
+
 def test_tools_task_and_typed_json_use_existing_shell_front_door(server):
     parent = client(server)
     prepared = shell(
@@ -220,7 +229,7 @@ def test_gemini_lifecycle_helper_passes_typed_paths_without_legacy_fields(server
     "old_library",
     ["ags_register() { return 0; }\n", "ags_global_entry() { return 125; }\n"],
 )
-def test_resume_global_partial_library_never_accepts_empty_success(server, old_library):
+def test_resume_global_partial_library_never_accepts_empty_success(server, old_library, permitted_memory_home):
     parent = client(server)
     root = parent.isolation / "partial-resume"
     (root / "hooks").mkdir(parents=True)
@@ -238,7 +247,7 @@ def test_resume_global_partial_library_never_accepts_empty_success(server, old_l
             str(root / "bin/agentstack-resume"),
             "ChildAlpha",
         ],
-        env={**os.environ, "AGENTSTACK_CLIENT_CONFIG": str(parent.path)},
+        env={**os.environ, "AGENTSTACK_CLIENT_CONFIG": str(parent.path), "AGENTSTACK_HOME": str(permitted_memory_home)},
         capture_output=True,
         text=True,
         timeout=20,
@@ -247,7 +256,7 @@ def test_resume_global_partial_library_never_accepts_empty_success(server, old_l
     assert not output.stdout
 
 
-def test_resume_cli_uses_existing_global_front_door(server):
+def test_resume_cli_uses_existing_global_front_door(server, permitted_memory_home):
     parent = client(server)
     parent.prepare_child(
         {"child_client_name": "child_01", "name": "ChildAlpha", "prepare_only": True}
@@ -261,7 +270,7 @@ def test_resume_cli_uses_existing_global_front_door(server):
             "--prepare-only",
             "--detached",
         ],
-        env={**os.environ, "AGENTSTACK_CLIENT_CONFIG": str(parent.path)},
+        env={**os.environ, "AGENTSTACK_CLIENT_CONFIG": str(parent.path), "AGENTSTACK_HOME": str(permitted_memory_home)},
         capture_output=True,
         text=True,
         timeout=30,

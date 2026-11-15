@@ -18,6 +18,8 @@
 # established before `claude` starts. Hooks still record later in-session
 # registrations.
 set -euo pipefail
+# R-183 / JF2: refuse before registration, transport selection or a new process.
+"${AGENTSTACK_HOME:-$HOME/.agentstack}/bin/agentstack-memory-budget" admit || exit $?
 
 AGS_PROG="agent-start"
 BIN_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"

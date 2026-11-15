@@ -1,0 +1,293 @@
+#!/usr/bin/env python3
+"""R-183 admission and advisory memory guard. No signals or mailbox access.
+
+All sizes are MiB. Reclaimable = free + inactive + speculative physical pages;
+compressed logical pages are NEVER counted as available. top MEM measures the
+Codex CLI and its code-mode hosts including their compressed footprint.
+"""
+import argparse
+import fcntl
+import json
+import math
+import os
+from pathlib import Path
+import re
+import subprocess
+import sys
+import time
+
+MIB = 1024 ** 2
+CLI = re.compile(r"^(codex|codex-[a-z0-9_-]+)$")
+
+
+def run(argv):
+    return subprocess.run(argv, capture_output=True, text=True, check=True,
+                          timeout=15, env=dict(os.environ, LC_ALL='C')).stdout
+
+
+def mem_mb(value):
+    m = re.fullmatch(r'(\d+(?:\.\d+)?)([BKMGT]?)[+\-]?', value)
+    if not m:
+        raise ValueError('unreadable footprint')
+    return float(m[1]) * {'B': 1/MIB, 'K': 1/1024, 'M': 1,
+                          'G': 1024, 'T': 1024**2, '': 1/MIB}[m[2]]
+
+
+def top_consumers(procs, footprints, panes):
+    """Names only; no argv. Attribute through a Codex ancestor and pane ancestry."""
+    rows = []
+    for pid in sorted(procs.keys() & footprints.keys(), key=lambda p: (-footprints[p], p))[:3]:
+        current, seen, codex = pid, set(), None
+        while current in procs and current not in seen:
+            seen.add(current)
+            if CLI.fullmatch(procs[current][1]):
+                codex = current
+                break
+            current = procs[current][0]
+        seat = '席の外'
+        seen = set()
+        while codex in procs and codex not in seen:
+            seen.add(codex)
+            if codex in panes:
+                seat = re.sub(r'[^A-Za-z0-9_.-]', '_', panes[codex])[:80] or '席の外'
+                break
+            codex = procs[codex][0]
+        name = re.sub(r'[^A-Za-z0-9_.-]', '_', procs[pid][1])[:80] or 'unknown'
+        rows.append(dict(pid=pid, name=name, mib=round(footprints[pid], 1), seat=seat))
+    return rows
+
+
+def sample():
+    vm = run(['/usr/bin/vm_stat'])
+    page = int(re.search(r'page size of (\d+) bytes', vm)[1])
+    pages = {k: int(v) for k, v in re.findall(r'^([^:\n]+):\s+(\d+)\.', vm, re.M)}
+    total = int(run(['/usr/sbin/sysctl', '-n', 'hw.memsize']).strip()) / MIB
+    level = int(run(['/usr/sbin/sysctl', '-n', 'kern.memorystatus_level']).strip())
+    # No argv/environment census: executable paths stay in memory and are not logged.
+    procs = {}
+    simulator = set()
+    tools = set()
+    for line in run(['/bin/ps', '-axo', 'pid=,ppid=,comm=']).splitlines():
+        row = line.strip().split(None, 2)
+        if len(row) == 3:
+            pid = int(row[0])
+            procs[pid] = (int(row[1]), Path(row[2]).name)
+            if re.search(r'/CoreSimulator/Devices/[^/]+/data/', row[2]):
+                simulator.add(pid)
+            if Path(row[2]).name == 'xctrace':
+                tools.add(pid)
+    if os.getpid() not in procs:
+        raise ValueError('missing process census positive control')
+    footprints = {}
+    for line in run(['/usr/bin/top', '-l', '1', '-n', '99999', '-stats', 'pid,mem']).splitlines():
+        row = line.split()
+        if len(row) == 2 and row[0].isdigit():
+            footprints[int(row[0])] = mem_mb(row[1])
+    if os.getpid() not in footprints:
+        raise ValueError('missing footprint census positive control')
+    cli = {pid for pid, (_, name) in procs.items() if CLI.fullmatch(name)}
+    # A process can exit between samples; only require records for those still alive.
+    missing = cli - footprints.keys()
+    if any(subprocess.run(['/bin/ps', '-p', str(pid), '-o', 'pid='],
+                          capture_output=True).returncode == 0 for pid in missing):
+        raise ValueError('incomplete Codex footprint census')
+    panes = {}
+    try:
+        for line in run([('/opt/homebrew/bin/tmux' if Path('/opt/homebrew/bin/tmux').exists() else 'tmux'), 'list-panes', '-a', '-F', '#{session_name} #{pane_pid}']).splitlines():
+            row = line.split()
+            if len(row) == 2 and row[1].isdigit():
+                panes[int(row[1])] = row[0]
+    except (OSError, subprocess.SubprocessError):
+        pass
+    fleet = [footprints[pid] for pid in cli & footprints.keys()]
+    seats = [footprints[pid] for pid in cli & footprints.keys()
+             if procs[pid][1] != 'codex-code-mode-host']
+    return dict(total_mb=total, level=level,
+                available_mb=sum(pages[k] for k in ('Pages free', 'Pages inactive',
+                                                   'Pages speculative')) * page / MIB,
+                free_mb=pages['Pages free'] * page / MIB,
+                compressor_mb=pages['Pages occupied by compressor'] * page / MIB,
+                fleet_mb=sum(fleet), cli_count=len(seats),
+                sim_app_mb=max([0] + [footprints[p] for p in simulator & footprints.keys()]),
+                tool_mb=max([0] + [footprints[p] for p in tools & footprints.keys()]),
+                seat_mb=max([2048] + seats), top_consumers=top_consumers(procs, footprints, panes)), procs
+
+
+def limits(s):
+    def value(key, default):
+        x = float(os.environ.get('AGENTSTACK_MEMORY_' + key, default))
+        if not math.isfinite(x) or x < 0:
+            raise ValueError('invalid memory limit ' + key)
+        return x
+    # 11-08 owner approved (chat「分けてよい」): light seats are estimated at SEAT_MB (2 GiB);
+    # Simulator/Xcode stations (weight=heavy, set by the spawner) keep the largest-seat estimate.
+    weight = os.environ.get('AGENTSTACK_MEMORY_SEAT_WEIGHT', 'light')
+    if weight not in ('light', 'heavy'):
+        raise ValueError('invalid seat weight')
+    light = value('SEAT_MB', 2048)
+    return dict(reserve=value('RESERVE_MB', 8192),
+                seat=max(s['seat_mb'], light) if weight == 'heavy' else light,
+                compressor=value('COMPRESSOR_MAX_MB', s['total_mb'] * .30),  # 11-08 owner approved (chat): 20%->30%; available floor and memorystatus level stay
+                fleet=value('FLEET_MAX_MB', max(0, s['total_mb'] - value('RESERVE_MB', 8192))),
+                level=value('MIN_LEVEL', 50),
+                sim_app=value('SIM_APP_MAX_MB', os.environ.get('AGENTSTACK_SIM_APP_MAX_MB',6144)),
+                tool=value('TOOL_MAX_MB', os.environ.get('AGENTSTACK_TOOL_MAX_MB',12288)))
+
+
+def reasons(s, lim, additional=0):
+    out = []
+    if s['available_mb'] < lim['reserve'] + additional:
+        out.append('physical-headroom')
+    if s['compressor_mb'] >= lim['compressor']:
+        out.append('compressor')
+    if s['fleet_mb'] + additional > lim['fleet']:
+        out.append('Codex-footprint')
+    if s['level'] < lim['level']:
+        out.append('memorystatus-level')
+    if s.get('sim_app_mb',0) > lim['sim_app']:
+        out.append('simulator-app-footprint')
+    if s.get('tool_mb',0) > lim['tool']:
+        out.append('xctrace-footprint')
+    return out
+
+
+def summary(s):
+    return ('available=%.0fMiB compressor=%.0fMiB Codex=%.0fMiB level=%s'
+            % (s['available_mb'], s['compressor_mb'], s['fleet_mb'], s['level']))
+
+
+def save(path, value):
+    temporary = path.with_name(path.name + '.' + str(os.getpid()) + '.tmp')
+    temporary.write_text(json.dumps(value, sort_keys=True) + '\n')
+    os.replace(temporary, path)
+
+
+def admit(runtime, s, procs):
+    lim = limits(s)
+    # Serialize checks and account for concurrent launches before they appear in top.
+    # The launcher pid owns its pending reservation; nested official wrappers reuse it.
+    pending_path = runtime / 'memory-admissions.json'
+    pending = json.loads(pending_path.read_text()) if pending_path.exists() else {}
+    now = time.time()
+    pending = {pid: row for pid, row in pending.items()
+               if int(pid) in procs and now - row['at'] < 180
+               and not CLI.fullmatch(procs[int(pid)][1])}
+    ancestors = set()
+    pid = os.getppid()
+    while pid > 1 and pid in procs and pid not in ancestors:
+        ancestors.add(pid)
+        pid = procs[pid][0]
+    own = next((pid for pid in pending if int(pid) in ancestors), None)
+    extra = sum(row['mb'] for pid, row in pending.items() if pid != own) + lim['seat']
+    why = reasons(s, lim, extra)
+    if (runtime / 'memory-hold').exists():
+        why.insert(0, 'memory-hold')
+    if why:
+        print('memory admission refused: ' + ','.join(why) + '; ' + summary(s), file=sys.stderr)
+        save(pending_path, pending)
+        return 75
+    pending[own or str(os.getppid())] = dict(at=now, mb=lim['seat'])
+    save(pending_path, pending)
+    return 0
+
+
+def notify(body):
+    # Existing operations sender is the installed formal Mail client; this guard
+    # never reads a token or mailbox, creates an identity, or drives a pane.
+    sys.path.insert(0, str(Path(__file__).resolve().parent))
+    from agentstack_stallself import send_server, sent_id
+    response = send_server(dict(seat='ProudTuring', subject='[blocked] R-183 memory-hold',
+                                body_md=body))
+    if sent_id(response) is None:
+        raise RuntimeError('memory notice not confirmed')
+
+
+def guard_owned_hold(text):
+    """Recognize only our fixed reasons or the exact historical guard formats."""
+    reason = r'(?:physical-headroom|compressor|Codex-footprint|memorystatus-level|simulator-app-footprint|xctrace-footprint)'
+    if re.fullmatch(r'R-183 (?:measurement unavailable|' + reason + r'(?:,' + reason + r')*(?:; [^\n]*)?)\n?', text):
+        return True
+    stamp = r'\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2} '
+    legacy = r'(?:level=\d+|sim-app pid=\d+ (?:rss|mem)=\d+MB killed|xctrace pid=\d+ mem=\d+MB killed)'
+    return re.fullmatch(stamp + legacy + r'\n?', text) is not None
+
+
+def guard(runtime, s, sender=notify):
+    lim = limits(s)
+    path = runtime / 'memory-guard-state.json'
+    try:
+        state = json.loads(path.read_text()) if path.exists() else {}
+        if not isinstance(state, dict):
+            state = {}
+    except ValueError:
+        # State may be absent/corrupt after interruption. Flag provenance, not
+        # the missing bookkeeping, decides whether healthy recovery is allowed.
+        state = {}
+    flag = runtime / 'memory-hold'
+    why = reasons(s, lim)
+    if why:
+        # Persist the episode before delivery: unknown/lost responses never duplicate mail.
+        if not state.get('held'):
+            state = dict(held=True, notified=False, reasons=why, sample=s)
+        if not flag.exists() or guard_owned_hold(flag.read_text()):
+            flag.write_text('R-183 ' + ','.join(why) + '; ' + summary(s) + '\n')
+        save(path, state)
+        if not state.get('notified'):
+            state['notified'] = True
+            state['delivery'] = 'attempting'
+            save(path, state)
+            try:
+                context = os.environ.get('AGENTSTACK_MEMORY_NOTICE_CONTEXT', 'measured pressure')
+                sender('R-183 / M-117 (' + context + '). ' + flag.name + ': ' + ','.join(why) + '; '
+                       + summary(s) + ''.join('\n' + 'pid=%s process=%s %.1fMiB seat=%s' % (p['pid'], p['name'], p['mib'], p['seat']) for p in s.get('top_consumers', [])) + '; limits reserve=%.0fMiB compressor=%.0fMiB Codex=%.0fMiB' % (lim['reserve'],lim['compressor'],lim['fleet']) + '. 新しい席と重い仕事を止め、動いていない席は正規 reaper で閉じる。process は止めていない。')
+                state['delivery'] = 'confirmed'
+            except Exception as error:
+                if type(error) is RuntimeError and str(error) == 'operations identity credential unavailable':
+                    state['delivery'] = 'failed-before-send: operations identity credential unavailable'
+                else:
+                    state['delivery'] = 'unknown; inspect formal Mail delivery before retry'
+            save(path, state)
+            with (runtime / 'memory-guard.log').open('a') as f:
+                f.write(time.strftime('%F %T') + ' HOLD ' + ','.join(why) + '; '
+                        + summary(s) + '; notice=' + state['delivery'] + '\n')
+    elif (s['available_mb'] >= lim['reserve'] + lim['seat'] + 1024
+          and s['compressor_mb'] < lim['compressor'] * .75
+          and s['fleet_mb'] + lim['seat'] <= lim['fleet'] and s['level'] >= 55):
+        # Only clear a hold created by this guard, never a foreign protection marker.
+        if not flag.exists():
+            save(path, dict(held=False))
+        elif guard_owned_hold(flag.read_text()):
+            flag.unlink()
+            save(path, dict(held=False))
+    return 0
+
+
+def main():
+    ap = argparse.ArgumentParser()
+    ap.add_argument('operation', choices=['sample', 'admit', 'guard'])
+    a = ap.parse_args()
+    runtime = Path(os.environ.get('AGENTSTACK_MEMORY_STATE_DIR', os.environ.get('AGENTSTACK_RUNTIME_DIR', str(Path.home()/'.agentstack/runtime'))))
+    runtime.mkdir(parents=True, exist_ok=True)
+    # One lock also serializes guard updates and pending admissions.
+    with (runtime / 'memory-budget.lock').open('a') as lock:
+        fcntl.flock(lock, fcntl.LOCK_EX)
+        try:
+            s, procs = sample()
+            if a.operation == 'sample':
+                print(json.dumps(s, sort_keys=True))
+                return 0
+            if a.operation == 'admit':
+                return admit(runtime, s, procs)
+            return guard(runtime, s)
+        except Exception:
+            # Do not print exceptions: process paths and transport credentials are private.
+            print('memory admission refused: measurement/state unavailable', file=sys.stderr)
+            if a.operation == 'guard':
+                if not (runtime / 'memory-hold').exists():
+                    (runtime / 'memory-hold').write_text('R-183 measurement unavailable\n')
+                save(runtime / 'memory-guard-state.json', dict(held=True, notified=False, reasons=['measurement-unavailable']))
+            return 75
+
+
+if __name__ == '__main__':
+    raise SystemExit(main())

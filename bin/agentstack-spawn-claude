@@ -1,0 +1,41 @@
+#!/usr/bin/env bash
+# One-shot: pre-register + spawn a Claude tmux child with an embedded task file (2026-10-08, R-079).
+# Usage: agentstack-spawn-claude <model: fable|opus|sonnet|haiku> <task-file> [workdir] [task-description]
+# AGENTSTACK_PROJECT_KEY comes from the installed environment.
+set -euo pipefail
+# R-183 / JF2: every provider passes the same host-memory gate before registration.
+# 11-08 owner (chat「分けてよい」): Simulator/Xcode stations are heavy; others are light (2 GiB).
+if [[ -z "${AGENTSTACK_MEMORY_SEAT_WEIGHT:-}" && -f "${2:-}" ]] \
+   && grep -Eqi 'simulator|simctl|sim_lease|xcodebuild|xcuitest|xctrace' "$2"; then
+    export AGENTSTACK_MEMORY_SEAT_WEIGHT=heavy
+fi
+"${AGENTSTACK_HOME:-$HOME/.agentstack}/bin/agentstack-memory-budget" admit || exit $?
+[ -f "${AGENTSTACK_HOME:-$HOME/.agentstack}/env.sh" ] && source "${AGENTSTACK_HOME:-$HOME/.agentstack}/env.sh"
+export AGENTSTACK_HOME="${AGENTSTACK_HOME:-$HOME/.agentstack}"
+HOOKS_DIR="${AGENTSTACK_LIFECYCLE_HOOKS_DIR:-${AGENTSTACK_HOOKS_DIR:-$AGENTSTACK_HOME/hooks}}"
+export AGENTSTACK_HOOKS_DIR="${AGENTSTACK_HOOKS_DIR:-$AGENTSTACK_HOME/hooks}"
+MODEL="${1:?model (fable|opus|sonnet|haiku)}"; TASK="${2:?task file}"; WORKDIR="${3:-$PWD}"
+DESC="${4:-$(head -1 "$TASK" | sed 's/^# *//' | python3 -c 'import sys; print(sys.stdin.read().strip()[:60])')}"
+case "$MODEL" in
+  fable) MODEL_ID=claude-fable-5-1 ;; opus) MODEL_ID=claude-opus-5-5 ;; sonnet) MODEL_ID=claude-sonnet-5-5 ;;
+  haiku) MODEL_ID=claude-haiku-4-5-20251001 ;; *) MODEL_ID="$MODEL" ;;
+esac
+export PARENT_AGENT="${PARENT_AGENT:-ProudTuring}"
+export AGENTSTACK_PROJECT_KEY="${AGENTSTACK_PROJECT_KEY:?configured project key required}"
+TOKDIR="$HOME/.agentstack/runtime"
+HANDOFF_DIR="${AGENTSTACK_RUNTIME_DIR:-${AGENTSTACK_HOME:-$HOME/.agentstack}/runtime}/spawn-tokens"
+mkdir -p "$HANDOFF_DIR"
+chmod 700 "$HANDOFF_DIR"
+# Guard the server-returned name even when preregistration is supplied externally.
+. "$AGENTSTACK_HOME/bin/lib/agentstack-child-name.sh"
+preregister_child_attempt() {
+  TMP="$HANDOFF_DIR/$(python3 -c 'import uuid; print(uuid.uuid4().hex)').token"
+  OUT="$("$AGENTSTACK_HOME/bin/agentstack-preregister-child" --project-key "$AGENTSTACK_PROJECT_KEY" --program claude-code --model "$MODEL_ID" --task-description "$DESC" --token-file-out "$TMP" 2>&1)" || { local code=$?; printf '%s\n' "$OUT" >&2; return "$code"; }
+  NAME="$(printf '%s\n' "$OUT" | tail -1 | tr -d '[:space:]')"
+  [[ "$NAME" =~ ^[A-Z][a-z]+[A-Z][a-z]+$ ]] || { printf '%s\n' 'preregister failed:' "$OUT" >&2; return 1; }
+  AGS_CHILD_NAME="$NAME"
+}
+ags_child_name_retry "$AGENTSTACK_PROJECT_KEY" preregister_child_attempt || exit $?
+cd "$WORKDIR"
+"$HOOKS_DIR/spawn_child.sh" --model "$MODEL" --pre-registered "$NAME" --child-token-file "$TMP" --embed-task --task-file "$TASK" "$WORKDIR"
+echo "spawned: $NAME (tmux session $NAME, model $MODEL_ID, parent $PARENT_AGENT, workdir $WORKDIR)"

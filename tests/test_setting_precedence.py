@@ -23,7 +23,6 @@ import shutil
 import subprocess
 import sys
 import tempfile
-
 import pytest
 
 
@@ -675,7 +674,8 @@ def test_first_install_still_uses_product_defaults(tmp_path):
     project = tmp_path / "project"
     home.mkdir()
     project.mkdir()
-    result = _dry_run(home, "--project-key", str(project), AGENTSTACK_PYTHON=sys.executable)
+    result = _dry_run(home, "--project-key", str(project), AGENTSTACK_PYTHON=sys.executable,
+                      AGENTSTACK_MCP_URL="http://127.0.0.1:1/mcp")
     out = result.stdout
     assert result.returncode == 0, out + result.stderr
     assert "dashboard port: 8770" in out
@@ -1326,3 +1326,13 @@ def test_issue354_plan_matches_the_values_actually_written(tmp_path, monkeypatch
     main = INSTALLER.read_text().split('\nmain() {\n', 1)[1]
     assert main.index('\n  report_setting_changes\n') < main.index('\n  if ! run_preflight;') < main.index('\n  write_env_file\n')
     print('ISSUE354_PLAN=' + json.dumps(dict(scenario=scenario, plan=plan, applied=values)))
+@pytest.mark.parametrize("value", ["workspace-write", "danger-full-access", "read-only"])
+def test_codex_sandbox_explicit_value_survives_resolution(tmp_path,value):
+    home,_=_previous_install(tmp_path)
+    assert _resolve_like_the_installer(home,"CODEX_SANDBOX_SETTING",env={"AGENTSTACK_CODEX_SANDBOX":value})==[value]
+
+def test_codex_sandbox_from_old_unclassified_env_is_kept(tmp_path):
+    home,_=_previous_install(tmp_path)
+    path=home/".agentstack/env.sh"
+    path.write_text(re.sub(r"^export AGENTSTACK_CODEX_SANDBOX=.*$", "export AGENTSTACK_CODEX_SANDBOX=read-only", path.read_text(), flags=re.M))
+    assert _resolve_like_the_installer(home,"CODEX_SANDBOX_SETTING")==["read-only"]

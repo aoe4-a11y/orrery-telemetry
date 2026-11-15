@@ -12,6 +12,11 @@ python3 -m venv .venv
 PYTHONPATH=. .venv/bin/python -m pytest -q -n auto --dist loadfile
 ```
 
+The repository's pytest bootstrap clears a launched AgentStack seat's identity,
+install roots, credentials, and Codex home, and gives pytest a private home.
+Installer tests may override that home with their own fixtures. Do not bypass
+this bootstrap: child Codex homes can contain symlinks to the owner's files.
+
 `.venv/` is gitignored. Do not install anything into a service venv under
 `~/.agentstack/` — those are production artifacts whose contents are pinned
 by cutover receipts.

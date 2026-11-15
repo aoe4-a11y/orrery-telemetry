@@ -741,9 +741,11 @@ def _offline_context(tmp_path):
     ('operation_lock', OPERATION_MUTEX),
     ('mutex', b'{"kind": "orrery-client-local-mutex-v1"}'),
 ])
-def test_client_start_waits_for_a_mutex_another_caller_is_writing(tmp_path, role, content):
+def test_client_start_waits_for_a_mutex_another_caller_is_writing(tmp_path, monkeypatch, role, content):
     """The constructor preflights every slot before it takes the operation mutex."""
-    import threading
+    import threading, tempfile
+    # This fixture owns a managed non-default temp root; no socket is created.
+    monkeypatch.setattr(tempfile, "tempdir", str(tmp_path.parent))
     root = _offline_context(tmp_path)
     path = root / api['CLIENT_LAYOUT'][role]
     fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600)
@@ -801,7 +803,7 @@ def test_actual_dedicated_tmux_server_stale_environment_does_not_route(prepared)
     if tmux is None:
         pytest.skip('tmux unavailable; external runner must cover dedicated socket')
     socket_name = 'rh4a-' + str(os.getpid())
-    tmux_root = tempfile.mkdtemp(prefix='rh4a-tm-')
+    tmux_root = tempfile.mkdtemp(prefix='rh4a-tm-', dir='/private/tmp')
     output = prepared['root'] / 'tmux-observation.json'
     env = {**os.environ, 'TMUX_TMPDIR': tmux_root}
     env.pop('TMUX', None)

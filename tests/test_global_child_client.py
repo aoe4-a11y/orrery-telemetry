@@ -41,6 +41,11 @@ def client(server, name="parent"):
 
 
 def shell(c, rel, args=(), payload=None, extra=None):
+    # This fixture verifies global dispatch; admission is tested separately.
+    gate = c.isolation / "agentstack/bin/agentstack-memory-budget"
+    gate.parent.mkdir(parents=True, exist_ok=True)
+    gate.write_text("#!/bin/sh\nexit 0\n")
+    gate.chmod(0o755)
     env = {
         **os.environ,
         "AGENTSTACK_CLIENT_CONFIG": str(c.path),

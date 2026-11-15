@@ -1,0 +1,47 @@
+#!/usr/bin/env bash
+# 手元で GitHub Actions と同じ検査を回す。push する前にここで落とす。
+# 目的: 壊れた push を送らない = Actions の失敗通知（殿のメール）を出さない。
+# Usage: orrery-ci [repo-dir]   既定: ~/tools/osce-trainer-main
+set -uo pipefail
+REPO="${1:-$HOME/tools/osce-trainer-main}"
+cd "$REPO" || { echo "no such repo: $REPO" >&2; exit 2; }
+
+# .github/workflows/ci.yml の run: 行と同じ順序・同じコマンド。
+# ここを増やしたら ci.yml も同じ日に直す（片方だけ直すのは分岐の製造・M-009）。
+STEPS=(
+  "npm run build:osce-guides"
+  "npm run lint:suggestions"
+  "npm run qa:validate"
+  "npm run qa:suggestion-map"
+  "npm run smoke"
+  "npm run qa:s2a-regression"
+  "npm run qa:intent-regression"
+)
+
+FAILED=()
+echo "== orrery-ci: $REPO =="
+[ -d node_modules ] || { echo "-- npm ci（node_modules 不在）"; npm ci >/dev/null 2>&1 || { echo "npm ci FAILED"; exit 1; }; }
+
+for s in "${STEPS[@]}"; do
+  printf '%-34s ' "$s"
+  if out=$(eval "$s" 2>&1); then
+    echo "PASS"
+  else
+    echo "FAIL"
+    FAILED+=("$s")
+    printf '%s\n' "$out" | tail -12 | sed 's/^/    | /'
+  fi
+done
+
+# 版注入で index.html が書き換わる（Auto Version Bump が 13/14 落ちた原因）。
+# 手元でも同じ取りこぼしが起きるので、未staged の生成物を明示する。
+DIRTY=$(git status --porcelain -- public/index.html public/version.js package-lock.json 2>/dev/null)
+[ -n "$DIRTY" ] && { echo "-- 注意: 生成物が未staged。commit に含めるか捨てるか決めること"; printf '%s\n' "$DIRTY" | sed 's/^/    /'; }
+
+if [ ${#FAILED[@]} -eq 0 ]; then
+  echo "== 全 ${#STEPS[@]} 段 PASS。push してよい。"
+  exit 0
+fi
+echo "== FAIL ${#FAILED[@]}/${#STEPS[@]}: ${FAILED[*]}"
+echo "   直してから push すること（壊れた push は殿のメールになる）"
+exit 1

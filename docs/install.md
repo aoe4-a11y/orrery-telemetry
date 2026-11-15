@@ -415,6 +415,7 @@ export AGENTSTACK_TCC_DIRS="$HOME/Desktop:$HOME/Documents:$HOME/Downloads"
 ## Upgrade
 
 保護設定の更新前に作業を完了するか active file reservation を解放し、更新後に影響する session をまとめて再起動してください。先に選択される root を preview します。
+この fork の fleet 更新は `scripts/run-mail-fetch-upgrade-from-ref.sh --preview` で候補範囲を確認し、所有者が同じ入口を対話実行します。必要な repository・ref・project key は明示し、旧設定を特定できなければ停止します。Mail 更新時の backup と復旧の詳細は実行時の案内と受領書で確認します。
 
 ```bash
 git pull

@@ -232,7 +232,7 @@ VAULT = _env_path("AGENTSTACK_VAULT", "")
 PROJECT_KEY = _env_text("AGENTSTACK_PROJECT_KEY", "")
 LABEL_PREFIX = _env_text("AGENTSTACK_LABEL_PREFIX", "org.agentstack")
 TERMINAL_SETTING = _env_text("AGENTSTACK_TERMINAL", "auto").lower()
-HOOKS_DIR = _env_path("AGENTSTACK_HOOKS_DIR", "~/.agentstack/hooks")
+HOOKS_DIR = _env_path("AGENTSTACK_LIFECYCLE_HOOKS_DIR", _env_path("AGENTSTACK_HOOKS_DIR", "~/.agentstack/hooks"))
 RUNTIME_DIR = _env_path("AGENTSTACK_RUNTIME_DIR", "~/.agentstack/runtime")
 PERSISTENT_PROFILES_DIR = _env_path(
     "AGENTSTACK_PERSISTENT_PROFILES_DIR", "~/.agentstack/profiles"
@@ -1855,6 +1855,49 @@ def history_binding_row(name: str) -> dict | None:
     found.update(_history_binding_fields(found, now=time.time()))
     return {key: found.get(key) for key in HISTORY_BINDING_FIELDS}
 
+def _seat_codex_model(pane_pid, process_tree):
+    """Read model and effort from the Codex process beneath this pane."""
+    pid = _agent_process_pid(pane_pid, process_tree, "codex-cli")
+    if not pid:
+        return "", ""
+    try:
+        result = subprocess.run(["ps", "-p", str(pid), "-o", "args="],
+                                capture_output=True, text=True, timeout=3)
+        args = shlex.split(result.stdout) if result.returncode == 0 else []
+        model = next((args[i + 1] for i, arg in enumerate(args[:-1])
+                      if arg == "--model"), "")
+        effort = next((arg.split("=", 1)[1] for arg in args
+                       if arg.startswith("model_reasoning_effort=")), "")
+        return model, effort
+    except (OSError, subprocess.SubprocessError, ValueError):
+        return "", ""
+
+
+def _seat_contract_tasks():
+    """Use the last contract row for each seat; unreadable titles fall back."""
+    latest = {}
+    try:
+        with open(os.path.expanduser("~/.agentstack/runtime/interplay/contracts.jsonl"), encoding="utf-8") as stream:
+            for line in stream:
+                try:
+                    row = json.loads(line)
+                    if row.get("seat"):
+                        latest[row["seat"]] = row
+                except (ValueError, AttributeError):
+                    continue
+    except OSError:
+        return {}
+    tasks = {}
+    for seat, row in latest.items():
+        try:
+            with open(row["task_file"], encoding="utf-8") as stream:
+                title = stream.readline().strip().lstrip("# ").strip()
+            if row.get("id") and title:
+                tasks[seat] = f"{row['id']} — {title}"
+        except (OSError, KeyError, TypeError):
+            continue
+    return tasks
+
 
 @_with_registration_batch
 def build_agents(history_days: float | None = HISTORY_DAYS_DEFAULT) -> list[dict]:
@@ -1874,6 +1917,7 @@ def build_agents(history_days: float | None = HISTORY_DAYS_DEFAULT) -> list[dict
     substitutions = _name_substitutions()
     persistent_profiles = _persistent_profiles()
     rows = []
+    contract_tasks = _seat_contract_tasks()
     for name, s in sessions.items():
         m = mail_agents.get(name)
         program, cat, running, watcher_health = _tmux_row_state(name, s, m, process_tree)
@@ -1897,6 +1941,12 @@ def build_agents(history_days: float | None = HISTORY_DAYS_DEFAULT) -> list[dict
             if running else {}
         )
         pane_model = _pane_model_for(rt.get("pane_model"), (m or {}).get("program"))
+        process_model, process_effort = _seat_codex_model(s.get("pane_pid"), process_tree) if (program or "").startswith("codex") else ("", "")
+        match = re.fullmatch(r"gpt-(\d+(?:\.\d+)?)-(sol|terra|luna|astra)", process_model, re.I)
+        process_display = (f"GPT {match.group(1)} {match.group(2).title()}"
+                           if match else _display_model(process_model))
+        if process_display and process_effort:
+            process_display += "・" + process_effort
         rows.append(
             {
                 "name": name,
@@ -1921,7 +1971,7 @@ def build_agents(history_days: float | None = HISTORY_DAYS_DEFAULT) -> list[dict
                 "live": live,
                 # pane のステータスバー由来を優先（warm pool claim で DB
                 # の model が実 model と乖離するケースを救う）。
-                "model": _display_model(pane_model) or
+                "model": process_display or _display_model(pane_model) or
                          (m or {}).get("model", ""),
                 "model_raw": pane_model or (m or {}).get("model_raw", ""),
                 "program": program,
@@ -1938,7 +1988,7 @@ def build_agents(history_days: float | None = HISTORY_DAYS_DEFAULT) -> list[dict
                 "provider_stall": _provider_stall_view(name, s) if running else None,
                 "work_disp": rt.get("work_disp"),
                 "last_disp": rt.get("last_disp"),
-                "task": (m or {}).get("task", ""),
+                "task": contract_tasks.get(name) or (m or {}).get("task", ""),
                 "instruction": mail_instr.get(name),
                 "deliv": len(didx.get(name, [])),
                 "mail_active": m["last_active"] if m else None,
@@ -3945,9 +3995,8 @@ def _codex_child_launch_flags(extra_dirs: list[str] | None = None) -> str:
     otherwise and every curl / git fetch becomes a prompt or a failure)."""
     approval = os.environ.get("AGENTSTACK_CODEX_CHILD_APPROVAL", "").strip() or "never"
     network = os.environ.get("AGENTSTACK_CODEX_NETWORK", "").strip().lower() or "on"
-    parts = [f"--sandbox workspace-write --ask-for-approval {shlex.quote(approval)}"]
-    # No update screen in a product-launched Codex: its default choice runs
-    # `npm install -g`, and nobody is there to decline it (#60).
+    sandbox = os.environ.get("AGENTSTACK_CODEX_SANDBOX", "").strip() or "workspace-write"
+    parts = [f"--sandbox {shlex.quote(sandbox)} --ask-for-approval {shlex.quote(approval)}"]
     parts.append("-c check_for_update_on_startup=false")
     if network not in ("0", "off", "false", "no"):
         parts.append("-c sandbox_workspace_write.network_access=true")
@@ -6502,9 +6551,9 @@ def agent_history_payload(name: str = "", hours: int | None = 24,
 
 
 try:
-    from dashboard.terminal_state import (_CTX_RE, _CTX_CODEX_LEFT_RE, _CTX_CODEX_USED_RE, _WORK_RE, _WORK_CLAUDE_TASK_RE, _WORK_CODEX_RE, _ASK_Q_RE, _ASK_OPT_RE, _ASK_YN_RE, _ASK_CODEX_RE, _QUESTION_RE)
+    from dashboard.terminal_state import (_CTX_RE, _CTX_CODEX_LEFT_RE, _CTX_CODEX_USED_RE, _WORK_RE, _WORK_CLAUDE_TASK_RE, _WORK_CODEX_RE, _ASK_Q_RE, _ASK_OPT_RE, _ASK_YN_RE, _ASK_CODEX_RE, _QUESTION_RE, _CODEX_FOOTER_MODEL, _CODEX_FOOTER_EFFORT)
 except ModuleNotFoundError:
-    from terminal_state import (_CTX_RE, _CTX_CODEX_LEFT_RE, _CTX_CODEX_USED_RE, _WORK_RE, _WORK_CLAUDE_TASK_RE, _WORK_CODEX_RE, _ASK_Q_RE, _ASK_OPT_RE, _ASK_YN_RE, _ASK_CODEX_RE, _QUESTION_RE)
+    from terminal_state import (_CTX_RE, _CTX_CODEX_LEFT_RE, _CTX_CODEX_USED_RE, _WORK_RE, _WORK_CLAUDE_TASK_RE, _WORK_CODEX_RE, _ASK_Q_RE, _ASK_OPT_RE, _ASK_YN_RE, _ASK_CODEX_RE, _QUESTION_RE, _CODEX_FOOTER_MODEL, _CODEX_FOOTER_EFFORT)
 # --------------------------------------------------------------------------- #
 # Agent runtime probe — コンテキスト残量(HP) + 動作状態を tmux ペインから読む
 #   Claude Code / Codex の TUI 表示を read-only パース。新データ源は持たない。
@@ -6577,10 +6626,15 @@ _MODEL_PANE_RE = re.compile(
 _STATUSLINE_HINT_RE = re.compile(
     r"ctx:\s*\d+%\s*used|Context\s+\d+%\s*(?:left|used)"
     # Codex footer before any context is used: "gpt-5.6-terra medium · ~/dir"
-    r"|^\s*gpt-\S+\s+(?:low|medium|high|xhigh|max|ultra)\s+[·•]"
+    # or "GPT-6.1 Terra medium · ~/dir" (terminal_state._CODEX_FOOTER_MODEL)
+    r"|^\s*" + _CODEX_FOOTER_MODEL + r"\s+" + _CODEX_FOOTER_EFFORT + r"\s+[·•]"
     # Claude's /model or /status line: "Model: Default (Opus 5 with 1M context)"
     r"|^\s*Model:\s",
     re.IGNORECASE)
+
+
+
+
 
 
 def _pane_model_from(tail: str) -> str | None:
@@ -6591,7 +6645,9 @@ def _pane_model_from(tail: str) -> str | None:
     の子に委任」と話しただけで、末尾全体フォールバックが gpt-5.6 を実モデルと
     誤読し、cockpit で Codex 表示になった。statusline が無いペインは None を
     返し、ORRERY Mail の登録（program / model）に判断を委ねる。"""
-    for src in (ln for ln in tail.splitlines() if _STATUSLINE_HINT_RE.search(ln)):
+    # The live statusline is the lowest such row; a quoted footer in a reply
+    # above it must not win (2026-11-03: Claude panes quoting a Codex footer).
+    for src in reversed([ln for ln in tail.splitlines() if _STATUSLINE_HINT_RE.search(ln)]):
         mm = _MODEL_PANE_RE.search(src)
         if not mm:
             continue
@@ -6625,7 +6681,7 @@ _ACTIVE_T_RE = re.compile(
 _CODEX_INTERRUPT_END_RE = re.compile(
     r"esc to interrupt\)"
     r"(?: · (?:1 background terminal|(?:[2-9]|[1-9][0-9]+) background terminals)"
-    r" running · /ps to view · /stop to close)?$")
+    r" running(?: · /ps to view · /stop to close)?)?$")
 _CODEX_TRUNCATED_WORK_RE = re.compile(
     r"^[•▌●]\s+(?:Working|Thinking)(?: \(([^\n]*))?…$")
 _CODEX_ELAPSED_PREFIX_RE = re.compile(
@@ -6835,7 +6891,7 @@ def _runtime_activity(text: str) -> tuple[str, str]:
         if prompt is None or re.match(r"\d+\.\s", prompt.group(1) or ""):
             continue
         suffix = lines[index + 1:]
-        if (any(_STATUSLINE_HINT_RE.search(row) or usage_footer(row) or row.strip().startswith("? for shortcuts")
+        if (any(_STATUSLINE_HINT_RE.search(row) or usage_footer(row) or row.strip().startswith(("? for shortcuts", "⏵"))
                 for row in suffix) and all(chrome(row) for row in suffix)):
             composer = index
             break
@@ -8846,6 +8902,9 @@ def _spawn_launch(payload: dict, request: dict, spec: SpawnLaunchSpec,
     # 4) spawn_child.sh --pre-registered を background で起動
     token_file = ""
     token_created = False
+    fleet_legacy = os.environ.get("AGENTSTACK_FLEET_COMPAT") == "1" and provider in {"claude", "codex"}
+    token_identity = None
+    launch_attempt = secrets.token_hex(16)
     log_fh = None
     log_path = None
     log_start_offset = 0
@@ -8853,7 +8912,7 @@ def _spawn_launch(payload: dict, request: dict, spec: SpawnLaunchSpec,
     token_key = re.sub(r"[^A-Za-z0-9_.-]", "_", child_name)
     owner_credential = os.path.join(RUNTIME_DIR, f"agent_token_{token_key}")
 
-    def remove_spawn_credentials(keep_owner_credential: bool = False) -> None:
+    def remove_spawn_credentials_core(keep_owner_credential: bool = False) -> None:
         """Remove both the one-shot handoff and any launcher-persisted copies.
 
         ``keep_owner_credential`` removes only the one-shot handoff; callers
@@ -8878,6 +8937,26 @@ def _spawn_launch(payload: dict, request: dict, spec: SpawnLaunchSpec,
                     "failed to remove failed-spawn credential %s: %s", path, e)
         token_created = False
 
+
+    def remove_spawn_credentials_legacy(keep_owner_credential: bool = False) -> None:
+        """Only the handoff created by this request is ours to remove."""
+        nonlocal token_created
+        if token_created and token_file and token_identity is not None:
+            try:
+                current = os.lstat(token_file)
+                if (current.st_dev, current.st_ino) == token_identity:
+                    os.unlink(token_file)
+            except FileNotFoundError:
+                pass
+            except OSError as error:
+                logging.warning("failed to remove owned handoff: %s", error)
+        token_created = False
+
+
+    def remove_spawn_credentials(keep_owner_credential: bool = False) -> None:
+        if fleet_legacy:
+            return remove_spawn_credentials_legacy(keep_owner_credential)
+        return remove_spawn_credentials_core(keep_owner_credential)
     def retain_recovery_credential() -> tuple[str, dict]:
         """Keep one usable owner credential after a launcher's cleanup was killed.
 
@@ -8889,6 +8968,8 @@ def _spawn_launch(payload: dict, request: dict, spec: SpawnLaunchSpec,
         usable copy is left.  Returns the error clause and result fields.
         """
         nonlocal token_created
+        if fleet_legacy:
+            return "Fleet generation ownership kept; canonical identity preserved", {"recovery_state_retained": True}
         owner_state = _spawn_credential_state(owner_credential, effective_child_token)
         handoff_state = (
             _spawn_credential_state(token_file, effective_child_token)
@@ -8935,6 +9016,8 @@ def _spawn_launch(payload: dict, request: dict, spec: SpawnLaunchSpec,
 
     def kill_spawn_session() -> bool:
         nonlocal spawn_stop_confirmed
+        if fleet_legacy:
+            return kill_spawn_session_legacy()
         spawn_stop_confirmed = False
         if log_path is None:
             # Logging failed before the launcher started: no session ownership.
@@ -8983,18 +9066,44 @@ def _spawn_launch(payload: dict, request: dict, spec: SpawnLaunchSpec,
         return retained_registration_error(
             error + '; cleanup is unconfirmed; owner state and credential handoff were retained',
             cleanup_incomplete=True, cleanup_state='unknown', **fields)
+    def kill_spawn_session_legacy() -> bool:
+        # A delayed dashboard callback cannot kill a successor by name. The
+        # launcher journal must match this request and still own every object.
+        import importlib.util
+        helper = os.path.join(os.path.dirname(SPAWN_SCRIPT), "seat_lifecycle.py")
+        try:
+            spec = importlib.util.spec_from_file_location("dashboard_seat_lifecycle", helper)
+            lifecycle = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(lifecycle)
+            seat = lifecycle.Seat(RUNTIME_DIR, child_name)
+            with seat.locked(blocking=False):
+                value = seat.validate(seat.attempt_journal(launch_attempt))
+                if (value is None or value.get("attempt") != launch_attempt
+                        or not value.get("session_started")):
+                    return False
+                subprocess.run(["tmux", "kill-session", "-t", f"={child_name}"],
+                               capture_output=True, text=True)
+                seat.delete(value["journal"])
+                return True
+        except (OSError, ValueError, KeyError, TypeError, ImportError, AttributeError):
+            logging.warning("no matching launch ownership; preserving seat %s", child_name)
+
+        return False
+
 
     token_dir = os.path.join(RUNTIME_DIR, "spawn-tokens")
     try:
         os.makedirs(token_dir, mode=0o700, exist_ok=True)
         os.chmod(token_dir, 0o700)
         token_file = os.path.join(
-            token_dir, f"{child_name}.{secrets.token_hex(8)}.token")
+            token_dir, f"{child_name}.{secrets.token_hex(16)}.token")
         open_flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL
         if hasattr(os, "O_NOFOLLOW"):
             open_flags |= os.O_NOFOLLOW
         fd = os.open(token_file, open_flags, 0o600)
         token_created = True
+        opened = os.fstat(fd)
+        token_identity = (opened.st_dev, opened.st_ino)
         with os.fdopen(fd, "w") as f:
             f.write(effective_child_token)
             f.flush()
@@ -9019,6 +9128,10 @@ def _spawn_launch(payload: dict, request: dict, spec: SpawnLaunchSpec,
                 f.flush()
                 os.fsync(f.fileno())
             os.chmod(binding_file, 0o600)
+        if fleet_legacy:
+            sys.path.insert(0, os.path.dirname(SPAWN_SCRIPT))
+            from seat_lifecycle import bind_handoff
+            bind_handoff(Path(RUNTIME_DIR), Path(token_file), child_name, project_key)
     except Exception as e:  # noqa: BLE001
         remove_spawn_credentials()
         return retained_registration_error(f"spawn token write failed: {e}")
@@ -9044,6 +9157,7 @@ def _spawn_launch(payload: dict, request: dict, spec: SpawnLaunchSpec,
     else:
         env["PARENT_AGENT"] = parent
     env["PROJECT_KEY"] = project_key
+    env["AGENTSTACK_LAUNCH_ATTEMPT_ID"] = launch_attempt
     # launchd の最小 PATH には ~/.local/bin が無く、spawn_child.sh が tmux 内で
     # 起動する `zsh -lc` は非対話シェルのため ~/.zshrc を source せず claude が
     # PATH に乗らない (cold start で claude 即落ち → tmux session が cleanup-

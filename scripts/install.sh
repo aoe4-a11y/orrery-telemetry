@@ -83,6 +83,7 @@ WORKTREE_ROOT_SETTING="${AGENTSTACK_WORKTREE_ROOT:-}"
 CODEX_CHILD_APPROVAL_SETTING="${AGENTSTACK_CODEX_CHILD_APPROVAL:-}"
 CODEX_CHILD_CONFIG_OVERLAY_SETTING="${AGENTSTACK_CODEX_CHILD_CONFIG_OVERLAY:-}"
 CODEX_NETWORK_SETTING="${AGENTSTACK_CODEX_NETWORK:-}"
+CODEX_SANDBOX_SETTING="${AGENTSTACK_CODEX_SANDBOX:-}"
 CHILD_DEFAULT_TOOLS_SETTING="${AGENTSTACK_CHILD_DEFAULT_TOOLS:-}"
 CODEX_ADD_DIRS_SETTING="${AGENTSTACK_CODEX_ADD_DIRS:-}"
 CHILD_RESUME_RETENTION_DAYS_SETTING="${AGENTSTACK_CHILD_RESUME_RETENTION_DAYS:-}"
@@ -734,6 +735,8 @@ resolve_setting WORKTREE_ROOT_SETTING AGENTSTACK_WORKTREE_ROOT "$INSTALL_DIR/wor
 resolve_setting CODEX_CHILD_APPROVAL_SETTING AGENTSTACK_CODEX_CHILD_APPROVAL never
 resolve_setting CODEX_CHILD_CONFIG_OVERLAY_SETTING AGENTSTACK_CODEX_CHILD_CONFIG_OVERLAY
 resolve_setting CODEX_NETWORK_SETTING AGENTSTACK_CODEX_NETWORK on
+resolve_setting CODEX_SANDBOX_SETTING AGENTSTACK_CODEX_SANDBOX workspace-write found
+export AGENTSTACK_CODEX_SANDBOX="$CODEX_SANDBOX_SETTING"
 resolve_setting CHILD_DEFAULT_TOOLS_SETTING AGENTSTACK_CHILD_DEFAULT_TOOLS
 resolve_setting CODEX_ADD_DIRS_SETTING AGENTSTACK_CODEX_ADD_DIRS
 resolve_setting CHILD_RESUME_RETENTION_DAYS_SETTING AGENTSTACK_CHILD_RESUME_RETENTION_DAYS 30
@@ -2670,6 +2673,16 @@ install_payload() {
       cp "$SCRIPT_DIR/codex_plugin_trust.py" "$SCRIPT_DIR/build-codex-app-marketplace.py" "$INSTALL_DIR/scripts/"
     fi
     install_child_mcp_proxy
+    # Fleet lint configuration is owner-controlled: seed only when absent.
+    # Never turn a core reinstall into an overwrite of local tuning.
+    plan "seed absent fleet lint config -> $INSTALL_DIR/config/head-send-lint.json"
+    if [[ "$DRY_RUN" != true ]]; then
+      mkdir -p "$INSTALL_DIR/config"
+      if [[ ! -e "$INSTALL_DIR/config/head-send-lint.json" && ! -L "$INSTALL_DIR/config/head-send-lint.json" ]]; then
+        cp "$REPO_ROOT/config/head-send-lint.json" "$INSTALL_DIR/config/head-send-lint.json"
+        chmod 600 "$INSTALL_DIR/config/head-send-lint.json"
+      fi
+    fi
   else
     plan "skip hooks copy for --dashboard-only"
     plan "skip skills copy for --dashboard-only"
@@ -2696,7 +2709,71 @@ install_payload() {
   plan "install helper scripts into $BIN_DIR"
   if [[ "$DRY_RUN" != true ]]; then
     cp "$SCRIPT_DIR/uninstall.sh" "$BIN_DIR/agentstack-uninstall"
-    cp "$SCRIPT_DIR/doctor.sh" "$BIN_DIR/agentstack-doctor"
+    # Fleet migration captures the existing protected-volume probe first.
+    if [[ "${AGENTSTACK_FLEET_COMPAT:-0}" != 1 ]]; then
+      cp "$SCRIPT_DIR/doctor.sh" "$BIN_DIR/agentstack-doctor"
+    fi
+    # Fleet-local source additions, deliberately owned by this upgrade branch.
+    cp "$REPO_ROOT/bin/agentstack-check-seats" "$INSTALL_DIR/bin/agentstack-check-seats"
+    cp "$REPO_ROOT/bin/agentstack-memory-guard" "$INSTALL_DIR/bin/agentstack-memory-guard"
+    cp "$REPO_ROOT/bin/agentstack-owner-checkin.py" "$INSTALL_DIR/bin/agentstack-owner-checkin.py"
+    # Fleet migration retains reaper registry configuration until rendered.
+    if [[ "${AGENTSTACK_FLEET_COMPAT:-0}" != 1 ]]; then
+      cp "$REPO_ROOT/bin/agentstack-reap-idle-seats" "$INSTALL_DIR/bin/agentstack-reap-idle-seats"
+    fi
+    cp "$REPO_ROOT/bin/agentstack-restart-seat" "$INSTALL_DIR/bin/agentstack-restart-seat"
+    cp "$REPO_ROOT/bin/agentstack-rule-mirror-check" "$INSTALL_DIR/bin/agentstack-rule-mirror-check"
+    cp "$REPO_ROOT/bin/agentstack-seat-cost.py" "$INSTALL_DIR/bin/agentstack-seat-cost.py"
+    cp "$REPO_ROOT/bin/agentstack-seat-stall-watch.py" "$INSTALL_DIR/bin/agentstack-seat-stall-watch.py"
+    cp "$REPO_ROOT/bin/agentstack-spawn-codex" "$INSTALL_DIR/bin/agentstack-spawn-codex"
+    cp "$REPO_ROOT/bin/agentstack-supervisor.py" "$INSTALL_DIR/bin/agentstack-supervisor.py"
+    if [[ "${AGENTSTACK_FLEET_COMPAT:-0}" != 1 ]]; then
+      cp "$REPO_ROOT/bin/agentstack-tmux-server-migrate" "$INSTALL_DIR/bin/agentstack-tmux-server-migrate"
+    fi
+    cp "$REPO_ROOT/bin/agentstack-unstick-seats.sh" "$INSTALL_DIR/bin/agentstack-unstick-seats.sh"
+    cp "$REPO_ROOT/bin/codex-stats" "$INSTALL_DIR/bin/codex-stats"
+    cp "$REPO_ROOT/bin/head-send" "$INSTALL_DIR/bin/head-send"
+    cp "$REPO_ROOT/bin/orrery-audit-evidence" "$INSTALL_DIR/bin/orrery-audit-evidence"
+    cp "$REPO_ROOT/bin/orrery-audit-login" "$INSTALL_DIR/bin/orrery-audit-login"
+    cp "$REPO_ROOT/bin/orrery-audit-run" "$INSTALL_DIR/bin/orrery-audit-run"
+    cp "$REPO_ROOT/bin/orrery-ci" "$INSTALL_DIR/bin/orrery-ci"
+    cp "$REPO_ROOT/bin/orrery-head-tripwire" "$INSTALL_DIR/bin/orrery-head-tripwire"
+    cp "$REPO_ROOT/bin/owner-quote-index" "$INSTALL_DIR/bin/owner-quote-index"
+    cp "$REPO_ROOT/bin/owner-sheet-health" "$INSTALL_DIR/bin/owner-sheet-health"
+    cp "$REPO_ROOT/bin/owner-sheet-server.py" "$INSTALL_DIR/bin/owner-sheet-server.py"
+    cp "$REPO_ROOT/bin/simulator-window-guard" "$INSTALL_DIR/bin/simulator-window-guard"
+    cp "$REPO_ROOT/bin/agentstack-spawn-claude" "$INSTALL_DIR/bin/agentstack-spawn-claude"
+    cp "$REPO_ROOT/bin/agentstack-stallself-replay.py" "$INSTALL_DIR/bin/agentstack-stallself-replay.py"
+    # Fleet migration reads the existing station config before replacing it.
+    if [[ "${AGENTSTACK_FLEET_COMPAT:-0}" != 1 ]]; then
+      cp "$REPO_ROOT/bin/agentstack-station-materials" "$INSTALL_DIR/bin/agentstack-station-materials"
+    fi
+    if [[ "${AGENTSTACK_FLEET_COMPAT:-0}" != 1 ]]; then
+      cp "$REPO_ROOT/bin/agentstack_jobend.py" "$INSTALL_DIR/bin/agentstack_jobend.py"
+    fi
+    cp "$REPO_ROOT/bin/agentstack_orphan.py" "$INSTALL_DIR/bin/agentstack_orphan.py"
+    cp "$REPO_ROOT/bin/agentstack_retainprune.py" "$INSTALL_DIR/bin/agentstack_retainprune.py"
+    if [[ "${AGENTSTACK_FLEET_COMPAT:-0}" != 1 ]]; then
+      cp "$REPO_ROOT/bin/agentstack_stallself.py" "$INSTALL_DIR/bin/agentstack_stallself.py"
+    fi
+    if [[ "${AGENTSTACK_FLEET_COMPAT:-0}" != 1 ]]; then
+      cp "$REPO_ROOT/bin/agentstack_unstick_seats.py" "$INSTALL_DIR/bin/agentstack_unstick_seats.py"
+    fi
+    if [[ "${AGENTSTACK_FLEET_COMPAT:-0}" != 1 ]]; then
+      cp "$REPO_ROOT/bin/codex-session-restore" "$INSTALL_DIR/bin/codex-session-restore"
+    fi
+    cp "$REPO_ROOT/bin/codex-usage" "$INSTALL_DIR/bin/codex-usage"
+    # Fleet migration preserves configured receipt roots from the existing helper.
+    if [[ "${AGENTSTACK_FLEET_COMPAT:-0}" != 1 ]]; then
+      cp "$REPO_ROOT/bin/head-accept" "$INSTALL_DIR/bin/head-accept"
+    fi
+    cp "$REPO_ROOT/bin/receipt-citation-warning.py" "$INSTALL_DIR/bin/receipt-citation-warning.py"
+    cp "$REPO_ROOT/bin/test_agentstack_jobend.py" "$INSTALL_DIR/bin/test_agentstack_jobend.py"
+    cp "$REPO_ROOT/bin/test_agentstack_orphan.py" "$INSTALL_DIR/bin/test_agentstack_orphan.py"
+    cp "$REPO_ROOT/bin/test_agentstack_retainprune.py" "$INSTALL_DIR/bin/test_agentstack_retainprune.py"
+    cp "$REPO_ROOT/bin/test_agentstack_stallself.py" "$INSTALL_DIR/bin/test_agentstack_stallself.py"
+    cp "$REPO_ROOT/bin/test_agentstack_station_materials_sparse.py" "$INSTALL_DIR/bin/test_agentstack_station_materials_sparse.py"
+    cp "$REPO_ROOT/bin/test_agentstack_unstick_seats.py" "$INSTALL_DIR/bin/test_agentstack_unstick_seats.py"
     cp "$SCRIPT_DIR/selftest.py" "$BIN_DIR/agentstack-selftest"
     cp "$MERGE_SETTINGS_SCRIPT" "$BIN_DIR/agentstack-merge-settings"
     cp "$MERGE_CLAUDE_MCP_SCRIPT" "$BIN_DIR/agentstack-merge-claude-mcp"
@@ -3074,6 +3151,7 @@ values = {
     "AGENTSTACK_CODEX_CHILD_CONFIG_OVERLAY": "$CODEX_CHILD_CONFIG_OVERLAY_SETTING",
     "AGENTSTACK_CODEX_NETWORK": "$CODEX_NETWORK_SETTING",
     "AGENTSTACK_CHILD_DEFAULT_TOOLS": "$CHILD_DEFAULT_TOOLS_SETTING",
+    "AGENTSTACK_CODEX_SANDBOX": "$CODEX_SANDBOX_SETTING",
     "AGENTSTACK_CODEX_ADD_DIRS": "$CODEX_ADD_DIRS_SETTING",
     "AGENTSTACK_CHILD_RESUME_RETENTION_DAYS": "$CHILD_RESUME_RETENTION_DAYS_SETTING",
     "AGENTSTACK_CODEX_BIN": "$CODEX_BIN_SETTING",
@@ -3105,6 +3183,22 @@ values = {
     # even when their names are absent from this list.
     "AGENTSTACK_CHOSEN_SETTINGS": "$CHOSEN_SETTINGS",
 }
+# Retain fleet exports outside the upstream-managed key set. Parse values as
+# literals; never execute the old file or expose its values in installer output.
+if path.is_file():
+    for old_line in path.read_text(encoding="utf-8").splitlines():
+        if not old_line.startswith("export ") or "=" not in old_line:
+            continue
+        old_key, old_raw = old_line[7:].split("=", 1)
+        if not old_key.replace("_", "").isalnum() or old_key[0:1].isdigit():
+            continue
+        if old_key in values or old_key in {
+            "AGENTSTACK_MAIL_DIR", "AGENTSTACK_MAIL_STATE_ROOT", "AGENTSTACK_MAIL_HTTP_BEARER_MODE"
+        }:
+            continue
+        old_value = shlex.split(old_raw, comments=True, posix=True)
+        if len(old_value) == 1:
+            values[old_key] = old_value[0]
 values.update({
     "AGENTSTACK_MAIL_DIR": "$NATIVE_MAIL_SERVICE_ROOT",
     "AGENTSTACK_MAIL_STATE_ROOT": "$NATIVE_MAIL_STATE_ROOT",
@@ -3115,8 +3209,18 @@ if os.environ["AGENTSTACK_INSTALL_PRESERVE_LEGACY_PROTECTED_ROOTS"] == "true":
 if values['AGENTSTACK_RUNTIME_MODE']=='fresh':
     values.update(__import__('json').loads(os.environ['AGENTSTACK_INSTALL_FRESH_ENV']))
     values['AGENTSTACK_MAIL_RUNNER'] = "$NATIVE_MAIL_RUNNER"
+codex_comments = []
+if path.is_file():
+    preceding = []
+    for old_line in path.read_text(encoding="utf-8").splitlines():
+        if old_line.startswith("export AGENTSTACK_CODEX_BIN="):
+            codex_comments = preceding
+            break
+        preceding = preceding + [old_line] if old_line.startswith("#") else []
 lines = ["# Generated by ORRERY Telemetry install.sh", "# Do not put secrets in this file.", ""]
 for key, value in values.items():
+    if key == "AGENTSTACK_CODEX_BIN":
+        lines.extend(codex_comments)
     lines.append(f"export {key}={shlex.quote(value)}")
 fd, temporary = tempfile.mkstemp(prefix=path.name + ".", dir=path.parent)
 try:
@@ -4900,6 +5004,7 @@ env = {
     "AGENTSTACK_CODEX_CHILD_CONFIG_OVERLAY": "$CODEX_CHILD_CONFIG_OVERLAY_SETTING",
     "AGENTSTACK_CODEX_NETWORK": "$CODEX_NETWORK_SETTING",
     "AGENTSTACK_CHILD_DEFAULT_TOOLS": "$CHILD_DEFAULT_TOOLS_SETTING",
+    "AGENTSTACK_CODEX_SANDBOX": "$CODEX_SANDBOX_SETTING",
     "AGENTSTACK_CODEX_ADD_DIRS": "$CODEX_ADD_DIRS_SETTING",
     "AGENTSTACK_CHILD_RESUME_RETENTION_DAYS": "$CHILD_RESUME_RETENTION_DAYS_SETTING",
     "AGENTSTACK_CODEX_BIN": "$CODEX_BIN_SETTING",
@@ -5350,6 +5455,7 @@ manifest = {
         "AGENTSTACK_CODEX_CHILD_CONFIG_OVERLAY": "$CODEX_CHILD_CONFIG_OVERLAY_SETTING",
         "AGENTSTACK_CODEX_NETWORK": "$CODEX_NETWORK_SETTING",
         "AGENTSTACK_CHILD_DEFAULT_TOOLS": "$CHILD_DEFAULT_TOOLS_SETTING",
+    "AGENTSTACK_CODEX_SANDBOX": "$CODEX_SANDBOX_SETTING",
         "AGENTSTACK_CODEX_ADD_DIRS": "$CODEX_ADD_DIRS_SETTING",
         "AGENTSTACK_CHILD_RESUME_RETENTION_DAYS": "$CHILD_RESUME_RETENTION_DAYS_SETTING",
         "AGENTSTACK_CODEX_BIN": "$CODEX_BIN_SETTING",
@@ -5521,6 +5627,9 @@ main() {
   if ! run_preflight; then
     exit 1
   fi
+  if [[ "${AGENTSTACK_FLEET_COMPAT:-0}" == 1 && "$TIER" != tier0 ]]; then
+    "$PYTHON_BIN" "$SCRIPT_DIR/install-fleet-payload.py" --install-dir "$INSTALL_DIR" --validate-only
+  fi
   # Validate before copying assets, writing settings or changing services.
   # Pass the new setting as data, never interpolate it into Python source.
   "$PYTHON_BIN" - "$REPO_ROOT/dashboard/legacy_http_admission.py" "$DASHBOARD_ALLOWED_ORIGINS_SETTING" <<'PY'
@@ -5578,9 +5687,15 @@ PY
     safe_merge_settings
     safe_managed_doc_setups
   fi
+  if [[ "${AGENTSTACK_FLEET_COMPAT:-0}" == 1 && "$TIER" != tier0 && "$DRY_RUN" != true ]]; then
+    "$PYTHON_BIN" "$SCRIPT_DIR/install-fleet-payload.py" --install-dir "$INSTALL_DIR"
+  fi
   start_service "$service_kind"
   write_manifest "${ACTIVE_SERVICE_KIND:-manual}" "${SERVICE_PATH:-}" \
     "${AGENT_MAIL_SERVICE_KIND:-}" "${AGENT_MAIL_SERVICE_PATH:-}"
+  if [[ "${AGENTSTACK_FLEET_COMPAT:-0}" == 1 && "$TIER" != tier0 && "$DRY_RUN" != true ]]; then
+    "$PYTHON_BIN" "$SCRIPT_DIR/install-fleet-payload.py" --install-dir "$INSTALL_DIR" --record-only
+  fi
   verify_dashboard_service
   if [[ "$DRY_RUN" == true ]]; then
     say "Dry-run complete: no files were written."

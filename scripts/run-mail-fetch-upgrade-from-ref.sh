@@ -1,0 +1,56 @@
+#!/bin/bash
+# Owner entry: the candidate is previewed here; the interactive installer runs only on request.
+set -euo pipefail
+mode=install
+if [[ "${1:-}" == --preview && $# == 1 ]]; then mode=preview
+elif [[ $# != 0 ]]; then echo 'usage: run-mail-fetch-upgrade-from-ref.sh [--preview]' >&2; exit 2
+fi
+: "${AGENTSTACK_UPGRADE_REPO:?set the existing repository path}"
+: "${AGENTSTACK_UPGRADE_REF:?set the reviewed fork ref}"
+: "${AGENTSTACK_PROJECT_KEY:?set the existing ORRERY project key}"
+[[ "$AGENTSTACK_UPGRADE_REPO" == /* && "$AGENTSTACK_PROJECT_KEY" == /* ]] || { echo 'repository and project key must be absolute' >&2; exit 2; }
+revision="$(git -C "$AGENTSTACK_UPGRADE_REPO" rev-parse --verify "${AGENTSTACK_UPGRADE_REF}^{commit}")"
+script_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)"
+if [[ "$mode" == preview ]]; then
+  [[ "$(git -C "$script_root" rev-parse HEAD)" == "$revision" ]] || { echo 'preview source does not match the reviewed ref' >&2; exit 2; }
+  [[ -z "$(git -C "$script_root" status --porcelain --untracked-files=no)" ]] || { echo 'preview source has tracked edits' >&2; exit 2; }
+  python3 - "$script_root" <<'PY'
+import json, pathlib, sys
+root=pathlib.Path(sys.argv[1])
+rows=json.loads((root/'fleet/addon-paths.json').read_text())
+release=pathlib.Path('releases/seat-lifecycle/ee5880e3e23606e0f3252cbeed211868102f4595')
+targets={row.removeprefix('fleet/') if row.startswith('fleet/runtime/') else row for row in rows}
+for path in (root/'fleet'/release).rglob('*'):
+    if path.is_file() or path.is_symlink():
+        targets.add(str(path.relative_to(root/'fleet')))
+targets.update(('hooks/spawn_child.sh','hooks/cleanup-child-agent.sh',
+                'hooks/spawn_child.upstream.sh','hooks/cleanup-child-agent.upstream.sh',
+                'bin/agentstack-preregister-child','bin/agentstack-preregister-child.upstream',
+                'bin/agentstack-spawn-codex','bin/agentstack-restart-seat','bin/agentstack-doctor',
+                'env.sh','fleet-install.json','install-state.json'))
+print('fleet payload possible destinations:',len(targets))
+for target in sorted(targets):
+    print('fleet destination:',target)
+print('core installer possible destinations: VERSION, dashboard/, hooks/, bin/, skills/, codex/, claude/, templates/, env.sh, install-state.json')
+print('owner-approved configuration may include Claude MCP/settings and managed instruction blocks')
+print('planned service actions: dashboard service start/restart; Mail autostart and watcher registration; Mail candidate verification and managed switch')
+print('service labels, live-specific conditional file changes, database backup location and outage duration: not measured by this preview')
+PY
+  printf 'reviewed source commit: %s\n' "$revision"
+  exit 0
+fi
+[[ -t 0 ]] || { echo 'run in the head/owner terminal for interactive approvals' >&2; exit 2; }
+[[ "${AGENTSTACK_ASSUME_YES:-0}" == 0 ]] || { echo 'remove AGENTSTACK_ASSUME_YES' >&2; exit 2; }
+command -v dev-storage-governor >/dev/null || { echo 'dev-storage-governor unavailable' >&2; exit 2; }
+command -v agentstack-station-materials >/dev/null || { echo 'agentstack-station-materials unavailable' >&2; exit 2; }
+root="$(dev-storage-governor allocate --project examforge --task ORRERY-UP-6-owner --owner owner --kind build-cache --reuse-key orrery-up-6-owner-source --storage-base internal --internal-reason source-worktree --retention-class ephemeral --retention-category scratch --content-class private-protected --budget-gib 1 --reproduction-command 'scripts/install.sh --mail update' --input-identity "$revision" --accepted-evidence scripts/install.sh)"
+worktree="$root/source"
+if [[ ! -d "$worktree" ]]; then
+  agentstack-station-materials worktree --source "$AGENTSTACK_UPGRADE_REPO" --destination "$worktree" --branch upgrade/orrery-up-6-owner-20261115 --revision "$revision" --receipt "$root/worktree.json"
+fi
+[[ "$(git -C "$worktree" rev-parse HEAD)" == "$revision" && -z "$(git -C "$worktree" status --porcelain)" ]] || { echo 'owner worktree differs; preserving it and stopping' >&2; exit 1; }
+printf 'reviewed source commit: %s\n' "$revision"
+(
+  cd "$worktree"
+  AGENTSTACK_FLEET_COMPAT=1 /bin/bash scripts/install.sh --project-key "$AGENTSTACK_PROJECT_KEY" --mail update
+)

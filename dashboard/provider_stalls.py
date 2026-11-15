@@ -28,13 +28,11 @@ _ERROR = re.compile(
     + r"[ \t]*$"
 )
 try:
-    from dashboard.terminal_state import _ANSI, _STALL_WORK as _WORK
+    from dashboard.terminal_state import _ANSI, _STALL_WORK as _WORK, _CODEX_FOOTER_MODEL, _CODEX_FOOTER_EFFORT
 except ModuleNotFoundError:
-    from terminal_state import _ANSI, _STALL_WORK as _WORK
+    from terminal_state import _ANSI, _STALL_WORK as _WORK, _CODEX_FOOTER_MODEL, _CODEX_FOOTER_EFFORT
 
-# Newer Codex shows the display name ("GPT-6.1 Terra high"), older ones the ID.
-_FOOTER = re.compile(r"^(?:gpt-\S+(?:\s+(?:sol|luna|astra|terra))?|sol|luna|astra|terra)"
-                     r"\s+(?:low|medium|high|xhigh|max|ultra)\b.*$", re.I)
+_FOOTER = re.compile(r"^(?:" + _CODEX_FOOTER_MODEL + r"|sol|luna|astra|terra)\s+" + _CODEX_FOOTER_EFFORT + r"\b.*$", re.I)
 _UI = re.compile(r"^(?:[─━\s]+|\? for shortcuts.*|\d+% context left.*)$")
 # Codex rust-v0.159.2, tui/src/bottom_pane/unified_exec_footer.rs::summary_text.
 # Only this complete footer may sit between the error and the composer.

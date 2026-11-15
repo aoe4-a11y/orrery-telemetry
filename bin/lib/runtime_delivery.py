@@ -904,7 +904,22 @@ class RuntimeDelivery(RuntimeFiles):
             return []
         return reply.stdout.splitlines()
 
+    def memory_admit(self):
+        # R-183 also covers global launch/retry/provider-exec entry points.
+        home=Path(self.client.config.get('agentstack_home',str(Path.home()/'.agentstack')))
+        env=dict(os.environ,AGENTSTACK_RUNTIME_DIR=str(home/'runtime'))
+        try:
+            result=subprocess.run([str(home/'bin/agentstack-memory-budget'),'admit'],
+                capture_output=True,text=True,timeout=20,env=env)
+        except (OSError,subprocess.SubprocessError):
+            print('memory admission refused: measurement unavailable',file=sys.stderr)
+            raise SystemExit(75)
+        if result.returncode:
+            print((result.stderr.strip().splitlines() or ['memory admission refused'])[0],file=sys.stderr)
+            raise SystemExit(result.returncode)
+
     def create_wrapper(self,row,provider_session_id=None):
+        self.memory_admit()
         args=[sys.executable,str(Path(__file__).with_name('runtime_client.py')),'--context',str(self.client.path),'--',
               'execute-launch',row['launch_id'],row['receipt_nonce']]
         if provider_session_id:args.append(provider_session_id)
@@ -961,7 +976,9 @@ class RuntimeDelivery(RuntimeFiles):
     def start(self, provider, cwd, *, detached=False, launch_kind='startup', provider_session_id=None):
         c=self.client
         if provider=='gemini' and (not c.outputs['child'].exists() or not c.outputs['task'].exists()):self.fail('GEMINI_INTERACTIVE_RUNTIME_UNSUPPORTED')
-        if provider=='codex':self.codex_trust()
+        self.memory_admit()
+        if provider=='codex':
+            self.codex_trust()
         name=c.identity['name']
         if detached and (not name or any(x in name for x in ('.',':','\r','\n','\0'))):self.fail('TMUX_TARGET_INPUT_INVALID')
         row=self.prepare_launch(provider,launch_kind=launch_kind,cwd=cwd)
@@ -1096,6 +1113,7 @@ class RuntimeDelivery(RuntimeFiles):
                     or runner.get('pid')!=os.getppid() or self.api['process_start'](os.getppid())!=runner.get('process_start')):
                 self.fail('LAUNCH_RECEIPT_MISMATCH')
             args=self.provider_command(row,provider_session_id)
+        self.memory_admit()
         env=dict(os.environ);env['AGENTSTACK_PROVIDER_PID']=str(os.getpid())
         os.chdir(row['cwd']);os.execvpe(args[0],args,env)
 

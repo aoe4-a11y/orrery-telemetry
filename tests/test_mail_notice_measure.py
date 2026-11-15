@@ -574,3 +574,14 @@ def test_unchanged_watcher_delivers_into_real_tmux_tty_sink(tmp_path):
                     os.killpg(process.pid, signal.SIGKILL); process.wait()
             terminal('kill-server')  # 自分の一時socketだけ。
             os.close(read_fd); os.close(keep_fd)
+
+
+@pytest.mark.parametrize("split", [0,1,12,80,160])
+def test_literal_message_id_notice_requires_submit_and_preserves_binding(split):
+    modern=prompt().replace(b"ORRERY Mail notification: message from", b"AgentStack mail notification: message_id=777; message from")
+    parser=m.PasteParser()
+    assert parser.feed(modern[:split])==[]
+    assert parser.feed(modern[split:])==[]
+    frames=parser.feed(b"\r")
+    assert frames==[modern]
+    assert m.notice_events(frames[0],BASE,"ProbeSender",at_ns=99)[0]["sequence"]==1

@@ -93,3 +93,4 @@ Documents without a translation are labelled with their original language. Image
 
 - [Native context and helper models](native-capabilities.md) — dsh / Hermes context observations and per-model capabilities.
 - [Native catalog and effort capabilities](managed-catalog.en.md)
+- [Native catalog and effort capabilities (Japanese)](managed-catalog.md)

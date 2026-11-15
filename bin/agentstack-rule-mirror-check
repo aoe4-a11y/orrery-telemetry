@@ -1,0 +1,113 @@
+#!/usr/bin/env python3
+"""Read-only mirror check for R-128/R-129/I1.
+
+Usage: agentstack-rule-mirror-check [EXAMFORGE_REPO]
+Without an argument, ExamForge documents are read with git show from
+origin/plan/first-experience. An explicit checkout checks its working tree.
+Storage has one shared canonical body; mirrors keep a pointer and the standing
+R-095 cleanup permission. Operational details live in TWO_SEAT_OPERATIONS.
+"""
+import re
+import subprocess
+import sys
+from pathlib import Path
+
+HOME = Path.home()
+CANON = HOME / '.agentstack/runtime/shared/STORAGE-R128-I1.md'
+POINTER = 'STORAGE-R128-I1.md'
+POLICY_ID = 'R-128/I1'
+MAINLINE_REF = 'origin/plan/first-experience'
+EXAMFORGE_GIT = HOME / 'tools/examforge'
+REGISTRY = HOME / '.codex/RULES_REGISTRY.md'
+MIRRORS = [
+    HOME / '.claude/CLAUDE.md',
+    HOME / '.codex/AGENTS.md',
+    HOME / '.agentstack/runtime/station-template.md',
+    HOME / 'tools/osce-trainer-main/AGENTS.md',
+    HOME / 'tools/osce-trainer-main/CLAUDE.md',
+    HOME / 'tools/osce-trainer/AGENTS.md',
+    HOME / 'tools/osce-trainer/CLAUDE.md',
+    REGISTRY,
+    'examforge:AGENTS.md',
+    'examforge:CLAUDE.md',
+    'examforge:docs/RESOURCE_BUDGET.md',
+    'examforge:docs/TWO_SEAT_OPERATIONS_JA.md',
+]
+LEGACY_ACTIVE = re.compile(r'残す物は次の\s*5\s*つだけ|NAS\s*は前提にしない|それ以外は、?作業が終わったら消す')
+CLEANUP_PERMISSION = re.compile(r'照合済み[^\n]*許可[^\n]*(?:要らない|不要)|消すのに殿の許可は要らない')
+
+
+def read_mirror(path, repo=None):
+    """Preserve the existing working-tree versus mainline read boundary."""
+    if isinstance(path, str) and path.startswith('examforge:'):
+        rel = path.split(':', 1)[1]
+        if repo is not None:
+            full = Path(repo) / rel
+            return str(full), full.read_text() if full.exists() else None
+        out = subprocess.run(['git', '-C', str(EXAMFORGE_GIT), 'show', f'{MAINLINE_REF}:{rel}'],
+                             capture_output=True, text=True)
+        return f'{MAINLINE_REF}:{rel}', out.stdout if out.returncode == 0 else None
+    return str(path), path.read_text() if path.exists() else None
+
+
+def canonical_reference(text):
+    return any('`' + path + '`' in text for path in [str(CANON), '~/.agentstack/runtime/shared/STORAGE-R128-I1.md'])
+
+
+def check(reader=read_mirror):
+    """Return findings. The injectable reader also permits a no-write draft check."""
+    label, canon = reader(CANON)
+    required = ['R-128', 'R-129', 'I1', 'R-095', '写し', 'SHA', 'NAS']
+    if canon is None or not re.search(r'\[storage R-128/I1\s*/', canon) or any(x not in canon for x in required):
+        return {'policy': None, 'problems': [f'{label}: canonical R-128/I1 policy missing or incomplete'], 'exit_code': 2}
+    problems = []
+    texts = {}
+    for path in MIRRORS:
+        label, text = reader(path)
+        if text is None:
+            problems.append(f'{label}: missing file')
+            continue
+        texts[path] = text
+        active = text
+        if path == REGISTRY:
+            rows = [l for l in text.splitlines() if l.startswith('| 記憶容量（storage） |')]
+            if len(rows) != 1 or POLICY_ID not in rows[0] or not canonical_reference(rows[0]):
+                problems.append(f'{label}: canonical storage registry row differs')
+            active = rows[0] if len(rows) == 1 else ''
+        if not canonical_reference(active):
+            problems.append(f'{label}: lacks canonical storage pointer')
+        if 'R-095' not in active or not CLEANUP_PERMISSION.search(active):
+            problems.append(f'{label}: lacks R-095 verified-cleanup permission')
+        begin, end = '<!-- BEGIN STORAGE V5 -->', '<!-- END STORAGE V5 -->'
+        if active.count(begin) != active.count(end) or active.count(begin) > 1:
+            problems.append(f'{label}: invalid storage marker pairs')
+        blocks = re.findall(re.escape(begin) + r'\n(.*?)' + re.escape(end), active, re.S)
+        for block in blocks:
+            if not canonical_reference(block) or LEGACY_ACTIVE.search(block):
+                problems.append(f'{label}: obsolete or divergent marked storage body')
+    # These obligations moved out of startup copies; validate their actual owner.
+    path = 'examforge:docs/TWO_SEAT_OPERATIONS_JA.md'
+    manual = texts.get(path, '')
+    for name, token in [('LOCK-PRIO', 'EXAMFORGE_HEAVY_PRIORITY'),
+                        ('iOS 27 PRB store', 'PRBPosterExtensionDataStore'),
+                        ('job completion watcher', 'watcher')]:
+        if token not in manual:
+            problems.append(f'{path}: lacks {name}')
+    return {'policy': POLICY_ID, 'problems': problems, 'exit_code': 1 if problems else 0}
+
+
+def main(argv=None):
+    argv = sys.argv[1:] if argv is None else argv
+    if len(argv) > 1:
+        print('usage: agentstack-rule-mirror-check [EXAMFORGE_REPO]', file=sys.stderr)
+        return 2
+    repo = Path(argv[0]) if argv else None
+    result = check(lambda p: read_mirror(p, repo))
+    for problem in result['problems']:
+        print(problem)
+    print(f"rule-mirror-check: canonical storage {result['policy']}, mismatches {len(result['problems'])}")
+    return result['exit_code']
+
+
+if __name__ == '__main__':
+    sys.exit(main())

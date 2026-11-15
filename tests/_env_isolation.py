@@ -8,7 +8,7 @@ from pathlib import Path
 
 # Variables that point tools at the real user's config directories. Installer
 # rehearsals must write under the test's temporary HOME, never through these.
-INHERITED_CONFIG_DIR_VARS = ("CODEX_HOME", "CLAUDE_CONFIG_DIR")
+INHERITED_CONFIG_DIR_VARS = ("CODEX_HOME", "CLAUDE_CONFIG_DIR", "TMUX", "TMUX_PANE")
 
 
 
