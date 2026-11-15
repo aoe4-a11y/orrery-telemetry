@@ -205,6 +205,7 @@ def test_dashboard_rotation_and_next_migration_destination_are_snapshotted(fixtu
     home, project, destination = fixture_tree
     runtime = home / '.agentstack/runtime'; runtime.mkdir()
     old = runtime / 'dashboard.log.4'; old.write_bytes(b'synthetic old rotation')
+    watcher_old = runtime / 'mail-watcher.log.1'; watcher_old.write_bytes(b'synthetic watcher rotation')
     (runtime / 'dashboard.legacy.1.log').write_bytes(b'synthetic legacy')
     result = run_pre(home, project, destination, {'AGENTSTACK_DASHBOARD_LOG_BACKUPS': '5'})
     assert result.returncode == 0, result.stderr
@@ -212,6 +213,7 @@ def test_dashboard_rotation_and_next_migration_destination_are_snapshotted(fixtu
     assert '.agentstack/runtime/dashboard.log.5' in rows
     assert '.agentstack/runtime/dashboard.legacy.2.log.tmp' in rows
     assert (destination / 'files/.agentstack/runtime/dashboard.log.4').read_bytes() == old.read_bytes()
+    assert (destination / 'files/.agentstack/runtime/mail-watcher.log.1').read_bytes() == watcher_old.read_bytes()
 
 
 def test_existing_examples_are_snapshotted(fixture_tree):

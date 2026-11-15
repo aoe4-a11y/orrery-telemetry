@@ -168,7 +168,7 @@ def plan(home: Path, project: Path, candidate: str, worktree: Path) -> list[str]
     if explicit_mail_root and relative(home, explicit_mail_root) != '.agentstack/mail-service':
         raise ValueError('non-default mail service root requires a separate reviewed plan')
     for name in ('annotations.json', 'claude-mcp-merge-result.json', 'dashboard-service.json',
-                 'dashboard.legacy.log', 'dashboard.log', 'dashboard.pid', 'mail-watcher.log',
+                 'dashboard.legacy.log', 'dashboard.log', 'dashboard.pid', 'mail-watcher.log', 'mail-watcher.log.1',
                  'managed_agents.txt', 'settings-installed-entries.json', 'settings-merge-result.json',
                  'annotations.json.tmp', 'dashboard.log.tmp', 'dashboard.legacy.log.tmp',
                  'settings-installed-entries.json.tmp', 'settings-merge-result.json.tmp'):
