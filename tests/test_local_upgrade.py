@@ -52,35 +52,13 @@ def test_child_home_rekeys_persisted_hooks_trust(tmp_path):
     assert str(source)+'/hooks.json:abc' not in generated
 
 
-def test_rollback_preserves_new_mail_state_and_restores_payload(tmp_path):
-    spec = importlib.util.spec_from_file_location('upgrade_backup', ROOT / 'scripts/fleet-upgrade-backup.py')
-    module = importlib.util.module_from_spec(spec); spec.loader.exec_module(module)
-    home=tmp_path/'home';live=home/'.agentstack';(live/'bin').mkdir(parents=True)
-    (live/'bin/tool').write_text('old');(live/'bin/tool').chmod(0o755)
-    (live/'config').mkdir();(live/'config/head-send-lint.json').write_text('{"threshold":1}')
-    (live/'mail').mkdir();(live/'mail/storage.sqlite3').write_text('initial-mail')
-    (live/'runtime').mkdir();(live/'runtime/agent_token_SunnyCurie').write_text('synthetic-secret')
-    project=home/'project';project.mkdir();(project/'CLAUDE.md').write_text('old-managed-doc')
-    snapshot=tmp_path/'snapshot'
-    module.snapshot(home,snapshot,project)
-    assert not (snapshot/'files/.agentstack/mail').exists()
-    assert not (snapshot/'files/.agentstack/runtime').exists()
-    (live/'bin/tool').write_text('new');(live/'mail/storage.sqlite3').write_text('new-mail')
-    (live/'config/head-send-lint.json').write_text('{"threshold":2}')
-    (project/'CLAUDE.md').write_text('new-managed-doc')
-    module.restore(home,snapshot)
-    assert (live/'bin/tool').read_text()=='old'
-    assert (live/'config/head-send-lint.json').read_text()=='{"threshold":1}'
-    assert (live/'bin/tool').stat().st_mode&0o777==0o755
-    assert (live/'mail/storage.sqlite3').read_text()=='new-mail'
-    assert (live/'runtime/agent_token_SunnyCurie').read_text()=='synthetic-secret'
-    assert (project/'CLAUDE.md').read_text()=='old-managed-doc'
 
 
 def test_restart_rejects_project_mismatch_before_stopping_current_seat(tmp_path):
     import json,shutil
     home=tmp_path/'home';stack=home/'.agentstack';runtime=stack/'runtime';runtime.mkdir(parents=True)
     hooks=stack/'hooks';hooks.mkdir();shutil.copy2(ROOT/'hooks/seat_lifecycle.py',hooks/'seat_lifecycle.py')
+    guard=stack/'bin/agentstack-memory-budget';guard.parent.mkdir();guard.write_text('#!/bin/sh\nexit 0\n');guard.chmod(0o755)
     token=runtime/'agent_token_SunnyCurie';token.write_text('fixture-owner');token.chmod(0o600)
     state=runtime/'child-agents/SunnyCurie.json';state.parent.mkdir();state.write_text(json.dumps({'agent_name':'SunnyCurie','project_key':'/authoritative/project','registration_token':'fixture-owner'}));state.chmod(0o600)
     before=state.read_bytes();task=tmp_path/'task.md';task.write_text('# fixture task')

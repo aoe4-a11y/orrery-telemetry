@@ -11,7 +11,7 @@ import subprocess
 import tempfile
 import unittest
 
-HELPER = Path(__file__).with_name("agentstack-station-materials")
+HELPER = Path(os.environ.get("STATION_MATERIALS_HELPER", str(Path(__file__).with_name("agentstack-station-materials"))))
 loader = importlib.machinery.SourceFileLoader("station_materials_sparse", str(HELPER))
 spec = importlib.util.spec_from_loader(loader.name, loader)
 materials = importlib.util.module_from_spec(spec)
@@ -141,6 +141,201 @@ class SparseInputsTests(unittest.TestCase):
             {"docs/receipts/input-set/from-data.json"}, {r"docs/receipts/\(question.id).json"}), set())
 
 
+class PublishedCloseTests(unittest.TestCase):
+    def git(self, cwd, *args):
+        return subprocess.check_output(["git", "-C", str(cwd), *args], stderr=subprocess.PIPE).decode().strip()
+
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temp.cleanup)
+        self.root = Path(self.temp.name)
+        self.repo = self.root / "repo"
+        self.repo.mkdir()
+        self.git(self.repo, "init", "-q")
+        self.git(self.repo, "config", "user.name", "fixture")
+        self.git(self.repo, "config", "user.email", "fixture@local")
+        (self.repo / "file.txt").write_text("one")
+        (self.repo / ".gitignore").write_text("ignored.txt\n")
+        self.git(self.repo, "add", ".")
+        self.git(self.repo, "commit", "-qm", "base")
+        self.base = self.git(self.repo, "rev-parse", "HEAD")
+        self.git(self.root, "init", "--bare", "-q", "remote.git")
+        self.git(self.repo, "remote", "add", "origin", str(self.root / "remote.git"))
+        self.dest = self.root / "lane"
+        self.receipt = self.root / "receipt.json"
+        # Simulate a mounted private volume entirely within the test scratch root.
+        private_root = self.root / "private-volume"
+        private_root.mkdir()
+        self.private_receipt = private_root / "receipt.json"
+        self.helper = self.root / "station-materials-fixture"
+        source = HELPER.read_text()
+        root_marker = "PRIVATE_ROOT = None  # __FLEET_PRIVATE_ROOT_ASSIGNMENT__"
+        mount_marker = "if not os.path.ismount(PRIVATE_ROOT):"
+        assert source.count(root_marker) == source.count(mount_marker) == 1
+        source = source.replace(root_marker, f"PRIVATE_ROOT = Path({str(private_root)!r})")
+        source = source.replace(mount_marker, "if not PRIVATE_ROOT.is_dir():")
+        self.helper.write_text(source)
+        self.helper.chmod(0o755)
+        self.args = ["worktree", "--source", str(self.repo), "--destination", str(self.dest),
+                     "--branch", "lane", "--revision", self.base, "--receipt", str(self.receipt),
+                     "--private-receipt", str(self.private_receipt)]
+        self.run_tool(*self.args, ok=True)
+        (self.dest / "file.txt").write_text("two")
+        self.git(self.dest, "add", "file.txt")
+        self.git(self.dest, "commit", "-qm", "advance")
+        self.head = self.git(self.dest, "rev-parse", "HEAD")
+        self.git(self.dest, "push", "-q", "origin", "lane")
+
+    def run_tool(self, *args, ok):
+        env = dict(os.environ)
+        if Path("/usr/sbin/lsof").is_file():
+            env["PATH"] = env.get("PATH", "") + os.pathsep + "/usr/sbin"
+        result = subprocess.run([str(self.helper), *args], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, env=env)
+        self.assertEqual(result.returncode == 0, ok, result.stderr)
+        return result
+
+    def close(self, *extra, ok):
+        return self.run_tool(*self.args, "--close-published", *extra, ok=ok)
+
+    def test_advanced_pushed_closes_and_retains_branch(self):
+        # Old receipts are accepted by published close without exposing their contents.
+        self.receipt.write_text(self.private_receipt.read_text())
+        self.close("--dry-run", ok=True)
+        self.assertTrue(self.dest.exists())
+        self.close(ok=True)
+        self.assertFalse(self.dest.exists())
+        self.assertEqual(self.git(self.repo, "rev-parse", "refs/heads/lane"), self.head)
+        self.assertIn("already closed", self.close(ok=True).stdout)
+
+    def test_unpushed_refused(self):
+        self.git(self.repo, "push", "-q", "origin", ":lane")
+        self.assertIn("origin branch", self.close(ok=False).stderr)
+        self.assertTrue(self.dest.exists())
+
+    def test_different_remote_commit_refused(self):
+        self.git(self.repo, "push", "-q", "--force", "origin", self.base + ":refs/heads/lane")
+        self.assertIn("differs", self.close(ok=False).stderr)
+        self.assertTrue(self.dest.exists())
+
+    def test_tracked_change_refused(self):
+        (self.dest / "file.txt").write_text("dirty")
+        self.assertIn("tracked changes", self.close(ok=False).stderr)
+
+    def test_untracked_and_ignored_refused_without_names(self):
+        for name in ("secret-name", "ignored.txt"):
+            f = self.dest / name
+            f.write_text("unique")
+            result = self.close(ok=False)
+            self.assertIn("count=", result.stderr)
+            self.assertNotIn(name, result.stderr + result.stdout)
+            f.unlink()
+
+    def test_resume_after_removal(self):
+        from unittest.mock import patch
+        args = argparse.Namespace(source=self.repo, destination=self.dest, branch="lane", revision=self.base,
+                                  receipt=self.receipt, dry_run=False)
+        original = materials.WorktreeState.record
+        def interrupted(state, stage, status, exit_code=None):
+            if stage == "published-close":
+                raise KeyboardInterrupt()
+            return original(state, stage, status, exit_code)
+        with patch.object(materials.WorktreeState, "record", interrupted):
+            with self.assertRaises(KeyboardInterrupt):
+                materials.close_published(args)
+        self.assertFalse(self.dest.exists())
+        self.close(ok=True)
+        self.assertEqual(json.loads((self.root / "lane.station-materials-state.json").read_text())["status"], "cleaned")
+
+    def test_resume_when_directory_removed_but_registration_remains(self):
+        import shutil
+        from unittest.mock import patch
+        args = argparse.Namespace(source=self.repo, destination=self.dest, branch="lane", revision=self.base,
+                                  receipt=self.receipt, dry_run=False)
+        original = materials.worktree_git
+        def interrupted(cwd, *git_args, **kwargs):
+            if git_args[:2] == ("worktree", "remove"):
+                shutil.rmtree(self.dest)
+                raise KeyboardInterrupt()
+            return original(cwd, *git_args, **kwargs)
+        with patch.object(materials, "worktree_git", interrupted):
+            with self.assertRaises(KeyboardInterrupt):
+                materials.close_published(args)
+        self.assertFalse(self.dest.exists())
+        self.assertIn(str(self.dest), self.git(self.repo, "worktree", "list", "--porcelain"))
+        self.close(ok=True)
+        self.assertNotIn(str(self.dest), self.git(self.repo, "worktree", "list", "--porcelain"))
+        self.assertEqual(self.git(self.repo, "rev-parse", "refs/heads/lane"), self.head)
+
+    def test_open_process_refused(self):
+        process = subprocess.Popen(["sleep", "5"], cwd=self.dest)
+        try:
+            self.assertIn("in use", self.close(ok=False).stderr)
+        finally:
+            # The fixture exits by itself; do not signal processes from the isolated suite.
+            process.wait(timeout=10)
+
+    def test_legacy_cleanup_still_works(self):
+        self.git(self.dest, "reset", "--hard", self.base)
+        self.run_tool(*self.args, "--cleanup", ok=True)
+        self.assertFalse(self.dest.exists())
+
+    def test_symlink_and_wrong_registration_refused(self):
+        link = self.root / "link"
+        link.symlink_to(self.dest, target_is_directory=True)
+        args = list(self.args)
+        args[args.index(str(self.dest))] = str(link)
+        self.assertIn("symlink", self.run_tool(*args, "--close-published", ok=False).stderr)
+        state = self.root / "lane.station-materials-state.json"
+        data = json.loads(state.read_text())
+        data["request"]["branch"] = "wrong"
+        state.write_text(json.dumps(data))
+        self.assertIn("mismatch", self.close(ok=False).stderr)
+
+
+
+class PrivacyReceiptTests(SparseInputsTests):
+    def test_public_private_and_legacy_resume(self):
+        from unittest.mock import patch
+        import contextlib
+        import io
+        root, repo, revision = self.fixture()
+        private = root / "private"
+        private.mkdir()
+        receipt = root / "public.json"
+        secret = private / "private.json"
+        args = ["worktree", "--source", str(repo), "--destination", str(root / "lane"),
+                "--branch", "privacy-lane", "--revision", revision, "--receipt", str(receipt),
+                "--private-receipt", str(secret)]
+        with patch.object(materials, "PRIVATE_ROOT", private), patch.object(materials.os.path, "ismount", return_value=True):
+            out = io.StringIO()
+            with contextlib.redirect_stdout(out):
+                self.assertEqual(materials.main(args), 0)
+            full = json.loads(secret.read_text())
+            public = receipt.read_text()
+            for row in full["required_test_inputs"]:
+                self.assertNotIn(row["path"], public)
+                self.assertNotIn(row["path"], out.getvalue())
+            for row in full["included_test_folders"]:
+                self.assertNotIn(row["path"], public)
+            self.assertEqual(len(full["required_test_inputs"]), 1)
+            self.assertEqual(json.loads(public), materials.public_worktree_receipt(full))
+            receipt.write_text(json.dumps(full))
+            with contextlib.redirect_stdout(out):
+                self.assertEqual(materials.main(args + ["--resume"]), 0)
+                self.assertEqual(materials.main(args + ["--cleanup"]), 0)
+            self.assertNotIn(full["required_test_inputs"][0]["path"], out.getvalue())
+
+    def test_missing_private_volume_fails_before_creation(self):
+        from unittest.mock import patch
+        root, repo, revision = self.fixture()
+        args = ["worktree", "--source", str(repo), "--destination", str(root / "lane"),
+                "--branch", "privacy-lane", "--revision", revision, "--receipt", str(root / "public.json")]
+        with patch.object(materials.os.path, "ismount", return_value=False):
+            self.assertEqual(materials.main(args), 1)
+        self.assertFalse((root / "lane").exists())
+        self.assertFalse((root / "public.json").exists())
+
+
 def verify_destination(args):
     receipt = args.record.parent / "generated-worktree.json"
     subprocess.run([str(HELPER), "worktree", "--source", str(args.source),
@@ -185,19 +380,16 @@ def verify_destination(args):
         assert folder_matches
     report = dict(commit=result["commit"], destination=str(args.destination),
                   expected_observation_sha256=hashlib.sha256(observed_bytes).hexdigest(),
-                  required_count=len(matches), verified_count=len(matches), required=matches,
+                  required_count=len(matches), verified_count=len(matches),
                   all_selected_count=len(refs), materialized_record_count=len(present),
                   excluded_tracked_count=len(records) - len(refs), extra_record_files=0,
                   excluded_by_directory={directory: sum(path.startswith(directory + "/") and path not in refs
                                                        for path in records)
                                          for directory in materials.RECORD_DIRECTORIES},
-                  actual_sparse_patterns=subprocess.check_output(
-                      ["git", "-C", str(args.destination), "sparse-checkout", "list"], text=True).splitlines(),
                   clean=True, heavy=0, dependency_copy_bytes=result["dependency_copy_bytes"])
     if args.verify_folder:
-        report.update(folder=args.verify_folder, folder_verified_files=folder_matches,
-                      folder_verified_count=len(folder_matches),
-                      included_test_folders=result["included_test_folders"],
+        report.update(folder_verified_count=len(folder_matches),
+                      included_test_folders_count=result["included_test_folders_count"],
                       previous_excluded_count=623, excluded_count_reduction=623 - report["excluded_tracked_count"])
     args.record.write_text(json.dumps(report, indent=2) + "\n")
     print(json.dumps(dict(required_verified=len(matches), selected_records=len(refs),
