@@ -527,6 +527,7 @@ def _legacy_pending(state_path: Path) -> Path:
 
 def inspect_legacy_claude(
     runtime_dir: Path, agent_name: str, *, agent_id: int, project_key: str, program: str,
+    expected_provider: str = "claude",
 ) -> dict[str, Any] | None:
     """Recognize only the old three-field Claude state, without writing a lock/file."""
     state_path, token_path, _home, mcp_path, _lock = _paths(runtime_dir, agent_name)
@@ -537,7 +538,7 @@ def inspect_legacy_claude(
         raise ResumeStateError("config_unrestorable", "child state is invalid") from exc
     if not isinstance(state, dict) or set(state) != {"agent_name", "project_key", "registration_token"}:
         return None
-    if (type(agent_id) is not int or agent_id <= 0 or _provider(program) != "claude"
+    if (type(agent_id) is not int or agent_id <= 0 or _provider(program) != expected_provider
             or state["agent_name"] != agent_name or state["project_key"] != project_key):
         raise ResumeStateError("identity_mismatch", "Legacy child identity does not match the registration")
     tombstone = runtime_dir / "child-resume-tombstones" / f"{agent_id}.json"
@@ -659,6 +660,7 @@ def finish_legacy_claude_migration(runtime_dir: Path, agent_name: str, *, genera
 def stage_registration(
     runtime_dir: Path, agent_name: str, *, project_key: str, program: str, generation: str,
     source: Path | None = None, binding: Path | None = None, legacy_agent_id: int | None = None,
+    verified_legacy_codex: bool = False,
 ) -> Path:
     """Validate a preregistration before changing files; retain a private undo record.
 
@@ -674,13 +676,26 @@ def stage_registration(
     with _AgentLock(lock_path, exclusive=True):
         if any(path.exists() or path.is_symlink() for path in (pending, _legacy_pending(state_path))):
             raise ResumeStateError("config_unrestorable", "A child registration change is already pending")
+        # A restarted seat passes its canonical credential path, not a new
+        # one-shot handoff. Older installed seats have no adjacent binding;
+        # their formal state already binds identity and credential. Validate
+        # both below rather than treating that path as a new handoff. Never
+        # fall back for an external path or a present (including broken)
+        # sidecar: those still require the exact supplied binding.
+        if (source == token_path and binding == token_path.with_name(token_path.name + ".binding.json")
+                and not binding.exists() and not binding.is_symlink()):
+            source = None
+            binding = None
         if _provider(program) is None or (source is not None and binding is None):
             raise ResumeStateError("identity_mismatch", "Formal child registration metadata is required")
         if legacy_agent_id is not None:
             if source is not None:
                 raise ResumeStateError("identity_mismatch", "A legacy child is launched from its own state")
+            if _provider(program) != "claude" and not (_provider(program) == "codex" and verified_legacy_codex):
+                raise ResumeStateError("identity_mismatch", "Unsupported legacy child provider")
             legacy = inspect_legacy_claude(runtime_dir, agent_name, agent_id=legacy_agent_id,
-                                           project_key=project_key, program=program)
+                                           project_key=project_key, program=program,
+                                           expected_provider=_provider(program))
             if legacy is None:
                 raise ResumeStateError("identity_mismatch", "Child state is not the legacy Claude shape")
             state = {"agent_id": legacy_agent_id, "agent_name": agent_name, "project_key": project_key,
@@ -2195,6 +2210,7 @@ def main() -> int:
     stage.add_argument("--source")
     stage.add_argument("--binding")
     stage.add_argument("--legacy-agent-id", type=int)
+    stage.add_argument("--verified-legacy-codex", action="store_true")
     finish = sub.add_parser("finish-registration")
     finish.add_argument("--runtime-dir", required=True)
     finish.add_argument("--agent-name", required=True)
@@ -2284,7 +2300,8 @@ def main() -> int:
             print(stage_registration(runtime, args.agent_name, project_key=args.project_key,
                                      program=args.program, generation=args.generation, source=Path(args.source) if args.source else None,
                                      binding=Path(args.binding) if args.binding else None,
-                                     legacy_agent_id=args.legacy_agent_id))
+                                     legacy_agent_id=args.legacy_agent_id,
+                                     verified_legacy_codex=args.verified_legacy_codex))
         elif args.command == "finish-registration":
             if not finish_registration(runtime, args.agent_name, generation=args.generation, rollback=args.rollback):
                 print("child_resume: registration attempt is no longer pending; nothing changed", file=os.sys.stderr)

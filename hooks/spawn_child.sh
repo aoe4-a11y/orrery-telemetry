@@ -629,6 +629,7 @@ stage_child_registration() {
         source_args=(--source "$source_file" --binding "${source_file}.binding.json")
     elif [[ -n "$legacy_agent_id" ]]; then
         source_args=(--legacy-agent-id "$legacy_agent_id")
+        [[ "$program" != codex ]] || source_args+=(--verified-legacy-codex)
     fi
     "${AGENTSTACK_PYTHON:-python3}" "$helper" stage-registration \
         --runtime-dir "$RUNTIME_DIR" --agent-name "$agent_name" \
@@ -645,7 +646,7 @@ stage_child_registration() {
 # for any other state. Exit 2: Mail predates existing-owner authentication.
 # Exit 1: not confirmed; the reason is on stderr.
 authenticate_legacy_claude_child() {
-    local agent_name="$1" token_file bearer="" bearer_status=0
+    local agent_name="$1" expected_provider="${2:-claude}" token_file bearer="" bearer_status=0
     token_file="$(child_token_file_path "$agent_name")" || return 1
     if legacy_http_bearer_enabled; then
         bearer="$(get_agentstack_token 2>/dev/null || true)"
@@ -655,7 +656,7 @@ authenticate_legacy_claude_child() {
     fi
     printf '%s' "$bearer" | "${AGENTSTACK_PYTHON:-python3}" - \
         "$CHILD_STATE_DIR/$agent_name.json" "$token_file" "$agent_name" \
-        "$PROJECT_KEY" "$MCP_URL" <<'PY'
+        "$PROJECT_KEY" "$MCP_URL" "$expected_provider" <<'PY'
 import hmac
 import http.client
 import json
@@ -664,7 +665,7 @@ import stat
 import sys
 from urllib.parse import urlparse
 
-state_file, token_file, agent_name, project_key, url = sys.argv[1:6]
+state_file, token_file, agent_name, project_key, url, expected_provider = sys.argv[1:7]
 bearer = sys.stdin.read()
 LEGACY_KEYS = {"agent_name", "project_key", "registration_token"}
 
@@ -752,8 +753,9 @@ profile = call("whois", {"project_key": project_key, "agent_name": agent_name, "
 agent_id, program = profile.get("id"), profile.get("program")
 if type(agent_id) is not int or agent_id <= 0 or profile.get("name") != agent_name:
     fail("ORRERY Mail has no registration with this exact name")
-if program not in {"claude", "claude-code"}:
-    fail(f"the registration with this name belongs to {program!r}, not Claude")
+allowed = {"claude": {"claude", "claude-code"}, "codex": {"codex"}}
+if program not in allowed.get(expected_provider, set()):
+    fail(f"the registration with this name belongs to {program!r}, not the requested provider")
 owner = call("register_agent", {
     "project_key": project_key, "name": agent_name, "program": program,
     "registration_token": token, "existing_agent_id": agent_id,
@@ -3437,6 +3439,23 @@ PY
         if [[ -n "$LEGACY_CLAUDE_OWNER" ]]; then
             IFS=$'\t' read -r LEGACY_CLAUDE_AGENT_ID REGISTRATION_PROGRAM <<< "$LEGACY_CLAUDE_OWNER"
             echo "[spawn_child/pre-reg] $CHILD_NAME was started by an earlier version; ORRERY Mail confirmed its owner (agent $LEGACY_CLAUDE_AGENT_ID), adopting its state" >&2
+        fi
+    fi
+    # Older Codex seats retained only a three-field state and their canonical
+    # token. Authenticate that exact existing owner before migrating it; never
+    # create a new registration or infer an agent id from local data.
+    if [[ "$USE_CODEX" == true && -n "$ONE_SHOT_TOKEN_FILE" &&
+          "$ONE_SHOT_TOKEN_FILE" == "$(child_token_file_path "$CHILD_NAME")" &&
+          ! -e "${ONE_SHOT_TOKEN_FILE}.binding.json" && ! -L "${ONE_SHOT_TOKEN_FILE}.binding.json" ]]; then
+        legacy_status=0
+        LEGACY_CODEX_OWNER="$(authenticate_legacy_claude_child "$CHILD_NAME" codex)" || legacy_status=$?
+        if [[ "$legacy_status" != 0 ]]; then
+            echo "Error: ORRERY Mail did not confirm the earlier Codex seat owner; nothing was changed." >&2
+            exit 1
+        fi
+        if [[ -n "$LEGACY_CODEX_OWNER" ]]; then
+            IFS=$'\t' read -r LEGACY_CLAUDE_AGENT_ID REGISTRATION_PROGRAM <<< "$LEGACY_CODEX_OWNER"
+            ONE_SHOT_TOKEN_FILE=""
         fi
     fi
     if ! CHILD_TOKEN_FILE="$(stage_child_registration "$CHILD_NAME" "$REGISTRATION_PROGRAM" "$ONE_SHOT_TOKEN_FILE" "$LEGACY_CLAUDE_AGENT_ID")"; then
