@@ -57,7 +57,8 @@ def installed_settings(home: Path) -> dict[str, str]:
     if not path.exists():
         return {}
     wanted = {'AGENTSTACK_LABEL_PREFIX', 'AGENTSTACK_MAIL_DB', 'AGENTSTACK_MAIL_STATE_ROOT',
-              'AGENTSTACK_MAIL_DIR', 'AGENTSTACK_MCP_URL', 'AGENTSTACK_MAIL_LAUNCHD_LABEL'}
+              'AGENTSTACK_MAIL_DIR', 'AGENTSTACK_MCP_URL', 'AGENTSTACK_MAIL_LAUNCHD_LABEL',
+              'AGENTSTACK_DASHBOARD_LOG', 'AGENTSTACK_MANAGED_AGENTS_FILE'}
     values = {}
     for line in path.read_text(encoding='utf-8').splitlines():
         match = re.match(r'^\s*export\s+([A-Z0-9_]+)=(.*)$', line)
@@ -82,6 +83,11 @@ def plan(home: Path, project: Path, candidate: str, worktree: Path) -> list[str]
     if not worktree.is_absolute():
         raise ValueError('absolute installer worktree required')
     installed = installed_settings(home)
+    for key, expected in (('AGENTSTACK_DASHBOARD_LOG', home / '.agentstack/runtime/dashboard.log'),
+                          ('AGENTSTACK_MANAGED_AGENTS_FILE', home / '.agentstack/runtime/managed_agents.txt')):
+        for value in (installed.get(key), os.environ.get(key)):
+            if value and Path(value) != expected:
+                raise ValueError('non-default runtime destination requires a separate reviewed plan')
     for key, expected in (('AGENTSTACK_HOME', home / '.agentstack'),
                           ('CODEX_HOME', home / '.codex'),
                           ('CLAUDE_CONFIG_DIR', home / '.claude')):
@@ -223,8 +229,13 @@ def plan(home: Path, project: Path, candidate: str, worktree: Path) -> list[str]
     env = state.get('env', {})
     if not isinstance(env, dict):
         raise ValueError('invalid recorded environment')
+    runtime_defaults = {'AGENTSTACK_DASHBOARD_LOG': str(home / '.agentstack/runtime/dashboard.log'),
+                        'AGENTSTACK_MANAGED_AGENTS_FILE': str(home / '.agentstack/runtime/managed_agents.txt')}
+    for key, expected in runtime_defaults.items():
+        if env.get(key) and env[key] != expected:
+            raise ValueError('non-default saved runtime destination requires a separate reviewed plan')
     for key, value in installed.items():
-        saved = env.get(key) or ''
+        saved = env.get(key) or runtime_defaults.get(key, '')
         if not isinstance(saved, str) or value != saved:
             raise ValueError('installed environment and saved locations disagree')
     defaults = {'AGENTSTACK_LABEL_PREFIX': 'org.agentstack',

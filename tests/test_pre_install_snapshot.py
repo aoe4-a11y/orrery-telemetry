@@ -36,10 +36,15 @@ def fixture_tree(tmp_path):
     return home, project, destination
 
 
-def run_pre(home, project, destination):
+def run_pre(home, project, destination, overrides=None):
+    env = {key: value for key, value in os.environ.items()
+           if not key.startswith(('AGENTSTACK_', 'XDG_'))
+           and key not in ('CODEX_HOME', 'CLAUDE_CONFIG_DIR')}
+    env['HOME'] = str(home)
+    env.update(overrides or {})
     return subprocess.run([sys.executable, str(PRE), '--home', str(home), '--project', str(project),
                            '--candidate', CANDIDATE, '--worktree', str(project), '--destination', str(destination)],
-                          capture_output=True, text=True)
+                          capture_output=True, text=True, env=env)
 
 
 def run_post(home, destination, sha):
@@ -126,6 +131,31 @@ def test_private_plan_lists_actual_paths_without_file_contents(fixture_tree):
     assert 'synthetic private fixture' not in plan_file.read_text()
     assert plan_file.stat().st_mode & 0o777 == 0o600
     assert not destination.exists()
+
+
+@pytest.mark.parametrize('key', ['AGENTSTACK_DASHBOARD_LOG', 'AGENTSTACK_MANAGED_AGENTS_FILE'])
+@pytest.mark.parametrize('source', ['installed', 'ambient'])
+def test_nondefault_runtime_destination_fails_closed(fixture_tree, key, source):
+    home, project, destination = fixture_tree
+    overrides = {}
+    if source == 'installed':
+        with (home / '.agentstack/env.sh').open('a') as stream:
+            stream.write(f'export {key}=/fixture/other-destination\n')
+    else:
+        overrides[key] = '/fixture/other-destination'
+    result = run_pre(home, project, destination, overrides)
+    assert result.returncode != 0
+    assert not destination.exists()
+
+
+@pytest.mark.parametrize('key,name', [('AGENTSTACK_DASHBOARD_LOG', 'dashboard.log'),
+                                       ('AGENTSTACK_MANAGED_AGENTS_FILE', 'managed_agents.txt')])
+def test_default_runtime_destination_is_accepted(fixture_tree, key, name):
+    home, project, destination = fixture_tree
+    with (home / '.agentstack/env.sh').open('a') as stream:
+        stream.write(f'export {key}={home}/.agentstack/runtime/{name}\n')
+    result = run_pre(home, project, destination)
+    assert result.returncode == 0, result.stderr
 
 
 def test_existing_installer_temporary_files_are_snapshotted(fixture_tree):
