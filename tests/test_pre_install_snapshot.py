@@ -26,7 +26,9 @@ def fixture_tree(tmp_path):
     (stack / 'bin/tool').write_bytes(b'old tool fixture')
     (stack / 'env.sh').write_bytes(b'synthetic private fixture')
     (project / 'AGENTS.md').write_bytes(b'old instruction fixture')
-    (stack / 'bin/link').symlink_to('tool')
+    release_hooks = stack / 'releases/seat-lifecycle/ee5880e3e23606e0f3252cbeed211868102f4595/hooks'
+    release_hooks.mkdir(parents=True)
+    (release_hooks / 'link').symlink_to('tool')
     state = {'owned_files': [str(stack / 'bin/tool')], 'services': [],
              'env': {'AGENTSTACK_LABEL_PREFIX': 'fixture'}}
     (stack / 'install-state.json').write_text(json.dumps(state))
@@ -65,8 +67,9 @@ def test_snapshot_restore_and_preserve_post_install_bytes(fixture_tree):
     assert (home / '.agentstack/env.sh').read_bytes() == b'synthetic private fixture'
     assert (project / 'AGENTS.md').read_bytes() == b'old instruction fixture'
     assert (destination / 'post-install-current/.agentstack/bin/tool').read_bytes() == b'new tool fixture'
-    assert (home / '.agentstack/bin/link').is_symlink()
-    assert os.readlink(home / '.agentstack/bin/link') == 'tool'
+    link = home / '.agentstack/releases/seat-lifecycle/ee5880e3e23606e0f3252cbeed211868102f4595/hooks/link'
+    assert link.is_symlink()
+    assert os.readlink(link) == 'tool'
 
 
 def test_corrupt_snapshot_stops_before_restore(fixture_tree):
@@ -151,6 +154,7 @@ def test_existing_instruction_receipt_adds_resolved_targets(fixture_tree):
     result = run_pre(home, project, destination)
     assert result.returncode == 0
     assert (destination / 'files/legacy/CLAUDE.md').read_bytes() == b'old legacy fixture'
+    assert (destination / 'files/.agentstack/backups/instruction-migration/provider/receipt.json').is_file()
 
 
 def test_reverify_stops_when_live_file_changes_after_snapshot(fixture_tree):
@@ -164,3 +168,30 @@ def test_reverify_stops_when_live_file_changes_after_snapshot(fixture_tree):
                              '--verify-manifest-sha', sha], capture_output=True, text=True)
     assert verify.returncode != 0
     assert (home / '.agentstack/bin/tool').read_bytes() == b'changed after snapshot'
+
+
+def test_plan_covers_every_fleet_destination_in_owner_preview(fixture_tree):
+    home, project, destination = fixture_tree
+    shell = (ROOT / 'scripts/run-mail-fetch-upgrade-from-ref.sh').read_text()
+    code = shell.split('  python3 - "$script_root" <<\'PY\'\n', 1)[1].split('\nPY\n', 1)[0]
+    result = subprocess.run([sys.executable, '-c', code, str(ROOT)], capture_output=True, text=True)
+    assert result.returncode == 0
+    preview = [line.removeprefix('fleet destination: ') for line in result.stdout.splitlines()
+               if line.startswith('fleet destination: ')]
+    assert preview
+    spec = importlib.util.spec_from_file_location('snapshot_coverage_module', PRE)
+    tool = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(tool)
+    roots = tool.plan(home, project, CANDIDATE, project)
+    missing = [rel for rel in preview if not any('.agentstack/' + rel == root or
+               ('.agentstack/' + rel).startswith(root + '/') for root in roots)]
+    assert missing == []
+
+
+def test_unexpected_writable_symlink_stops_before_snapshot(fixture_tree):
+    home, project, destination = fixture_tree
+    link = home / '.agentstack/bin/unsafe-link'
+    link.symlink_to(project / 'AGENTS.md')
+    result = run_pre(home, project, destination)
+    assert result.returncode != 0
+    assert not destination.exists()

@@ -592,7 +592,8 @@ To save a private path inventory first, run `scripts/pre-install-snapshot.py --p
 with `--home`, `--project`, `--candidate`, `--worktree`, and `--plan-output`.
 Only counts are printed; the inventory is written to the requested private file.
 
-To restore, use the snapshot and manifest SHA printed by the owner entry:
+To restore, the owner first stops Mail and the dashboard and quiesces writes to
+the target files, then uses the snapshot and manifest SHA printed by the entry:
 
 ```bash
 python3 scripts/post-install-restore.py --home "$HOME" \
@@ -603,6 +604,17 @@ Before replacing files, restore clones and verifies the current versions under
 the snapshot. Paths that were absent before the upgrade are not deleted. The
 Mail database has a separate backup and restore decision. Non-default storage
 roots, cross-volume paths, and unexpected symlink traversal fail closed.
+
+Only if the owner decides to restore the database too, stop Mail and other DB
+writers and provide the actual database and selected backup paths:
+
+```bash
+python3 scripts/restore-mail-database.py --home "$HOME" --snapshot "$SNAPSHOT" \
+  --manifest-sha256 "$MANIFEST_SHA" --database "$MAIL_DB" --backup "$MAIL_BACKUP"
+```
+
+The command first clones and verifies the current database and its WAL files on
+the same volume; it refuses when they are in use or cannot be verified.
 
 ## Rollback
 

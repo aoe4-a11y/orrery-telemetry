@@ -559,7 +559,8 @@ fleet の owner 入口 `scripts/run-mail-fetch-upgrade-from-ref.sh` は、instal
 を使い、`--home`、`--project`、`--candidate`、`--worktree`、`--plan-output` を指定します。
 一覧は指定ファイルへ非公開で保存し、標準出力には件数だけを出します。
 
-復元時は、入口が表示した snapshot と manifest SHA を使います。
+復元時は、head が Mail と dashboard を停止し、対象 file の書込みを静止させてから、
+入口が表示した snapshot と manifest SHA を使います。
 
 ```bash
 python3 scripts/post-install-restore.py --home "$HOME" \
@@ -569,6 +570,15 @@ python3 scripts/post-install-restore.py --home "$HOME" \
 復元前に現在の対象 file も clone・照合して snapshot の下に残します。更新前に無かった
 path は自動削除しません。Mail の database 自体は対象外で、backup の選択と復元は別に
 判断します。非既定の保存 root、volume をまたぐ path、予期しない symlink は停止します。
+
+DB も戻すと head が決めた場合に限り、Mail と他の DB writer を止め、実際の DB と
+選んだ backup の絶対 path を指定して以下を使います。現在の DB と WAL 等を先に
+同一 volume に clone・SHA 照合して保全し、使用中や照合不能なら停止します。
+
+```bash
+python3 scripts/restore-mail-database.py --home "$HOME" --snapshot "$SNAPSHOT" \
+  --manifest-sha256 "$MANIFEST_SHA" --database "$MAIL_DB" --backup "$MAIL_BACKUP"
+```
 
 ## Rollback
 

@@ -140,6 +140,10 @@ def plan(home: Path, project: Path, candidate: str, worktree: Path) -> list[str]
         if not isinstance(name, str) or not Path(name).is_absolute():
             raise ValueError('invalid owned file entry')
         paths.add(relative(home, name))
+    for provider, target in (('codex', home / '.codex/AGENTS.md'),
+                             ('claude', home / '.claude/CLAUDE.md')):
+        digest_name = hashlib.sha256(os.fsencode(str(target))).hexdigest()
+        paths.add('.agentstack/backups/instruction-migration/' + provider + '/' + digest_name)
     receipts = state.get('instruction_receipts', [])
     if not isinstance(receipts, list):
         raise ValueError('invalid instruction receipts')
@@ -151,6 +155,7 @@ def plan(home: Path, project: Path, candidate: str, worktree: Path) -> list[str]
         if not receipt.is_relative_to(receipt_root) or receipt.name != 'receipt.json':
             raise ValueError('instruction receipt is outside the expected directory')
         assert_safe_parents(home, relative(home, receipt))
+        paths.add(relative(home, receipt.parent))
         if receipt.is_symlink() or not receipt.is_file():
             raise ValueError('instruction receipt is unavailable')
         doc = json.loads(receipt.read_text())
@@ -235,7 +240,12 @@ def collect(home: Path, roots: list[str]) -> list[str]:
                 raise ValueError('planned tree contains an excluded dependency directory')
             for child in sorted(path.iterdir(), key=lambda p: p.name):
                 visit(relative(home, child))
-        elif not (stat.S_ISREG(st.st_mode) or stat.S_ISLNK(st.st_mode)):
+        elif stat.S_ISLNK(st.st_mode):
+            allowed = (rel.startswith('.agentstack/' + RELEASE + '/') or
+                       rel.startswith('.claude/skills/') or rel.startswith('.codex/skills/'))
+            if not allowed:
+                raise ValueError('planned writable path is a symlink and requires review')
+        elif not stat.S_ISREG(st.st_mode):
             raise ValueError('planned tree contains an unsupported file type')
     for root in roots:
         visit(root)
