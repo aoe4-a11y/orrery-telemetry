@@ -583,6 +583,27 @@ pre-flight has also been checked under `zsh`.
    the old and new render paths, the outage and the probe results in a
    deployment note.
 
+## Fleet pre-install snapshot and restore
+
+The fleet owner entry `scripts/run-mail-fetch-upgrade-from-ref.sh` clones the
+existing targets to `~/.agentstack/backups/orrery-up-6-<UTC>/` on the same APFS
+volume and rechecks every source and clone SHA-256 before starting the installer.
+To save a private path inventory first, run `scripts/pre-install-snapshot.py --plan`
+with `--home`, `--project`, `--candidate`, `--worktree`, and `--plan-output`.
+Only counts are printed; the inventory is written to the requested private file.
+
+To restore, use the snapshot and manifest SHA printed by the owner entry:
+
+```bash
+python3 scripts/post-install-restore.py --home "$HOME" \
+  --snapshot "$SNAPSHOT" --manifest-sha256 "$MANIFEST_SHA"
+```
+
+Before replacing files, restore clones and verifies the current versions under
+the snapshot. Paths that were absent before the upgrade are not deleted. The
+Mail database has a separate backup and restore decision. Non-default storage
+roots, cross-volume paths, and unexpected symlink traversal fail closed.
+
 ## Rollback
 
 Going back with `--update-mail` and the previous candidate pinned is the route

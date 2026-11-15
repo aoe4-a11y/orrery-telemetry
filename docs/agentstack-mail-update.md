@@ -550,6 +550,26 @@ installer が管理する範囲に第二の supervisor はありません。旧�
    logging に触れたなら、拒否される呼び出しも含めます。`$SHA`、新旧の render
    path、outage、probe の結果を deployment note に記録します。
 
+## fleet 更新前の写しと復元
+
+fleet の owner 入口 `scripts/run-mail-fetch-upgrade-from-ref.sh` は、installer の前に
+既存対象を同一 volume の APFS clone で `~/.agentstack/backups/orrery-up-6-<UTC>/` に
+写し、元と写しの SHA-256 を全件再照合します。一致しない場合、installer は始まりません。
+一覧だけを事前に作る場合は、同じ checkout で `scripts/pre-install-snapshot.py --plan`
+を使い、`--home`、`--project`、`--candidate`、`--worktree`、`--plan-output` を指定します。
+一覧は指定ファイルへ非公開で保存し、標準出力には件数だけを出します。
+
+復元時は、入口が表示した snapshot と manifest SHA を使います。
+
+```bash
+python3 scripts/post-install-restore.py --home "$HOME" \
+  --snapshot "$SNAPSHOT" --manifest-sha256 "$MANIFEST_SHA"
+```
+
+復元前に現在の対象 file も clone・照合して snapshot の下に残します。更新前に無かった
+path は自動削除しません。Mail の database 自体は対象外で、backup の選択と復元は別に
+判断します。非既定の保存 root、volume をまたぐ path、予期しない symlink は停止します。
+
 ## Rollback
 
 前の build への戻しは `--update-mail` に前の candidate を pin するのが test で

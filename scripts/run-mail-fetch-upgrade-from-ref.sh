@@ -34,6 +34,7 @@ for target in sorted(targets):
 print('core installer possible destinations: VERSION, dashboard/, hooks/, bin/, skills/, codex/, claude/, templates/, env.sh, install-state.json')
 print('owner-approved configuration may include Claude MCP/settings and managed instruction blocks')
 print('planned service actions: dashboard service start/restart; Mail autostart and watcher registration; Mail candidate verification and managed switch')
+print('before install: clone and verify existing install payload into same-volume private backup; preserve all existing Mail backups')
 print('service labels, live-specific conditional file changes, database backup location and outage duration: not measured by this preview')
 PY
   printf 'reviewed source commit: %s\n' "$revision"
@@ -50,6 +51,32 @@ if [[ ! -d "$worktree" ]]; then
 fi
 [[ "$(git -C "$worktree" rev-parse HEAD)" == "$revision" && -z "$(git -C "$worktree" status --porcelain)" ]] || { echo 'owner worktree differs; preserving it and stopping' >&2; exit 1; }
 printf 'reviewed source commit: %s\n' "$revision"
+backup_parent="$HOME/.agentstack/backups"
+[[ -d "$backup_parent" && ! -L "$backup_parent" ]] || { echo 'approved backup parent unavailable' >&2; exit 1; }
+snapshot="$backup_parent/orrery-up-6-$(date -u '+%Y%m%dT%H%M%SZ')"
+result_file="$root/pre-install-snapshot-$(date -u '+%Y%m%dT%H%M%SZ').json"
+( set -o noclobber; umask 077; python3 "$worktree/scripts/pre-install-snapshot.py" --home "$HOME" \
+    --project "$AGENTSTACK_PROJECT_KEY" --candidate "$revision" --worktree "$worktree" --destination "$snapshot" > "$result_file" ) || {
+  echo 'snapshot did not verify; installer was not started' >&2; exit 1;
+}
+manifest_sha="$(python3 - "$result_file" "$snapshot/manifest.json" <<'PYVERIFY'
+import hashlib, json, pathlib, re, sys
+result = json.loads(pathlib.Path(sys.argv[1]).read_text())
+sha = result['manifest_sha256']
+if not re.fullmatch(r'[0-9a-f]{64}', sha) or hashlib.sha256(pathlib.Path(sys.argv[2]).read_bytes()).hexdigest() != sha:
+    raise SystemExit(1)
+print(sha)
+PYVERIFY
+)" || { echo 'snapshot manifest verification failed; installer was not started' >&2; exit 1; }
+python3 "$worktree/scripts/pre-install-snapshot.py" --home "$HOME" \
+  --project "$AGENTSTACK_PROJECT_KEY" --candidate "$revision" --worktree "$worktree" --destination "$snapshot" \
+  --verify-manifest-sha "$manifest_sha" >/dev/null || {
+  echo 'snapshot no longer matches; installer was not started' >&2; exit 1;
+}
+[[ "$(git -C "$worktree" rev-parse HEAD)" == "$revision" && -z "$(git -C "$worktree" status --porcelain)" ]] || {
+  echo 'owner worktree changed after snapshot; installer was not started' >&2; exit 1;
+}
+printf 'verified snapshot: ~/.agentstack/backups/%s; manifest SHA-256: %s\n' "${snapshot##*/}" "$manifest_sha"
 (
   cd "$worktree"
   AGENTSTACK_FLEET_COMPAT=1 /bin/bash scripts/install.sh --project-key "$AGENTSTACK_PROJECT_KEY" --mail update
