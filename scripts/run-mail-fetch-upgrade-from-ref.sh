@@ -36,6 +36,7 @@ print('owner-approved configuration may include Claude MCP/settings and managed 
 print('planned service actions: dashboard service start/restart; Mail autostart and watcher registration; Mail candidate verification and managed switch')
 print('before install: clone and verify existing install payload into same-volume private backup; preserve all existing Mail backups')
 print('before install: stop Mail, verify DB/WAL/SHM clones, then restart and check the old listener')
+print('after old Mail restarts: create and verify a second payload snapshot immediately before installer')
 print('DB restore priority: installer backup first; pre-install clone is the earlier anchor')
 print('service labels, live-specific conditional file changes, database backup location and outage duration: not measured by this preview')
 PY
@@ -101,11 +102,43 @@ if not re.fullmatch(r'[0-9a-f]{64}', sha) or hashlib.sha256(pathlib.Path(sys.arg
 print(sha)
 PYMAIL
 )" || { echo 'Mail backup manifest verification failed; installer was not started' >&2; exit 1; }
+# Stopping and restarting Mail changes runtime PID/marker/log files. Keep the
+# first snapshot and its DB bundle as the earlier anchor, then capture the
+# payload again after the old listener is healthy and before the installer.
+final_plan="$backup_parent/orrery-up-6-final-plan-$(date -u '+%Y%m%dT%H%M%SZ').json"
+python3 "$worktree/scripts/pre-install-snapshot.py" --home "$HOME" \
+  --project "$AGENTSTACK_PROJECT_KEY" --candidate "$revision" --worktree "$worktree" \
+  --plan --plan-output "$final_plan" >/dev/null || {
+  echo 'final snapshot plan failed; installer was not started' >&2; exit 1;
+}
+final_snapshot="$backup_parent/orrery-up-6-final-$(date -u '+%Y%m%dT%H%M%SZ')"
+final_result="$root/final-pre-install-snapshot-$(date -u '+%Y%m%dT%H%M%SZ').json"
+( set -o noclobber; umask 077; python3 "$worktree/scripts/pre-install-snapshot.py" --home "$HOME" \
+    --project "$AGENTSTACK_PROJECT_KEY" --candidate "$revision" --worktree "$worktree" --destination "$final_snapshot" > "$final_result" ) || {
+  echo 'final snapshot did not verify; installer was not started' >&2; exit 1;
+}
+final_manifest_sha="$(python3 - "$final_result" "$final_snapshot/manifest.json" "$final_plan" <<'PYFINAL'
+import hashlib,json,pathlib,re,sys
+result=json.loads(pathlib.Path(sys.argv[1]).read_text())
+sha=result['manifest_sha256']; raw=pathlib.Path(sys.argv[2]).read_bytes()
+if not re.fullmatch(r'[0-9a-f]{64}',sha) or hashlib.sha256(raw).hexdigest()!=sha:
+    raise SystemExit(1)
+if [row['path'] for row in json.loads(pathlib.Path(sys.argv[3]).read_text())] != [row['path'] for row in json.loads(raw)]:
+    raise SystemExit(1)
+print(sha)
+PYFINAL
+)" || { echo 'final snapshot manifest verification failed; installer was not started' >&2; exit 1; }
+python3 "$worktree/scripts/pre-install-snapshot.py" --home "$HOME" \
+  --project "$AGENTSTACK_PROJECT_KEY" --candidate "$revision" --worktree "$worktree" --destination "$final_snapshot" \
+  --verify-manifest-sha "$final_manifest_sha" >/dev/null || {
+  echo 'final snapshot no longer matches; installer was not started' >&2; exit 1;
+}
 [[ "$(git -C "$worktree" rev-parse HEAD)" == "$revision" && -z "$(git -C "$worktree" status --porcelain)" ]] || {
   echo 'owner worktree changed after snapshot; installer was not started' >&2; exit 1;
 }
 printf 'verified snapshot: ~/.agentstack/backups/%s; manifest SHA-256: %s\n' "${snapshot##*/}" "$manifest_sha"
 printf 'verified pre-install Mail backup manifest SHA-256: %s\n' "$mail_manifest_sha"
+printf 'verified final payload snapshot: ~/.agentstack/backups/%s; manifest SHA-256: %s\n' "${final_snapshot##*/}" "$final_manifest_sha"
 python3 - "$mail_result" <<'PYOUTAGE'
 import json,sys
 result=json.load(open(sys.argv[1]))
