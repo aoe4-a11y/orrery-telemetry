@@ -11,6 +11,41 @@ ROOT=Path(__file__).resolve().parents[1]
 RELEASE=ROOT/'fleet/releases/seat-lifecycle/ee5880e3e23606e0f3252cbeed211868102f4595/hooks'
 
 class LegacyChildHomeTest(unittest.TestCase):
+    def test_watcher_does_not_inject_into_head_panes(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root=Path(temporary);trace=root/'trace';source=(ROOT/'hooks/watch_agent_mail_signals.sh').read_text()
+            start=source.index('deliver_worker() {');end=source.index('\nprocess_existing_signals()',start)
+            shell='''state_mark_result() { printf 'mark:%s\\n' "$3" >> "$TRACE"; }
+release_delivery_lease() { printf 'release\\n' >> "$TRACE"; }
+tmux() { printf 'unexpected-tmux\\n' >> "$TRACE"; return 77; }
+'''+source[start:end]+'''\ndeliver_worker /fixture/signal ProudTuring 1 Sender '[receipt] fixture' normal 0
+deliver_worker /fixture/signal PinkTesla 2 Sender '[receipt] fixture' normal 0
+'''
+            run=subprocess.run(['/bin/bash','-c',shell],env={'HOME':str(root),'PATH':'/usr/bin:/bin','TRACE':str(trace)},
+                               capture_output=True,text=True,timeout=15)
+            self.assertEqual(run.returncode,0,run.stderr)
+            self.assertEqual(trace.read_text().splitlines(),['mark:head_no_pane','release','mark:head_no_pane','release'])
+
+    def test_check_seats_classifies_fake_panes_without_live_database(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root=Path(temporary);fake=root/'fake';fake.mkdir();project=root/'project';project.mkdir()
+            def executable(path,text):path.write_text(text);path.chmod(0o755)
+            executable(fake/'tmux','#!/bin/bash\nproject='+shlex.quote(str(project))+'\n'+'''
+case "$1" in
+  list-sessions) printf 'Work\\nGone\\n';;
+  capture-pane) case "$*" in *Work*) printf 'Working (esc to interrupt)\\ngpt-6.1-sol high\\n';; *) printf 'invalid cwd\\n';; esac;;
+  display-message) case "$*" in *pane_current_path*Work*|*Work*pane_current_path*) printf '%s\\n' "$project";; esac;;
+esac
+''')
+            executable(fake/'sqlite3','#!/bin/sh\nexit 0\n')
+            executable(fake/'pgrep','#!/bin/sh\nexit 1\n')
+            run=subprocess.run(['/bin/bash',str(ROOT/'bin/agentstack-check-seats')],
+                env={'HOME':str(root),'PATH':str(fake)+':/usr/bin:/bin'},capture_output=True,text=True,timeout=20)
+            self.assertEqual(run.returncode,0,run.stderr)
+            rows=run.stdout.splitlines()
+            self.assertTrue(any('Work' in row and 'WORKING' in row for row in rows))
+            self.assertTrue(any('Gone' in row and 'DEAD-CWD' in row for row in rows))
+
     def test_spawn_codex_uses_actual_legacy_launch_with_fake_tmux(self):
         with tempfile.TemporaryDirectory() as temporary:
             root=Path(temporary);home=root/'home';stack=home/'.agentstack';runtime=stack/'runtime'
