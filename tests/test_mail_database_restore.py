@@ -90,3 +90,16 @@ def test_backup_with_sidecar_refuses_before_changes(scenario):
     assert result.returncode != 0
     assert database.read_bytes() == before
     assert not (snapshot / 'post-install-db').exists()
+
+
+def test_restore_saves_current_sidecars_before_removing_them(scenario):
+    home, snapshot, sha, database, backup = scenario
+    wal = Path(str(database) + '-wal');shm = Path(str(database) + '-shm')
+    wal.write_bytes(b'synthetic wal bytes');shm.write_bytes(b'synthetic shared bytes')
+    result = call(scenario)
+    assert result.returncode == 0
+    assert not wal.exists() and not shm.exists()
+    safety = snapshot / 'post-install-db'
+    assert (safety / 'db-wal').read_bytes() == b'synthetic wal bytes'
+    assert (safety / 'db-shm').read_bytes() == b'synthetic shared bytes'
+    assert len(json.loads((safety / 'manifest.json').read_text())) == 3
