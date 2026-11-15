@@ -35,12 +35,12 @@ class Connection:
         if request['method'] == 'tools/list':
             result = {'tools': [{'name': 'register_agent', 'inputSchema': {'properties': {'existing_agent_id': {}}}}]}
         elif request['params']['name'] == 'whois':
-            result = {'structuredContent': {'id': 11, 'name': 'SunnyCurie', 'program': 'codex'}}
+            result = {'structuredContent': {'id': 11, 'name': 'SunnyCurie', 'program': os.getenv('TEST_PROGRAM','codex')}}
         else:
             arguments = request['params']['arguments']
             assert arguments['existing_agent_id'] == 11 and arguments['name'] == 'SunnyCurie'
             assert arguments['registration_token'] == 'synthetic'
-            result = {'structuredContent': {'id': 12 if os.getenv('BAD_OWNER') else 11, 'name': 'SunnyCurie', 'program': 'codex', 'project_id': 1}}
+            result = {'structuredContent': {'id': 12 if os.getenv('BAD_OWNER') else 11, 'name': 'SunnyCurie', 'program': os.getenv('TEST_PROGRAM','codex'), 'project_id': 1}}
         self.response = Response({'result': result})
     def getresponse(self): return self.response
     def close(self): pass
@@ -59,6 +59,11 @@ http.client.HTTPConnection = Connection
                                     capture_output=True, timeout=30)
             self.assertEqual(result.returncode, 0, result.stderr)
             self.assertEqual(result.stdout.strip(), '11\tcodex')
+            env['TEST_PROGRAM'] = 'codex-cli'
+            alias = subprocess.run(['/bin/bash', '-c', script], env=env, text=True,
+                                   capture_output=True, timeout=30)
+            self.assertEqual(alias.returncode, 0, alias.stderr)
+            self.assertEqual(alias.stdout.strip(), '11\tcodex-cli')
             env['BAD_OWNER'] = '1'
             wrong = subprocess.run(['/bin/bash', '-c', script], env=env, text=True,
                                    capture_output=True, timeout=30)
@@ -82,6 +87,16 @@ http.client.HTTPConnection = Connection
             self.assertEqual(result, token)
             self.assertEqual(json.loads(state.read_text())['agent_id'], 11)
             self.assertEqual(json.loads(state.read_text())['program'], 'codex')
+
+    def test_authenticated_codex_cli_alias_keeps_its_program(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            runtime=Path(temporary); state=runtime/'child-agents/SunnyCurie.json'; state.parent.mkdir()
+            token=runtime/'agent_token_SunnyCurie'; token.write_text('synthetic'); token.chmod(0o600)
+            state.write_text(json.dumps({'agent_name':'SunnyCurie','project_key':'/fixture',
+                                         'registration_token':'synthetic'}));state.chmod(0o600)
+            resume.stage_registration(runtime,'SunnyCurie',project_key='/fixture',program='codex-cli',
+                generation='d'*32,legacy_agent_id=11,verified_legacy_codex=True)
+            self.assertEqual(json.loads(state.read_text())['program'],'codex-cli')
 
     def test_formal_canonical_state_without_sidecar(self):
         with tempfile.TemporaryDirectory() as temporary:

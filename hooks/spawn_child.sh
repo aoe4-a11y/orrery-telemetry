@@ -629,7 +629,7 @@ stage_child_registration() {
         source_args=(--source "$source_file" --binding "${source_file}.binding.json")
     elif [[ -n "$legacy_agent_id" ]]; then
         source_args=(--legacy-agent-id "$legacy_agent_id")
-        [[ "$program" != codex ]] || source_args+=(--verified-legacy-codex)
+        case "$program" in codex|codex-cli) source_args+=(--verified-legacy-codex) ;; esac
     fi
     "${AGENTSTACK_PYTHON:-python3}" "$helper" stage-registration \
         --runtime-dir "$RUNTIME_DIR" --agent-name "$agent_name" \
@@ -753,7 +753,7 @@ profile = call("whois", {"project_key": project_key, "agent_name": agent_name, "
 agent_id, program = profile.get("id"), profile.get("program")
 if type(agent_id) is not int or agent_id <= 0 or profile.get("name") != agent_name:
     fail("ORRERY Mail has no registration with this exact name")
-allowed = {"claude": {"claude", "claude-code"}, "codex": {"codex"}}
+allowed = {"claude": {"claude", "claude-code"}, "codex": {"codex", "codex-cli"}}
 if program not in allowed.get(expected_provider, set()):
     fail(f"the registration with this name belongs to {program!r}, not the requested provider")
 owner = call("register_agent", {
