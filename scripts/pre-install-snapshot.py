@@ -13,6 +13,7 @@ import json
 import os
 from pathlib import Path, PurePosixPath
 import re
+import shlex
 import shutil
 import stat
 import subprocess
@@ -47,6 +48,31 @@ def assert_safe_parents(home: Path, rel: str) -> None:
             raise ValueError('planned path traverses a symlink')
 
 
+def installed_settings(home: Path) -> dict[str, str]:
+    """Read only the installer's literal location settings; never source env.sh."""
+    path = home / '.agentstack/env.sh'
+    assert_safe_parents(home, '.agentstack/env.sh')
+    if path.is_symlink() or (path.exists() and not path.is_file()):
+        raise ValueError('installed environment is not a regular file')
+    if not path.exists():
+        return {}
+    wanted = {'AGENTSTACK_LABEL_PREFIX', 'AGENTSTACK_MAIL_DB', 'AGENTSTACK_MAIL_STATE_ROOT',
+              'AGENTSTACK_MAIL_DIR', 'AGENTSTACK_MCP_URL', 'AGENTSTACK_MAIL_LAUNCHD_LABEL'}
+    values = {}
+    for line in path.read_text(encoding='utf-8').splitlines():
+        match = re.match(r'^\s*export\s+([A-Z0-9_]+)=(.*)$', line)
+        if not match or match.group(1) not in wanted or match.group(1) in values:
+            continue
+        try:
+            words = shlex.split(match.group(2), comments=True, posix=True)
+        except ValueError:
+            raise ValueError('installed location setting is not a literal') from None
+        if len(words) > 1:
+            raise ValueError('installed location setting is not a literal')
+        values[match.group(1)] = words[0] if words else ''
+    return values
+
+
 def plan(home: Path, project: Path, candidate: str, worktree: Path) -> list[str]:
     if not re.fullmatch(r'[0-9a-f]{40,64}', candidate):
         raise ValueError('candidate must be a full hexadecimal commit ID')
@@ -55,6 +81,7 @@ def plan(home: Path, project: Path, candidate: str, worktree: Path) -> list[str]
     relative(home, project)
     if not worktree.is_absolute():
         raise ValueError('absolute installer worktree required')
+    installed = installed_settings(home)
     for key, expected in (('AGENTSTACK_HOME', home / '.agentstack'),
                           ('CODEX_HOME', home / '.codex'),
                           ('CLAUDE_CONFIG_DIR', home / '.claude')):
@@ -196,6 +223,20 @@ def plan(home: Path, project: Path, candidate: str, worktree: Path) -> list[str]
     env = state.get('env', {})
     if not isinstance(env, dict):
         raise ValueError('invalid recorded environment')
+    for key, value in installed.items():
+        saved = env.get(key) or ''
+        if not isinstance(saved, str) or value != saved:
+            raise ValueError('installed environment and saved locations disagree')
+    defaults = {'AGENTSTACK_LABEL_PREFIX': 'org.agentstack',
+                'AGENTSTACK_MAIL_STATE_ROOT': str(home / '.agentstack/mail'),
+                'AGENTSTACK_MAIL_DIR': str(home / '.agentstack/mail-service'),
+                'AGENTSTACK_MCP_URL': 'http://127.0.0.1:18765/mcp',
+                'AGENTSTACK_MAIL_LAUNCHD_LABEL': ''}
+    defaults['AGENTSTACK_MAIL_DB'] = str(Path(env.get('AGENTSTACK_MAIL_STATE_ROOT') or defaults['AGENTSTACK_MAIL_STATE_ROOT']) / 'storage.sqlite3')
+    for key, default in defaults.items():
+        saved = env.get(key)
+        if key not in installed and saved and saved != default:
+            raise ValueError('saved non-default location is missing from installed environment')
     old_project = env.get('AGENTSTACK_PROJECT_KEY')
     if old_project:
         if not isinstance(old_project, str) or not Path(old_project).is_absolute():

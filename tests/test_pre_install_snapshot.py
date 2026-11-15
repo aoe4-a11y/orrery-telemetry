@@ -24,7 +24,7 @@ def fixture_tree(tmp_path):
     project = home / 'project'
     project.mkdir()
     (stack / 'bin/tool').write_bytes(b'old tool fixture')
-    (stack / 'env.sh').write_bytes(b'synthetic private fixture')
+    (stack / 'env.sh').write_bytes(b"synthetic private fixture\nexport AGENTSTACK_LABEL_PREFIX=fixture\n")
     (project / 'AGENTS.md').write_bytes(b'old instruction fixture')
     release_hooks = stack / 'releases/seat-lifecycle/ee5880e3e23606e0f3252cbeed211868102f4595/hooks'
     release_hooks.mkdir(parents=True)
@@ -64,7 +64,7 @@ def test_snapshot_restore_and_preserve_post_install_bytes(fixture_tree):
     result = run_post(home, destination, stats['manifest_sha256'])
     assert result.returncode == 0
     assert (home / '.agentstack/bin/tool').read_bytes() == b'old tool fixture'
-    assert (home / '.agentstack/env.sh').read_bytes() == b'synthetic private fixture'
+    assert (home / '.agentstack/env.sh').read_bytes() == b"synthetic private fixture\nexport AGENTSTACK_LABEL_PREFIX=fixture\n"
     assert (project / 'AGENTS.md').read_bytes() == b'old instruction fixture'
     assert (destination / 'post-install-current/.agentstack/bin/tool').read_bytes() == b'new tool fixture'
     link = home / '.agentstack/releases/seat-lifecycle/ee5880e3e23606e0f3252cbeed211868102f4595/hooks/link'
@@ -167,6 +167,45 @@ def test_managed_harness_configuration_stops_before_snapshot(fixture_tree):
     assert result.returncode != 0
     assert not destination.exists()
     assert setting.read_text() == 'not-json-and-must-not-be-read'
+
+
+def test_installed_location_drift_stops_without_executing_environment(fixture_tree):
+    home, project, destination = fixture_tree
+    sentinel = home / 'must-not-exist'
+    (home / '.agentstack/env.sh').write_text(
+        "export AGENTSTACK_LABEL_PREFIX=fixture\n"
+        "export AGENTSTACK_MCP_URL='$(touch " + str(sentinel) + ")'\n")
+    result = run_pre(home, project, destination)
+    assert result.returncode != 0
+    assert not sentinel.exists()
+    assert not destination.exists()
+
+
+def test_cleared_installed_label_fails_closed(fixture_tree):
+    home, project, destination = fixture_tree
+    (home / '.agentstack/env.sh').write_text("export AGENTSTACK_LABEL_PREFIX=''\n")
+    result = run_pre(home, project, destination)
+    assert result.returncode != 0
+    assert not destination.exists()
+
+
+def test_missing_nondefault_installed_label_fails_closed(fixture_tree):
+    home, project, destination = fixture_tree
+    (home / '.agentstack/env.sh').write_text('# label absent\n')
+    result = run_pre(home, project, destination)
+    assert result.returncode != 0
+    assert not destination.exists()
+
+
+def test_symlinked_stack_root_refused_before_environment_read(tmp_path):
+    home = tmp_path / 'home'; home.mkdir()
+    external = tmp_path / 'external'; external.mkdir()
+    (external / 'env.sh').write_text('synthetic')
+    (home / '.agentstack').symlink_to(external, target_is_directory=True)
+    project = home / 'project'; project.mkdir()
+    result = run_pre(home, project, home / '.agentstack/backups/orrery-up-6-fixture')
+    assert result.returncode != 0
+    assert not (external / 'backups').exists()
 
 
 def test_wrong_manifest_digest_refuses_before_restore(fixture_tree):
