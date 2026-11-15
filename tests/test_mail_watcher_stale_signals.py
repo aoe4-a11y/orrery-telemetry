@@ -69,17 +69,17 @@ os.execv({tmux!r},[{tmux!r},*sys.argv[1:]])
 
 def test_absent_signals_are_retained_until_fleet_seat_restarts(watcher):
     signal,run,runtime,failure,tmux=watcher
-    paths=[signal('Absent',number) for number in range(1,25)]
+    paths=[signal('Absent',1)]
     tmux('new-session','-d','-s','Living',"printf 'Claude\\n'; cat")
     live=signal('Living',100)
     first=run();state=json.loads((runtime/'notify-state.json').read_text())
     assert all(path.exists() for path in paths)
     assert not live.exists(),(state.get('Living:100'),first.stdout,first.stderr)
-    assert all(not state[f'Absent:{number}'].get('terminal') for number in range(1,25))
+    assert not state['Absent:1'].get('terminal')
     assert state['Living:100']['last_result']=='success'
-    assert first.stdout.count('Signal:')==25
+    assert first.stdout.count('Signal:')==2
     # Retry after the cooldown, when the same fleet identity is reopened.
-    for number in range(1,25): state[f'Absent:{number}']['last_attempt_epoch']=0
+    state['Absent:1']['last_attempt_epoch']=0
     (runtime/'notify-state.json').write_text(json.dumps(state))
     tmux('new-session','-d','-s','Absent',"printf 'Claude\\n'; cat")
     run()

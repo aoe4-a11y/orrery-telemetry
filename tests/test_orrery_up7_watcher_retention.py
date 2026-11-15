@@ -80,3 +80,21 @@ state_should_attempt FixtureSeat 3
         'PATH': '/usr/bin:/bin:/usr/sbin:/sbin'}, capture_output=True, text=True, timeout=10)
     assert result.returncode == 0, result.stderr
     assert 'terminal' not in json.loads(state.read_text())['FixtureSeat:3']
+
+
+def test_legacy_fallback_distinguishes_rewrites_within_same_second(tmp_path):
+    signal = tmp_path / 'fixture.signal'
+    signal.write_text('{"message":{}}')
+    second = int(time.time()) - 5
+    script = function('read_signal_meta') + '\nread_signal_meta "$1"\n'
+    def metadata(nanoseconds):
+        ns = second * 1_000_000_000 + nanoseconds
+        os.utime(signal, ns=(ns, ns))
+        result = subprocess.run(['/bin/bash', '-c', script, 'fixture', str(signal)],
+            env={'PATH': '/usr/bin:/bin:/usr/sbin:/sbin'}, capture_output=True, text=True, timeout=10)
+        assert result.returncode == 0
+        return result.stdout.splitlines()
+    first, second_read = metadata(100), metadata(200)
+    assert first[0] == second_read[0] == 'ok'
+    assert first[5] == second_read[5]
+    assert first[8] != second_read[8]
