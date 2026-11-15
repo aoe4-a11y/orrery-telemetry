@@ -128,6 +128,26 @@ def test_private_plan_lists_actual_paths_without_file_contents(fixture_tree):
     assert not destination.exists()
 
 
+def test_existing_installer_temporary_files_are_snapshotted(fixture_tree):
+    home, project, destination = fixture_tree
+    paths = [home / 'Library/LaunchAgents/fixture.mail.plist.prev',
+             home / 'Library/LaunchAgents/fixture.mail-watcher.plist.tmp',
+             home / '.config/systemd/user/fixture.agentdashboard.service.tmp',
+             home / '.agentstack/runtime/annotations.json.tmp',
+             home / '.agentstack/install-state.json.tmp']
+    expected = {}
+    for index, path in enumerate(paths):
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(('fixture-' + str(index)).encode())
+        expected[path.relative_to(home).as_posix()] = hashlib.sha256(path.read_bytes()).hexdigest()
+    result = run_pre(home, project, destination)
+    assert result.returncode == 0, result.stderr
+    rows = {r['path']: r for r in json.loads((destination / 'manifest.json').read_text())}
+    for path, sha in expected.items():
+        assert rows[path]['sha256'] == sha
+        assert hashlib.sha256((destination / 'files' / path).read_bytes()).hexdigest() == sha
+
+
 def test_wrong_manifest_digest_refuses_before_restore(fixture_tree):
     home, project, destination = fixture_tree
     pre = run_pre(home, project, destination)

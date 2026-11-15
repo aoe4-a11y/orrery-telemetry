@@ -62,7 +62,8 @@ def plan(home: Path, project: Path, candidate: str, worktree: Path) -> list[str]
         if value and Path(value) != expected:
             raise ValueError('non-default configuration root requires a separate reviewed plan')
     paths = {
-        '.agentstack/VERSION', '.agentstack/env.sh', '.agentstack/install-state.json',
+        '.agentstack/VERSION', '.agentstack/env.sh', '.agentstack/env.sh.tmp',
+        '.agentstack/install-state.json', '.agentstack/install-state.json.tmp',
         '.agentstack/fleet-install.json', '.agentstack/bin', '.agentstack/hooks',
         '.agentstack/dashboard', '.agentstack/skills', '.agentstack/codex',
         '.agentstack/claude', '.agentstack/config', '.agentstack/templates',
@@ -119,7 +120,8 @@ def plan(home: Path, project: Path, candidate: str, worktree: Path) -> list[str]
         raise ValueError('non-default mail service root requires a separate reviewed plan')
     for name in ('annotations.json', 'claude-mcp-merge-result.json', 'dashboard-service.json',
                  'dashboard.legacy.log', 'dashboard.log', 'dashboard.pid', 'mail-watcher.log',
-                 'managed_agents.txt', 'settings-installed-entries.json', 'settings-merge-result.json'):
+                 'managed_agents.txt', 'settings-installed-entries.json', 'settings-merge-result.json',
+                 'annotations.json.tmp', 'dashboard.log.tmp', 'dashboard.legacy.log.tmp'):
         paths.add('.agentstack/runtime/' + name)
     for legacy in (home / '.agentstack/runtime').glob('dashboard.legacy.*'):
         paths.add(relative(home, legacy))
@@ -215,9 +217,10 @@ def plan(home: Path, project: Path, candidate: str, worktree: Path) -> list[str]
     for selected_prefix in prefixes:
         for suffix in ('agentdashboard', 'mail', 'mail-watcher'):
             label = selected_prefix + '.' + suffix
-            paths.add('Library/LaunchAgents/' + label + '.plist')
-            paths.add('.config/systemd/user/' + label + '.service')
-            paths.add('.config/systemd/user/' + label + '.timer')
+            for service in ('Library/LaunchAgents/' + label + '.plist',
+                            '.config/systemd/user/' + label + '.service',
+                            '.config/systemd/user/' + label + '.timer'):
+                paths.update((service, service + '.tmp', service + '.prev'))
     for path in paths:
         assert_safe_parents(home, path)
     return sorted(paths)
