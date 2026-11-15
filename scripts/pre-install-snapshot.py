@@ -226,6 +226,13 @@ def plan(home: Path, project: Path, candidate: str, worktree: Path) -> list[str]
 def collect(home: Path, roots: list[str]) -> list[str]:
     result: set[str] = set()
     def visit(rel: str) -> None:
+        # Historical backup is not a candidate payload name; copy_core_tree
+        # does not delete destination-only hook files. Do not open it.
+        if rel == '.agentstack/hooks/spawn_child.sh.bak-20260925-update-token':
+            candidate = ROOT / 'hooks' / Path(rel).name
+            if candidate.exists() or candidate.is_symlink():
+                raise ValueError('excluded historical hook is a candidate destination')
+            return
         assert_safe_parents(home, rel)
         if rel in result:
             return

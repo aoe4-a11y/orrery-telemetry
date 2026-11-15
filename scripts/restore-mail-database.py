@@ -120,16 +120,110 @@ def restore(home: Path, snapshot: Path, manifest_sha: str, database: Path, backu
             'restored_backup_sha256': before_backup[0]}
 
 
+def restore_bundle(home: Path, snapshot: Path, manifest_sha: str, database: Path, mail_manifest_sha: str) -> dict:
+    for path in (snapshot, database):
+        snapshot_tool.assert_safe_parents(home, snapshot_tool.relative(home, path))
+    if snapshot.parent != home / '.agentstack/backups' or not snapshot.name.startswith('orrery-up-6-'):
+        raise ValueError('snapshot outside approved backup directory')
+    if snapshot.is_symlink() or not snapshot.is_dir() or snapshot.stat().st_uid != os.getuid() or snapshot.stat().st_mode & 0o077:
+        raise ValueError('snapshot unavailable or not private')
+    manifest = snapshot / 'manifest.json'
+    if manifest.is_symlink() or not manifest.is_file() or not re.fullmatch(r'[0-9a-f]{64}', manifest_sha):
+        raise ValueError('snapshot manifest unavailable')
+    if snapshot_tool.digest(manifest)[0] != manifest_sha:
+        raise ValueError('snapshot manifest digest differs')
+    bundle = snapshot / 'mail-database'; mail_manifest = bundle / 'manifest.json'
+    if (bundle.is_symlink() or not bundle.is_dir() or bundle.stat().st_uid != os.getuid()
+            or bundle.stat().st_mode & 0o077 or mail_manifest.is_symlink() or not mail_manifest.is_file()
+            or not re.fullmatch(r'[0-9a-f]{64}', mail_manifest_sha)):
+        raise ValueError('Mail bundle manifest unavailable')
+    if snapshot_tool.digest(mail_manifest)[0] != mail_manifest_sha:
+        raise ValueError('Mail bundle manifest digest differs')
+    data = json.loads(mail_manifest.read_text())
+    if not isinstance(data, dict): raise ValueError('invalid Mail bundle')
+    rows = data.get('components')
+    if (data.get('version') != 2 or data.get('database_relative') != snapshot_tool.relative(home, database)
+            or not isinstance(rows, list) or not all(isinstance(r, dict) for r in rows)
+            or [r.get('kind') for r in rows] != ['db', 'wal', 'shm']
+            or rows[0].get('present') is not True):
+        raise ValueError('invalid Mail bundle')
+    paths = [database, Path(str(database) + '-wal'), Path(str(database) + '-shm')]
+    copies = [bundle / 'db', bundle / 'wal', bundle / 'shm']
+    for row, copy in zip(rows, copies):
+        if not isinstance(row.get('present'), bool) or copy.is_symlink() or copy.exists() != row['present']:
+            raise ValueError('Mail bundle presence differs')
+        if row['present'] and (not isinstance(row.get('sha256'), str) or
+                not re.fullmatch(r'[0-9a-f]{64}', row['sha256']) or
+                type(row.get('bytes')) is not int or row['bytes'] < 0):
+            raise ValueError('invalid Mail bundle digest')
+        if row['present'] and (not copy.is_file() or copy.stat().st_nlink != 1 or
+                snapshot_tool.digest(copy) != (row.get('sha256'), row.get('bytes'))):
+            raise ValueError('Mail bundle component differs')
+    for path in paths:
+        if path.is_symlink() or (path.exists() and (not path.is_file() or path.stat().st_nlink != 1)):
+            raise ValueError('current database component is unsafe')
+        if path.exists() and path.stat().st_dev != snapshot.stat().st_dev:
+            raise ValueError('current database is on another volume')
+    idle(paths + copies)
+    safety = snapshot / 'post-install-db-bundle'; safety.mkdir(mode=0o700)
+    old = []
+    for name, path in zip(('db', 'wal', 'shm'), paths):
+        if not path.exists():
+            old.append(None); continue
+        before = snapshot_tool.digest(path); snapshot_tool.clone(path, safety / name)
+        if snapshot_tool.digest(safety / name) != before or snapshot_tool.digest(path) != before:
+            raise ValueError('current database safety copy differs')
+        old.append(before)
+    safe_manifest = safety / 'manifest.json'
+    fd = os.open(safe_manifest, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+    with os.fdopen(fd, 'w') as f:
+        json.dump([{'kind': kind, 'present': item is not None, 'sha256': item[0] if item else None,
+                    'bytes': item[1] if item else 0} for kind, item in zip(('db', 'wal', 'shm'), old)], f); f.write('\n')
+        f.flush(); os.fsync(f.fileno())
+    temps = []
+    for row, path, copy in zip(rows, paths, copies):
+        if not row['present']:
+            temps.append(None); continue
+        temp = path.with_name('.orrery-db-restore-' + uuid.uuid4().hex)
+        snapshot_tool.clone(copy, temp)
+        if snapshot_tool.digest(temp) != (row['sha256'], row['bytes']) or snapshot_tool.digest(copy) != (row['sha256'], row['bytes']):
+            raise ValueError('prepared restore clone differs')
+        temps.append(temp)
+    idle(paths + copies)
+    for row, copy in zip(rows, copies):
+        if copy.is_symlink() or copy.exists() != row['present'] or (row['present'] and snapshot_tool.digest(copy) != (row['sha256'], row['bytes'])):
+            raise ValueError('Mail bundle changed during preparation')
+    for path, before in zip(paths, old):
+        observed = snapshot_tool.digest(path) if path.exists() or path.is_symlink() else None
+        if observed != before:
+            raise ValueError('current database changed during preparation')
+    for row, path, temp in zip(rows, paths, temps):
+        if temp is not None: os.replace(temp, path)
+        elif path.exists(): path.unlink()
+        if row['present'] and snapshot_tool.digest(path) != (row['sha256'], row['bytes']):
+            raise ValueError('restored component differs')
+    return {'restored_components': sum(row['present'] for row in rows),
+            'safety_manifest_sha256': snapshot_tool.digest(safe_manifest)[0]}
+
+
 def main() -> int:
     ap = argparse.ArgumentParser()
-    for name in ('home', 'snapshot', 'database', 'backup'):
+    for name in ('home', 'snapshot', 'database'):
         ap.add_argument('--' + name, type=Path, required=True)
+    ap.add_argument('--backup', type=Path)
     ap.add_argument('--manifest-sha256', required=True)
+    ap.add_argument('--mail-manifest-sha256')
     args = ap.parse_args();os.umask(0o077)
     try:
-        if not all(p.is_absolute() for p in (args.home, args.snapshot, args.database, args.backup)):
+        if not all(p.is_absolute() for p in (args.home, args.snapshot, args.database)):
             raise ValueError('absolute paths required')
-        print(json.dumps(restore(args.home, args.snapshot, args.manifest_sha256, args.database, args.backup)))
+        if args.mail_manifest_sha256:
+            if args.backup is not None: raise ValueError('choose exactly one backup mode')
+            result = restore_bundle(args.home, args.snapshot, args.manifest_sha256, args.database, args.mail_manifest_sha256)
+        else:
+            if args.backup is None or not args.backup.is_absolute(): raise ValueError('absolute installer backup required')
+            result = restore(args.home, args.snapshot, args.manifest_sha256, args.database, args.backup)
+        print(json.dumps(result))
         return 0
     except (OSError, ValueError, KeyError, TypeError, sqlite3.Error, subprocess.TimeoutExpired):
         print('database restore refused or failed; retain all safety copies', file=sys.stderr)

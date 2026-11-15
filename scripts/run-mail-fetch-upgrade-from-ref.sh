@@ -35,6 +35,8 @@ print('core installer possible destinations: VERSION, dashboard/, hooks/, bin/, 
 print('owner-approved configuration may include Claude MCP/settings and managed instruction blocks')
 print('planned service actions: dashboard service start/restart; Mail autostart and watcher registration; Mail candidate verification and managed switch')
 print('before install: clone and verify existing install payload into same-volume private backup; preserve all existing Mail backups')
+print('before install: stop Mail, verify DB/WAL/SHM clones, then restart and check the old listener')
+print('DB restore priority: installer backup first; pre-install clone is the earlier anchor')
 print('service labels, live-specific conditional file changes, database backup location and outage duration: not measured by this preview')
 PY
   printf 'reviewed source commit: %s\n' "$revision"
@@ -85,11 +87,58 @@ python3 "$worktree/scripts/pre-install-snapshot.py" --home "$HOME" \
   --verify-manifest-sha "$manifest_sha" >/dev/null || {
   echo 'snapshot no longer matches; installer was not started' >&2; exit 1;
 }
+mail_result="$root/pre-install-mail-backup-$(date -u '+%Y%m%dT%H%M%SZ').json"
+( set -o noclobber; umask 077; python3 "$worktree/scripts/pre-install-mail-cycle.py" \
+    --home "$HOME" --snapshot "$snapshot" --worktree "$worktree" > "$mail_result" ) || {
+  echo 'pre-install Mail stop/clone/restart gate failed; installer was not started' >&2; exit 1;
+}
+mail_manifest_sha="$(python3 - "$mail_result" "$snapshot/mail-database/manifest.json" <<'PYMAIL'
+import hashlib, json, pathlib, re, sys
+result = json.loads(pathlib.Path(sys.argv[1]).read_text())
+sha = result['mail_manifest_sha256']
+if not re.fullmatch(r'[0-9a-f]{64}', sha) or hashlib.sha256(pathlib.Path(sys.argv[2]).read_bytes()).hexdigest() != sha:
+    raise SystemExit(1)
+print(sha)
+PYMAIL
+)" || { echo 'Mail backup manifest verification failed; installer was not started' >&2; exit 1; }
 [[ "$(git -C "$worktree" rev-parse HEAD)" == "$revision" && -z "$(git -C "$worktree" status --porcelain)" ]] || {
   echo 'owner worktree changed after snapshot; installer was not started' >&2; exit 1;
 }
 printf 'verified snapshot: ~/.agentstack/backups/%s; manifest SHA-256: %s\n' "${snapshot##*/}" "$manifest_sha"
+printf 'verified pre-install Mail backup manifest SHA-256: %s\n' "$mail_manifest_sha"
+python3 - "$mail_result" <<'PYOUTAGE'
+import json,sys
+result=json.load(open(sys.argv[1]))
+print('pre-install Mail stop until old listener healthy, seconds:',result['preinstall_outage_seconds'])
+PYOUTAGE
+timing_file="$root/installer-switch-$(date -u '+%Y%m%dT%H%M%SZ').seconds"
+( set -o noclobber; umask 077; : > "$timing_file" ) || { echo 'switch timing file unavailable; installer was not started' >&2; exit 1; }
+install_rc=0
 (
   cd "$worktree"
-  AGENTSTACK_FLEET_COMPAT=1 /bin/bash scripts/install.sh --project-key "$AGENTSTACK_PROJECT_KEY" --mail update
-)
+  AGENTSTACK_FLEET_COMPAT=1 AGENTSTACK_OWNER_SWITCH_TIMING_FILE="$timing_file" \
+    /bin/bash scripts/install.sh --project-key "$AGENTSTACK_PROJECT_KEY" --mail update
+) || install_rc=$?
+python3 - "$timing_file" <<'PYTIMING'
+import pathlib,re,sys
+try:
+    entries=pathlib.Path(sys.argv[1]).read_text().splitlines()
+    value=entries[-1] if entries and re.fullmatch(r'[0-9]+\.[0-9]+',entries[-1]) else 'unrecorded'
+except OSError:
+    value='unrecorded'
+print('installer Mail switch measured seconds:',value)
+PYTIMING
+if [[ "$install_rc" == 0 ]]; then
+  python3 - "$HOME/.agentstack/install-state.json" <<'PYUPDATE'
+import json,sys
+try:
+    update=json.load(open(sys.argv[1])).get('agent_mail',{}).get('update',{})
+    print('installer Mail update result:',update.get('result','unrecorded'))
+    print('installer Mail switch outage seconds:',update.get('outage_seconds','unrecorded'))
+except (OSError, ValueError, AttributeError):
+    print('installer Mail switch outage seconds: unrecorded')
+PYUPDATE
+else
+  echo 'installer failed; switch outage may be unrecorded in state' >&2
+fi
+exit "$install_rc"

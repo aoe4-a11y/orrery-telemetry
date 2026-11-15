@@ -3996,7 +3996,13 @@ mail_update_clock() {
 }
 
 mail_update_elapsed() {  # mail_update_elapsed <start from mail_update_clock>
-  "$PYTHON_BIN" -c 'import sys, time; print(f"{time.monotonic() - float(sys.argv[1]):.1f}")' "$1"
+  local elapsed
+  elapsed="$("$PYTHON_BIN" -c 'import sys, time; print(f"{time.monotonic() - float(sys.argv[1]):.1f}")' "$1")" || return 1
+  if [[ -n "${AGENTSTACK_OWNER_SWITCH_TIMING_FILE:-}" ]]; then
+    [[ -f "$AGENTSTACK_OWNER_SWITCH_TIMING_FILE" && ! -L "$AGENTSTACK_OWNER_SWITCH_TIMING_FILE" ]] || return 1
+    printf '%s\n' "$elapsed" >> "$AGENTSTACK_OWNER_SWITCH_TIMING_FILE" || return 1
+  fi
+  printf '%s\n' "$elapsed"
 }
 
 # The text is scripts/lib/mail_update_notice.py, shared with doctor and the
